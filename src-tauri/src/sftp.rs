@@ -177,8 +177,9 @@ pub async fn sftp_open(
 
     // the terminal's ssh, without its terminal, running the sftp subsystem
     let base: Vec<String> = launch.command.get_argv().iter().skip(1).map(|w| w.to_string_lossy().to_string()).filter(|w| w != "-tt").collect();
+    let base = with_keepalive(base);
     let mut args = base.clone();
-    args.splice(0..0, ["-s".to_string(), "-T".to_string(), "-o".to_string(), "ServerAliveInterval=30".to_string()]);
+    args.splice(0..0, ["-s".to_string(), "-T".to_string()]);
     args.push("sftp".into());
 
     let label = window.label().to_string();
@@ -665,6 +666,19 @@ async fn upload_file(raw: &RawSftpSession, item: &Item, cancel: &AtomicBool, rep
 
 // ---- SCP, for devices with no SFTP ----
 
+/// Keepalives for every ssh and scp a file transfer runs, so a long copy (or an idle tab) isn't dropped by a
+/// firewall: the profile's Keepalive when it sets one (already in the arguments), else every 30 seconds; ssh gives up
+/// after 4 unanswered (two minutes), as a slow device writing its flash can pause that long
+fn with_keepalive(mut base: Vec<String>) -> Vec<String> {
+    if !base.iter().any(|w| w.starts_with("ServerAliveInterval=")) {
+        base.splice(0..0, ["-o".to_string(), "ServerAliveInterval=30".to_string()]);
+    }
+    if !base.iter().any(|w| w.starts_with("ServerAliveCountMax=")) {
+        base.splice(0..0, ["-o".to_string(), "ServerAliveCountMax=4".to_string()]);
+    }
+    base
+}
+
 /// ssh or scp with the connection's login (askpass.rs): the password, and the user asked anything else
 fn with_login(program: &str, token: &str) -> Result<tokio::process::Command, String> {
     let helper = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -688,7 +702,7 @@ async fn scp_list(base: &[String], token: &str, path: &str) -> Result<Listing, S
     let mut said = String::new();
     for verb in ["dir", "show"] {
         let mut command = with_login("ssh", token)?;
-        command.args(["-T", "-o", "ServerAliveInterval=30"]).args(base).arg(format!("{verb} {path}"));
+        command.arg("-T").args(base).arg(format!("{verb} {path}"));
         let output = tokio::time::timeout(Duration::from_secs(600), command.output())
             .await
             .map_err(|_| "The device didn't answer.".to_string())?
@@ -709,7 +723,7 @@ async fn scp_delete(base: &[String], token: &str, path: &str) -> Result<(), Stri
         return Err(format!("{path}: a name with spaces can't be deleted this way."));
     }
     let mut command = with_login("ssh", token)?;
-    command.args(["-T", "-o", "ServerAliveInterval=30"]).args(base).arg(format!("delete /force {path}"));
+    command.arg("-T").args(base).arg(format!("delete /force {path}"));
     let output = tokio::time::timeout(Duration::from_secs(120), command.output())
         .await
         .map_err(|_| "The device didn't answer.".to_string())?
@@ -965,6 +979,14 @@ mod tests {
     fn explains_privilege_refusals() {
         assert!(privilege_hint("Line has invalid autocommand \"delete /force flash:x\"").contains("privilege 15"));
         assert_eq!(privilege_hint("%Error deleting flash:/x (No such file or directory)"), "%Error deleting flash:/x (No such file or directory)");
+    }
+
+    #[test]
+    fn keeps_connections_alive() {
+        let added = with_keepalive(vec!["10.0.0.1".into()]);
+        assert!(added.contains(&"ServerAliveInterval=30".to_string()) && added.ends_with(&["10.0.0.1".to_string()]));
+        let profile = with_keepalive(vec!["-o".into(), "ServerAliveInterval=15".into(), "h".into()]);
+        assert_eq!(profile.iter().filter(|w| w.starts_with("ServerAliveInterval")).count(), 1);
     }
 
     #[test]

@@ -7,6 +7,7 @@
 import type { MenuItem } from "../ui/Menu.svelte";
 import type { SessionView } from "../sessions/api";
 import type { TabArea } from "./TabArea";
+import { specialCommands } from "../terminal/PageHost";
 
 /** What the menu needs from the window */
 export interface TabMenuHost {
@@ -58,15 +59,9 @@ function sessionsMenu(sessions: SessionView[], open: (s: SessionView) => void): 
 
 /** Special Command's items, as PuTTY's: Telnet's commands, a serial Break; ssh can't send any */
 function specialItems(protocol: string, send: (command: string) => void): MenuItem[] {
-  if (protocol === "TELNET") {
-    return [
-      ["Break", "break"], ["Are You There", "ayt"], ["Synch", "synch"], ["Erase Character", "ec"], ["Erase Line", "el"],
-      ["Go Ahead", "ga"], ["No Operation", "nop"], ["Abort Process", "abort"], ["Abort Output", "ao"],
-      ["Interrupt Process", "interrupt"], ["Suspend Process", "susp"], ["End Of Record", "eor"], ["End Of File", "eof"],
-    ].map(([label, command]) => ({ label, action: () => send(command) }));
-  }
-  if (protocol === "SERIAL") return [{ label: "Break", action: () => send("break") }];
-  return [{ label: "Not in the built-in terminal: ssh can't send them", disabled: true }];
+  const specials = specialCommands(protocol.toLowerCase());
+  if (specials.length === 0) return [{ label: "Not in the built-in terminal: ssh can't send them", disabled: true }];
+  return specials.map(({ label, command }) => ({ label, action: () => send(command) }));
 }
 
 /** The menu for the tab `id` */

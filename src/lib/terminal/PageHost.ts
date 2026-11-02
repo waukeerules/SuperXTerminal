@@ -22,7 +22,7 @@ type PtyEvent =
   | { type: "data"; data: string }
   | { type: "exit"; code: number | null }
   | { type: "notice"; text: string; kind: string }
-  | { type: "started"; local: boolean; look: Look };
+  | { type: "started"; local: boolean; look: Look; link: string };
 
 /** The profile's cursor and bell for the page (`Look` in `src-tauri/src/launch.rs`) */
 interface Look {
@@ -86,6 +86,17 @@ function beep(): void {
   tone.onended = () => void audio.close();
 }
 
+/** The Special Commands a connection can send, as PuTTY's menu: Telnet's, a serial Break; ssh and Raw none */
+export function specialCommands(link: string): { label: string; command: string }[] {
+  if (link === "serial") return [{ label: "Break", command: "break" }];
+  if (link !== "telnet") return [];
+  return [
+    ["Break", "break"], ["Are You There", "ayt"], ["Synch", "synch"], ["Erase Character", "ec"], ["Erase Line", "el"],
+    ["Go Ahead", "ga"], ["No Operation", "nop"], ["Abort Process", "abort"], ["Abort Output", "ao"],
+    ["Interrupt Process", "interrupt"], ["Suspend Process", "susp"], ["End Of Record", "eor"], ["End Of File", "eof"],
+  ].map(([label, command]) => ({ label, command }));
+}
+
 /** What the core's error starts with when a serial session's COM name needs a device (launch::SERIAL_DEVICE_NEEDED) */
 const SERIAL_DEVICE_NEEDED = "SERIAL_DEVICE:";
 
@@ -107,6 +118,8 @@ export class PageHost implements ScriptTarget {
   private mark = 0;
   /** The program ended: nothing more can be typed */
   private ended = false;
+  /** What the connection is: "pty", or a stream's "telnet", "raw" or "serial" (pty_open's started event) */
+  private link = "pty";
   /** The tab's session log (SessionLog): its id for writing, its file, and whether it goes when the tab closes */
   private log: { id: number; path: string; temporary: boolean } | null = null;
   /** When the last time stamp went in the log; 0 for none yet, so the first write is stamped */
@@ -229,6 +242,9 @@ export class PageHost implements ScriptTarget {
         if (typeof message.uri === "string" && /^https?:\/\//i.test(message.uri)) {
           await invoke("plugin:opener|open_url", { url: message.uri }).catch(() => {});
         }
+        break;
+      case "special":
+        await this.special(String(message.command ?? ""));
         break;
       case "openInPutty":
         this.post({ type: "notice", text: "There's no PuTTY on the Mac: Connect external, in the session's menu in the Sessions tree, opens it in Terminal.", kind: "info" });
@@ -426,6 +442,8 @@ export class PageHost implements ScriptTarget {
       cursor: { style: look.cursor, blink: look.blink },
       local: this.local,
       serial: false,
+      // the Special Commands this tab sends itself (the page then offers them instead of Open in PuTTY)
+      specials: specialCommands(this.link),
       prefs: allPrefs(),
       fonts: MAC_MONOSPACE_FONTS,
       // PuTTY's defaults (the profile's Terminal > Keyboard and Bell settings aren't in SuperXTerminal's profiles)
@@ -449,6 +467,7 @@ export class PageHost implements ScriptTarget {
         this.flush();
       } else if (event.type === "started") {
         // output waits until the page has its settings, so the first lines are highlighted too
+        this.link = event.link;
         this.configured = this.sendConfig(event.look);
       } else if (event.type === "notice") {
         this.post({ type: "notice", text: event.text, kind: event.kind });

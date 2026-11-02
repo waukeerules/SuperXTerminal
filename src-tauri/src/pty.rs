@@ -42,8 +42,9 @@ pub enum PtyEvent {
     Exit { code: Option<u32> },
     /// Something to tell the user in the terminal before the program's own output
     Notice { text: String, kind: String },
-    /// How the page should treat the tab: `local` for a local shell, and the profile's cursor and bell
-    Started { local: bool, look: Look },
+    /// How the page should treat the tab: `local` for a local shell, the profile's cursor and bell, and what the
+    /// connection is ("pty", or a stream's "telnet", "raw" or "serial"), for the Special Commands it can send
+    Started { local: bool, look: Look, link: String },
 }
 
 /// One open pseudo terminal: the master side (for resizing), its writer (for typing) and the program in it
@@ -97,7 +98,13 @@ pub fn pty_open(
         }
     };
     let Launch { mut command, password, local, notices, look, stream } = launch;
-    let _ = on_event.send(PtyEvent::Started { local, look });
+    let link = match &stream {
+        Some(crate::streams::Target::Telnet { .. }) => "telnet",
+        Some(crate::streams::Target::Raw { .. }) => "raw",
+        Some(crate::streams::Target::Serial { .. }) => "serial",
+        None => "pty",
+    };
+    let _ = on_event.send(PtyEvent::Started { local, look, link: link.into() });
     for text in notices {
         let _ = on_event.send(PtyEvent::Notice { text, kind: "info".into() });
     }

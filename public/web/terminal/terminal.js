@@ -13,7 +13,7 @@
  *
  * Messages from TerminalControl: config, data, notice, paste, focus, action, cursorColor. To it: ready, size, input,
  * ack, log, copy, pasteRequest (every paste, so TerminalControl can ask first; with "text" for one not from the
- * clipboard), document, bell, tab, openInPutty, openLink (a link Ctrl+clicked), pref, cleared (the screen was cleared
+ * clipboard), document, bell, tab, openInPutty, special (a Special Command, when config.specials offers it), openLink (a link Ctrl+clicked), pref, cleared (the screen was cleared
  * here, so the pseudo console's own copy of it is cleared too and a resize can't bring the text back).
  *
  * xterm.js add-ons: web links (Ctrl+click opens) and WebGL drawing (Options > Terminal > Drawing; the DOM renderer
@@ -42,6 +42,7 @@
     var cursorFromProfile = { style: 'block', blink: false }; // the PuTTY profile's cursor, from TerminalControl
     var localShell = false;         // cmd, PowerShell or WSL rather than a connection through plink
     var serialSession = false;      // a serial port: Open in PuTTY replaces this tab, as the port can only be open once
+    var specials = [];              // Special Commands the host sends itself ({label, command}): then no Open in PuTTY
     var menuKeys = [];              // Send Key's keys ({key, label, hint}), from TerminalKeys.MenuKeys
     var keysFromProfile = { backspace: 'del', homeEnd: 'standard', functionKeys: 'tilde' }; // the PuTTY profile's keys, from TerminalControl
     var sessionRules = '';          // the session's or its folder's highlighting rules; empty: Options > Terminal's
@@ -638,12 +639,19 @@
                 return { label: k.label, key: k.hint, action: function () { post({ type: 'sendKey', key: k.key }); } };
             }).concat([
                 // a Break is a signal on the line, not a key: plink can't send one, PuTTY's Special Command can
-                { label: 'Break', key: 'needs PuTTY', enabled: false },
+                specials.some(function (s) { return s.command === 'break'; })
+                    ? { label: 'Break', key: 'signal', action: function () { post({ type: 'special', command: 'break' }); } }
+                    : { label: 'Break', key: 'needs PuTTY', enabled: false },
                 '-',
                 { label: 'Other Key...', action: function () { post({ type: 'sendKey' }); } }
             ]) },
             '-'
-        ].concat(localShell ? [] : [
+        ].concat(specials.length ? [
+            { label: 'Special Command', items: specials.map(function (s) {
+                return { label: s.label, action: function () { post({ type: 'special', command: s.command }); } };
+            }) },
+            '-'
+        ] : localShell ? [] : [
             // plink can't send PuTTY's Special Commands (Break, signals...); PuTTY's own window can
             { label: serialSession ? 'Open in PuTTY (Special Commands, replaces this tab)' : 'Open in PuTTY (Special Commands)',
                 action: function () { post({ type: 'openInPutty' }); } },
@@ -995,6 +1003,7 @@
         if (config.cursor) { cursorFromProfile = config.cursor; }
         localShell = !!config.local;
         serialSession = !!config.serial;
+        specials = config.specials || [];
         menuKeys = config.menuKeys || [];
         if (config.keys) { keysFromProfile = config.keys; }
         sessionRules = config.sessionRules || '';

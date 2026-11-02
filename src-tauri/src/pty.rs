@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::launch::{self, Launch};
+use crate::launch::{self, Launch, Look};
 use crate::sessions::Store;
 use crate::AppState;
 
@@ -40,8 +40,8 @@ pub enum PtyEvent {
     Exit { code: Option<u32> },
     /// Something to tell the user in the terminal before the program's own output
     Notice { text: String, kind: String },
-    /// How the page should treat the tab: `local` for a local shell
-    Started { local: bool },
+    /// How the page should treat the tab: `local` for a local shell, and the profile's cursor and bell
+    Started { local: bool, look: Look },
 }
 
 /// One open pseudo terminal: the master side (for resizing), its writer (for typing) and the program in it
@@ -70,16 +70,17 @@ pub fn pty_open(
     rows: u16,
     on_event: Channel<PtyEvent>,
 ) -> Result<u32, String> {
+    let profiles = state.profiles.lock().unwrap().clone();
     let launch = match target {
-        Target::LocalShell => launch::local_shell(),
+        Target::LocalShell => launch::local_shell(&profiles),
         Target::Session { store, id } => {
             let sessions = state.sessions.lock().unwrap();
             let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
-            launch::launch(&sessions, store, session)?
+            launch::launch(&sessions, &profiles, store, session)?
         }
     };
-    let Launch { mut command, password, local, notices } = launch;
-    let _ = on_event.send(PtyEvent::Started { local });
+    let Launch { mut command, password, local, notices, look } = launch;
+    let _ = on_event.send(PtyEvent::Started { local, look });
     for text in notices {
         let _ = on_event.send(PtyEvent::Notice { text, kind: "info".into() });
     }

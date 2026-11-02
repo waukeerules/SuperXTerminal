@@ -15,7 +15,14 @@ type PtyEvent =
   | { type: "data"; data: string }
   | { type: "exit"; code: number | null }
   | { type: "notice"; text: string; kind: string }
-  | { type: "started"; local: boolean };
+  | { type: "started"; local: boolean; look: Look };
+
+/** The profile's cursor and bell for the page (`Look` in `src-tauri/src/launch.rs`) */
+interface Look {
+  cursor: string;
+  blink: boolean;
+  bell: string;
+}
 
 /** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
 export type Target = { kind: "localShell" } | { kind: "session"; store: "saved" | "private"; id: string };
@@ -105,7 +112,7 @@ export class PageHost {
   private async handle(message: PageMessage): Promise<void> {
     switch (message.type) {
       case "ready":
-        this.sendConfig();
+        // the page gets its settings once the core says what's starting ("started"), with the profile's look
         await this.open();
         break;
       case "size":
@@ -146,16 +153,16 @@ export class PageHost {
     if (value) this.post({ type: "paste", text: value });
   }
 
-  /** The page's settings: no highlighting rules or themes yet (M4), the app's light or dark look */
-  private sendConfig(): void {
+  /** The page's settings: the profile's cursor and bell; no highlighting rules or themes yet (M4) */
+  private sendConfig(look: Look): void {
     const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     this.post({
       type: "config",
       ruleSets: [],
       themes: STAND_IN_THEMES,
       dark,
-      bell: "visual",
-      cursor: { style: "block", blink: true },
+      bell: look.bell,
+      cursor: { style: look.cursor, blink: look.blink },
       local: this.local,
       serial: false,
       prefs: {},
@@ -175,6 +182,8 @@ export class PageHost {
       if (event.type === "data") {
         this.queue.push(event.data);
         this.flush();
+      } else if (event.type === "started") {
+        this.sendConfig(event.look);
       } else if (event.type === "notice") {
         this.post({ type: "notice", text: event.text, kind: event.kind });
       } else if (event.type === "exit") {
@@ -185,6 +194,8 @@ export class PageHost {
     try {
       this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel });
     } catch (error) {
+      // nothing started, so the page has had no settings yet
+      this.sendConfig({ cursor: "block", blink: true, bell: "visual" });
       this.post({ type: "notice", text: String(error), kind: "error" });
     }
   }

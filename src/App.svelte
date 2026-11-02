@@ -7,12 +7,20 @@
   import { onMount } from "svelte";
   import { TabArea } from "./lib/layout/TabArea";
   import SessionTree from "./lib/sessions/SessionTree.svelte";
+  import Settings from "./lib/settings/Settings.svelte";
+  import { listen } from "@tauri-apps/api/event";
   import { opensAsLocalShell, type SessionView } from "./lib/sessions/api";
 
   let tabElement: HTMLDivElement;
   let tabs: TabArea | null = null;
   let status = $state("Ready");
   let openSessions = $state<ReadonlySet<string>>(new Set());
+  let settingsOpen = $state(false);
+
+  // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
+  void listen<string>("menu", (event) => {
+    if (event.payload === "settings") settingsOpen = true;
+  });
 
   onMount(() => {
     tabs = new TabArea(tabElement, (open) => (openSessions = open));
@@ -33,6 +41,10 @@
     status = "Opened session: Local Shell";
   }
 </script>
+
+{#if settingsOpen}
+  <Settings onClose={() => (settingsOpen = false)} />
+{/if}
 
 <div class="window">
   <div class="toolbar" aria-label="Quick connect" title="Quick connect comes in M1">

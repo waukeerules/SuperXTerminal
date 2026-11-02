@@ -65,17 +65,17 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Connecting**
 - ✅ SSH tab: `ssh -tt` in a PTY, host, port, username; checked against the lab switch (log in, `sh ip int bri`)
-- ⬜ Profiles: Settings → Profiles, "Default Settings", matched by name
-- 🚧 Passwords: a session's `-pw` is typed at the first prompt (checked on the lab switch); Keychain storage for profiles comes with Profiles
-- ⬜ Key files and agent
-- 🚧 Allow older algorithms (profile option, on by default): SHA-1 key exchange, `ssh-rsa`, CBC ciphers: always on until profiles exist
-- 🚧 Launch order: override, session, folder default, profile, defaults: session and folder defaults done
+- ✅ Profiles: Settings → Profiles (Cmd+,), "Default Settings", matched by name; a missing profile falls back to Default Settings with a notice in the terminal. Checked: a `root` profile made Media Server log in as root
+- 🚧 Passwords: a session's `-pw` is typed at the first prompt (checked on the lab switch); a profile's password is kept in the Keychain and typed the same way (written, not yet tried)
+- ✅ Key files and agent: a profile's key file (`-i`, `IdentitiesOnly`), else ssh's own keys and agent (checked with the 1Password agent)
+- ✅ Allow older algorithms (profile option, on in Default Settings): SHA-1 key exchange, `ssh-rsa`, CBC ciphers
+- ✅ Launch order: session, folder default, profile, Default Settings (local overrides join it in M5); tested
 - ⬜ `{key}` placeholders; Environment Variables with Keychain secrets
 - ⬜ Quick connect toolbar
 - ⬜ Edit Session (SSH fields, profile list, greyed fields explained)
 
 **Settings**
-- ⬜ Settings window basics (settings folder, theme, icon size, tree font)
+- 🚧 Settings window basics (settings folder, theme, icon size, tree font): the window (Cmd+,) with its Profiles tab; the rest next
 - ⬜ Light and Dark themes matching SuperXPuTTY
 
 ## M2 Database sessions

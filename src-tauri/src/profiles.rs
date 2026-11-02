@@ -1,0 +1,123 @@
+//! Profiles: how each user logs in, matched by name to a session's PuTTY profile (docs/PLAN.md §2 Profiles).
+//!
+//! Shared data (Sessions.xml, the Database table) names a profile ("root", "Default Settings"); each user's own
+//! profile of that name says how they log in, as their PuTTY profile does on Windows. Profiles are per user, in
+//! `Profiles.json` in the user's folder; passwords are in the OS's secret store (the Keychain on a Mac), never in a
+//! file and never sent to the UI. "Default Settings" always exists, and every other profile falls back to it.
+
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
+/// The profile every session without one uses, and every profile falls back to, as PuTTY's
+pub const DEFAULT_PROFILE: &str = "Default Settings";
+
+/// The Keychain service passwords are kept under
+const KEYCHAIN_SERVICE: &str = "SuperXTerminal";
+
+/// One profile. Empty fields aren't set, and fall back to "Default Settings", then to ssh's own defaults.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Profile {
+    pub name: String,
+    pub username: String,
+    /// 0 for not set
+    pub port: u16,
+    /// A private key file (OpenSSH format); empty: ssh's own keys and the agent
+    pub key_file: String,
+    pub jump_host: String,
+    /// Seconds between keep-alives (ssh's ServerAliveInterval); 0 for not set
+    pub keepalive: u32,
+    /// More ssh arguments, e.g. "-L 8080:localhost:80 -o Compression=yes"
+    pub ssh_options: String,
+    /// Accept the older algorithms older devices offer (SHA-1 key exchange, ssh-rsa, CBC ciphers); None: the default's
+    pub older_algorithms: Option<bool>,
+    /// A Host from ~/.ssh/config, used for anything this profile doesn't set
+    pub ssh_config_host: String,
+    /// The terminal's cursor: "" (default), "block", "underline" or "bar"
+    pub cursor: String,
+    /// Whether the cursor blinks; None: the default's
+    pub cursor_blink: Option<bool>,
+    /// The bell: "" (default), "visual", "sound" or "none"
+    pub bell: String,
+    /// Whether a password is stored for it (the password itself stays in the Keychain)
+    #[serde(skip_deserializing)]
+    pub has_password: bool,
+}
+
+/// Every profile, "Default Settings" first
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Profiles {
+    pub profiles: Vec<Profile>,
+}
+
+impl Profiles {
+    /// Read `Profiles.json`; missing or unreadable means just "Default Settings"
+    pub fn load(user_folder: &Path) -> Profiles {
+        let mut profiles: Profiles = std::fs::read_to_string(user_folder.join("Profiles.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
+        profiles.ensure_default();
+        for profile in &mut profiles.profiles {
+            profile.has_password = password(&profile.name).is_some();
+        }
+        profiles
+    }
+
+    /// Write `Profiles.json`
+    pub fn save(&self, user_folder: &Path) -> Result<(), String> {
+        std::fs::create_dir_all(user_folder).map_err(|e| e.to_string())?;
+        let text = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        std::fs::write(user_folder.join("Profiles.json"), text).map_err(|e| e.to_string())
+    }
+
+    /// Make sure "Default Settings" exists, first; new, it accepts older algorithms, as PuTTY does
+    fn ensure_default(&mut self) {
+        if let Some(index) = self.profiles.iter().position(|p| is_default(&p.name)) {
+            let default = self.profiles.remove(index);
+            self.profiles.insert(0, default);
+        } else {
+            let default = Profile { name: DEFAULT_PROFILE.into(), older_algorithms: Some(true), ..Profile::default() };
+            self.profiles.insert(0, default);
+        }
+    }
+
+    /// A profile by name, ignoring case
+    pub fn get(&self, name: &str) -> Option<&Profile> {
+        self.profiles.iter().find(|p| p.name.eq_ignore_ascii_case(name.trim()))
+    }
+
+    /// "Default Settings"
+    pub fn default_profile(&self) -> &Profile {
+        self.get(DEFAULT_PROFILE).expect("Default Settings always exists")
+    }
+}
+
+/// Whether a profile name means "Default Settings" (also empty, as SuperXPuTTY's FolderSettings.IsDefaultProfile)
+pub fn is_default(name: &str) -> bool {
+    name.trim().is_empty() || name.trim().eq_ignore_ascii_case(DEFAULT_PROFILE)
+}
+
+/// The Keychain entry for a profile's password
+fn entry(profile: &str) -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, &format!("profile:{}", profile.to_lowercase())).ok()
+}
+
+/// A profile's stored password, if it has one
+pub fn password(profile: &str) -> Option<String> {
+    entry(profile)?.get_password().ok().filter(|p| !p.is_empty())
+}
+
+/// Store a profile's password, or forget it when `password` is empty
+pub fn set_password(profile: &str, password: &str) -> Result<(), String> {
+    let entry = entry(profile).ok_or("The Keychain isn't available")?;
+    if password.is_empty() {
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    } else {
+        entry.set_password(password).map_err(|e| e.to_string())
+    }
+}

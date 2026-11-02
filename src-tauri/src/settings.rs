@@ -52,6 +52,9 @@ pub struct AppSettings {
     pub use_sessions_xml: bool,
     /// The Sessions pane's width in points, as dragged at its edge
     pub sessions_pane_width: u32,
+    /// The Sessions pane is auto-hidden, as DockPanelSuite's unpinned pane in SuperXPuTTY: a tab at the window's left
+    /// edge that slides it out
+    pub sessions_auto_hide: bool,
 }
 
 impl Default for AppSettings {
@@ -77,6 +80,7 @@ impl Default for AppSettings {
             serial_devices: std::collections::BTreeMap::new(),
             use_sessions_xml: true,
             sessions_pane_width: 280,
+            sessions_auto_hide: false,
         }
     }
 }

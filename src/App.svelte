@@ -66,6 +66,7 @@
     else if (event.payload === "clearScrollback") tabs?.activeHost()?.action("clearScrollback");
     else if (event.payload === "toggleSendCommands") void saveSettings({ showSendCommands: !settings.showSendCommands });
     else if (event.payload === "toggleButtonBar") void saveSettings({ showButtonBar: !settings.showButtonBar });
+    else if (event.payload === "toggleSessionsAutoHide") setAutoHide(!settings.sessionsAutoHide);
     else if (event.payload.startsWith("import:")) tree?.importSessions(event.payload.slice(7) as ImportKind);
     else if (event.payload === "exportCsv") void tree?.exportSessions(null, "Sessions.csv");
   });
@@ -178,8 +179,53 @@
     handle.addEventListener("pointercancel", done);
   }
 
+  /**
+   * Auto hide, as DockPanelSuite's unpinned pane in SuperXPuTTY: the Sessions pane folds to a tab at the left edge.
+   * Hovering it (or a click) slides the pane out over the tabs; it goes again a couple of seconds after the pointer
+   * leaves it, when a session opens, or when a terminal is clicked.
+   */
+  let slid = $state(false);
+  let showTimer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  const HIDE_AFTER = 2000;
+
+  function setAutoHide(on: boolean): void {
+    slid = false;
+    void saveSettings({ sessionsAutoHide: on });
+  }
+
+  function slideOut(): void {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    slid = true;
+  }
+
+  function slideIn(): void {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    slid = false;
+  }
+
+  /** The pointer left the pane (or the edge tab without it opening): hide after a while, unless it comes back */
+  function scheduleHide(): void {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    // not while its edge is being dragged to resize it
+    if (settings.sessionsAutoHide && slid && !document.body.classList.contains("resizing-pane")) hideTimer = setTimeout(() => (slid = false), HIDE_AFTER);
+  }
+
+  // a click in a terminal (its own page) takes the focus from this one: the pane goes, as when another pane is clicked
+  $effect(() => {
+    const blurred = () => {
+      if (settings.sessionsAutoHide && slid && document.activeElement?.tagName === "IFRAME") slideIn();
+    };
+    window.addEventListener("blur", blurred);
+    return () => window.removeEventListener("blur", blurred);
+  });
+
   /** Open a session from the tree in a new tab */
   function openSession(session: SessionView, environment: string | null): void {
+    if (settings.sessionsAutoHide) slideIn();
     // RDP and VNC open in their own apps, as SuperXPuTTY's launchers
     if (opensExternally(session.protocol)) {
       openExternally(session.store, session.id, "open").then((text) => (status = text), (e) => (status = String(e)));
@@ -242,17 +288,35 @@
     <SendCommands onOpenEditor={() => (editorOpen = true)} />
   {/if}
 
-  <div class="main">
-    <aside class="sessions" style:width="{paneWidth ?? clampWidth(settings.sessionsPaneWidth || PANE_DEFAULT)}px">
-      <div class="pane-title">Sessions</div>
-      <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsTab = "Profiles")} onLook={(_, icons) => {
-        customs = icons;
-        if (tabs) tabs.customs = icons;
-      }} />
-    </aside>
+  <div class="main" class:autohide={settings.sessionsAutoHide}>
+    {#if settings.sessionsAutoHide}
+      <!-- the folded pane's tab, as DockPanelSuite draws an auto-hidden pane -->
+      <button class="edge" class:active={slid} title="Sessions" onclick={slideOut}
+        onmouseenter={() => { clearTimeout(hideTimer); showTimer = setTimeout(slideOut, 250); }}
+        onmouseleave={scheduleHide}><span>Sessions</span></button>
+    {/if}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="splitter" title="Drag to resize; double-click for the usual width" onpointerdown={startResize}
-      ondblclick={() => void saveSettings({ sessionsPaneWidth: PANE_DEFAULT })}></div>
+    <div class="side" class:out={slid} onmouseenter={() => clearTimeout(hideTimer)} onmouseleave={scheduleHide}>
+      <aside class="sessions" style:width="{paneWidth ?? clampWidth(settings.sessionsPaneWidth || PANE_DEFAULT)}px">
+        <div class="pane-title">
+          <span>Sessions</span>
+          <button class="pin" class:unpinned={settings.sessionsAutoHide} onclick={() => setAutoHide(!settings.sessionsAutoHide)}
+            title={settings.sessionsAutoHide ? "Keep the pane open (dock it)" : "Auto hide: fold the pane to the left edge"}
+            aria-label={settings.sessionsAutoHide ? "Dock the Sessions pane" : "Auto hide the Sessions pane"}>
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+              <path d="M5 1.5h6M6 1.5v5L4 9h8l-2-2.5v-5M8 9v5.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+        <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsTab = "Profiles")} onLook={(_, icons) => {
+          customs = icons;
+          if (tabs) tabs.customs = icons;
+        }} />
+      </aside>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="splitter" title="Drag to resize; double-click for the usual width" onpointerdown={startResize}
+        ondblclick={() => void saveSettings({ sessionsPaneWidth: PANE_DEFAULT })}></div>
+    </div>
     <div class="tabs" bind:this={tabElement}></div>
   </div>
 
@@ -303,6 +367,84 @@
     flex: 1;
     display: flex;
     min-height: 0;
+    position: relative;
+  }
+
+  .side {
+    flex: none;
+    display: flex;
+  }
+
+  /* auto hide: the pane lies over the tabs beside its edge tab, only while slid out (no transform, so the tree's
+     dialogs, which are fixed in place, stay put) */
+  .autohide .side {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 24px;
+    z-index: 60;
+    box-shadow: 4px 0 18px rgb(0 0 0 / 0.35);
+    visibility: hidden;
+  }
+
+  .autohide .side.out {
+    visibility: visible;
+  }
+
+  .edge {
+    flex: none;
+    width: 24px;
+    padding: 8px 0 0;
+    border: 0;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--bg-pane);
+    color: var(--text-muted);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    cursor: default;
+  }
+
+  .edge span {
+    writing-mode: vertical-rl;
+    font-size: 13px;
+    padding: 6px 0;
+    border-left: 3px solid var(--border);
+  }
+
+  .edge:hover span,
+  .edge.active span {
+    color: var(--text);
+    border-left-color: var(--accent);
+  }
+
+  .pane-title {
+    display: flex;
+    align-items: center;
+  }
+
+  .pane-title span {
+    flex: 1;
+  }
+
+  .pin {
+    display: flex;
+    padding: 2px 3px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  .pin:hover {
+    color: var(--text);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  /* DockPanelSuite's pin lies on its side while the pane auto-hides */
+  .pin.unpinned svg {
+    rotate: 90deg;
   }
 
   .sessions {

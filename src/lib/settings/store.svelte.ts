@@ -38,6 +38,8 @@ export interface AppSettings {
   useSessionsXml: boolean;
   /** The Sessions pane's width in points, as dragged at its edge */
   sessionsPaneWidth: number;
+  /** The Sessions pane is auto-hidden: a tab at the left edge slides it out */
+  sessionsAutoHide: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -61,6 +63,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   sessionLogFolder: "",
   useSessionsXml: true,
   sessionsPaneWidth: 280,
+  sessionsAutoHide: false,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

@@ -1615,6 +1615,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &MenuItem::with_id(app, "toggleSendCommands", "Send Commands", true, None::<&str>)?,
             &MenuItem::with_id(app, "toggleButtonBar", "Button Bar", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "toggleSessionsAutoHide", "Auto Hide Sessions", true, None::<&str>)?,
         ],
     )?;
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &tools, &window])

@@ -290,10 +290,13 @@
 
   <div class="main" class:autohide={settings.sessionsAutoHide}>
     {#if settings.sessionsAutoHide}
-      <!-- the folded pane's tab, as DockPanelSuite draws an auto-hidden pane -->
-      <button class="edge" class:active={slid} title="Sessions" onclick={slideOut}
-        onmouseenter={() => { clearTimeout(hideTimer); showTimer = setTimeout(slideOut, 250); }}
-        onmouseleave={scheduleHide}><span>Sessions</span></button>
+      <!-- the auto-hide strip, as DockPanelSuite's: a tab per folded pane, each only as tall as its name (more panes
+           folded to this side would add theirs below) -->
+      <div class="edge">
+        <button class="edge-tab" class:active={slid} title="Sessions" onclick={slideOut}
+          onmouseenter={() => { clearTimeout(hideTimer); showTimer = setTimeout(slideOut, 250); }}
+          onmouseleave={scheduleHide}>Sessions</button>
+      </div>
     {/if}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="side" class:out={slid} onmouseenter={() => clearTimeout(hideTimer)} onmouseleave={scheduleHide}>
@@ -381,7 +384,7 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 24px;
+    left: 22px;
     z-index: 60;
     box-shadow: 4px 0 18px rgb(0 0 0 / 0.35);
     visibility: hidden;
@@ -393,30 +396,33 @@
 
   .edge {
     flex: none;
-    width: 24px;
-    padding: 8px 0 0;
-    border: 0;
-    border-right: 1px solid var(--border);
-    border-radius: 0;
-    background: var(--bg-pane);
-    color: var(--text-muted);
+    width: 22px;
     display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 6px;
+    background: var(--bg-pane);
+    border-right: 1px solid var(--border);
+  }
+
+  .edge-tab {
+    writing-mode: vertical-rl;
+    margin: 0 3px;
+    padding: 8px 0;
+    border: 0;
+    border-left: 3px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
     cursor: default;
   }
 
-  .edge span {
-    writing-mode: vertical-rl;
-    font-size: 13px;
-    padding: 6px 0;
-    border-left: 3px solid var(--border);
-  }
-
-  .edge:hover span,
-  .edge.active span {
+  .edge-tab:hover,
+  .edge-tab.active {
     color: var(--text);
     border-left-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
 
   .pane-title {

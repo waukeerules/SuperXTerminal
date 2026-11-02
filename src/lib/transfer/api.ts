@@ -12,6 +12,8 @@ export interface Entry {
   size: number;
   /** Seconds since 1970; 0 when unknown */
   modified: number;
+  /** The time as the device wrote it, when it isn't one (SCP's `dir`) */
+  date: string;
   permissions: string;
   owner: string;
   group: string;
@@ -28,6 +30,8 @@ export interface Opened {
   remote: string;
   local: string;
   address: string;
+  /** SCP instead of SFTP: listed with the device's `dir`, files copied one at a time, nothing else */
+  scp: boolean;
 }
 
 export type Progress = { type: "total"; bytes: number; files: number } | { type: "done"; bytes: number; file: string };
@@ -58,9 +62,14 @@ export function joinPath(dir: string, name: string): string {
 
 /** The folder a path is in ("/" stays "/") */
 export function parentPath(path: string): string {
+  // a device's root (flash:, flash:/) has no parent
+  if (/^[\w-]+:\/?$/.test(path)) return path;
   const trimmed = path.replace(/\/+$/, "");
   const at = trimmed.lastIndexOf("/");
-  return at <= 0 ? "/" : trimmed.slice(0, at);
+  if (at < 0) return path;
+  if (at === 0) return "/";
+  // flash:/dir goes up to flash:/
+  return trimmed[at - 1] === ":" ? trimmed.slice(0, at + 1) : trimmed.slice(0, at);
 }
 
 /** 1.2 MB */

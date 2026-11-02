@@ -21,8 +21,10 @@ const LIFETIME: Duration = Duration::from_secs(120);
 pub type Asker = Arc<dyn Fn(&str, bool) -> Option<String> + Send + Sync>;
 
 struct Entry {
-    /// Given once, at the first password question
+    /// Given at the first password question of each ssh (one run, or each run for a token with an asker)
     password: Option<String>,
+    /// The ssh processes that have had it: asked again, the password was wrong, so the user is asked
+    given: std::collections::HashSet<u32>,
     /// For questions the password doesn't answer; a token with one lasts until it's dropped
     asker: Option<Asker>,
     made: Instant,
@@ -37,12 +39,13 @@ fn socket_path() -> std::path::PathBuf {
 
 /// A token for a password, good once, for two minutes (Connect external)
 pub fn register(password: &str) -> Result<String, String> {
-    add(Entry { password: Some(password.to_string()), asker: None, made: Instant::now() })
+    add(Entry { password: Some(password.to_string()), given: Default::default(), asker: None, made: Instant::now() })
 }
 
-/// A token that gives its password (if any) once and asks the user anything else; drop it with `forget`
+/// A token for a connection that may run ssh several times (file transfer: SFTP, or SCP's runs): each ssh gets its
+/// password (if any) once, and anything else is asked of the user; drop it with `forget`
 pub fn register_asking(password: Option<&str>, asker: Asker) -> Result<String, String> {
-    add(Entry { password: password.map(str::to_string), asker: Some(asker), made: Instant::now() })
+    add(Entry { password: password.map(str::to_string), given: Default::default(), asker: Some(asker), made: Instant::now() })
 }
 
 /// The token's connection is done
@@ -70,8 +73,9 @@ fn add(_entry: Entry) -> Result<String, String> {
     Err("Not on this system".into())
 }
 
-/// The answer to one request: "password" takes the token's password (once); "ask" asks the user
-fn answer(token: &str, kind: &str, prompt: &str) -> String {
+/// The answer to one request from the ssh `ssh_pid`: "password" gives the token's password (once to each ssh, and
+/// only once at all for a token without an asker); "ask" asks the user
+fn answer(token: &str, kind: &str, ssh_pid: u32, prompt: &str) -> String {
     let asker = {
         let mut tokens = TOKENS.lock().unwrap();
         let Some(entry) = tokens.as_mut().and_then(|t| t.get_mut(token)) else { return String::new() };
@@ -79,7 +83,13 @@ fn answer(token: &str, kind: &str, prompt: &str) -> String {
             return String::new();
         }
         if kind == "password" {
-            return entry.password.take().unwrap_or_default();
+            if entry.asker.is_none() {
+                return entry.password.take().unwrap_or_default();
+            }
+            return match &entry.password {
+                Some(password) if entry.given.insert(ssh_pid) => password.clone(),
+                _ => String::new(),
+            };
         }
         entry.asker.clone()
     };
@@ -88,7 +98,8 @@ fn answer(token: &str, kind: &str, prompt: &str) -> String {
     asker.and_then(|ask| ask(prompt, secret)).unwrap_or_default()
 }
 
-/// Answer requests on the socket (once per run of the app): "token\nkind\nprompt" (newlines in the prompt as \x01)
+/// Answer requests on the socket (once per run of the app): "token\nkind\nssh-pid\nprompt" (newlines in the prompt
+/// as \x01)
 #[cfg(unix)]
 fn listen() -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
@@ -114,9 +125,11 @@ fn listen() -> Result<(), String> {
                             if BufReader::new(&stream).read_to_string(&mut request).is_err() {
                                 return;
                             }
-                            let mut parts = request.splitn(3, '\n');
-                            let (token, kind, prompt) = (parts.next().unwrap_or(""), parts.next().unwrap_or("password"), parts.next().unwrap_or(""));
-                            let reply = answer(token.trim(), kind.trim(), &prompt.replace('\x01', "\n"));
+                            let mut parts = request.splitn(4, '\n');
+                            let (token, kind) = (parts.next().unwrap_or(""), parts.next().unwrap_or("password"));
+                            let pid = parts.next().and_then(|p| p.trim().parse().ok()).unwrap_or(0);
+                            let prompt = parts.next().unwrap_or("");
+                            let reply = answer(token.trim(), kind.trim(), pid, &prompt.replace('\x01', "\n"));
                             let mut stream = &stream;
                             let _ = stream.write_all(reply.as_bytes());
                         });
@@ -158,7 +171,10 @@ fn fetch(token: &str, kind: &str, prompt: &str) -> Option<String> {
     let mut stream = std::os::unix::net::UnixStream::connect(socket_path()).ok()?;
     // a question waits on the user
     stream.set_read_timeout(Some(Duration::from_secs(if kind == "ask" { 600 } else { 5 }))).ok()?;
-    stream.write_all(format!("{token}\n{kind}\n{}", prompt.replace('\n', "\x01")).as_bytes()).ok()?;
+    // ssh is this helper's parent: each ssh gets the password once
+    // SAFETY: getppid has no preconditions
+    let ssh_pid = unsafe { libc::getppid() };
+    stream.write_all(format!("{token}\n{kind}\n{ssh_pid}\n{}", prompt.replace('\n', "\x01")).as_bytes()).ok()?;
     stream.shutdown(std::net::Shutdown::Write).ok()?;
     let mut reply = String::new();
     stream.read_to_string(&mut reply).ok()?;

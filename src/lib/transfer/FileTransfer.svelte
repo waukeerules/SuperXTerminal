@@ -219,13 +219,13 @@
         onRename={(e) => void rename("local", e)}
         onReveal={(e) => sides.local.listing && void revealLocal(e.name ? joinPath(sides.local.listing.path, e.name) : sides.local.listing.path)} />
       <div class="remote" bind:this={remoteElement}>
-        <FilePane side="remote" title={`Remote (${conn.address})`} home={conn.home} {...sides.remote}
+        <FilePane side="remote" title={`Remote (${conn.address}${conn.scp ? ", SCP" : ""})`} home={conn.home} {...sides.remote}
           onNavigate={(p) => void load("remote", p)}
           onCopy={(paths) => sides.local.listing && void queue(false, paths, sides.local.listing.path)}
           onDrop={(paths, folder) => void queue(true, paths, folder)}
-          onMkdir={() => void mkdir("remote")}
-          onRename={(e) => void rename("remote", e)}
-          onDelete={(entries) => void remove(entries)} />
+          onMkdir={conn.scp ? undefined : () => void mkdir("remote")}
+          onRename={conn.scp ? undefined : (e) => void rename("remote", e)}
+          onDelete={conn.scp ? undefined : (entries) => void remove(entries)} />
       </div>
     </div>
 

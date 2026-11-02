@@ -20,8 +20,8 @@
     onCopy: (paths: string[]) => void;
     /** Files dragged from the other side (full paths), dropped into this side's `folder` */
     onDrop: (paths: string[], folder: string) => void;
-    onMkdir: () => void;
-    onRename: (entry: Entry) => void;
+    onMkdir?: () => void;
+    onRename?: (entry: Entry) => void;
     /** Remote only: delete these entries */
     onDelete?: (entries: Entry[]) => void;
     /** Local only: show an entry in Finder */
@@ -155,8 +155,8 @@
         ...(entry?.dir && picked.length === 1 ? [{ label: "Open", bold: true, action: () => onNavigate(full(entry)) } as MenuItem] : []),
         { label: picked.length > 1 ? `${other} ${picked.length} items` : other, disabled: !picked.length && "Select files or folders first", action: () => onCopy(picked.map(full)) },
         { separator: true },
-        { label: "New Folder…", action: onMkdir },
-        { label: "Rename…", disabled: picked.length !== 1 && "Select one file or folder", action: () => onRename(picked[0]) },
+        ...(onMkdir ? [{ label: "New Folder…", action: onMkdir } as MenuItem] : []),
+        ...(onRename ? [{ label: "Rename…", disabled: picked.length !== 1 && "Select one file or folder", action: () => onRename(picked[0]) } as MenuItem] : []),
         ...(onDelete ? [{ label: "Delete…", disabled: !picked.length && "Select files or folders first", action: () => onDelete(picked) } as MenuItem] : []),
         ...(onReveal ? [{ label: "Show in Finder", action: () => onReveal(picked[0] ?? { name: "", dir: true } as Entry) } as MenuItem] : []),
         { separator: true },
@@ -169,10 +169,10 @@
 <section class="pane" aria-label={title}>
   <header>
     <span class="title">{title}</span>
-    <button title="Up a folder (⌘↑)" aria-label="Up" disabled={!listing || listing.path === "/"} onclick={() => listing && onNavigate(parentPath(listing.path))}>↑</button>
+    <button title="Up a folder (⌘↑)" aria-label="Up" disabled={!listing || parentPath(listing.path) === listing.path} onclick={() => listing && onNavigate(parentPath(listing.path))}>↑</button>
     <button title="Home folder" aria-label="Home" onclick={() => onNavigate(home)}>⌂</button>
     <button title="Refresh" aria-label="Refresh" onclick={() => listing && onNavigate(listing.path)}>⟳</button>
-    <button title="New folder" aria-label="New folder" onclick={onMkdir}>+</button>
+    {#if onMkdir}<button title="New folder" aria-label="New folder" onclick={onMkdir}>+</button>{/if}
     <button class="copy" title={side === "local" ? "Copy the selected files to the remote folder" : "Copy the selected files to this Mac's folder"}
       disabled={!selected.size} onclick={() => onCopy(chosen().map(full))}>{side === "local" ? "Upload →" : "← Download"}</button>
   </header>
@@ -195,7 +195,7 @@
         </tr>
       </thead>
       <tbody>
-        {#if listing && listing.path !== "/"}
+        {#if listing && parentPath(listing.path) !== listing.path}
           <tr class="up" ondblclick={() => onNavigate(parentPath(listing.path))}
             ondragover={(e) => over(e, parentPath(listing.path))} ondrop={(e) => drop(e, parentPath(listing.path))}>
             <td class="name"><span class="icon folder"></span>..</td><td></td><td></td><td></td><td></td><td></td>
@@ -213,7 +213,7 @@
               <span class="icon" class:folder={entry.dir} class:link={entry.link}></span>{entry.name}
             </td>
             <td class="size">{entry.dir ? "" : formatSize(entry.size)}</td>
-            <td class="modified">{formatTime(entry.modified)}</td>
+            <td class="modified" title={entry.date}>{formatTime(entry.modified) || entry.date}</td>
             <td class="permissions">{entry.permissions}</td>
             <td class="owner">{entry.owner}</td>
             <td class="group">{entry.group}</td>

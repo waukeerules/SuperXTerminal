@@ -27,10 +27,19 @@ const CHUNK: u32 = 32 * 1024;
 const IN_FLIGHT: usize = 16;
 
 struct Conn {
-    raw: Arc<RawSftpSession>,
-    child: tokio::sync::Mutex<tokio::process::Child>,
+    /// SFTP: the protocol over ssh, and the ssh
+    raw: Option<Arc<RawSftpSession>>,
+    child: Option<tokio::sync::Mutex<tokio::process::Child>>,
+    /// SCP (a device with no SFTP): the session's ssh arguments, run again for each listing and copy
+    scp: Option<Vec<String>>,
     token: String,
     window: String,
+}
+
+impl Conn {
+    fn raw(&self) -> Result<&RawSftpSession, String> {
+        self.raw.as_deref().ok_or_else(|| "This device only offers SCP, which can copy files but not do this.".to_string())
+    }
 }
 
 /// Every open file transfer, by the id given to its tab, and the transfers that can be cancelled
@@ -54,6 +63,8 @@ pub struct Opened {
     local: String,
     /// user@host, for the tab
     address: String,
+    /// SCP instead of SFTP: files listed with the device's `dir`, copied one at a time, nothing else
+    scp: bool,
 }
 
 /// One file or folder in a pane
@@ -66,6 +77,8 @@ pub struct Entry {
     size: u64,
     /// Seconds since 1970; 0 when unknown
     modified: u64,
+    /// The time as the device wrote it, when it isn't a time (SCP's `dir`)
+    date: String,
     /// As `ls -l` shows them (drwxr-xr-x)
     permissions: String,
     owner: String,
@@ -163,7 +176,8 @@ pub async fn sftp_open(
     let login = launch.login.clone().unwrap_or_default();
 
     // the terminal's ssh, without its terminal, running the sftp subsystem
-    let mut args: Vec<String> = launch.command.get_argv().iter().skip(1).map(|w| w.to_string_lossy().to_string()).filter(|w| w != "-tt").collect();
+    let base: Vec<String> = launch.command.get_argv().iter().skip(1).map(|w| w.to_string_lossy().to_string()).filter(|w| w != "-tt").collect();
+    let mut args = base.clone();
     args.splice(0..0, ["-s".to_string(), "-T".to_string(), "-o".to_string(), "ServerAliveInterval=30".to_string()]);
     args.push("sftp".into());
 
@@ -204,7 +218,23 @@ pub async fn sftp_open(
     let raw = Arc::new(RawSftpSession::new(tokio::io::join(stdout, stdin)));
     // logging in can wait on the user (a host key, a password)
     raw.set_timeout(600);
+    let local = if local.is_empty() { dirs::home_dir().unwrap_or_default().to_string_lossy().to_string() } else { local };
+    let address = if login.username.is_empty() { login.host.clone() } else { format!("{}@{}", login.username, login.host) };
     if let Err(e) = raw.init().await {
+        // no SFTP: a device with SCP and a `dir` command (Cisco IOS and the like) is used that way
+        let _ = child.start_kill();
+        let probe = scp_list(&base, &token, "").await;
+        if let Err(why) = &probe {
+            crate::applog::info(format!("{address} has no SFTP, and isn't a device that lists files with dir: {why}"));
+        }
+        if let Ok(listing) = probe {
+            crate::applog::info(format!("File transfer opened to {address} over SCP (no SFTP there)"));
+            let home = listing.path.clone();
+            let remote = if remote.is_empty() { home.clone() } else { remote };
+            let id = NEXT.fetch_add(1, Ordering::Relaxed);
+            sftps.conns.lock().unwrap().insert(id, Arc::new(Conn { raw: None, child: None, scp: Some(base), token, window: label }));
+            return Ok(Opened { id, home, remote, local, address, scp: true });
+        }
         crate::askpass::forget(&token);
         // ssh's own words, once it has ended
         let _ = tokio::time::timeout(Duration::from_secs(3), child.wait()).await;
@@ -226,13 +256,11 @@ pub async fn sftp_open(
     raw.set_timeout(60);
     let home = raw.realpath(".").await.map_err(plain)?.files.into_iter().next().map(|f| f.filename).unwrap_or_else(|| "/".into());
     let remote = if remote.is_empty() { home.clone() } else { remote };
-    let local = if local.is_empty() { dirs::home_dir().unwrap_or_default().to_string_lossy().to_string() } else { local };
-    let address = if login.username.is_empty() { login.host.clone() } else { format!("{}@{}", login.username, login.host) };
     crate::applog::info(format!("File transfer opened to {address}"));
 
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
-    sftps.conns.lock().unwrap().insert(id, Arc::new(Conn { raw, child: tokio::sync::Mutex::new(child), token, window: label }));
-    Ok(Opened { id, home, remote, local, address })
+    sftps.conns.lock().unwrap().insert(id, Arc::new(Conn { raw: Some(raw), child: Some(tokio::sync::Mutex::new(child)), scp: None, token, window: label }));
+    Ok(Opened { id, home, remote, local, address, scp: false })
 }
 
 /// The tab closed: disconnect
@@ -241,8 +269,12 @@ pub async fn sftp_close(sftps: State<'_, Sftps>, id: u32) -> Result<(), String> 
     let conn = sftps.conns.lock().unwrap().remove(&id);
     if let Some(conn) = conn {
         crate::askpass::forget(&conn.token);
-        let _ = conn.raw.close_session();
-        let _ = conn.child.lock().await.kill().await;
+        if let Some(raw) = &conn.raw {
+            let _ = raw.close_session();
+        }
+        if let Some(child) = &conn.child {
+            let _ = child.lock().await.kill().await;
+        }
     }
     Ok(())
 }
@@ -252,8 +284,10 @@ pub fn close_window(sftps: &Sftps, label: &str) {
     sftps.conns.lock().unwrap().retain(|_, c| {
         if c.window == label {
             crate::askpass::forget(&c.token);
-            let _ = c.raw.close_session();
-            if let Ok(mut child) = c.child.try_lock() {
+            if let Some(raw) = &c.raw {
+                let _ = raw.close_session();
+            }
+            if let Some(Ok(mut child)) = c.child.as_ref().map(|c| c.try_lock()) {
                 let _ = child.start_kill();
             }
             false
@@ -308,7 +342,10 @@ async fn read_dir(raw: &RawSftpSession, path: &str) -> Result<Vec<russh_sftp::pr
 #[tauri::command]
 pub async fn sftp_list(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<Listing, String> {
     let conn = conn(&sftps, id)?;
-    let raw = &conn.raw;
+    if let Some(base) = &conn.scp {
+        return scp_list(base, &conn.token, path.trim()).await;
+    }
+    let raw = conn.raw()?;
     let path = raw.realpath(if path.trim().is_empty() { "." } else { path.trim() }).await.map_err(plain)?.files.into_iter().next().map(|f| f.filename).unwrap_or(path);
     let mut entries = Vec::new();
     for file in read_dir(raw, &path).await? {
@@ -330,6 +367,7 @@ pub async fn sftp_list(sftps: State<'_, Sftps>, id: u32, path: String) -> Result
             link,
             size: shown.size.unwrap_or(0),
             modified: shown.mtime.unwrap_or(0) as u64,
+            date: String::new(),
             permissions: attrs.permissions.map(mode_text).unwrap_or_default(),
             owner,
             group,
@@ -341,20 +379,20 @@ pub async fn sftp_list(sftps: State<'_, Sftps>, id: u32, path: String) -> Result
 /// A new remote folder
 #[tauri::command]
 pub async fn sftp_mkdir(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<(), String> {
-    conn(&sftps, id)?.raw.mkdir(path, FileAttributes::empty()).await.map(|_| ()).map_err(plain)
+    conn(&sftps, id)?.raw()?.mkdir(path, FileAttributes::empty()).await.map(|_| ()).map_err(plain)
 }
 
 /// Rename or move a remote file or folder
 #[tauri::command]
 pub async fn sftp_rename(sftps: State<'_, Sftps>, id: u32, from: String, to: String) -> Result<(), String> {
-    conn(&sftps, id)?.raw.rename(from, to).await.map(|_| ()).map_err(plain)
+    conn(&sftps, id)?.raw()?.rename(from, to).await.map(|_| ()).map_err(plain)
 }
 
 /// Delete a remote file, or a folder and everything in it
 #[tauri::command]
 pub async fn sftp_delete(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<(), String> {
     let conn = conn(&sftps, id)?;
-    delete(&conn.raw, &path).await
+    delete(conn.raw()?, &path).await
 }
 
 async fn delete(raw: &RawSftpSession, path: &str) -> Result<(), String> {
@@ -400,7 +438,10 @@ pub async fn sftp_transfer(
     let conn = conn(&sftps, id)?;
     let cancel = Arc::new(AtomicBool::new(false));
     sftps.cancels.lock().unwrap().insert(transfer, cancel.clone());
-    let result = run_transfer(&conn.raw, upload, &sources, &target, &cancel, &on_progress).await;
+    let result = match &conn.scp {
+        Some(base) => scp_transfer(base, &conn.token, upload, &sources, &target, &cancel, &on_progress).await,
+        None => run_transfer(conn.raw()?, upload, &sources, &target, &cancel, &on_progress).await,
+    };
     sftps.cancels.lock().unwrap().remove(&transfer);
     result
 }
@@ -615,6 +656,162 @@ async fn upload_file(raw: &RawSftpSession, item: &Item, cancel: &AtomicBool, rep
     Ok(())
 }
 
+// ---- SCP, for devices with no SFTP ----
+
+/// ssh or scp with the connection's login (askpass.rs): the password, and the user asked anything else
+fn with_login(program: &str, token: &str) -> Result<tokio::process::Command, String> {
+    let helper = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut command = tokio::process::Command::new(program);
+    command
+        .env("SSH_ASKPASS", helper)
+        .env("SSH_ASKPASS_REQUIRE", "force")
+        .env(crate::askpass::TOKEN_VAR, token)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    Ok(command)
+}
+
+/// A folder on the device, from its `dir` (Cisco IOS: "Directory of flash:/" and a line a file). With no path, its
+/// flash; `show` is tried when `dir` isn't allowed (a login below privilege 15)
+async fn scp_list(base: &[String], token: &str, path: &str) -> Result<Listing, String> {
+    // IOS takes "flash:" as a command's argument but not the "flash:/" its dir shows
+    let path = if path.is_empty() { "flash:" } else { path.strip_suffix('/').filter(|p| p.ends_with(':')).unwrap_or(path) };
+    let mut said = String::new();
+    for verb in ["dir", "show"] {
+        let mut command = with_login("ssh", token)?;
+        command.args(["-T", "-o", "ServerAliveInterval=30"]).args(base).arg(format!("{verb} {path}"));
+        let output = tokio::time::timeout(Duration::from_secs(600), command.output())
+            .await
+            .map_err(|_| "The device didn't answer.".to_string())?
+            .map_err(|e| format!("Couldn't start ssh: {e}"))?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        if let Some(listing) = parse_dir(&text) {
+            return Ok(listing);
+        }
+        said = format!("{}{}", String::from_utf8_lossy(&output.stderr).trim(), text.trim());
+    }
+    Err(if said.is_empty() { format!("{path}: no listing") } else { said })
+}
+
+/// A Cisco-style `dir`: the folder from "Directory of …", then "index perms size date… name" lines
+fn parse_dir(text: &str) -> Option<Listing> {
+    let path = text.lines().find_map(|l| l.trim().strip_prefix("Directory of ").map(|p| p.trim().to_string()))?;
+    let mut entries = Vec::new();
+    for line in text.lines() {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.len() < 5 || words[0].parse::<u64>().is_err() {
+            continue;
+        }
+        let perms = words[1];
+        if !perms.starts_with(['-', 'd']) || !perms[1..].chars().all(|c| "rwx-".contains(c)) {
+            continue;
+        }
+        let Ok(size) = words[2].parse::<u64>() else { continue };
+        let name = words[words.len() - 1].to_string();
+        entries.push(Entry {
+            name,
+            dir: perms.starts_with('d'),
+            link: false,
+            size,
+            modified: 0,
+            date: words[3..words.len() - 1].join(" "),
+            permissions: perms.to_string(),
+            owner: String::new(),
+            group: String::new(),
+        });
+    }
+    Some(Listing { path, entries })
+}
+
+/// The session's ssh arguments for scp: -l (a user to ssh, a bandwidth limit to scp) and -p (a port) as scp takes
+/// them; the host is the last word
+fn scp_args(base: &[String]) -> (Vec<String>, String) {
+    let mut args = Vec::new();
+    let mut words = base.iter();
+    while let Some(word) = words.next() {
+        match word.as_str() {
+            "-l" => {
+                if let Some(user) = words.next() {
+                    args.extend(["-o".to_string(), format!("User={user}")]);
+                }
+            }
+            "-p" => {
+                if let Some(port) = words.next() {
+                    args.extend(["-P".to_string(), port.clone()]);
+                }
+            }
+            _ => args.push(word.clone()),
+        }
+    }
+    let host = args.pop().unwrap_or_default();
+    (args, host)
+}
+
+/// Copy files with scp (-O: the SCP protocol, as network devices speak it), one at a time
+async fn scp_transfer(
+    base: &[String],
+    token: &str,
+    upload: bool,
+    sources: &[String],
+    target: &str,
+    cancel: &AtomicBool,
+    on_progress: &Channel<Progress>,
+) -> Result<(), String> {
+    let (args, host) = scp_args(base);
+    let mut sizes = Vec::new();
+    for source in sources {
+        if upload {
+            let meta = std::fs::metadata(source).map_err(|e| format!("{source}: {e}"))?;
+            if meta.is_dir() {
+                return Err(format!("{source} is a folder: over SCP, copy the files in it instead."));
+            }
+            sizes.push(meta.len());
+        } else {
+            sizes.push(0);
+        }
+    }
+    let total: u64 = sizes.iter().sum();
+    let _ = on_progress.send(Progress::Total { bytes: total, files: sources.len() as u64 });
+    let mut done = 0u64;
+    for (source, size) in sources.iter().zip(sizes) {
+        let name = source.trim_end_matches('/').rsplit(['/', std::path::MAIN_SEPARATOR]).next().unwrap_or(source).to_string();
+        let (from, to) = if upload {
+            (source.clone(), format!("{host}:{}", join(target, &name)))
+        } else {
+            (format!("{host}:{source}"), std::path::Path::new(target).join(&name).to_string_lossy().to_string())
+        };
+        let _ = on_progress.send(Progress::Done { bytes: done, file: name.clone() });
+        let mut command = with_login("scp", token)?;
+        command.arg("-O").args(&args).arg(&from).arg(&to);
+        let mut child = command.spawn().map_err(|e| format!("Couldn't start scp: {e}"))?;
+        let mut stderr = child.stderr.take();
+        let status = loop {
+            if cancel.load(Ordering::Relaxed) {
+                let _ = child.kill().await;
+                return Err("Cancelled".into());
+            }
+            match tokio::time::timeout(Duration::from_millis(200), child.wait()).await {
+                Ok(status) => break status.map_err(|e| e.to_string())?,
+                Err(_) => continue,
+            }
+        };
+        if !status.success() {
+            let mut said = String::new();
+            if let Some(stderr) = stderr.as_mut() {
+                use tokio::io::AsyncReadExt;
+                let _ = stderr.read_to_string(&mut said).await;
+            }
+            let said = said.trim();
+            return Err(format!("{name}: {}", if said.is_empty() { "scp failed" } else { said }));
+        }
+        done += if upload { size } else { std::fs::metadata(&to).map(|m| m.len()).unwrap_or(0) };
+        let _ = on_progress.send(Progress::Done { bytes: done, file: name });
+    }
+    Ok(())
+}
+
 // ---- this Mac's side ----
 
 /// A user or group id's name, as ls shows it
@@ -672,6 +869,7 @@ pub fn local_list(path: String) -> Result<Listing, String> {
             link,
             size: if meta.is_dir() { 0 } else { meta.len() },
             modified,
+            date: String::new(),
             permissions,
             owner,
             group,
@@ -704,6 +902,21 @@ pub fn local_reveal(path: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_a_cisco_dir() {
+        let text = "\nDirectory of flash:/\n\n    2  -rwx        3096   Mar 1 1993 00:15:59 +00:00  multiple-fs\n    4  drwx         512   Mar 1 1993 00:04:09 +00:00  c2960-lanbasek9-mz.150-2.SE11\n  611  -rwx        5684   Mar 1 1993 02:20:14 +00:00  config.text\n\n57931776 bytes total (39998976 bytes free)\n";
+        let listing = parse_dir(text).unwrap();
+        assert_eq!(listing.path, "flash:/");
+        assert_eq!(listing.entries.len(), 3);
+        assert_eq!(listing.entries[1].name, "c2960-lanbasek9-mz.150-2.SE11");
+        assert!(listing.entries[1].dir);
+        assert_eq!((listing.entries[2].size, listing.entries[2].date.as_str()), (5684, "Mar 1 1993 02:20:14 +00:00"));
+        assert!(parse_dir("bash: dir: command not found").is_none());
+        let (args, host) = scp_args(&["-p".into(), "2222".into(), "-l".into(), "admin".into(), "-o".into(), "X=1".into(), "10.0.0.1".into()]);
+        assert_eq!(args, ["-P", "2222", "-o", "User=admin", "-o", "X=1"]);
+        assert_eq!(host, "10.0.0.1");
+    }
 
     #[test]
     fn writes_modes_as_ls_does() {

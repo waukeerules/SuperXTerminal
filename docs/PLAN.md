@@ -72,7 +72,7 @@ A new macOS app with SSH through `ssh`. It reads SuperXPuTTY's data files and Da
   - the Monaco Highlighted Output page.
 - **Buildable now.** It's developed on a Mac (Apple silicon), and the same code builds on Windows and Linux.
 - **The closest look.** HTML/CSS can match SuperXPuTTY's dark (VS2015) and light themes closely: tree rows, the environment-colour circles behind icons, tab stripes and the button bar.
-- **Cross-platform.** Tauri builds for macOS (WKWebView), Windows (WebView2) and Linux (WebKitGTK). **The Mac comes first**; the code stays platform-neutral, with platform-specific parts behind small interfaces, and CI builds Windows and Linux too. They're polished later. On Windows it's a lighter SuperXPuTTY, without PuTTY windows or the in-tab RDP client; whether it ever replaces SuperXPuTTY is open question 2. Linux caveats: WebKitGTK is slower, so xterm.js may fall back from WebGL to its DOM renderer; secrets go to the Secret Service (GNOME Keyring, KWallet); serial ports are `/dev/ttyUSB*` and `/dev/ttyACM*`.
+- **Cross-platform.** Tauri builds for macOS (WKWebView), Windows (WebView2) and Linux (WebKitGTK). **The Mac comes first**; the code stays platform-neutral, with platform-specific parts behind small interfaces, and it stays buildable on Windows and Linux. They're polished later. On Windows it's a lighter SuperXPuTTY, without PuTTY windows or the in-tab RDP client; whether it ever replaces SuperXPuTTY is open question 2. Linux caveats: WebKitGTK is slower, so xterm.js may fall back from WebGL to its DOM renderer; secrets go to the Secret Service (GNOME Keyring, KWallet); serial ports are `/dev/ttyUSB*` and `/dev/ttyACM*`.
 
 **The stack:**
 - Tauri 2, Rust stable, TypeScript.
@@ -92,7 +92,7 @@ A new macOS app with SSH through `ssh`. It reads SuperXPuTTY's data files and Da
 - **Linux:** WebKitGTK is LGPL, linked dynamically as a system library, which LGPL allows.
 - **Fonts:** Segoe UI (Microsoft) and SF Pro (Apple) are never bundled; the system font is used.
 - **Brand logos (Simple Icons):** the drawings are CC0, but the logos are their owners' trademarks. They label sessions (normal use), and never appear in SuperXTerminal's own icon, branding or marketing.
-- **Kept that way automatically:** `cargo-deny` and an npm licence check in CI allow only MIT, Apache-2.0, BSD, ISC, Zlib, CC0, Unicode and MPL-2.0, so a new dependency with any other licence fails the build.
+- **Kept that way:** `cargo deny check` and `npm run licenses`, run before each release, allow only MIT, Apache-2.0, BSD, ISC, Zlib, CC0, Unicode and MPL-2.0, so a new dependency with any other licence fails the build.
 
 ### How terminals are hosted
 
@@ -415,7 +415,7 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 
 | # | Milestone | Size | Done when |
 |---|---|---|---|
-| M0 | **Skeleton**: Tauri app, Svelte, dockview, licence checks, CI building macOS, Windows and Linux (unsigned) | 1 w | The app opens on a Mac, with an empty tree and one local shell tab; CI builds all three |
+| M0 | **Skeleton**: Tauri app, Svelte, dockview, licence checks, local builds | 1 w | The app opens on a Mac, with an empty tree and one local shell tab |
 | M1 | **MVP**: SSH tabs (`ssh` in a PTY, `web/terminal`), sessions tree from Sessions.xml/PrivateSessions.xml/Folders.xml (read and write), icons (templates redrawn as SVG, logos, custom), environment colours, quick connect, Edit Session, Profiles (with Keychain passwords and keys), placeholders with Keychain secrets, Settings basics | 5-6 w | A Mac user opens the team's Sessions.xml and connects to switches with the right icons and colours |
 | M2 | **Database sessions**: read, cache, outbox, locks, version polling, folders table, writes, Move/Copy, settings dialog and JSON | 3-4 w | Mac and Windows users edit the same table and see each other's changes within 30 s |
 | M3 | **Scripting and commands**: button bar, Send Commands, SPSL (WAITFOR, SENDKEY...), Script Editor and library, snippet prompts, Send Key | 3 w | The existing button bars and scripts run unchanged |
@@ -430,10 +430,10 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 
 - **Development** happens on a Mac (Apple silicon, macOS 27, Xcode installed). Rust stable via `rustup`, Node LTS for the UI build.
 - **The Mac-only parts are checked all along**, not at the end: the Keychain, the menu bar and app menu, WKWebView (fonts, IME, clipboard), `/dev/cu.*` serial devices, Windows App and Screen Sharing launching.
-- **Other platforms:** keep platform-specific code behind small interfaces. Windows (WebView2, ConPTY, Windows' own `ssh.exe`, Credential Manager) and Linux (WebKitGTK, Secret Service) are built by CI and tried on a VM now and then; they're polished after the Mac.
-- **Builds.** GitHub Actions builds on `macos-14` (Apple silicon, universal `.app`/`.dmg`), `windows-latest` and `ubuntu-latest` on every push, once the repository is on GitHub. Until then, builds are local.
+- **Other platforms:** keep platform-specific code behind small interfaces. Windows (WebView2, ConPTY, Windows' own `ssh.exe`, Credential Manager) and Linux (WebKitGTK, Secret Service) are built and tried on a VM now and then; they're polished after the Mac.
+- **Builds and releases are local**, as for SuperXPuTTY: `npm run tauri build` on the Mac, then the release is pushed to GitHub (`waukeerules/SuperXTerminal`, private). Pushes start no GitHub Actions run, since those cost money. The workflow in `.github/workflows/build.yml` (macOS, Windows, Linux) runs only when started by hand, for an occasional check of the other platforms.
 - **Running an unsigned Mac build.** Right-click → Open, or `xattr -dr com.apple.quarantine SuperXTerminal.app`. Local builds aren't quarantined.
-- **Signing and notarisation (M6)** need an Apple Developer Program membership (USD 99/year) for a Developer ID certificate, or the company's own. CI runs `notarytool` with an app-specific password or API key kept in GitHub secrets. Windows signing needs a code-signing certificate.
+- **Signing and notarisation (M6)** need an Apple Developer Program membership (USD 99/year) for a Developer ID certificate, or the company's own. `notarytool` runs locally with an app-specific password or API key kept in the Keychain. Windows signing needs a code-signing certificate.
 - **Copying from SuperXPuTTY:**
   - `web/terminal`, `web/output`, `web/shared` and `web/lib` copy across with their licences (xterm.js and Monaco: MIT; Simple Icons: CC0).
   - SuperXPuTTY itself is MIT, so its code can be ported with the copyright notice kept.
@@ -445,7 +445,7 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 ## 6. Open questions
 
 1. **Stack:** decided: Tauri 2, Svelte 5 and dockview, with no licence problems for companies that adopt it (§1 Licensing).
-2. **Cross-platform:** the Mac comes first, and CI builds Windows and Linux too. Still open: should the Windows build ever aim to replace SuperXPuTTY, or stay a lighter option beside it?
+2. **Cross-platform:** the Mac comes first, and the code stays buildable on Windows and Linux. Still open: should the Windows build ever aim to replace SuperXPuTTY, or stay a lighter option beside it?
 3. **Database application name:** connect as `SuperPuTTY` (no schema change, locks enforced as now), or as `SuperXTerminal` (needs the guard trigger to accept both, changed in SuperXPuTTY's schema SQL too)?
 4. **New protocol `LocalShell` in shared Sessions.xml:** today an unknown protocol stops SuperXPuTTY loading Sessions.xml at all (§3). So SuperXPuTTY must change first: read an unknown protocol as greyed, and keep unknown attributes (`XmlAnyAttribute`). Do that, and ship it before the Mac app writes such sessions, or keep Mac-only sessions in Private sessions only?
 5. **Profiles:** decided: SuperXTerminal's own per-user profiles, matched by name (§2 Profiles). Still open: is the `reg export` import worth building, and should the non-secret parts of profiles ever be shareable through the settings folder?

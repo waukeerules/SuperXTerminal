@@ -1,6 +1,6 @@
 // Fails when a package the app ships (npm dependencies, not dev tools) has a licence outside the allowed list.
 // The allowed list matches src-tauri/deny.toml, so the Rust and JavaScript sides follow one rule (docs/PLAN.md §1
-// Licensing). Run with `npm run licenses`; CI runs it on every push.
+// Licensing). Run with `npm run licenses` before each release.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

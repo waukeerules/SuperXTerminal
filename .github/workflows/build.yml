@@ -1,10 +1,10 @@
 # Builds SuperXTerminal on macOS, Windows and Linux, unsigned, and checks licences and advisories.
-# The Mac build is the one that matters; the others keep the code platform-neutral (docs/PLAN.md §1).
+# Manual only (Actions → Build → Run workflow): builds and releases are made locally, as for SuperXPuTTY, so pushes
+# to GitHub never start a paid run. Kept for checking the Windows and Linux builds now and then.
 name: Build
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   licenses:

@@ -7,12 +7,12 @@ A macOS counterpart of [SuperXPuTTY](https://github.com/waukeerules/superputty):
 
 ## Status
 
-Planning done; starting M0. No code yet.
+M0 (skeleton: a local shell tab in SuperXPuTTY's layout) is done; M1 (sessions tree, SSH, profiles) is next.
 
 - **[docs/PLAN.md](docs/PLAN.md):** the plan. It covers the options and the chosen stack (Tauri 2 and Svelte 5, reusing SuperXPuTTY's xterm.js and Monaco pages), licensing, the feature matrix, data compatibility, the UI mapping, milestones and open questions.
 - **[docs/ROADMAP.md](docs/ROADMAP.md):** progress, one line per feature, ticked ✅ as each is delivered.
 
-Mac first; CI also builds Windows and Linux.
+Mac first; the code stays buildable on Windows and Linux. Builds and releases are made locally, as for SuperXPuTTY, and pushed to GitHub; nothing builds on GitHub automatically.
 
 ## Building
 

@@ -64,22 +64,35 @@ A new macOS app with SSH through `ssh`. It reads SuperXPuTTY's data files and Da
 | **Develop and test on Windows** | **Yes**: runs on Windows with WebView2 (as SuperXPuTTY's pages do) and Windows' own OpenSSH `ssh.exe` | **No**: needs a Mac to build and run | Yes |
 | Effort / risk | Medium / low-medium | High / medium; Swift and a Mac are needed from day one | Medium / low, but heavy |
 
-### Recommendation: B1, Tauri 2
+### Decision: B1, Tauri 2
 
 - **Most reuse.** It keeps the parts of SuperXPuTTY that were hardest to get right:
   - the xterm.js terminal page with its decorations, WAITFOR text, paste check, logs and keys;
   - the highlighting rules engine and its JSON;
   - the Monaco Highlighted Output page.
-- **Buildable now.** It can be written and run on this Windows machine today. GitHub Actions' macOS runners build the Mac app.
+- **Buildable now.** It's developed on a Mac (Apple silicon), and the same code builds on Windows and Linux.
 - **The closest look.** HTML/CSS can match SuperXPuTTY's dark (VS2015) and light themes closely: tree rows, the environment-colour circles behind icons, tab stripes and the button bar.
-- **Cross-platform later.** It could become a cross-platform SuperXPuTTY. That's not a goal, but it's a door left open (see Open questions).
+- **Cross-platform.** Tauri builds for macOS (WKWebView), Windows (WebView2) and Linux (WebKitGTK). **The Mac comes first**; the code stays platform-neutral, with platform-specific parts behind small interfaces, and CI builds Windows and Linux too. They're polished later. On Windows it's a lighter SuperXPuTTY, without PuTTY windows or the in-tab RDP client; whether it ever replaces SuperXPuTTY is open question 2. Linux caveats: WebKitGTK is slower, so xterm.js may fall back from WebGL to its DOM renderer; secrets go to the Secret Service (GNOME Keyring, KWallet); serial ports are `/dev/ttyUSB*` and `/dev/ttyACM*`.
 
 **The stack:**
 - Tauri 2, Rust stable, TypeScript.
-- A small UI framework (Svelte or Solid) for the tree, dialogs and settings.
+- Svelte 5 for the tree, dialogs and settings.
 - [dockview](https://dockview.dev) for tabs, splits and floating groups.
 - xterm.js 6.0.0 and Monaco 0.57.0, copied from SuperXPuTTY's `web/lib`.
 - Crates: `portable-pty`, `tokio-postgres` (with `native-tls` or `rustls`), `quick-xml` + `serde` (Sessions.xml and friends), `keyring`, `notify` (the file watcher), `serialport` (serial sessions), `csv`.
+
+### Licensing
+
+**The aim:** a company can adopt SuperXTerminal without licence problems.
+
+- **SuperXTerminal itself:** MIT, like SuperXPuTTY. Code ported from SuperXPuTTY keeps its MIT copyright notice.
+- **What's shipped is permissive:** Tauri, Svelte, dockview, xterm.js, Monaco, `portable-pty`, `tokio-postgres`, `quick-xml`, `keyring` and `csv` are MIT and/or Apache-2.0. Their notices go in a generated `THIRD-PARTY-NOTICES` file in each release.
+- **One weak copyleft:** `serialport` is MPL-2.0, which applies per file: only changes to its own files would have to be shared, and our code isn't affected. If zero copyleft is wanted, serial ports can be driven directly instead.
+- **Not shipped, so no licence question:** OpenSSH, PuTTY, Windows App, Screen Sharing, iTerm2, FileZilla. The app launches what's already installed.
+- **Linux:** WebKitGTK is LGPL, linked dynamically as a system library, which LGPL allows.
+- **Fonts:** Segoe UI (Microsoft) and SF Pro (Apple) are never bundled; the system font is used.
+- **Brand logos (Simple Icons):** the drawings are CC0, but the logos are their owners' trademarks. They label sessions (normal use), and never appear in SuperXTerminal's own icon, branding or marketing.
+- **Kept that way automatically:** `cargo-deny` and an npm licence check in CI allow only MIT, Apache-2.0, BSD, ISC, Zlib, CC0, Unicode and MPL-2.0, so a new dependency with any other licence fails the build.
 
 ### How terminals are hosted
 
@@ -235,9 +248,29 @@ All of this comes with the reused `web/terminal` page.
 | Themes, font, cursor, bell, copy on select, mark matches | ✅ | `TerminalPreferences`, one JSON setting, as now. Its default for cursor, bell and keys is `"profile"`; on the Mac that means the session's [profile](#profiles) |
 | Paste check (several lines, production sessions) | ✅ | |
 | Find, clear scrollback/screen, links, unlimited scrollback | ✅ | Cmd shortcuts added beside the Ctrl ones |
-| **Highlighted Output** (Monaco, beside the tab) | ✅ | `web/output` reused |
+| **Highlighted Output** (Monaco, beside the tab; the terminal menu's Open as Document) | ✅ | `web/output` reused: the screen rebuilt by a hidden xterm.js, then shown in Monaco with the same rules and themes |
 | Search Output, Activity and Silence alerts | ✅ | |
 | Classic look of PuTTY windows | ❌ | No PuTTY windows |
+
+**Not through iTerm2.** Highlighting, the right-click menu and Monaco all need SuperXTerminal to see and draw the output, and it can't see or draw inside another app's window. So they live in SuperXTerminal's own terminal tab (xterm.js, the same page as SuperXPuTTY's built-in terminal). It's the main and default way sessions open. Terminal.app and iTerm2 are only an "Open in..." escape hatch, without these features.
+
+### Terminal right-click menu
+
+The menu is built by the page itself (`web/terminal/terminal.js`), so it comes across as it is. Item by item, from SuperXPuTTY 2.5:
+
+| Item | Mac | How |
+|---|---|---|
+| Copy, Paste, Copy and Paste | ✅ | Shortcuts shown as Cmd+C / Cmd+V on the Mac; Ctrl+Insert and Shift+Insert still work. Every paste goes through paste check |
+| Find..., Select All | ✅ | Cmd+F, Cmd+A |
+| Clear Scrollback, Clear Screen, Clear Screen and Scrollback | ✅ | Cmd+K for Clear Screen and Scrollback, as in Terminal.app |
+| **Open as Document** | ✅ | Highlighted Output: the output in Monaco, beside the tab |
+| Highlighting, Theme, Bell, Font, Cursor (submenus) | ✅ | Same `TerminalPreferences`; Highlighting is for this tab only |
+| Copy on Select, Mark Matches of Selection | ✅ | |
+| Send Key | ✅ | `TerminalKeys` |
+| Open in PuTTY (Special Commands) | 🔁 | Becomes two items: **Special Command** (a submenu sent by SuperXTerminal itself, see SSH and other connections) and **Open in Terminal.app / iTerm2** |
+| Close Tab, Close Other Tabs, Close Tabs to the Right, Close All Tabs | ✅ | Cmd+W for Close Tab |
+
+The menu is drawn by the page in the app's theme, as on Windows, rather than as a native macOS menu, so it looks the same on both.
 
 ### Commands and scripting
 
@@ -332,7 +365,7 @@ Aim: someone who knows SuperXPuTTY recognises every screen. The main window keep
 | Document tabs (DockPanelSuite, wide tabs, colour stripe) | dockview tabs, styled to match | Tab strip CSS copied from the dark/light themes |
 | Splits, floating windows | dockview splits; pop out to a window | |
 | Tab context menu (Rename, Duplicate, Restart, Send Key, Special Command, Search Output, Close...) | Same menu | PuTTY items (Change settings, Event log, About PuTTY) greyed |
-| Built-in terminal's own right-click menu | Same (it's the same page) | |
+| Built-in terminal's own right-click menu | Same (it's the same page) | See [Terminal right-click menu](#terminal-right-click-menu) |
 | Button bar above the status bar | Same | |
 | Status bar (status text, script progress and Stop, version) | Same | |
 | Options dialog (Paths, GUI, Shortcuts, Advanced, RDP, Terminal) | Settings window (Cmd+,), same tabs | Paths: PuTTY, pscp, plink, Mintty, WinSCP, VNC, Xorg rows greyed; adds `ssh` path, SSH config, Terminal.app/iTerm2 choice. RDP tab: options for the `.rdp` file. New **Profiles** tab: the user's profiles (see §2 Profiles) |
@@ -381,35 +414,25 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 
 | # | Milestone | Size | Done when |
 |---|---|---|---|
-| M0 | **Skeleton**: Tauri app, dockview, CI building a macOS `.dmg` (unsigned) and a Windows dev build | 1 w | The app opens on Windows and on a Mac, with an empty tree and one local shell tab |
+| M0 | **Skeleton**: Tauri app, Svelte, dockview, licence checks, CI building macOS, Windows and Linux (unsigned) | 1 w | The app opens on a Mac, with an empty tree and one local shell tab; CI builds all three |
 | M1 | **MVP**: SSH tabs (`ssh` in a PTY, `web/terminal`), sessions tree from Sessions.xml/PrivateSessions.xml/Folders.xml (read and write), icons (templates redrawn as SVG, logos, custom), environment colours, quick connect, Edit Session, Profiles (with Keychain passwords and keys), placeholders with Keychain secrets, Settings basics | 5-6 w | A Mac user opens the team's Sessions.xml and connects to switches with the right icons and colours |
 | M2 | **Database sessions**: read, cache, outbox, locks, version polling, folders table, writes, Move/Copy, settings dialog and JSON | 3-4 w | Mac and Windows users edit the same table and see each other's changes within 30 s |
 | M3 | **Scripting and commands**: button bar, Send Commands, SPSL (WAITFOR, SENDKEY...), Script Editor and library, snippet prompts, Send Key | 3 w | The existing button bars and scripts run unchanged |
 | M4 | **Terminal extras**: highlighting rules and preferences in Settings, Highlighted Output, Search Output, alerts, paste check, logs, reconnect | 2 w | |
 | M5 | **The rest**: Favorites/Recent, multi-select, bulk edit, local overrides, CSV, file watcher, Quick Selector, jump hosts (`-J`), extra-args translation, Telnet/Raw/Serial with Special Commands, RDP/VNC/FileZilla launchers, layouts, menu-bar extra, `~/.ssh/config` import | 4 w | Feature matrix complete except the SFTP browser |
-| M6 | **Distribution**: Developer ID signing, notarisation, auto update, `.dmg` design | 1 w | A download opens on any Mac without warnings |
+| M6 | **Distribution**: Developer ID signing, notarisation, auto update, `.dmg` design, third-party notices | 1 w | A download opens on any Mac without warnings |
 | Later | SFTP file browser | 2-3 w | |
 
-**Total to M6:** about 19-21 weeks.
+**Total to M6:** about 19-21 weeks. Progress is tracked in [ROADMAP.md](ROADMAP.md).
 
-### Working on it from Windows now
+### Developing on a Mac
 
-- **Nearly everything runs on Windows.**
-  - Tauri uses WebView2 there, the same engine SuperXPuTTY's pages run in.
-  - `portable-pty` uses ConPTY.
-  - Windows 10/11 ship OpenSSH's `ssh.exe`, so SSH tabs, the tree, the data files, Postgres, scripting and highlighting can all be built and tested here.
-  - `keyring` uses Windows Credential Manager in place of the Keychain.
-- **Mac-only, needing a Mac to check:**
-  - the Keychain itself, the menu bar and app menu;
-  - WKWebView differences from WebView2 (fonts, IME, clipboard);
-  - `/dev/cu.*` serial devices;
-  - Windows App and Screen Sharing launching;
-  - signing and notarisation.
-  - Keep these behind small interfaces so the Windows build stubs them.
-- **Builds.** A GitHub Actions workflow on `macos-14` (Apple silicon) builds an unsigned universal `.app`/`.dmg` on every push and keeps it as an artifact.
-- **Running the Mac build.** An unsigned build runs after right-click → Open, or `xattr -dr com.apple.quarantine SuperXTerminal.app`.
-- **A real Mac is needed by the end of M1** to check the Mac-only items. A cloud Mac (e.g. MacStadium, AWS EC2 Mac) works if no Mac is at hand.
-- **Signing and notarisation (M6)** need an Apple Developer Program membership (USD 99/year) for a Developer ID certificate. CI runs `notarytool` with an app-specific password or API key kept in GitHub secrets.
+- **Development** happens on a Mac (Apple silicon, macOS 27, Xcode installed). Rust stable via `rustup`, Node LTS for the UI build.
+- **The Mac-only parts are checked all along**, not at the end: the Keychain, the menu bar and app menu, WKWebView (fonts, IME, clipboard), `/dev/cu.*` serial devices, Windows App and Screen Sharing launching.
+- **Other platforms:** keep platform-specific code behind small interfaces. Windows (WebView2, ConPTY, Windows' own `ssh.exe`, Credential Manager) and Linux (WebKitGTK, Secret Service) are built by CI and tried on a VM now and then; they're polished after the Mac.
+- **Builds.** GitHub Actions builds on `macos-14` (Apple silicon, universal `.app`/`.dmg`), `windows-latest` and `ubuntu-latest` on every push, once the repository is on GitHub. Until then, builds are local.
+- **Running an unsigned Mac build.** Right-click → Open, or `xattr -dr com.apple.quarantine SuperXTerminal.app`. Local builds aren't quarantined.
+- **Signing and notarisation (M6)** need an Apple Developer Program membership (USD 99/year) for a Developer ID certificate, or the company's own. CI runs `notarytool` with an app-specific password or API key kept in GitHub secrets. Windows signing needs a code-signing certificate.
 - **Copying from SuperXPuTTY:**
   - `web/terminal`, `web/output`, `web/shared` and `web/lib` copy across with their licences (xterm.js and Monaco: MIT; Simple Icons: CC0).
   - SuperXPuTTY itself is MIT, so its code can be ported with the copyright notice kept.
@@ -420,13 +443,13 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 
 ## 6. Open questions
 
-1. **Stack:** is Tauri (B1) acceptable, or do you want a pure Swift app (B2) for the most Mac-native feel, at the cost of no Windows development and less reuse?
-2. **Cross-platform later?** Tauri would let SuperXTerminal run on Windows too. Should it stay Mac-only (and SuperXPuTTY stays the Windows app), or aim to replace SuperXPuTTY one day?
+1. **Stack:** decided: Tauri 2, Svelte 5 and dockview, with no licence problems for companies that adopt it (§1 Licensing).
+2. **Cross-platform:** the Mac comes first, and CI builds Windows and Linux too. Still open: should the Windows build ever aim to replace SuperXPuTTY, or stay a lighter option beside it?
 3. **Database application name:** connect as `SuperPuTTY` (no schema change, locks enforced as now), or as `SuperXTerminal` (needs the guard trigger to accept both, changed in SuperXPuTTY's schema SQL too)?
 4. **New protocol `LocalShell` in shared Sessions.xml:** today an unknown protocol stops SuperXPuTTY loading Sessions.xml at all (§3). So SuperXPuTTY must change first: read an unknown protocol as greyed, and keep unknown attributes (`XmlAnyAttribute`). Do that, and ship it before the Mac app writes such sessions, or keep Mac-only sessions in Private sessions only?
 5. **Profiles:** decided: SuperXTerminal's own per-user profiles, matched by name (§2 Profiles). Still open: is the `reg export` import worth building, and should the non-secret parts of profiles ever be shareable through the settings folder?
 6. **RDP:** is opening Windows App (outside the tabs) good enough, or should an in-tab RDP client (e.g. FreeRDP) be a later milestone?
 7. **SENDBREAK:** make it work on the Mac for serial and SSH sessions (it can), or keep it "not available" to match SuperXPuTTY?
 8. **Distribution:** will you get an Apple Developer ID (for signing and notarisation), and should builds be public GitHub releases?
-9. **Mac hardware:** is a Mac available for testing by the end of M1, or should we plan for a cloud Mac?
+9. **Mac hardware:** decided: development happens on a Mac.
 10. **Repository:** name `SuperXTerminal` under `waukeerules`, public or private, and MIT licence like SuperXPuTTY?

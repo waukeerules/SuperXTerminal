@@ -73,7 +73,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Allow older algorithms (profile option, on in Default Settings): SHA-1 key exchange, `ssh-rsa`, CBC ciphers
 - ✅ Launch order: session, folder default, profile, Default Settings (local overrides join it in M5); tested
 - ⬜ `{key}` placeholders; Environment Variables with Keychain secrets
-- ⬜ Quick connect toolbar
+- ✅ Quick connect toolbar: Protocol, Host (`host`, `host:port`, `user@host`, `ssh://host:port`), Login, Password (used once, never saved) and Profile; Enter connects, Clear empties it. Checked on the lab switch. File > New Local Shell (Cmd+T) replaces M0's button
 - ✅ Edit Session (all of SuperXPuTTY's fields, profile list, inherited folder values as hints, greyed fields explained, `-pw` shown masked and kept), from the session's right-click menu, which matches SuperXPuTTY's (Connect, Colour, Copy host address, Edit, Delete; the rest greyed with the milestone)
 
 **Settings**

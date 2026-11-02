@@ -28,7 +28,19 @@ interface Look {
 }
 
 /** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
-export type Target = { kind: "localShell" } | { kind: "session"; store: "saved" | "private"; id: string };
+export type Target =
+  | { kind: "localShell" }
+  | { kind: "session"; store: "saved" | "private"; id: string }
+  | ({ kind: "quickConnect" } & QuickConnect);
+
+/** Quick connect's toolbar fields (`QuickConnect` in `src-tauri/src/launch.rs`) */
+export interface QuickConnect {
+  protocol: string;
+  host: string;
+  username: string;
+  password: string;
+  profile: string;
+}
 
 /** A message from the page; every message has a type, and the rest depends on it */
 type PageMessage = { type: string; [key: string]: unknown };

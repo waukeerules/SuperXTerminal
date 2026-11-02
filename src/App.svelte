@@ -8,6 +8,7 @@
   import { TabArea } from "./lib/layout/TabArea";
   import SessionTree from "./lib/sessions/SessionTree.svelte";
   import Settings from "./lib/settings/Settings.svelte";
+  import QuickConnect from "./lib/layout/QuickConnect.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { opensAsLocalShell, type SessionView } from "./lib/sessions/api";
 
@@ -20,6 +21,7 @@
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
   void listen<string>("menu", (event) => {
     if (event.payload === "settings") settingsOpen = true;
+    else if (event.payload === "newLocalShell") newShell();
   });
 
   onMount(() => {
@@ -35,7 +37,7 @@
     status = `Opened session: ${session.name} [${session.protocol || "SSH"}]`;
   }
 
-  /** Open another Local Shell tab (toolbar button, for now) */
+  /** Open another Local Shell tab (File > New Local Shell, Cmd+T) */
   function newShell(): void {
     tabs?.openLocalShell();
     status = "Opened session: Local Shell";
@@ -47,14 +49,10 @@
 {/if}
 
 <div class="window">
-  <div class="toolbar" aria-label="Quick connect" title="Quick connect comes in M1">
-    <label>Protocol <select disabled><option>SSH</option></select></label>
-    <label>Host <input disabled placeholder="e.g. 192.168.0.5" /></label>
-    <label>Login <input disabled placeholder="e.g. admin" /></label>
-    <label>Password <input disabled type="password" /></label>
-    <label>Session <select disabled><option></option></select></label>
-    <button onclick={newShell} title="Open a Local Shell tab (for now, the only way to open a tab)">New Local Shell</button>
-  </div>
+  <QuickConnect onProblem={(text) => (status = text)} onConnect={(quick, title, local) => {
+    tabs?.openQuickConnect(quick, title, local);
+    status = `Opened session: ${title} [${quick.protocol}]`;
+  }} />
   <div class="toolbar" aria-label="Send Commands" title="Send Commands comes in M3">
     <label class="grow">Command <input disabled class="grow" /></label>
   </div>

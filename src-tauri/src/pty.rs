@@ -28,6 +28,8 @@ pub enum Target {
     LocalShell,
     /// A stored session, by its store and id
     Session { store: Store, id: String },
+    /// Quick connect's one-off session
+    QuickConnect(launch::QuickConnect),
 }
 
 /// What a pseudo terminal sends its tab
@@ -77,6 +79,10 @@ pub fn pty_open(
             let sessions = state.sessions.lock().unwrap();
             let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
             launch::launch(&sessions, &profiles, store, session)?
+        }
+        Target::QuickConnect(quick) => {
+            let sessions = state.sessions.lock().unwrap();
+            launch::launch(&sessions, &profiles, Store::Saved, &quick.session()?)?
         }
     };
     let Launch { mut command, password, local, notices, look } = launch;

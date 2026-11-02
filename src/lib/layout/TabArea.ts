@@ -16,7 +16,7 @@ import {
 } from "dockview-core";
 import { mount, unmount } from "svelte";
 import type { CustomIcon } from "../icons/custom";
-import { PageHost, type Target } from "../terminal/PageHost";
+import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
 import SessionTab from "./SessionTab.svelte";
 
 /** What a terminal tab is given when it's added: what to run, whether it's a local shell, and how its tab looks */
@@ -149,6 +149,11 @@ export class TabArea {
     const panelId = this.add(title, { target: { kind: "session", store, id }, local, icon, environment });
     this.sessions.set(panelId, `${store}:${id}`);
     this.onOpenChanged(new Set(this.sessions.values()));
+  }
+
+  /** Open a tab for Quick connect's one-off session */
+  openQuickConnect(quick: QuickConnect, title: string, local: boolean): void {
+    this.add(title, { target: { kind: "quickConnect", ...quick }, local, icon: local ? "terminal" : "computer", environment: null });
   }
 
   /** Add a terminal tab and show it; returns its panel id */

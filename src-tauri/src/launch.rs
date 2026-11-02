@@ -52,6 +52,56 @@ const OLDER_ALGORITHMS: [&str; 8] = [
     "-o", "Ciphers=+aes256-cbc,aes192-cbc,aes128-cbc",
 ];
 
+/// An in-memory attribute only Quick connect sets: the password typed in its toolbar, never written to a file
+pub const QUICK_PASSWORD: &str = "__QuickConnectPassword";
+
+/// What Quick connect gives: SuperXPuTTY's toolbar fields
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickConnect {
+    pub protocol: String,
+    /// "host", "host:port", "user@host:port" or "ssh://host:port", as SuperXPuTTY's HostConnectionString (plus user@)
+    pub host: String,
+    pub username: String,
+    pub password: String,
+    pub profile: String,
+}
+
+impl QuickConnect {
+    /// The one-off session Quick connect opens (never saved), as SuperXPuTTY's TryConnectFromToolbar builds it
+    pub fn session(&self) -> Result<StoredSession, String> {
+        let mut text = self.host.trim().trim_end_matches('/').to_string();
+        let mut protocol = self.protocol.clone();
+        if let Some((scheme, rest)) = text.split_once("://") {
+            protocol = scheme.to_ascii_uppercase();
+            text = rest.to_string();
+        }
+        let mut username = self.username.trim().to_string();
+        if let Some((user, rest)) = text.split_once('@') {
+            if username.is_empty() {
+                username = user.to_string();
+            }
+            text = rest.to_string();
+        }
+        let (host, port) = match text.rsplit_once(':') {
+            Some((host, port)) if port.parse::<u16>().is_ok() => (host.to_string(), port.parse().unwrap_or(0)),
+            _ => (text.clone(), 0),
+        };
+        let local = ["WINCMD", "WSL", "PS"].contains(&protocol.to_ascii_uppercase().as_str());
+        if host.is_empty() && !local {
+            return Err("Type a host to connect to.".into());
+        }
+        let mut session = StoredSession::new(&format!("QuickConnect/{host}"));
+        session.set("Proto", &protocol);
+        session.set("Host", &host);
+        session.set("Port", &port.to_string());
+        session.set("Username", &username);
+        session.set("PuttySession", if self.profile.trim().is_empty() { profiles::DEFAULT_PROFILE } else { self.profile.trim() });
+        session.attributes.push((QUICK_PASSWORD.into(), self.password.clone()));
+        Ok(session)
+    }
+}
+
 /// Build the start of a stored session, or say why it can't start on this Mac yet
 pub fn launch(sessions: &Sessions, profiles: &Profiles, store: Store, session: &StoredSession) -> Result<Launch, String> {
     match session.get("Proto").to_ascii_uppercase().as_str() {
@@ -158,10 +208,10 @@ fn ssh(sessions: &Sessions, profiles: &Profiles, store: Store, session: &StoredS
     }
     let extra = translate_extra_args(session.get("ExtraArgs"));
     notices.extend(extra.notices);
-    // the session's own -pw, else its profile's password, else Default Settings'
-    let password = extra
-        .password
-        .clone()
+    // Quick connect's password (never stored), else the session's own -pw, else its profile's, else Default Settings'
+    let password = Some(session.get(QUICK_PASSWORD).to_string())
+        .filter(|p| !p.is_empty())
+        .or_else(|| extra.password.clone())
         .or_else(|| profiles::password(&profile.name))
         .or_else(|| if profile.name == default.name { None } else { profiles::password(&default.name) });
     if port != 0 && port != 22 {
@@ -364,6 +414,27 @@ mod tests {
         assert_eq!(t.password.as_deref(), Some("secret"));
         assert_eq!(t.args, ["-p", "2222", "-A"]);
         assert_eq!(t.notices, ["Not used on this Mac: -sercfg 9600"]);
+    }
+
+    #[test]
+    fn quick_connect_reads_the_host_field_as_superxputty_does() {
+        let quick = QuickConnect {
+            protocol: "SSH".into(),
+            host: "admin@192.168.0.50:2222".into(),
+            username: String::new(),
+            password: "pw".into(),
+            profile: String::new(),
+        };
+        let session = quick.session().unwrap();
+        assert_eq!((session.get("Host"), session.get("Port"), session.get("Username")), ("192.168.0.50", "2222", "admin"));
+        let (args, _) = args_of(&Sessions::default(), &profiles(), &session);
+        assert_eq!(
+            args,
+            ["-tt", "-p", "2222", "-l", "admin", "-o", "ServerAliveInterval=30", "-o",
+             "PreferredAuthentications=keyboard-interactive,password,publickey", "192.168.0.50"]
+        );
+        let telnet = QuickConnect { host: "telnet://10.0.0.1".into(), ..quick };
+        assert_eq!(telnet.session().unwrap().get("Proto"), "TELNET");
     }
 
     #[test]

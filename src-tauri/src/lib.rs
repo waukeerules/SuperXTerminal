@@ -225,7 +225,8 @@ fn settings_set_folder(state: State<'_, AppState>, path: String) -> Result<(), S
     settings.save(&state.user_folder)
 }
 
-/// The menu bar: the app menu (with Settings..., Cmd+,), Edit (which WebKit needs for Cmd+C/V) and Window.
+/// The menu bar: the app menu (with Settings..., Cmd+,), File (New Local Shell, Cmd+T), Edit (which WebKit needs for
+/// Cmd+C/V) and Window.
 /// SuperXPuTTY's File, View and Tools menus join it as their features arrive.
 fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
@@ -246,6 +247,12 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::quit(app, None)?,
         ],
+    )?;
+    let file = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&MenuItem::with_id(app, "newLocalShell", "New Local Shell", true, Some("CmdOrCtrl+T"))?],
     )?;
     let edit = Submenu::with_items(
         app,
@@ -272,7 +279,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::close_window(app, None)?,
         ],
     )?;
-    Menu::with_items(app, &[&app_menu, &edit, &window])
+    Menu::with_items(app, &[&app_menu, &file, &edit, &window])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

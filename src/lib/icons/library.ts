@@ -79,12 +79,13 @@ export function parseKey(key: string): { name: string; color: string | null } | 
 /**
  * What draws a key: its template, logo or custom icon in its colour (the key's own, else the default); keys that
  * name nothing drawable fall back to the workstation template. Custom icons' default colour is the PNG's own, so
- * `color` is null for them when the key has none.
+ * `color` is null for them when the key has none. Toolbar glyphs ("check", "clear", ...) only resolve when
+ * `allowGlyphs` is set, so sessions can't use them.
  */
-export function resolveIcon(key: string, customNames: ReadonlySet<string>): ResolvedIcon {
+export function resolveIcon(key: string, customNames: ReadonlySet<string>, allowGlyphs = false): ResolvedIcon {
   const parsed = parseKey(key || FALLBACK_ICON) ?? { name: FALLBACK_ICON, color: null };
   const name = parsed.name.toLowerCase();
-  if (templates[name] && !templates[name].glyph) {
+  if (templates[name] && (allowGlyphs || !templates[name].glyph)) {
     return { kind: "template", name, color: parsed.color ?? templates[name].color };
   }
   if (logos[name]) return { kind: "logo", name, color: parsed.color ?? logos[name].color };

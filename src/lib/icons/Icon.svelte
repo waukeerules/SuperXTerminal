@@ -21,12 +21,14 @@
     environment?: string | null;
     open?: boolean;
     customs?: ReadonlyMap<string, CustomIcon>;
+    /** A toolbar glyph ("check", "clear", ...) rather than a session icon */
+    glyph?: boolean;
   }
 
-  let { key, size, environment = null, open = false, customs = new Map() }: Props = $props();
+  let { key, size, environment = null, open = false, customs = new Map(), glyph = false }: Props = $props();
 
   const uid = `i${next++}`;
-  const icon = $derived(resolveIcon(key, new Set(customs.keys())));
+  const icon = $derived(resolveIcon(key, new Set(customs.keys()), glyph));
   const custom = $derived(icon.kind === "custom" ? customs.get(icon.name) : undefined);
   // IconLibrary pads each icon by 18% on every side, which leaves room for the environment circle
   const cell = $derived(Math.round(size * 1.36));

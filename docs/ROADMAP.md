@@ -115,11 +115,11 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 ## M4 Terminal extras
 
 - ✅ Highlighting rules (cisco, junos, generic, auto, user rules), per tab, and per session and folder (`HighlightRules`, set in Edit Session): SuperXPuTTY's defaults bundled, then the team's and the user's `highlighting` folders; checked against SuperXPuTTY's colours on the lab switch (`sh ip int bri`)
-- ⬜ Terminal preferences in Settings (theme, font, cursor, bell, copy on select, mark matches)
+- ✅ Terminal preferences in Settings > Terminal, as SuperXPuTTY's TerminalPreferences (theme, font, size, cursor, blink, bell, drawing, highlighting, mark matches, copy on select, scrollback, paste check lines, log time stamps, keys): shared by every tab and applied at once, also when changed from a tab's own menu. Checked: a font size reached the open tab
 - ⬜ Highlighted Output (Monaco) beside the tab, from the menu's Open as Document
-- ⬜ Terminal right-click menu complete, with Mac shortcuts (Cmd+C/V/F/K/W)
+- ✅ Mac shortcuts: Cmd+C and Cmd+V (through paste check), Edit > Find… (Cmd+F, the terminal's find bar), Edit > Clear Scrollback (Cmd+K), File > Close Tab (Cmd+W, no longer the window). The page's bell (sound), Ctrl+click links (http/https, default browser) answered as TerminalControl does
 - ⬜ Search Output; Activity and Silence alerts
-- ⬜ Paste check
+- ✅ Paste check, as SuperXPuTTY's: a paste of 2 lines or more (Settings > Terminal; 0 never) is shown in the Paste window, editable, typed on Paste (Cmd+Return); Cmd+V, Ctrl+Shift+V, the menu and middle-click all go through it. Checked with a three-line paste
 - ⬜ Session logs (kept or temporary, time stamps)
 - ✅ Tab right-click menu, as SuperXPuTTY's: New session (every session by folder), Duplicate session, Copy host address, Save session as, Rename tab, Refresh tab, Accept commands, Send Key, Special Command (not in the built-in terminal), Copy all, Restart session / Reconnect, Clear scrollback, Reset terminal, Close, Close others, Close others to the right, Close all. The output items come with the rest of M4. Checked on the lab switch
 - ✅ A session that ends cleanly (a logout) closes its tab, as SuperXPuTTY's; any other end keeps the tab and its output, and Enter reconnects. Checked: exit on the switch closed the tab; a refused connection stayed, and Enter tried again

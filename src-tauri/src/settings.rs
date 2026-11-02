@@ -38,6 +38,9 @@ pub struct AppSettings {
     pub auto_reconnect: bool,
     pub auto_reconnect_attempts: u32,
     pub auto_reconnect_delay_seconds: u32,
+    /// The terminal's preferences, shared by every tab, as SuperXPuTTY's TerminalPreferences: names to string values,
+    /// only those changed from their defaults (src/lib/terminal/prefs.ts has the defaults)
+    pub terminal_prefs: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for AppSettings {
@@ -57,6 +60,7 @@ impl Default for AppSettings {
             auto_reconnect: true,
             auto_reconnect_attempts: 6,
             auto_reconnect_delay_seconds: 10,
+            terminal_prefs: std::collections::BTreeMap::new(),
         }
     }
 }

@@ -126,6 +126,10 @@ class TerminalPanel implements IContentRenderer {
       },
     );
     this.tabs.hosts.set(id, this.host);
+    this.host.title = parameters.api.title ?? "";
+    parameters.api.onDidTitleChange((e) => {
+      if (this.host) this.host.title = e.title;
+    });
     frame.src = `/web/terminal/index.html?tab=${encodeURIComponent(id)}`;
     this.element.append(frame);
   }
@@ -265,6 +269,17 @@ export class TabArea {
   /** The title a tab opened with, before any rename */
   private originalTitle(id: string): string {
     return this.titles.get(id) ?? this.api.getPanel(id)?.title ?? "";
+  }
+
+  /** The active tab's page host, for the Edit menu's Find and Clear Scrollback */
+  activeHost(): PageHost | null {
+    const id = this.api.activePanel?.id;
+    return id ? this.hosts.get(id) ?? null : null;
+  }
+
+  /** File > Close Tab (Cmd+W) */
+  closeActive(): void {
+    this.api.activePanel?.api.close();
   }
 
   /** Turn a tab's Accept commands on or off */

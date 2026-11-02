@@ -29,6 +29,8 @@ export interface AppSettings {
   autoReconnect: boolean;
   autoReconnectAttempts: number;
   autoReconnectDelaySeconds: number;
+  /** The terminal's preferences, by name; only those changed from their defaults */
+  terminalPrefs: Record<string, string>;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -47,6 +49,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   autoReconnect: true,
   autoReconnectAttempts: 6,
   autoReconnectDelaySeconds: 10,
+  terminalPrefs: {},
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

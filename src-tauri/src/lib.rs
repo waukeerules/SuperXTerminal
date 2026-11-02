@@ -1140,7 +1140,12 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         app,
         "File",
         true,
-        &[&MenuItem::with_id(app, "newLocalShell", "New Local Shell", true, Some("CmdOrCtrl+T"))?],
+        &[
+            &MenuItem::with_id(app, "newLocalShell", "New Local Shell", true, Some("CmdOrCtrl+T"))?,
+            &PredefinedMenuItem::separator(app)?,
+            // Cmd+W closes the tab, as in Terminal and iTerm2; the window closes with its red button
+            &MenuItem::with_id(app, "closeTab", "Close Tab", true, Some("CmdOrCtrl+W"))?,
+        ],
     )?;
     let edit = Submenu::with_items(
         app,
@@ -1154,6 +1159,10 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::copy(app, None)?,
             &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            // the terminal's own Find (its Ctrl+Shift+F) and Clear Scrollback, with the Mac's keys
+            &MenuItem::with_id(app, "find", "Find…", true, Some("CmdOrCtrl+F"))?,
+            &MenuItem::with_id(app, "clearScrollback", "Clear Scrollback", true, Some("CmdOrCtrl+K"))?,
         ],
     )?;
     let window = Submenu::with_items(
@@ -1163,8 +1172,6 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &PredefinedMenuItem::minimize(app, None)?,
             &PredefinedMenuItem::maximize(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::close_window(app, None)?,
         ],
     )?;
     let tools = Submenu::with_items(

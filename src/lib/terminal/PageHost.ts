@@ -14,6 +14,8 @@ import { isDark, settings } from "../settings/store.svelte";
 import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
 import { askOne } from "../scripting/asking.svelte";
+import { allPrefs, onPrefsChanged, setPrefs } from "./prefs";
+import { checkPaste } from "./pasting.svelte";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
 type PtyEvent =
@@ -66,6 +68,23 @@ const MENU_KEYS = [
  * through a theme, so with none the cursor stayed white. It has no highlighting styles, so rules colour nothing.
  */
 const STAND_IN_THEMES = [{ name: "PuTTY", base: "vs-dark", colors: { background: "#000000", foreground: "#FFFFFF" } }];
+
+/** Monospaced fonts that come with macOS, for the page's font menu */
+const MAC_MONOSPACE_FONTS = ["Menlo", "Monaco", "SF Mono", "Courier New", "Andale Mono", "PT Mono"];
+
+/** The bell's sound: a short tone (Windows plays its default beep) */
+function beep(): void {
+  const audio = new AudioContext();
+  const tone = audio.createOscillator();
+  const volume = audio.createGain();
+  tone.frequency.value = 880;
+  volume.gain.setValueAtTime(0.15, audio.currentTime);
+  volume.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.15);
+  tone.connect(volume).connect(audio.destination);
+  tone.start();
+  tone.stop(audio.currentTime + 0.15);
+  tone.onended = () => void audio.close();
+}
 
 /** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
 const STABLE_AFTER_MS = 60_000;
@@ -127,11 +146,15 @@ export class PageHost implements ScriptTarget {
     private readonly onState: () => void = () => {},
   ) {
     window.addEventListener("message", this.onWindowMessage);
+    this.stopPrefs = onPrefsChanged((prefs) => this.post({ type: "prefs", prefs }));
   }
+
+  private readonly stopPrefs: () => void;
 
   /** Close the pseudo terminal and stop listening; called when the tab closes */
   dispose(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.stopPrefs();
     window.removeEventListener("message", this.onWindowMessage);
     if (this.ptyId !== null) {
       void invoke("pty_close", { id: this.ptyId });
@@ -179,8 +202,27 @@ export class PageHost implements ScriptTarget {
         if (typeof message.text === "string") await navigator.clipboard.writeText(message.text);
         break;
       case "pasteRequest":
-        // paste check (several lines) comes in M4; until then every paste goes straight through
         await this.paste(typeof message.text === "string" ? message.text : null);
+        break;
+      case "pref":
+        // a preference changed from the page's own menu: saved, and every tab gets it
+        if (typeof message.name === "string") await setPrefs({ [message.name]: message.value == null ? null : String(message.value) });
+        break;
+      case "bell":
+        // the page posts it only for the "sound" bell (a visual bell flashes in the page)
+        beep();
+        break;
+      case "openLink":
+        // Ctrl+click on a link: only http and https, in the default browser, as TerminalControl
+        if (typeof message.uri === "string" && /^https?:\/\//i.test(message.uri)) {
+          await invoke("plugin:opener|open_url", { url: message.uri }).catch(() => {});
+        }
+        break;
+      case "openInPutty":
+        this.post({ type: "notice", text: "Open in PuTTY isn't available on the Mac.", kind: "info" });
+        break;
+      case "cleared":
+        // Windows' pseudo console keeps its own copy of the screen; the Mac's doesn't, so there's nothing to clear
         break;
       case "sendKey":
         await this.sendKey(typeof message.key === "string" ? message.key : null);
@@ -309,6 +351,12 @@ export class PageHost implements ScriptTarget {
     this.post({ type: "action", name });
   }
 
+  /** Edit > Find… (Cmd+F): the page's own find bar, which it opens on Ctrl+Shift+F */
+  find(): void {
+    const input = this.frame.contentDocument?.querySelector(".xterm-helper-textarea");
+    input?.dispatchEvent(new KeyboardEvent("keydown", { key: "F", code: "KeyF", keyCode: 70, ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+  }
+
   /** Refresh tab: fit the terminal to the tab again and redraw it */
   refresh(): void {
     this.frame.contentWindow?.dispatchEvent(new Event("resize"));
@@ -317,8 +365,15 @@ export class PageHost implements ScriptTarget {
   /** Paste the given text, or the clipboard's, into the terminal */
   private async paste(text: string | null): Promise<void> {
     const value = text ?? (await navigator.clipboard.readText().catch(() => ""));
-    if (value) this.post({ type: "paste", text: value });
+    if (!value) return;
+    // several lines are checked first (paste check), as TerminalControl
+    const checked = await checkPaste(value, this.title);
+    this.post({ type: "focus" });
+    if (checked) this.post({ type: "paste", text: checked });
   }
+
+  /** The tab's title, for the paste check's question */
+  title = "";
 
   /** The page's settings: the highlighting rules and themes, and the profile's cursor and bell */
   private async sendConfig(look: Look): Promise<void> {
@@ -333,8 +388,12 @@ export class PageHost implements ScriptTarget {
       cursor: { style: look.cursor, blink: look.blink },
       local: this.local,
       serial: false,
-      prefs: {},
-      fonts: [],
+      prefs: allPrefs(),
+      fonts: MAC_MONOSPACE_FONTS,
+      // PuTTY's defaults (the profile's Terminal > Keyboard and Bell settings aren't in SuperXTerminal's profiles)
+      keys: { backspace: "del", homeEnd: "standard", functionKeys: "tilde" },
+      bellOverload: { on: true, count: 5, windowMs: 2000, quietMs: 5000 },
+      profileFont: { family: "Menlo", points: 12 },
       menuKeys: MENU_KEYS,
       sessionRules: look.rules,
       unlimitedScrollback: 1000000,

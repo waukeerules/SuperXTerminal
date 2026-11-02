@@ -21,6 +21,7 @@
   import ScriptEditor from "./lib/commands/ScriptEditor.svelte";
   import ScriptStatus from "./lib/commands/ScriptStatus.svelte";
   import Ask from "./lib/scripting/Ask.svelte";
+  import PasteCheck from "./lib/terminal/PasteCheck.svelte";
   import { context, runScriptIn } from "./lib/commands/sending.svelte";
   import { saveSettings } from "./lib/settings/store.svelte";
   import type { CustomIcon } from "./lib/icons/custom";
@@ -49,6 +50,9 @@
     else if (event.payload === "environmentVariables") variablesOpen = true;
     else if (event.payload === "databaseSessions") databaseOpen = true;
     else if (event.payload === "scriptEditor") editorOpen = true;
+    else if (event.payload === "closeTab") tabs?.closeActive();
+    else if (event.payload === "find") tabs?.activeHost()?.find();
+    else if (event.payload === "clearScrollback") tabs?.activeHost()?.action("clearScrollback");
     else if (event.payload === "toggleSendCommands") void saveSettings({ showSendCommands: !settings.showSendCommands });
     else if (event.payload === "toggleButtonBar") void saveSettings({ showButtonBar: !settings.showButtonBar });
   });
@@ -175,6 +179,7 @@
 {/if}
 
 <Ask />
+<PasteCheck />
 
 {#if menu}
   <Menu items={menu.items} x={menu.x} y={menu.y} onClose={() => (menu = null)} />

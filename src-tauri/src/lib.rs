@@ -1549,6 +1549,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         true,
         &[
             &MenuItem::with_id(app, "newLocalShell", "New Local Shell", true, Some("CmdOrCtrl+T"))?,
+            // SuperXPuTTY's File > Open session… (its Quick Selector)
+            &MenuItem::with_id(app, "openSession", "Open Session…", true, Some("CmdOrCtrl+O"))?,
             &PredefinedMenuItem::separator(app)?,
             // SuperXPuTTY's File > Import sessions and Export sessions to CSV
             &Submenu::with_items(
@@ -1593,6 +1595,9 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &PredefinedMenuItem::minimize(app, None)?,
             &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            // SuperXPuTTY's Switch session…: the Quick Selector over the open tabs
+            &MenuItem::with_id(app, "switchSession", "Switch Session…", true, Some("CmdOrCtrl+Shift+O"))?,
         ],
     )?;
     let tools = Submenu::with_items(

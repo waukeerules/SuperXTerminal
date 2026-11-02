@@ -448,12 +448,19 @@ export class TabArea {
   }
 
   /** Every open tab (Highlighted Output too) in the order they show, group by group, for the ▾ list */
-  allTabs(): { id: string; title: string; icon: string; environment: string | null; active: boolean }[] {
+  allTabs(): { id: string; title: string; icon: string; environment: string | null; active: boolean; session: string }[] {
     const active = this.api.activePanel?.id;
     return this.api.groups.flatMap((group) =>
       group.panels.map((panel) => {
         const params = panel.params as unknown as { icon?: string; environment?: string | null };
-        return { id: panel.id, title: panel.title ?? "", icon: params.icon ?? "terminal", environment: params.environment ?? null, active: panel.id === active };
+        return {
+          id: panel.id,
+          title: panel.title ?? "",
+          icon: params.icon ?? "terminal",
+          environment: params.environment ?? null,
+          active: panel.id === active,
+          session: this.sessions.get(panel.id) ?? "",
+        };
       }),
     );
   }

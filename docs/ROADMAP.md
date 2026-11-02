@@ -163,7 +163,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - 🚧 Connect external opens the session's ssh command in a Terminal window (macOS asks once to let SuperXTerminal control Terminal); not yet tried in the app. iTerm2 later
 
 **App**
-- ⬜ Quick Selector
+- ✅ Quick Selector, as SuperXPuTTY's: File > Open Session… (Cmd+O) over every session and Window > Switch Session… (Cmd+Shift+O) over the open tabs (the active one ticked, the highlight starting on another); every word typed must be in the name or path; ↑/↓, Enter, Esc, a double-click, Option+⌫ back to the last "/"; the keyboard goes back to the terminal after. Checked in the app
 - ⬜ Splits, pop-out windows
 - ⬜ Compare output: two tabs' output side by side in Monaco's diff editor (already in `public/web/lib/monaco`), differences highlighted, e.g. a config on two switches or before and after a change; from the tab menu (Compare with…) on two tabs' logs
 - ⬜ Layouts (`layouts-mac/`)

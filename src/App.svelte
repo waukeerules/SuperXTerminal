@@ -31,6 +31,7 @@
   import { tabMenu } from "./lib/layout/tabMenu";
   import SearchOutput from "./lib/terminal/SearchOutput.svelte";
   import SerialSettings from "./lib/terminal/SerialSettings.svelte";
+  import QuickSelector, { type QuickItem } from "./lib/sessions/QuickSelector.svelte";
   import type { PageHost } from "./lib/terminal/PageHost";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 
@@ -42,6 +43,8 @@
   let settingsTab = $state<string | null>(null);
   let variablesOpen = $state(false);
   let coloursOpen = $state(false);
+  /** The Quick Selector open: its title and entries, and what choosing one does */
+  let quick = $state<{ title: string; items: QuickItem[]; choose: (item: QuickItem) => void } | null>(null);
   let databaseOpen = $state(false);
   let editorOpen = $state(false);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
@@ -59,6 +62,8 @@
     else if (event.payload === "newLocalShell") newShell();
     else if (event.payload === "environmentVariables") variablesOpen = true;
     else if (event.payload === "environmentColours") coloursOpen = true;
+    else if (event.payload === "openSession") quickOpen();
+    else if (event.payload === "switchSession") quickSwitch();
     else if (event.payload === "databaseSessions") databaseOpen = true;
     else if (event.payload === "scriptEditor") editorOpen = true;
     else if (event.payload === "closeTab") tabs?.closeActive();
@@ -252,6 +257,42 @@
     runScriptIn(tab, script.replace(/\r\n/g, "\n"), "Login script", true);
   }
 
+  /** Where a session is, for the Quick Selector's detail: its path, after Private/ or Database/ outside Saved sessions */
+  function pathOf(session: SessionView): string {
+    const path = session.id.replace(/^@db\//, "");
+    return session.store === "saved" ? path : `${session.store === "private" ? "Private" : "Database"}/${path}`;
+  }
+
+  /** File > Open Session… (Cmd+O): every session, as SuperXPuTTY's Open session */
+  function quickOpen(): void {
+    const t = tree;
+    if (!t) return;
+    const sessions = t.allSessions();
+    quick = {
+      title: "Open Session",
+      items: sessions.map((s) => ({ key: `${s.store}:${s.id}`, name: s.name, detail: pathOf(s), icon: s.icon, environment: t.environmentOf(s) })),
+      choose: (item) => {
+        const session = sessions.find((s) => `${s.store}:${s.id}` === item.key);
+        if (session) t.openSession(session);
+      },
+    };
+  }
+
+  /** Window > Switch Session… (Cmd+Shift+O): the open tabs, as SuperXPuTTY's Switch session */
+  function quickSwitch(): void {
+    const t = tabs;
+    if (!t) return;
+    const sessions = tree?.allSessions() ?? [];
+    quick = {
+      title: "Switch Session",
+      items: t.allTabs().map((tab) => {
+        const session = sessions.find((s) => `${s.store}:${s.id}` === tab.session);
+        return { key: tab.id, name: tab.title, detail: session ? pathOf(session) : "", icon: tab.icon, environment: tab.environment, current: tab.active };
+      }),
+      choose: (item) => t.activate(item.key),
+    };
+  }
+
   /** Open another Local Shell tab (File > New Local Shell, Cmd+T) */
   function newShell(): void {
     tabs?.openLocalShell();
@@ -346,6 +387,12 @@
 
 {#if menu}
   <Menu items={menu.items} x={menu.x} y={menu.y} {customs} onClose={() => (menu = null)} />
+{/if}
+
+{#if quick}
+  <QuickSelector title={quick.title} items={quick.items} {customs}
+    onChoose={(item) => { const q = quick; quick = null; q?.choose(item); setTimeout(() => tabs?.focusActive(), 50); }}
+    onClose={() => { quick = null; tabs?.focusActive(); }} />
 {/if}
 
 {#if serialTab}

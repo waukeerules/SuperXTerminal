@@ -1003,6 +1003,16 @@
     }
   }
 
+  /** Open a session as the tree does (its colour on the tab, Recent), for the Quick Selector */
+  export function openSession(session: SessionView): void {
+    open(session);
+  }
+
+  /** A session's environment colour, for the Quick Selector's icons */
+  export function environmentOf(session: SessionView): string | null {
+    return colors.forSession(session);
+  }
+
   /** Every session, for the tab menu's New session and Copy host address */
   export function allSessions(): SessionView[] {
     return loaded?.sessions ?? [];

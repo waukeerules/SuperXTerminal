@@ -164,7 +164,9 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **App**
 - ✅ Quick Selector, as SuperXPuTTY's: File > Open Session… (Cmd+O) over every session and Window > Switch Session… (Cmd+Shift+O) over the open tabs (the active one ticked, the highlight starting on another); every word typed must be in the name or path; ↑/↓, Enter, Esc, a double-click, Option+⌫ back to the last "/"; the keyboard goes back to the terminal after. Checked in the app
-- ⬜ Splits, pop-out windows
+- ✅ Splits: drag a tab to a group's edge, or Split Right (⌘D) / Split Down (⇧⌘D) in the tab menu and Window menu; Join All Tabs puts them back in one group. Each terminal's page stays put and is only placed over its group (dockview's "always" renderer), so moving a tab doesn't reload it or restart its session. Checked: a shell's output stayed through Split Right, Join and a drag to the bottom edge
+- ✅ New Window (⌘N) and the tree's Connect in new window, as SuperXPuTTY's new instance: another window with its own tree and tabs (just the session, for Connect in new window), cascaded from the one in front; the menu bar's commands go to the window in front only; settings saved in one window are read again by the others; closing a window ends its shells and connections. Checked: shells counted before and after closing a window; Lab Switch - Telnet opened in its own window
+- ⬜ Pop a running tab out into its own window (the core would hand the connection, with its scrollback, to the new window's page)
 - ⬜ Compare output: two tabs' output side by side in Monaco's diff editor (already in `public/web/lib/monaco`), differences highlighted, e.g. a config on two switches or before and after a change; from the tab menu (Compare with…) on two tabs' logs
 - ⬜ Layouts (`layouts-mac/`)
 - ⬜ Session detail pane (View > Session detail), as SuperXPuTTY's: the selected session's fields (name, icon, host, note, port, connection type, profile, username, extra arguments with -pw masked, SPSL file, RDP options, paths) in a property list with a description of the field picked; off by default, shown and placed with the layouts

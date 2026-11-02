@@ -34,6 +34,7 @@
   import QuickSelector, { type QuickItem } from "./lib/sessions/QuickSelector.svelte";
   import type { PageHost } from "./lib/terminal/PageHost";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
+  import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
   let tabElement: HTMLDivElement;
   let tabs = $state<TabArea | null>(null);
@@ -57,13 +58,19 @@
   let searches = $state<{ id: string; title: string; logPath: string | null }[]>([]);
 
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
-  void listen<string>("menu", (event) => {
+  // this window's own: the core sends the menu bar's commands to the window in front only
+  void getCurrentWebviewWindow().listen<string>("menu", (event) => {
     if (event.payload === "settings") settingsTab = "General";
     else if (event.payload === "newLocalShell") newShell();
+    else if (event.payload === "newWindow") void invoke("window_new", { open: null });
     else if (event.payload === "environmentVariables") variablesOpen = true;
     else if (event.payload === "environmentColours") coloursOpen = true;
     else if (event.payload === "openSession") quickOpen();
     else if (event.payload === "switchSession") quickSwitch();
+    else if (event.payload === "splitRight" || event.payload === "splitDown") {
+      const id = tabs?.api.activePanel?.id;
+      if (id) tabs?.split(id, event.payload === "splitRight" ? "right" : "below");
+    } else if (event.payload === "joinAll") tabs?.joinAll();
     else if (event.payload === "databaseSessions") databaseOpen = true;
     else if (event.payload === "scriptEditor") editorOpen = true;
     else if (event.payload === "closeTab") tabs?.closeActive();
@@ -77,6 +84,8 @@
   });
 
   void loadSettings();
+  // saved in another window (or this one): read them again, so every window shows and saves the same settings
+  void listen("settings-changed", () => void loadSettings());
 
   // tabs follow the theme and icon size chosen in Settings
   $effect(() => {
@@ -147,8 +156,7 @@
         ),
       };
     };
-    tabs.openLocalShell();
-    status = "Opened session: Local Shell";
+    void start();
     return () => tabs?.dispose();
   });
 
@@ -291,6 +299,26 @@
       }),
       choose: (item) => t.activate(item.key),
     };
+  }
+
+  /**
+   * What the window opens first: a Local Shell, or the session Connect in new window asked for (once the tree has
+   * read the sessions)
+   */
+  async function start(): Promise<void> {
+    const open = await invoke<string | null>("window_start").catch(() => null);
+    if (open) {
+      for (let tries = 0; tries < 100; tries++) {
+        const session = tree?.allSessions().find((s) => `${s.store}:${s.id}` === open);
+        if (session) {
+          tree?.openSession(session);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      status = `The session ${open.slice(open.indexOf(":") + 1)} wasn't found`;
+    }
+    newShell();
   }
 
   /** Open another Local Shell tab (File > New Local Shell, Cmd+T) */

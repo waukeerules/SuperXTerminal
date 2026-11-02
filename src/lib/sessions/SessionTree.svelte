@@ -387,7 +387,11 @@
           disabled: (session.protocol || "SSH").toUpperCase() !== "SSH" && "Only SSH sessions open in Terminal",
           action: () => void external(session, "terminal"),
         },
-        { label: "Connect in new window", disabled: "Windows and splits come in M5" },
+        {
+          label: "Connect in new window",
+          disabled: unavailableReason(session.protocol) ?? false,
+          action: () => void invoke("window_new", { open: `${session.store}:${session.id}` }).catch((e) => (error = String(e))),
+        },
         favoriteItem(session),
         {
           label: "Colour",

@@ -152,6 +152,18 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
       },
     },
     { separator: true },
+    {
+      label: "Split Right  ⌘D",
+      disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
+      action: () => tabs.split(id, "right"),
+    },
+    {
+      label: "Split Down  ⇧⌘D",
+      disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
+      action: () => tabs.split(id, "below"),
+    },
+    ...(tabs.groupCount() > 1 ? [{ label: "Join All Tabs", action: () => tabs.joinAll() } as MenuItem] : []),
+    { separator: true },
     { label: "Close", action: () => tabs.command(id, "close") },
     { label: "Close others", disabled: list.length < 2, action: () => tabs.command(id, "closeOthers") },
     { label: "Close others to the right", disabled: index === group.length - 1, action: () => tabs.command(id, "closeRight") },

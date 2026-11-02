@@ -51,6 +51,8 @@ pub enum PtyEvent {
 struct Session {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     kind: SessionKind,
+    /// The window whose tab it is; closing that window ends it
+    window: String,
 }
 
 /// A program in a pseudo terminal (ssh, a shell), or a Telnet, Raw or Serial stream in the core
@@ -75,6 +77,7 @@ pub struct Ptys {
 /// Returns the id the tab uses for the other calls; Err when the session can't start on this Mac.
 #[tauri::command]
 pub fn pty_open(
+    window: tauri::WebviewWindow,
     ptys: State<'_, Ptys>,
     state: State<'_, AppState>,
     target: Target,
@@ -111,7 +114,7 @@ pub fn pty_open(
         let _ = on_event.send(PtyEvent::Notice { text, kind: "info".into() });
     }
     if let Some(target) = stream {
-        return open_stream(&ptys, &target, cols, rows, on_event);
+        return open_stream(&ptys, &target, cols, rows, on_event, window.label());
     }
 
     let pair = native_pty_system()
@@ -178,13 +181,13 @@ pub fn pty_open(
         })
         .map_err(|e| e.to_string())?;
 
-    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Pty { master: pair.master, child } });
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Pty { master: pair.master, child }, window: window.label().to_string() });
     Ok(id)
 }
 
 /// Start a Telnet, Raw or Serial stream and pass its output on, as a pseudo terminal's. The other end closing is a
 /// clean end (the tab closes, as plink's would); a broken connection isn't (the tab stays and can reconnect).
-fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u16, on_event: Channel<PtyEvent>) -> Result<u32, String> {
+fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u16, on_event: Channel<PtyEvent>, window: &str) -> Result<u32, String> {
     let (stream, mut reader) = crate::streams::open(target, cols, rows)?;
     let id = ptys.next.fetch_add(1, Ordering::Relaxed) + 1;
     std::thread::Builder::new()
@@ -210,7 +213,7 @@ fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u1
         })
         .map_err(|e| e.to_string())?;
     let writer = stream.writer.clone();
-    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Stream(stream) });
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Stream(stream), window: window.to_string() });
     Ok(id)
 }
 
@@ -302,7 +305,26 @@ pub fn pty_resize(ptys: State<'_, Ptys>, id: u32, cols: u16, rows: u16) -> Resul
 /// Close a tab's pseudo terminal: end its program if it's still running and forget it
 #[tauri::command]
 pub fn pty_close(ptys: State<'_, Ptys>, id: u32) -> Result<(), String> {
-    match ptys.sessions.lock().unwrap().remove(&id).map(|s| s.kind) {
+    let session = ptys.sessions.lock().unwrap().remove(&id);
+    end(session);
+    Ok(())
+}
+
+/// A window closed: end every session its tabs had, as closing each tab would
+pub fn close_window(ptys: &Ptys, label: &str) {
+    let gone: Vec<Session> = {
+        let mut sessions = ptys.sessions.lock().unwrap();
+        let ids: Vec<u32> = sessions.iter().filter(|(_, s)| s.window == label).map(|(id, _)| *id).collect();
+        ids.iter().filter_map(|id| sessions.remove(id)).collect()
+    };
+    for session in gone {
+        end(Some(session));
+    }
+}
+
+/// End a session's program or connection
+fn end(session: Option<Session>) {
+    match session.map(|s| s.kind) {
         Some(SessionKind::Pty { child, .. }) => {
             let mut child = child.lock().unwrap();
             let _ = child.kill();
@@ -311,7 +333,6 @@ pub fn pty_close(ptys: State<'_, Ptys>, id: u32) -> Result<(), String> {
         Some(SessionKind::Stream(stream)) => stream.close(),
         None => {}
     }
-    Ok(())
 }
 
 #[cfg(test)]

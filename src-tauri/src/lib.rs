@@ -26,7 +26,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use profiles::{Profile, Profiles};
 use sessions::{Sessions, SessionsLoaded};
@@ -670,7 +670,7 @@ fn variables_fill(state: State<'_, AppState>, text: String) -> Filled {
 
 /// Save the Settings window's General tab; the settings folder is changed with `settings_set_folder`
 #[tauri::command]
-fn settings_save(state: State<'_, AppState>, settings: AppSettings) -> Result<AppSettings, String> {
+fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettings) -> Result<AppSettings, String> {
     let mut current = state.settings.lock().unwrap();
     let folder = current.settings_folder.clone();
     *current = AppSettings { settings_folder: folder, ..settings };
@@ -680,6 +680,8 @@ fn settings_save(state: State<'_, AppState>, settings: AppSettings) -> Result<Ap
     };
     current.tree_font_size = current.tree_font_size.clamp(10, 24);
     current.save(&state.user_folder)?;
+    // every window reads them again, so another window's next save doesn't put back what it had
+    let _ = app.emit(SETTINGS_CHANGED, ());
     Ok(current.clone())
 }
 
@@ -1514,11 +1516,16 @@ fn db_import(state: State<'_, AppState>, path: String) -> Result<db::DbSettings,
 
 /// Use another settings folder (chosen in the UI), and remember it
 #[tauri::command]
-fn settings_set_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
+fn settings_set_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<(), String> {
     let mut settings = state.settings.lock().unwrap();
     settings.settings_folder = Some(PathBuf::from(path));
-    settings.save(&state.user_folder)
+    settings.save(&state.user_folder)?;
+    let _ = app.emit(SETTINGS_CHANGED, ());
+    Ok(())
 }
+
+/// The event every window gets when the settings are saved
+const SETTINGS_CHANGED: &str = "settings-changed";
 
 /// The menu bar: the app menu (with Settings..., Cmd+,), File (New Local Shell, Cmd+T), Edit (which WebKit needs for
 /// Cmd+C/V), Tools (Environment Variables...) and Window.
@@ -1548,6 +1555,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "File",
         true,
         &[
+            &MenuItem::with_id(app, "newWindow", "New Window", true, Some("CmdOrCtrl+N"))?,
             &MenuItem::with_id(app, "newLocalShell", "New Local Shell", true, Some("CmdOrCtrl+T"))?,
             // SuperXPuTTY's File > Open session… (its Quick Selector)
             &MenuItem::with_id(app, "openSession", "Open Session…", true, Some("CmdOrCtrl+O"))?,
@@ -1598,6 +1606,10 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             // SuperXPuTTY's Switch session…: the Quick Selector over the open tabs
             &MenuItem::with_id(app, "switchSession", "Switch Session…", true, Some("CmdOrCtrl+Shift+O"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "splitRight", "Split Right", true, Some("CmdOrCtrl+D"))?,
+            &MenuItem::with_id(app, "splitDown", "Split Down", true, Some("CmdOrCtrl+Shift+D"))?,
+            &MenuItem::with_id(app, "joinAll", "Join All Tabs", true, None::<&str>)?,
         ],
     )?;
     let tools = Submenu::with_items(
@@ -1627,14 +1639,61 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &tools, &window])
 }
 
+/// What each new window opens first ("store:id"), by its label; taken once by `window_start`
+static WINDOW_OPENS: Mutex<Option<std::collections::HashMap<String, String>>> = Mutex::new(None);
+/// The window last brought to the front, which the menu bar's commands go to
+static FRONT_WINDOW: Mutex<Option<String>> = Mutex::new(None);
+/// The number of the next window ("window-2" ...)
+static NEXT_WINDOW: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(2);
+
+/// File > New Window, and Connect in new window (`open` the session, "store:id"), as SuperXPuTTY's new instance: another
+/// window with its own Sessions tree and tabs
+#[tauri::command]
+fn window_new(app: AppHandle, open: Option<String>) -> Result<(), String> {
+    let label = format!("window-{}", NEXT_WINDOW.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    if let Some(open) = open {
+        WINDOW_OPENS.lock().unwrap().get_or_insert_with(Default::default).insert(label.clone(), open);
+    }
+    let handle = app.clone();
+    // windows are made on the main thread (the web view's settings need it)
+    app.run_on_main_thread(move || {
+        // down and to the right of the window in front, as a Mac app cascades new windows
+        let front_label = FRONT_WINDOW.lock().unwrap().clone().unwrap_or_else(|| "main".into());
+        let front = handle.get_webview_window(&front_label).or_else(|| handle.get_webview_window("main"));
+        let at = front.and_then(|w| Some(w.outer_position().ok()?.to_logical::<f64>(w.scale_factor().ok()?))).map(|p| (p.x + 28.0, p.y + 28.0));
+        let _ = window(&handle, &label, at);
+        // in front at once, so the menu's next command (Cmd+T) goes to it
+        *FRONT_WINDOW.lock().unwrap() = Some(label.clone());
+        if let Some(new) = handle.get_webview_window(&label) {
+            let _ = new.set_focus();
+        }
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// What a window opens when it starts: a session ("store:id") for Connect in new window, else None (a Local Shell)
+#[tauri::command]
+fn window_start(window: tauri::WebviewWindow) -> Option<String> {
+    WINDOW_OPENS.lock().unwrap().as_mut().and_then(|opens| opens.remove(window.label()))
+}
+
 /// The main window, made here rather than in tauri.conf.json so its web view can have Writing Tools off: macOS put
 /// its "Write with Siri" badge by the terminal's cursor, and offered to rewrite what's typed into a session
 fn main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
+    window(app, "main", None)
+}
+
+/// A SuperXTerminal window: the first ("main"), or another made by New Window ("window-2", ...) at `at` (logical)
+fn window(app: &tauri::AppHandle, label: &str, at: Option<(f64, f64)>) -> tauri::Result<()> {
+    let builder = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::default())
         .title("SuperXTerminal")
         .inner_size(1400.0, 900.0)
         .min_inner_size(800.0, 500.0)
         .disable_drag_drop_handler();
+    let builder = match at {
+        Some((x, y)) => builder.position(x, y),
+        None => builder,
+    };
     #[cfg(target_os = "macos")]
     let builder = builder.with_webview_configuration(writing_tools_off());
     builder.build()?;
@@ -1697,7 +1756,15 @@ pub fn run() {
         .menu(menu)
         // menu items the UI handles arrive there as a "menu" event with the item's id
         .on_menu_event(|app, event| {
-            let _ = app.emit("menu", event.id().0.as_str());
+            // to the window in front only: with several windows, Cmd+T opens one shell, in that window
+            let front = FRONT_WINDOW.lock().unwrap().clone().filter(|label| app.get_webview_window(label).is_some());
+            let _ = app.emit_to(front.as_deref().unwrap_or("main"), "menu", event.id().0.as_str());
+        })
+        // a window's tabs go with it: their shells and connections end
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Focused(true) => *FRONT_WINDOW.lock().unwrap() = Some(window.label().to_string()),
+            tauri::WindowEvent::Destroyed => pty::close_window(&window.state::<pty::Ptys>(), window.label()),
+            _ => {}
         })
         .setup(|app| {
             logs::sweep_temp();
@@ -1758,6 +1825,8 @@ pub fn run() {
             overrides_get,
             sessions_bulk_edit,
             sessions_export_csv,
+            window_new,
+            window_start,
             sessions_import_plan,
             sessions_import_apply,
             ssh_config_path,

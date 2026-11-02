@@ -244,6 +244,9 @@ export class TabArea {
       defaultTabComponent: "session",
       createTabComponent: () => new TabLabel(this),
       createRightHeaderActionComponent: () => new TabListButton(this),
+      // each tab's page stays where it is in the window and is only placed over its group, so moving a tab to
+      // another group (a split) doesn't reload the page, which would start its session again
+      defaultRenderer: "always",
     });
     this.api.onDidRemovePanel((panel) => {
       // its Highlighted Output stays, marked closed
@@ -463,6 +466,32 @@ export class TabArea {
         };
       }),
     );
+  }
+
+  /**
+   * Split: the tab moves to a new group beside its own (right) or under it (below), as dragging a tab to a group's
+   * edge does; with a tab of its own the group has nothing left to split off, so it stays
+   */
+  split(id: string, direction: "right" | "below"): void {
+    const panel = this.api.getPanel(id);
+    if (!panel || panel.group.panels.length < 2) return;
+    const group = this.api.addGroup({ referenceGroup: panel.group, direction });
+    panel.api.moveTo({ group });
+    panel.api.setActive();
+  }
+
+  /** How many groups the tabs are split into */
+  groupCount(): number {
+    return this.api.groups.length;
+  }
+
+  /** Join all the groups back into one, the active tab staying in front */
+  joinAll(): void {
+    const active = this.api.activePanel;
+    const [first, ...rest] = this.api.groups;
+    if (!first) return;
+    for (const group of rest) for (const panel of [...group.panels]) panel.api.moveTo({ group: first });
+    active?.api.setActive();
   }
 
   /** Switch to a tab */

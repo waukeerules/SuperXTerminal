@@ -63,6 +63,9 @@ pub struct AppSettings {
     pub show_session_detail: bool,
     /// Settings > Shortcuts: the actions' keys the user changed ("" for none); the others have keys.rs's defaults
     pub shortcuts: std::collections::BTreeMap<String, String>,
+    /// The menu bar icon, as SuperXPuTTY's Minimize to tray: sessions from its menu, and SuperXTerminal kept running
+    /// there when its last window closes
+    pub show_in_menu_bar: bool,
 }
 
 impl Default for AppSettings {
@@ -93,6 +96,7 @@ impl Default for AppSettings {
             show_layouts: false,
             show_session_detail: false,
             shortcuts: std::collections::BTreeMap::new(),
+            show_in_menu_bar: false,
         }
     }
 }

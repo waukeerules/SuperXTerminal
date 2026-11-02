@@ -46,6 +46,14 @@
   </fieldset>
 
   <fieldset>
+    <legend>Menu bar</legend>
+    <label class="check"><input type="checkbox" checked={settings.showInMenuBar}
+      onchange={(e) => void saveSettings({ showInMenuBar: e.currentTarget.checked })} /> Show SuperXTerminal in the menu bar</label>
+    <p class="hint">Its menu opens sessions (Favorites, Recent and every folder) without the window first, and
+      SuperXTerminal keeps running there when its last window closes, as SuperXPuTTY's Minimize to tray.</p>
+  </fieldset>
+
+  <fieldset>
     <legend>Links</legend>
     <p class="hint">superxterminal:// links open sessions and layouts (superxterminal://session/Lab/sw1,
       superxterminal://layout/Core). ssh:// and telnet:// links open in Terminal until SuperXTerminal is made their app.</p>

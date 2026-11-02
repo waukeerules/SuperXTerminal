@@ -47,6 +47,8 @@ export interface AppSettings {
   showSessionDetail: boolean;
   /** Settings > Shortcuts: the actions' keys changed from the defaults ("" for none) */
   shortcuts: Record<string, string>;
+  /** The menu bar icon (SuperXPuTTY's Minimize to tray), and SuperXTerminal kept running there with no window */
+  showInMenuBar: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -75,6 +77,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   showLayouts: false,
   showSessionDetail: false,
   shortcuts: {},
+  showInMenuBar: false,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

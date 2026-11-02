@@ -21,6 +21,7 @@ mod overrides;
 mod sessions;
 mod shortcuts;
 mod streams;
+mod tray;
 mod variables;
 mod settings;
 
@@ -137,7 +138,7 @@ fn profiles_delete(state: State<'_, AppState>, name: String) -> Result<Vec<Profi
 
 /// Read (or read again) the session and folder files, and give the UI what it shows
 #[tauri::command]
-fn sessions_load(state: State<'_, AppState>) -> SessionsLoaded {
+fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
     let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
     let saved_off = !state.settings.lock().unwrap().use_sessions_xml;
     *state.files_seen.lock().unwrap() = files_fingerprint(&state);
@@ -164,6 +165,7 @@ fn sessions_load(state: State<'_, AppState>) -> SessionsLoaded {
         saved_off,
     };
     *state.sessions.lock().unwrap() = loaded;
+    tray::refresh(&app);
     result
 }
 
@@ -608,28 +610,34 @@ fn shortcuts_get(state: State<'_, AppState>) -> shortcuts::Shortcuts {
 
 /// Add a session to Favorites, or take it out
 #[tauri::command]
-fn shortcuts_favorite(state: State<'_, AppState>, id: String, on: bool) -> Result<shortcuts::Shortcuts, String> {
-    shortcuts::edit(&state.user_folder, |s| {
+fn shortcuts_favorite(app: AppHandle, state: State<'_, AppState>, id: String, on: bool) -> Result<shortcuts::Shortcuts, String> {
+    let changed = shortcuts::edit(&state.user_folder, |s| {
         s.favorites.retain(|f| *f != id);
         if on {
             s.favorites.push(id);
         }
-    })
+    });
+    tray::refresh(&app);
+    changed
 }
 
 /// Record a session opened from the tree, first in Recent
 #[tauri::command]
-fn shortcuts_opened(state: State<'_, AppState>, id: String) -> Result<shortcuts::Shortcuts, String> {
-    shortcuts::edit(&state.user_folder, |s| shortcuts::push_recent(&mut s.recent, &id))
+fn shortcuts_opened(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<shortcuts::Shortcuts, String> {
+    let changed = shortcuts::edit(&state.user_folder, |s| shortcuts::push_recent(&mut s.recent, &id));
+    tray::refresh(&app);
+    changed
 }
 
 /// Take one session out of Recent, or clear it (`id` None)
 #[tauri::command]
-fn shortcuts_forget_recent(state: State<'_, AppState>, id: Option<String>) -> Result<shortcuts::Shortcuts, String> {
-    shortcuts::edit(&state.user_folder, |s| match &id {
+fn shortcuts_forget_recent(app: AppHandle, state: State<'_, AppState>, id: Option<String>) -> Result<shortcuts::Shortcuts, String> {
+    let changed = shortcuts::edit(&state.user_folder, |s| match &id {
         Some(id) => s.recent.retain(|r| r != id),
         None => s.recent.clear(),
-    })
+    });
+    tray::refresh(&app);
+    changed
 }
 
 /// Remember Favorites or Recent being opened or closed by the user
@@ -688,9 +696,13 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
     if let Ok(bar) = menu(&app, &current.shortcuts) {
         let _ = app.set_menu(bar);
     }
+    let saved = current.clone();
+    drop(current);
+    // and the menu bar icon, Settings > General
+    tray::refresh(&app);
     // every window reads them again, so another window's next save doesn't put back what it had
     let _ = app.emit(SETTINGS_CHANGED, ());
-    Ok(current.clone())
+    Ok(saved)
 }
 
 /// Database sessions' settings for the window, and whether a password is stored
@@ -1720,8 +1732,44 @@ fn layout_rename(state: State<'_, AppState>, from: String, to: String) -> Result
 /// front to take it (`requests_take`)
 static PENDING: Mutex<Vec<cli::Request>> = Mutex::new(Vec::new());
 
-/// Something to open from outside: kept for the window in front, which is told and brought forward
-fn deliver<R: Runtime>(app: &AppHandle<R>, request: Option<cli::Request>) {
+/// The menu bar icon's items ("tray:..."): a session opens in the window in front, or in a new one when none is open
+fn tray_command(app: &AppHandle, id: &str) {
+    let has_window = !app.webview_windows().is_empty();
+    if let Some(rest) = id.strip_prefix("tray:open:") {
+        // "<store>:<id>"; Database sessions' ids start "@db/" already
+        let session = rest.split_once(':').map(|(_, id)| id).unwrap_or(rest);
+        deliver(app, Some(cli::Request::Session { id: session.to_string() }));
+        return;
+    }
+    match id {
+        "tray:quit" => app.exit(0),
+        // a new window starts with a Local Shell
+        "tray:newLocalShell" | "tray:openSession" | "tray:newWindow" if !has_window => deliver(app, None),
+        "tray:newWindow" => {
+            let _ = window_new(app.clone(), None, None, None);
+        }
+        "tray:newLocalShell" | "tray:openSession" => {
+            deliver(app, None);
+            let front = FRONT_WINDOW.lock().unwrap().clone().unwrap_or_else(|| "main".into());
+            let _ = app.emit_to(front.as_str(), "menu", id.trim_start_matches("tray:"));
+        }
+        _ => deliver(app, None),
+    }
+}
+
+/// Something to open from outside: kept for the window in front, which is told and brought forward; with no window
+/// open (SuperXTerminal kept in the menu bar), a new one, which takes it as it starts
+fn deliver(app: &AppHandle, request: Option<cli::Request>) {
+    if app.webview_windows().is_empty() {
+        if let Some(request) = request {
+            PENDING.lock().unwrap().push(request);
+        }
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let _ = main_window(&handle);
+        });
+        return;
+    }
     let front = FRONT_WINDOW.lock().unwrap().clone().filter(|label| app.get_webview_window(label).is_some()).unwrap_or_else(|| "main".into());
     if let Some(request) = request {
         PENDING.lock().unwrap().push(request);
@@ -1897,6 +1945,10 @@ pub fn run() {
         })
         // menu items the UI handles arrive there as a "menu" event with the item's id
         .on_menu_event(|app, event| {
+            if event.id().0.starts_with("tray:") {
+                tray_command(app, event.id().0.as_str());
+                return;
+            }
             // to the window in front only: with several windows, Cmd+T opens one shell, in that window
             let front = FRONT_WINDOW.lock().unwrap().clone().filter(|label| app.get_webview_window(label).is_some());
             let _ = app.emit_to(front.as_deref().unwrap_or("main"), "menu", event.id().0.as_str());
@@ -1912,6 +1964,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             no_siri_badge();
             main_window(app.handle())?;
+            tray::refresh(app.handle());
             Ok(())
         })
         .manage(pty::Ptys::default())
@@ -2021,13 +2074,24 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // a link macOS hands over (superxterminal://, ssh://, telnet://)
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Opened { urls } = &event {
-                for url in urls {
-                    deliver(app, cli::from_url(url.as_str()));
+            match &event {
+                // a link macOS hands over (superxterminal://, ssh://, telnet://)
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Opened { urls } => {
+                    for url in urls {
+                        deliver(app, cli::from_url(url.as_str()));
+                    }
                 }
+                // the last window closed: with the menu bar icon, SuperXTerminal keeps running there
+                tauri::RunEvent::ExitRequested { api, code: None, .. } => {
+                    if app.state::<AppState>().settings.lock().unwrap().show_in_menu_bar {
+                        api.prevent_exit();
+                    }
+                }
+                // the Dock icon clicked with no window open: a new one
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { has_visible_windows: false, .. } => deliver(app, None),
+                _ => {}
             }
-            let _ = (app, event);
         });
 }

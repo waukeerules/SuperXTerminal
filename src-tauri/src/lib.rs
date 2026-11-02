@@ -549,7 +549,13 @@ fn session_external(state: State<'_, AppState>, store: sessions::Store, id: Stri
     match (how.as_str(), session.get("Proto").to_ascii_uppercase().as_str()) {
         ("open", "RDP") => external::open_rdp(session, &host, &username, &state.settings.lock().unwrap().rdp_defaults.clone()),
         ("open", "VNC") => external::open_vnc(&host, port, &username),
-        ("filezilla", _) => external::open_filezilla(&host, port, &username),
+        ("filezilla", _) => external::open_filezilla(
+            &host,
+            port,
+            &username,
+            &variables::substitute(session.get("LocalPath"), &values),
+            &variables::substitute(session.get("RemotePath"), &values),
+        ),
         ("terminal", _) => {
             let launch = launch::launch(&sessions, &profiles, &values, &serial_devices, store, session)?;
             if launch.stream.is_some() || launch.local {

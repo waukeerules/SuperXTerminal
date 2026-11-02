@@ -92,6 +92,9 @@ pub struct SessionView {
     pub locked: bool,
     /// Database sessions: the columns locked in the table, comma-separated ("host,port")
     pub locked_fields: String,
+    /// Database sessions: a change not in the table yet (waiting, or refused), and what became of it
+    pub pending: bool,
+    pub pending_note: String,
 }
 
 /// Every session and folder setting, as last read
@@ -180,6 +183,8 @@ fn view(session: &StoredSession, store: Store) -> SessionView {
         color: session.get("Color").to_string(),
         note: session.get("Note").to_string(),
         updated_by: session.get("DatabaseUpdatedBy").to_string(),
+        pending: session.get("DatabasePending") == "true",
+        pending_note: session.get("DatabasePendingNote").to_string(),
         locked: session.get("DatabaseLocked") == "true",
         locked_fields: session.get("DatabaseLockedFields").to_string(),
         id,

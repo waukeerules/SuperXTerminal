@@ -13,7 +13,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 |---|---|
 | [M0 Skeleton](#m0-skeleton) | ✅ |
 | [M1 MVP](#m1-mvp) | ✅ |
-| [M2 Database sessions](#m2-database-sessions) | 🚧 |
+| [M2 Database sessions](#m2-database-sessions) | ✅ |
 | [M3 Scripting and commands](#m3-scripting-and-commands) | ⬜ |
 | [M4 Terminal extras](#m4-terminal-extras) | ⬜ |
 | [M5 The rest](#m5-the-rest) | ⬜ |
@@ -89,14 +89,15 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 - ✅ Connect as `SuperPuTTY`, with the nickname (checked against the team's PostgreSQL 17.5)
 - ✅ Read in pages in the background; `@db/` ids (the team's 4 sessions, folders, icons and colours as in SuperXPuTTY)
-- 🚧 Cache (`DatabaseSessions.cache.xml`) and retry while offline, as SuperXPuTTY: the cache is shown at once at start, then the table is read; a cache from another connection (its Source) isn't used; while offline the change check stops and a full read is tried every 2 minutes; the root shows "(3,214)", "(loading...)" or "(offline, cached 09:41)". Not yet tried offline in the app
-- 🚧 Writes (insert, update, delete, read back) and the outbox: writes done (Edit Session, New session, Delete, Colour; folder New, Rename, Delete, Colour, Folder settings; dragging), each read back, with conflicts refused (checked on test rows in the team's table); the offline outbox next
-- 🚧 Locks (`locked`, `locked_fields`) checked in the UI: locked rows can't be edited, deleted or moved, and locked fields are greyed in Edit Session; the table's guard trigger checked on a test table (`sxt_test_sessions`: locked row, locked fields, the locks themselves, managed_by; scripts under another application name not stopped); not yet seen in the app
+- ✅ Cache (`DatabaseSessions.cache.xml`) and retry while offline, as SuperXPuTTY: the cache is shown at once at start, then the table is read; a cache from another connection (its Source) isn't used; while offline the change check stops and a full read is tried every 2 minutes; the root shows "(loading...)", "(offline, cached 09:41)", "(1 pending)" or "(1 not saved)". Checked offline in the app (through a local forwarder that was stopped and started)
+- ✅ Writes and the offline outbox, as SuperXPuTTY's Submit and DatabaseOutbox: online with nothing queued a change is written at once; offline (or behind queued changes) it's queued in `DatabaseSessions.outbox.json`, shown in italics with a note, and sent in order before the next read; refused ones are kept under Database sessions > Pending changes (Send again, Overwrite theirs, Discard). Checked in the app on a test table: a colour change and a delete made offline; the delete sent, the colour refused because someone else changed the row, then saved with Overwrite theirs
+- ✅ Locks (`locked`, `locked_fields`): locked rows can't be edited, deleted or moved (Copy to still works), and locked fields are greyed in Edit Session; the table's guard trigger refuses the same (locked row, locked fields, the locks themselves, managed_by) while scripts under another application name aren't stopped. Checked on a test table, in the app and by an ignored test (`cargo test schema_and_locks -- --ignored`)
 - ✅ Changes noticed every 30 s (`<table>_version`): a session added in SuperXPuTTY on Windows appeared on the Mac within the check
 - ✅ `deleted_at` rows hidden (in the query; columns a table lacks read as defaults)
 - ✅ Folders table (colours, defaults): read, applied and written (Colour, Folder settings…; moved and removed with renamed and deleted folders)
 - ✅ Move to / Copy to between Database and Saved/Private (and between Saved and Private): to the same folder path, without database fields; a move out of the table asks first and leaves locked rows; clashing names are refused and stay put. Checked with a test session through all three
-- 🚧 Database settings dialog, Create / upgrade schema, read-only: Tools > Database Sessions… with Test connection and Read only. Create / upgrade schema ported from SuperXPuTTY (same SQL, so either app's run leaves the same table), enabled when Test finds something missing; checked on a test table (new table, and upgrading an older one). Not yet clicked in the app
+- ✅ Database settings dialog, Create / upgrade schema, read-only: Tools > Database Sessions… with Test connection and Read only. Create / upgrade schema ported from SuperXPuTTY (same SQL, so either app's run leaves the same table), enabled when Test finds something missing; checked in the app (a new table) and by the ignored test (a new table, and upgrading an older one)
+- ✅ 10,000 sessions (`lots_of_sessions`): read in 0.84 s (20 pages of 500), cache written in 55 ms and read in 30 ms; in the app about 2 s from OK to the tree, search as you type (3,600 matches for "acc-sw0") and nested folders open at once
 - ✅ Database settings export/import (SuperXPuTTY's JSON), Clear; password in the Keychain
 
 ## M3 Scripting and commands

@@ -27,6 +27,10 @@ export interface SessionView {
   locked: boolean;
   /** Database sessions: the columns locked in the table, comma-separated ("host,port") */
   lockedFields: string;
+  /** Database sessions: a change not in the table yet (waiting while it can't be reached, or refused) */
+  pending: boolean;
+  /** What became of it, for the tooltip */
+  pendingNote: string;
 }
 
 /** One folder's own settings: its colour and the defaults its sessions inherit */
@@ -158,6 +162,43 @@ export interface DbState {
   count: number;
   /** When the sessions shown were read, "HH:MM" */
   syncedAt: string;
+  /** Changes waiting to be sent, and changes the table refused */
+  pending: number;
+  failed: number;
+}
+
+/** A change to Database sessions not in the table yet, for Pending changes */
+export interface PendingChange {
+  id: string;
+  /** e.g. "Change Lab/sw1", "Rename folder Lab to Labs" */
+  what: string;
+  queuedAt: string;
+  /** Why the table refused it; null while it's waiting */
+  error: string | null;
+  /** Will save over someone else's change */
+  force: boolean;
+  /** A refused edit, which Overwrite theirs can save */
+  canOverwrite: boolean;
+}
+
+/** The queued and refused changes, oldest first */
+export function pendingChanges(): Promise<PendingChange[]> {
+  return invoke<PendingChange[]>("db_pending_list");
+}
+
+/** Send changes again (overwrite: edits over someone else's change); they go now if the table can be reached */
+export function retryPending(ids: string[], overwrite: boolean): Promise<DbState> {
+  return invoke<DbState>("db_pending_retry", { ids, overwrite });
+}
+
+/** Drop changes; the sessions go back to what the table has */
+export function discardPending(ids: string[]): Promise<DbState> {
+  return invoke<DbState>("db_pending_discard", { ids });
+}
+
+/** How Database sessions stand now, without reading the table */
+export function databaseStatus(): Promise<DbState> {
+  return invoke<DbState>("db_status");
 }
 
 /** Show the cached Database sessions at once, before the table is read */

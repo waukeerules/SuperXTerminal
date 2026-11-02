@@ -120,8 +120,13 @@ pub fn has_password() -> bool {
 /// Connect as SuperXPuTTY does: application name SuperPuTTY, 8 s timeout, the chosen SSL mode, and the nickname.
 /// `typed` is a password typed in the window but not saved yet (Test connection).
 async fn connect(settings: &DbSettings, user_folder: &Path, typed: Option<&str>) -> Result<Client, String> {
+    open(settings, user_folder, typed).await.map_err(|e| e.message)
+}
+
+/// Connect, saying whether a failure means the database can't be reached (so a change is queued) or refused us
+async fn open(settings: &DbSettings, user_folder: &Path, typed: Option<&str>) -> Result<Client, WriteError> {
     if settings.host.trim().is_empty() || settings.user.trim().is_empty() {
-        return Err("Set the host and username in Database sessions first.".into());
+        return Err(WriteError::refused("Set the host and username in Database sessions first."));
     }
     let mut config = tokio_postgres::Config::new();
     config
@@ -136,7 +141,7 @@ async fn connect(settings: &DbSettings, user_folder: &Path, typed: Option<&str>)
     }
     let mode = settings.ssl_mode.to_ascii_lowercase();
     let client = if mode == "disable" {
-        let (client, connection) = config.connect(NoTls).await.map_err(describe)?;
+        let (client, connection) = config.connect(NoTls).await.map_err(write_error)?;
         tauri::async_runtime::spawn(connection);
         client
     } else {
@@ -151,8 +156,8 @@ async fn connect(settings: &DbSettings, user_folder: &Path, typed: Option<&str>)
             .danger_accept_invalid_certs(!verify)
             .danger_accept_invalid_hostnames(mode != "verifyfull")
             .build()
-            .map_err(|e| e.to_string())?;
-        let (client, connection) = config.connect(postgres_native_tls::MakeTlsConnector::new(tls)).await.map_err(describe)?;
+            .map_err(|e| WriteError::refused(&e.to_string()))?;
+        let (client, connection) = config.connect(postgres_native_tls::MakeTlsConnector::new(tls)).await.map_err(write_error)?;
         tauri::async_runtime::spawn(connection);
         client
     };
@@ -161,7 +166,7 @@ async fn connect(settings: &DbSettings, user_folder: &Path, typed: Option<&str>)
         client
             .execute("SELECT set_config('superputty.nickname', $1, false)", &[&settings.nickname.trim()])
             .await
-            .map_err(describe)?;
+            .map_err(write_error)?;
     }
     Ok(client)
 }
@@ -352,6 +357,32 @@ fn to_session(c: &[String]) -> StoredSession {
     s.set("RdpOptions", &c[12]);
     s.set("LocalPath", &c[13]);
     s.set("RemotePath", &c[14]);
+    s
+}
+
+/// A row's values as a session (a change waiting in the outbox), as to_session does for a row read
+pub fn session_of(row: &Row, id: &str, version: &str) -> StoredSession {
+    let folder = row.folder.trim_matches('/');
+    let session_id = if folder.is_empty() { format!("@db/{}", row.name) } else { format!("@db/{folder}/{}", row.name) };
+    let mut s = StoredSession::new(&session_id);
+    s.set("DatabaseId", id);
+    s.set("DatabaseVersion", version);
+    s.set("Color", &row.color);
+    s.set("JumpHost", &row.jump_host);
+    s.set("HighlightRules", &row.highlight_rules);
+    s.set("SessionName", &row.name);
+    s.set("ImageKey", &row.icon);
+    s.set("Host", &row.host);
+    s.set("Note", &row.notes);
+    s.set("Port", &row.port.to_string());
+    s.set("Proto", &row.protocol);
+    s.set("PuttySession", &row.putty_profile);
+    s.set("Username", &row.username);
+    s.set("ExtraArgs", &row.extra_args);
+    s.set("SPSLFileName", &row.spsl_script);
+    s.set("RdpOptions", &row.rdp_options);
+    s.set("LocalPath", &row.local_path);
+    s.set("RemotePath", &row.remote_path);
     s
 }
 
@@ -575,6 +606,42 @@ pub struct ExportFile {
 
 #[cfg(test)]
 mod tests {
+    /// How long a read of a big table takes (e.g. lots_of_sessions, 10k rows), and its change token. Run with
+    /// SXT_DB_HOST, SXT_DB_USER, SXT_DB_PASSWORD and SXT_DB_TABLE set: `cargo test read_a_big_table -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn read_a_big_table() {
+        let env = |k: &str| std::env::var(k).expect(k);
+        let folder = std::env::temp_dir().join("sxt-db-test");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("EnvironmentVariables.json"),
+            serde_json::json!({ "Variables": [{ "Key": "dbpw", "Value": env("SXT_DB_PASSWORD"), "Secret": false }] }).to_string(),
+        )
+        .unwrap();
+        let settings = DbSettings {
+            enabled: true,
+            host: env("SXT_DB_HOST"),
+            user: env("SXT_DB_USER"),
+            table: env("SXT_DB_TABLE"),
+            password_placeholder: "{dbpw}".into(),
+            ..DbSettings::default()
+        };
+        let started = std::time::Instant::now();
+        let fetched = tauri::async_runtime::block_on(fetch_all(&settings, &folder)).unwrap();
+        println!("read {} sessions, {} folder settings in {:?}; token {}; optional columns {:?}; writable {}",
+            fetched.sessions.len(), fetched.folders.len(), started.elapsed(), fetched.token, fetched.optional_columns, fetched.writable);
+        let mut ids = std::collections::HashSet::new();
+        let duplicates = fetched.sessions.iter().filter(|s| !ids.insert(s.id())).count();
+        println!("duplicate ids: {duplicates}");
+        let started = std::time::Instant::now();
+        write_cache(&folder, &settings, &fetched).unwrap();
+        println!("cache written in {:?}, {} bytes", started.elapsed(), std::fs::metadata(cache_file(&folder)).unwrap().len());
+        let started = std::time::Instant::now();
+        let cached = read_cache(&folder, &settings).unwrap();
+        println!("cache read back: {} sessions in {:?}", cached.sessions.len(), started.elapsed());
+    }
+
     /// Create / upgrade schema and the lock trigger on a table of its own, superputty.sxt_test_sessions, which it
     /// drops first. Run with SXT_DB_HOST, SXT_DB_USER and SXT_DB_PASSWORD set:
     /// `cargo test schema_and_locks -- --ignored --nocapture`
@@ -691,6 +758,8 @@ mod tests {
 }
 
 /// One session's values for a write: the columns SuperXPuTTY writes (as its AddSessionParameters)
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Row {
     pub folder: String,
     pub name: String,
@@ -808,35 +877,58 @@ fn values(row: &Row, columns: &[&str]) -> Vec<Box<dyn tokio_postgres::types::ToS
 }
 
 /// Connect for a write, refusing when the settings are read-only
-async fn connect_to_write(settings: &DbSettings, user_folder: &Path) -> Result<Client, String> {
+async fn connect_to_write(settings: &DbSettings, user_folder: &Path) -> Result<Client, WriteError> {
     if settings.read_only {
-        return Err("The database connection is read-only, so nothing is created or changed.".into());
+        return Err(WriteError::refused("The database connection is read-only, so nothing is created or changed."));
     }
-    connect(settings, user_folder, None).await
+    open(settings, user_folder, None).await
 }
 
-/// A write's error as SuperXPuTTY words it: the lock trigger's refusal, a name clash, a refused name
-fn write_error(error: tokio_postgres::Error) -> String {
-    if let Some(db) = error.as_db_error() {
-        let code = db.code().code();
-        if code == "P0001" {
-            if let Some(reason) = db.message().strip_prefix("locked: ") {
-                let mut chars = reason.chars();
-                return chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default() + ".";
-            }
-        }
-        if code == "23505" {
-            return "A session with that name is already in that folder in the database (perhaps hidden there by its deleted_at).".into();
-        }
-        if code == "23514" {
-            return "The database refused the name or folder: names can't be empty or contain /.".into();
-        }
+/// Why a write failed, and whether it's because the database can't be reached (SuperXPuTTY's
+/// DatabaseUnavailableException): then the change is queued rather than refused
+#[derive(Debug)]
+pub struct WriteError {
+    pub message: String,
+    pub unavailable: bool,
+}
+
+impl WriteError {
+    pub fn refused(message: &str) -> WriteError {
+        WriteError { message: message.to_string(), unavailable: false }
     }
-    describe(error)
+}
+
+impl From<WriteError> for String {
+    fn from(e: WriteError) -> String {
+        e.message
+    }
+}
+
+/// A write's error as SuperXPuTTY words it: the lock trigger's refusal, a name clash, a refused name; no answer, a
+/// dropped connection or a server shutting down (08..., 57P...) is "can't be reached"
+fn write_error(error: tokio_postgres::Error) -> WriteError {
+    let Some(db) = error.as_db_error() else {
+        // no answer from the server (refused, timed out, dropped) is "can't be reached"; a mistake on our side isn't
+        let unavailable = error.is_closed() || std::error::Error::source(&error).is_some_and(|e| e.is::<std::io::Error>());
+        return WriteError { message: describe(error), unavailable };
+    };
+    let code = db.code().code();
+    let message = if code == "P0001" && db.message().starts_with("locked: ") {
+        let reason = &db.message()["locked: ".len()..];
+        let mut chars = reason.chars();
+        chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default() + "."
+    } else if code == "23505" {
+        "A session with that name is already in that folder in the database (perhaps hidden there by its deleted_at).".into()
+    } else if code == "23514" {
+        "The database refused the name or folder: names can't be empty or contain /.".into()
+    } else {
+        db.message().to_string()
+    };
+    WriteError { message, unavailable: code.starts_with("08") || code.starts_with("57P") }
 }
 
 /// Add a session; returns its id
-pub async fn insert(settings: &DbSettings, user_folder: &Path, optional: &[String], row: &Row) -> Result<String, String> {
+pub async fn insert(settings: &DbSettings, user_folder: &Path, optional: &[String], row: &Row) -> Result<String, WriteError> {
     let client = connect_to_write(settings, user_folder).await?;
     let columns = write_columns(optional);
     let params: Vec<String> = (1..=columns.len()).map(|i| format!("${i}")).collect();
@@ -846,10 +938,22 @@ pub async fn insert(settings: &DbSettings, user_folder: &Path, optional: &[Strin
     client.query_one(&sql, &refs).await.map(|r| r.get(0)).map_err(write_error)
 }
 
-/// Change a session, but only if nobody changed it since it was read (`version` is its updated_at as .NET ticks)
-pub async fn update(settings: &DbSettings, user_folder: &Path, optional: &[String], id: &str, version: &str, row: &Row) -> Result<(), String> {
-    let ticks: i64 = version.parse().map_err(|_| "This session was read by an older version; Refresh, then make your change again.")?;
-    let micros = (ticks - TICKS_AT_UNIX_EPOCH) / 10;
+/// Change a session, but only if nobody changed it since it was read (`version` is its updated_at as .NET ticks),
+/// unless `force` (Overwrite theirs, or a row this sync already changed)
+pub async fn update(
+    settings: &DbSettings,
+    user_folder: &Path,
+    optional: &[String],
+    id: &str,
+    version: &str,
+    row: &Row,
+    force: bool,
+) -> Result<(), WriteError> {
+    let micros = match version.parse::<i64>() {
+        Ok(ticks) => (ticks - TICKS_AT_UNIX_EPOCH) / 10,
+        Err(_) if force => 0,
+        Err(_) => return Err(WriteError::refused("This session was read by an older version; Refresh, then make your change again.")),
+    };
     let client = connect_to_write(settings, user_folder).await?;
     let columns = write_columns(optional);
     let n = columns.len();
@@ -858,23 +962,25 @@ pub async fn update(settings: &DbSettings, user_folder: &Path, optional: &[Strin
     values.push(Box::new(id.to_string()));
     values.push(Box::new(micros));
     let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = values.iter().map(|v| v.as_ref() as _).collect();
+    // Overwrite skips the version check; the parameter is still sent, so its type is given
+    let version_check =
+        if force { format!("${}::bigint IS NOT NULL", n + 2) } else { format!("(extract(epoch FROM updated_at) * 1000000)::bigint = ${}", n + 2) };
     let sql = format!(
-        "UPDATE {} SET ({}) = ({}) WHERE id = ${}::text::uuid AND (extract(epoch FROM updated_at) * 1000000)::bigint = ${}",
+        "UPDATE {} SET ({}) = ({}) WHERE id = ${}::text::uuid AND {version_check}",
         settings.table(),
         columns.join(", "),
         params.join(", "),
         n + 1,
-        n + 2
     );
     let rows = client.execute(&sql, &refs).await.map_err(write_error)?;
     if rows == 0 {
-        return Err("Someone else changed or deleted this session since it was read. Refresh, then make your change again.".into());
+        return Err(WriteError::refused("Someone else changed or deleted this session since it was read. Refresh, then make your change again."));
     }
     Ok(())
 }
 
 /// Delete a session
-pub async fn delete(settings: &DbSettings, user_folder: &Path, id: &str) -> Result<(), String> {
+pub async fn delete(settings: &DbSettings, user_folder: &Path, id: &str) -> Result<(), WriteError> {
     let client = connect_to_write(settings, user_folder).await?;
     client.execute(&format!("DELETE FROM {} WHERE id = $1::text::uuid", settings.table()), &[&id]).await.map_err(write_error)?;
     Ok(())
@@ -883,22 +989,28 @@ pub async fn delete(settings: &DbSettings, user_folder: &Path, id: &str) -> Resu
 /// The rows in a folder and below it, as SuperXPuTTY's InFolder
 const IN_FOLDER: &str = "(folder = $1 OR left(folder, length($1) + 1) = $1 || '/')";
 
-/// Rename or move a folder: every row below it, hidden ones too, and the folders' own settings
-pub async fn rename_folder(settings: &DbSettings, user_folder: &Path, from: &str, to: &str) -> Result<(), String> {
+/// Rename or move a folder: every row below it, hidden ones too, and the folders' own settings; returns the rows' ids
+pub async fn rename_folder(settings: &DbSettings, user_folder: &Path, from: &str, to: &str) -> Result<Vec<String>, WriteError> {
     let client = connect_to_write(settings, user_folder).await?;
     let (from, to) = (from.trim_matches('/'), to.trim_matches('/'));
-    client
-        .execute(&format!("UPDATE {} SET folder = $2 || substr(folder, length($1) + 1) WHERE {IN_FOLDER}", settings.table()), &[&from, &to])
+    let moved = client
+        .query(
+            &format!("UPDATE {} SET folder = $2 || substr(folder, length($1) + 1) WHERE {IN_FOLDER} RETURNING id::text", settings.table()),
+            &[&from, &to],
+        )
         .await
-        .map_err(write_error)?;
+        .map_err(write_error)?
+        .iter()
+        .map(|r| r.get(0))
+        .collect();
     let _ = client
         .execute(&format!("UPDATE {} SET folder = $2 || substr(folder, length($1) + 1) WHERE {IN_FOLDER}", settings.folders_table()), &[&from, &to])
         .await;
-    Ok(())
+    Ok(moved)
 }
 
 /// Delete a folder: the sessions it showed (rows hidden by deleted_at stay) and the folders' own settings
-pub async fn delete_folder(settings: &DbSettings, user_folder: &Path, folder: &str) -> Result<u64, String> {
+pub async fn delete_folder(settings: &DbSettings, user_folder: &Path, folder: &str) -> Result<u64, WriteError> {
     let client = connect_to_write(settings, user_folder).await?;
     let folder = folder.trim_matches('/');
     let removed = client
@@ -910,7 +1022,7 @@ pub async fn delete_folder(settings: &DbSettings, user_folder: &Path, folder: &s
 }
 
 /// Save a folder's settings in the folders table (all empty removes them), as SuperXPuTTY's SetFolder
-pub async fn set_folder(settings: &DbSettings, user_folder: &Path, f: &FolderSetting) -> Result<(), String> {
+pub async fn set_folder(settings: &DbSettings, user_folder: &Path, f: &FolderSetting) -> Result<(), WriteError> {
     let client = connect_to_write(settings, user_folder).await?;
     let path = f.path.trim_matches('/').to_string();
     let empty = f.color.is_empty() && f.username.is_empty() && f.putty_profile.is_empty() && f.port == 0
@@ -936,7 +1048,7 @@ pub async fn set_folder(settings: &DbSettings, user_folder: &Path, f: &FolderSet
     match result {
         Ok(_) => Ok(()),
         Err(e) if e.code().is_some_and(|c| c.code() == "42P01") => {
-            Err("The database has no folder settings table yet. Run Create / upgrade schema in Tools > Database sessions.".into())
+            Err(WriteError::refused("The database has no folder settings table yet. Run Create / upgrade schema in Tools > Database sessions."))
         }
         Err(e) => Err(write_error(e)),
     }

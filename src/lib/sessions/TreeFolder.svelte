@@ -69,6 +69,7 @@
     if (session.note) lines.push(session.note);
     if (session.updatedBy) lines.push(`Changed by ${session.updatedBy}`);
     if (session.locked) lines.push("Locked in the database");
+    if (session.pending) lines.unshift(session.pendingNote);
     const reason = unavailableReason(session.protocol);
     if (reason) lines.push(reason);
     return lines.join("\n");
@@ -94,7 +95,7 @@
   {#each node.sessions as session (session.store + ":" + session.id)}
     {@const reason = unavailableReason(session.protocol)}
     {@const key = `${session.store}:${session.id}`}
-    <div class="row session" class:dimmed={reason !== null} class:selected={selected === key}
+    <div class="row session" class:dimmed={reason !== null} class:pending={session.pending} class:selected={selected === key}
       onclick={() => onSelect(key)} draggable={!session.locked}
       ondragstart={(e) => drag(e, { kind: "session", store: session.store, id: session.id })}
       oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
@@ -110,6 +111,11 @@
 {/if}
 
 <style>
+  /* not in the table yet: queued while offline, or refused (SuperXPuTTY draws these in italics) */
+  .row.pending .label {
+    font-style: italic;
+  }
+
   .row {
     display: flex;
     align-items: center;

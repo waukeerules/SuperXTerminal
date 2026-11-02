@@ -17,6 +17,7 @@
     unavailableReason,
     refreshDatabase,
     cachedDatabase,
+    databaseStatus,
     databaseChanged,
     type DbState,
     type FolderSetting,
@@ -27,6 +28,7 @@
   } from "./api";
   import EditSession from "./EditSession.svelte";
   import FolderSettings from "./FolderSettings.svelte";
+  import PendingChanges from "./PendingChanges.svelte";
   import Prompt from "../ui/Prompt.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { PALETTE } from "../icons/palette";
@@ -55,6 +57,8 @@
   /** The session being edited: its store, its id (null for new) and its fields */
   let editing = $state<{ store: Store; id: string | null; fields: SessionFields; lockedFields?: string } | null>(null);
   /** A folder whose settings are being edited */
+  /** Whether Pending changes is open */
+  let showPending = $state(false);
   let folderSettings = $state<{ store: Store; setting: FolderSetting } | null>(null);
   /** A name being asked for (New folder, Rename) */
   let prompt = $state<{ title: string; value: string; validate: (name: string) => string; onOk: (name: string) => void } | null>(null);
@@ -78,7 +82,7 @@
   const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query, newFolders.saved) : null);
   const privateRoot = $derived(loaded ? buildTree("private", "Private sessions", loaded.sessions, query, newFolders.private) : null);
   const databaseRoot = $derived(
-    loaded && db?.enabled ? buildTree("database", `Database sessions (${dbStatus(db, dbLoading)})`, loaded.sessions, query, newFolders.database) : null,
+    loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), loaded.sessions, query, newFolders.database) : null,
   );
 
   // read again whenever the settings folder changes (Settings > General); the first run reads them at start
@@ -141,7 +145,7 @@
   /** Read the table again if it changed; not while a window is open, so a session being edited isn't replaced, and
    * not while offline (the retry takes over) */
   async function checkDatabase(): Promise<void> {
-    if (editing || folderSettings || prompt || menu || dbLoading || db?.error) return;
+    if (editing || folderSettings || prompt || menu || showPending || dbLoading || db?.error) return;
     try {
       if (await databaseChanged()) await readDatabase();
     } catch {
@@ -150,12 +154,14 @@
     }
   }
 
-  /** The root's status in brackets, as SuperXPuTTY's StatusText: "3,214", "loading...", "offline, cached 09:41" */
-  function dbStatus(state: DbState, loading: boolean): string {
-    const readOnly = state.writable ? "" : ", read-only";
-    if (loading) return "loading...";
-    if (state.error) return (state.syncedAt ? `offline, cached ${state.syncedAt}` : "offline") + readOnly;
-    return state.count.toLocaleString() + readOnly;
+  /** The root's label: the tree adds the count, so only SuperXPuTTY's other states are added, e.g. "(offline, cached
+   * 09:41)", "(loading...)", "(read-only)" */
+  function dbLabel(state: DbState, loading: boolean): string {
+    const parts = loading ? ["loading..."] : state.error ? [state.syncedAt ? `offline, cached ${state.syncedAt}` : "offline"] : [];
+    if (!state.writable && !loading) parts.push("read-only");
+    if (state.pending) parts.push(`${state.pending} pending`);
+    if (state.failed) parts.push(`${state.failed} not saved`);
+    return parts.length ? `Database sessions (${parts.join(", ")})` : "Database sessions";
   }
 
   /** Read the settings, custom icons and session files again */
@@ -164,6 +170,7 @@
       customs = await loadCustomIcons();
       onLook(settings.iconSize, customs);
       loaded = await loadSessions();
+      if (db?.enabled) db = await databaseStatus();
       error = "";
     } catch (e) {
       error = `Couldn't read the sessions: ${e}`;
@@ -236,9 +243,11 @@
     const dbBlock = (store: Store, locked = false): string | false =>
       store !== "database" ? false
       : !db?.writable ? "Read only: this login can't change the table, or Read only is ticked in Database Sessions"
-      : db.error ? "The database can't be reached right now"
       : locked ? "Locked in the database"
       : false;
+    // folder settings aren't queued while offline, as in SuperXPuTTY: they need the table
+    const folderBlock = (store: Store): string | false =>
+      dbBlock(store) || (store === "database" && db?.error ? "Folder settings are saved only while the database can be reached" : false);
     if ("session" in target) {
       const session = target.session;
       const block = dbBlock(session.store, session.locked);
@@ -273,7 +282,15 @@
       const block = dbBlock(folder.store, sessionsIn(folder).some((s) => s.locked));
       const canAdd = dbBlock(folder.store);
       items = [
-        ...(folder.store === "database" && isRoot ? [{ label: "Refresh", action: () => void readDatabase() }, { separator: true } as MenuItem] : []),
+        ...(folder.store === "database" && isRoot
+          ? [
+              { label: "Refresh", action: () => void readDatabase() },
+              ...(db && db.pending + db.failed > 0
+                ? [{ label: `Pending changes (${db.pending + db.failed})…`, action: () => (showPending = true) }]
+                : []),
+              { separator: true } as MenuItem,
+            ]
+          : []),
         { label: "New session…", disabled: canAdd, action: () => (editing = { store: folder.store, id: null, fields: blank(folder.path) }) },
         { label: "New folder…", disabled: canAdd, action: () => newFolder(folder) },
         ...(isRoot
@@ -282,13 +299,13 @@
               { label: "Rename…", disabled: block, action: () => rename(folder) },
               {
                 label: "Colour",
-                disabled: canAdd,
+                disabled: folderBlock(folder.store),
                 items: [
                   { label: "None", swatch: "", action: () => void setFolderColour(folder, "") },
                   ...PALETTE.map((p) => ({ label: p.name, swatch: p.color, action: () => void setFolderColour(folder, p.color) })),
                 ],
               },
-              { label: "Folder settings…", disabled: canAdd, action: () => (folderSettings = { store: folder.store, setting: settingOf(folder) }) },
+              { label: "Folder settings…", disabled: folderBlock(folder.store), action: () => (folderSettings = { store: folder.store, setting: settingOf(folder) }) },
               { label: "Delete folder", disabled: block, action: () => void removeFolder(folder) },
               ...transferItems(sessionsIn(folder), folder.store, sessionsIn(folder).some((s) => s.locked)),
             ] as MenuItem[])),
@@ -314,7 +331,7 @@
       disabled: sessions.length === 0 ? "No sessions here" : move && from === "database" && locked ? "Locked in the database" : false,
       items: targets.map((to) => ({
         label: ROOT_NAMES[to],
-        disabled: to === "database" && (!db?.writable || !!db.error) ? "Database sessions can't be written now" : false,
+        disabled: to === "database" && !db?.writable ? "Database sessions can't be written now" : false,
         action: () => void transfer(sessions, from, to, move),
       })),
     });
@@ -519,6 +536,10 @@
 {#if folderSettings}
   <FolderSettings store={folderSettings.store} setting={folderSettings.setting} onCancel={() => (folderSettings = null)}
     onSaved={async () => { folderSettings = null; await reload(); }} />
+{/if}
+
+{#if showPending}
+  <PendingChanges onChanged={async (state) => { db = state; loaded = await loadSessions(); }} onClose={() => (showPending = false)} />
 {/if}
 
 {#if prompt}

@@ -8,6 +8,7 @@ mod launch;
 mod profiles;
 mod pty;
 mod secrets;
+mod outbox;
 mod sessions;
 mod variables;
 mod settings;
@@ -30,6 +31,8 @@ pub struct AppState {
     profiles: Mutex<Profiles>,
     /// Database sessions' state: the change token of the last read, and how the last read went
     database: Mutex<DbState>,
+    /// The Database sessions as last read from the table (or its cache), before queued changes are applied on top
+    db_server: Mutex<Vec<sessions::StoredSession>>,
 }
 
 /// How Database sessions stand, for the tree's root
@@ -52,6 +55,9 @@ struct DbState {
     count: usize,
     /// When the sessions shown were read, "HH:MM", for "offline, cached 09:41"
     synced_at: String,
+    /// Changes waiting to be sent, and changes the table refused (Pending changes)
+    pending: usize,
+    failed: usize,
 }
 
 /// The user's profiles, "Default Settings" first; passwords are only marked as stored, never sent
@@ -322,11 +328,16 @@ async fn refresh_database(state: &AppState) -> Result<DbState, String> {
     let user_folder = state.user_folder.clone();
     if !settings.enabled {
         state.sessions.lock().unwrap().database.clear();
+        state.db_server.lock().unwrap().clear();
         let mut db_state = state.database.lock().unwrap();
         *db_state = DbState::default();
         return Ok(db_state.clone());
     }
-    let result = db::fetch_all(&settings, &user_folder).await;
+    // as SuperXPuTTY's BeginSync: send what's queued first, then read
+    let result = match if settings.read_only { Ok(()) } else { flush(state, &settings).await } {
+        Ok(()) => db::fetch_all(&settings, &user_folder).await,
+        Err(unreachable) => Err(unreachable),
+    };
     let mut db_state = state.database.lock().unwrap();
     db_state.enabled = true;
     db_state.source = format!("{}.{}", settings.schema, settings.table);
@@ -339,8 +350,8 @@ async fn refresh_database(state: &AppState) -> Result<DbState, String> {
             db_state.error.clear();
             db_state.count = fetched.sessions.len();
             db_state.synced_at = chrono::Local::now().format("%H:%M").to_string();
+            *state.db_server.lock().unwrap() = fetched.sessions;
             let mut sessions = state.sessions.lock().unwrap();
-            sessions.database = fetched.sessions;
             sessions.folders.insert(sessions::Store::Database, fetched.folders.into_iter().map(|f| (f.path.clone(), f)).collect());
         }
         Err(error) => {
@@ -352,26 +363,153 @@ async fn refresh_database(state: &AppState) -> Result<DbState, String> {
             db_state.error = error;
         }
     }
+    show_database(state, &settings, &mut db_state);
     Ok(db_state.clone())
+}
+
+/// Show the table's sessions with the queued changes on top, and count what's pending (SuperXPuTTY's ShowSessions)
+fn show_database(state: &AppState, settings: &db::DbSettings, db_state: &mut DbState) {
+    let changes = outbox::changes(&state.user_folder, &settings.source());
+    (db_state.pending, db_state.failed) = outbox::count(&changes);
+    let server = state.db_server.lock().unwrap();
+    let shown = if changes.is_empty() { server.clone() } else { outbox::apply(&server, &changes) };
+    state.sessions.lock().unwrap().database = shown;
 }
 
 /// Show this connection's cache, as SuperXPuTTY does at start before the table is read; nothing if it's another's
 fn show_cache(state: &AppState, settings: &db::DbSettings, db_state: &mut DbState) {
+    let cached = db::read_cache(&state.user_folder, settings);
+    let mut server = state.db_server.lock().unwrap();
     let mut sessions = state.sessions.lock().unwrap();
-    match db::read_cache(&state.user_folder, settings) {
+    match cached {
         Some(cached) => {
             db_state.writable = cached.writable;
             db_state.optional_columns = cached.optional_columns;
             db_state.count = cached.sessions.len();
             db_state.synced_at = cached.synced_at.get(11..16).unwrap_or_default().to_string();
-            sessions.database = cached.sessions;
+            *server = cached.sessions;
             sessions.folders.insert(sessions::Store::Database, cached.folders.into_iter().map(|f| (f.path.clone(), f)).collect());
         }
         None => {
             *db_state = DbState { enabled: true, source: db_state.source.clone(), ..DbState::default() };
-            sessions.database.clear();
+            server.clear();
             sessions.folders.remove(&sessions::Store::Database);
         }
+    }
+}
+
+/// Send one change to the table, as SuperXPuTTY's ApplyChange. Rows this sync already changed (e.g. moved by a
+/// queued folder rename) are updated without the version check: the version they were read at is older than our own.
+async fn apply_change(
+    settings: &db::DbSettings,
+    user_folder: &std::path::Path,
+    optional: &[String],
+    change: &outbox::PendingChange,
+    touched: &mut std::collections::HashSet<String>,
+) -> Result<(), db::WriteError> {
+    use outbox::Kind;
+    let row = || change.row.clone().ok_or_else(|| db::WriteError::refused("The change has no session values."));
+    match change.kind {
+        Kind::Insert => {
+            touched.insert(db::insert(settings, user_folder, optional, &row()?).await?);
+        }
+        Kind::Update => {
+            let force = change.force || touched.contains(&change.row_id);
+            db::update(settings, user_folder, optional, &change.row_id, &change.version, &row()?, force).await?;
+            touched.insert(change.row_id.clone());
+        }
+        Kind::Delete => db::delete(settings, user_folder, &change.row_id).await?,
+        Kind::RenameFolder => touched.extend(db::rename_folder(settings, user_folder, &change.from, &change.to).await?),
+        Kind::DeleteFolder => {
+            db::delete_folder(settings, user_folder, &change.from).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Send the queued changes in order, as SuperXPuTTY's Flush: a refused one is marked with why and left for the user,
+/// the rest still go; stops with the reason if the table can't be reached
+async fn flush(state: &AppState, settings: &db::DbSettings) -> Result<(), String> {
+    let (_, user_folder, optional) = db_write_context(state);
+    let source = settings.source();
+    let mut touched = std::collections::HashSet::new();
+    for change in outbox::changes(&user_folder, &source).into_iter().filter(|c| c.error.is_none()) {
+        match apply_change(settings, &user_folder, &optional, &change, &mut touched).await {
+            Ok(()) => outbox::remove(&user_folder, &source, &change.id)?,
+            Err(e) if e.unavailable => return Err(e.message),
+            Err(e) => outbox::set_error(&user_folder, &source, &change.id, Some(e.message), false)?,
+        }
+    }
+    Ok(())
+}
+
+/// What a batch of changes from the tree did
+#[derive(Default)]
+struct Submitted {
+    /// Saved or queued
+    done: usize,
+    /// Why each refused one was refused, e.g. "core-sw1: Host is locked in the database."
+    problems: Vec<String>,
+    /// The positions of the refused ones, so a move removes only what arrived
+    refused: std::collections::HashSet<usize>,
+}
+
+/// Make changes from the tree, as SuperXPuTTY's SubmitBatch: online with nothing queued, each is written at once;
+/// offline, or behind queued changes (to keep their order), or once the table drops mid-way, they're queued and shown
+/// at once. One refused change doesn't stop the others. Then the table is read again (or, offline, the queue shown).
+async fn submit(state: &AppState, changes: Vec<outbox::PendingChange>) -> Result<Submitted, String> {
+    let (settings, user_folder, optional) = db_write_context(state);
+    let mut result = Submitted::default();
+    if settings.read_only {
+        result.problems.push("The database connection is read-only.".into());
+        result.refused.extend(0..changes.len());
+        return Ok(result);
+    }
+    let source = settings.source();
+    let online = {
+        let d = state.database.lock().unwrap();
+        d.error.is_empty() && !d.token.is_empty()
+    };
+    let mut direct = online && outbox::changes(&user_folder, &source).is_empty();
+    let mut touched = std::collections::HashSet::new();
+    for (i, change) in changes.into_iter().enumerate() {
+        // a session still waiting to be added can only be changed in the queue
+        if direct && !change.row_id.starts_with("pending:") {
+            match apply_change(&settings, &user_folder, &optional, &change, &mut touched).await {
+                Ok(()) => {
+                    result.done += 1;
+                    continue;
+                }
+                // the rest are queued, in order, after this one
+                Err(e) if e.unavailable => direct = false,
+                Err(e) => {
+                    let what = change.row.as_ref().map(|r| r.name.clone()).unwrap_or_else(|| change.from.clone());
+                    result.problems.push(format!("{what}: {}", e.message));
+                    result.refused.insert(i);
+                    continue;
+                }
+            }
+        }
+        outbox::add(&user_folder, &source, change)?;
+        result.done += 1;
+    }
+    if state.database.lock().unwrap().error.is_empty() {
+        refresh_database(state).await?;
+    } else {
+        let mut db_state = state.database.lock().unwrap();
+        show_database(state, &settings, &mut db_state);
+    }
+    Ok(result)
+}
+
+/// One change from the tree: Err with why when the table refused it
+async fn submit_one(state: &AppState, change: outbox::PendingChange) -> Result<(), String> {
+    let submitted = submit(state, vec![change]).await?;
+    match submitted.problems.first() {
+        // a single change's reason, without its name in front
+        Some(problem) if !submitted.refused.is_empty() => Err(problem.split_once(": ").map(|(_, why)| why).unwrap_or(problem).to_string()),
+        Some(problem) => Err(problem.clone()),
+        None => Ok(()),
     }
 }
 
@@ -387,6 +525,7 @@ fn db_cached(state: State<'_, AppState>) -> DbState {
     }
     *db_state = DbState { enabled: true, source: format!("{}.{}", settings.schema, settings.table), ..DbState::default() };
     show_cache(&state, &settings, &mut db_state);
+    show_database(&state, &settings, &mut db_state);
     db_state.clone()
 }
 
@@ -411,7 +550,6 @@ fn db_session(state: &AppState, id: &str) -> Result<sessions::StoredSession, Str
 #[tauri::command]
 async fn db_session_save(state: State<'_, AppState>, original_id: Option<String>, fields: editing::SessionFields) -> Result<String, String> {
     folders::check_name(&fields.name)?;
-    let (settings, user_folder, optional) = db_write_context(&state);
     match &original_id {
         Some(id) => {
             let stored = db_session(&state, id)?;
@@ -423,13 +561,18 @@ async fn db_session_save(state: State<'_, AppState>, original_id: Option<String>
                     return Err(format!("{locked} of \"{}\" is locked in the database.", before.name));
                 }
             }
-            db::update(&settings, &user_folder, &optional, stored.get("DatabaseId"), stored.get("DatabaseVersion"), &row).await?;
+            let mut change = outbox::PendingChange::new(outbox::Kind::Update);
+            change.row_id = stored.get("DatabaseId").to_string();
+            change.version = stored.get("DatabaseVersion").to_string();
+            change.row = Some(row);
+            submit_one(&state, change).await?;
         }
         None => {
-            db::insert(&settings, &user_folder, &optional, &editing::to_row(&fields, None)).await?;
+            let mut change = outbox::PendingChange::new(outbox::Kind::Insert);
+            change.row = Some(editing::to_row(&fields, None));
+            submit_one(&state, change).await?;
         }
     }
-    refresh_database(&state).await?;
     let id = editing::SessionFields { folder: fields.folder.clone(), ..fields }.id();
     Ok(format!("@db/{id}"))
 }
@@ -438,10 +581,10 @@ async fn db_session_save(state: State<'_, AppState>, original_id: Option<String>
 #[tauri::command]
 async fn db_session_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let stored = db_session(&state, &id)?;
-    let (settings, user_folder, _) = db_write_context(&state);
-    db::delete(&settings, &user_folder, stored.get("DatabaseId")).await?;
-    refresh_database(&state).await?;
-    Ok(())
+    let mut change = outbox::PendingChange::new(outbox::Kind::Delete);
+    change.row_id = stored.get("DatabaseId").to_string();
+    change.from = stored.id().trim_start_matches("@db/").to_string();
+    submit_one(&state, change).await
 }
 
 /// Move a Database session to another folder of the table, then read it back; returns its new id
@@ -451,10 +594,12 @@ async fn db_session_move(state: State<'_, AppState>, id: String, folder: String)
     if stored.get("DatabaseLockedFields").split(',').any(|f| f.trim() == "folder") {
         return Err(format!("The folder of \"{}\" is locked in the database.", stored.get("SessionName")));
     }
-    let (settings, user_folder, optional) = db_write_context(&state);
     let row = db::Row::of(&stored, &folder);
-    db::update(&settings, &user_folder, &optional, stored.get("DatabaseId"), stored.get("DatabaseVersion"), &row).await?;
-    refresh_database(&state).await?;
+    let mut change = outbox::PendingChange::new(outbox::Kind::Update);
+    change.row_id = stored.get("DatabaseId").to_string();
+    change.version = stored.get("DatabaseVersion").to_string();
+    change.row = Some(row.clone());
+    submit_one(&state, change).await?;
     let folder = folder.trim_matches('/');
     Ok(if folder.is_empty() { format!("@db/{}", row.name) } else { format!("@db/{folder}/{}", row.name) })
 }
@@ -474,10 +619,10 @@ async fn db_folder_move(state: State<'_, AppState>, from: String, to: String) ->
     if let Some(name) = blocked {
         return Err(format!("\"{name}\" in this folder is locked in the database, so the folder can't be renamed here."));
     }
-    let (settings, user_folder, _) = db_write_context(&state);
-    db::rename_folder(&settings, &user_folder, &from, &to).await?;
-    refresh_database(&state).await?;
-    Ok(())
+    let mut change = outbox::PendingChange::new(outbox::Kind::RenameFolder);
+    change.from = from.trim_matches('/').to_string();
+    change.to = to.trim_matches('/').to_string();
+    submit_one(&state, change).await
 }
 
 /// Delete a Database folder and the sessions it shows, then read the table back
@@ -493,10 +638,9 @@ async fn db_folder_delete(state: State<'_, AppState>, path: String) -> Result<()
     if let Some(name) = blocked {
         return Err(format!("\"{name}\" in this folder is locked in the database, so the folder can't be removed here."));
     }
-    let (settings, user_folder, _) = db_write_context(&state);
-    db::delete_folder(&settings, &user_folder, &path).await?;
-    refresh_database(&state).await?;
-    Ok(())
+    let mut change = outbox::PendingChange::new(outbox::Kind::DeleteFolder);
+    change.from = path.trim_matches('/').to_string();
+    submit_one(&state, change).await
 }
 
 /// Save a Database folder's settings in the folders table, then read the table back
@@ -545,15 +689,19 @@ async fn sessions_transfer(
         ids.iter().filter_map(|id| all.find(from, id).cloned()).collect()
     };
     let mut problems = Vec::new();
-    let mut arrived: Vec<sessions::StoredSession> = Vec::new();
-    if to == Store::Database {
-        let (settings, user_folder, optional) = db_write_context(&state);
-        for session in &picked {
-            match db::insert(&settings, &user_folder, &optional, &db::Row::of(session, session.folder())).await {
-                Ok(_) => arrived.push(session.clone()),
-                Err(e) => problems.push(format!("{}: {e}", session.id())),
-            }
-        }
+    
+    let arrived: Vec<sessions::StoredSession> = if to == Store::Database {
+        let changes = picked
+            .iter()
+            .map(|session| {
+                let mut change = outbox::PendingChange::new(outbox::Kind::Insert);
+                change.row = Some(db::Row::of(session, session.folder()));
+                change
+            })
+            .collect();
+        let submitted = submit(&state, changes).await?;
+        problems.extend(submitted.problems);
+        picked.iter().enumerate().filter(|(i, _)| !submitted.refused.contains(i)).map(|(_, s)| s.clone()).collect()
     } else {
         let path = store_file(&state, to)?;
         let others = other_ids(&state, to);
@@ -581,27 +729,88 @@ async fn sessions_transfer(
             }
             Ok(())
         })?;
-        arrived = added;
-    }
-    if delete_source {
+        added
+    };
+    if delete_source && from == Store::Database {
+        let mut deletes = Vec::new();
         for session in &arrived {
-            let result = match from {
-                Store::Database if session.get("DatabaseLocked") == "true" => Err(format!("{}: locked in the database, so it stays there.", session.id())),
-                Store::Database => {
-                    let (settings, user_folder, _) = db_write_context(&state);
-                    db::delete(&settings, &user_folder, session.get("DatabaseId")).await
-                }
-                _ => store_file(&state, from).and_then(|path| editing::delete(&path, session.id())),
-            };
-            if let Err(e) = result {
+            if session.get("DatabaseLocked") == "true" {
+                problems.push(format!("{}: locked in the database, so it stays there.", session.id()));
+                continue;
+            }
+            let mut change = outbox::PendingChange::new(outbox::Kind::Delete);
+            change.row_id = session.get("DatabaseId").to_string();
+            change.from = session.id().trim_start_matches("@db/").to_string();
+            deletes.push(change);
+        }
+        problems.extend(submit(&state, deletes).await?.problems);
+    } else if delete_source {
+        for session in &arrived {
+            if let Err(e) = store_file(&state, from).and_then(|path| editing::delete(&path, session.id())) {
                 problems.push(e);
             }
         }
     }
-    if from == Store::Database || to == Store::Database {
-        refresh_database(&state).await?;
-    }
     Ok(TransferReport { done: arrived.len(), problems })
+}
+
+/// How Database sessions stand now, without reading anything (after a change from the tree)
+#[tauri::command]
+fn db_status(state: State<'_, AppState>) -> DbState {
+    state.database.lock().unwrap().clone()
+}
+
+/// One queued change, for the Pending changes window
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingView {
+    id: String,
+    what: String,
+    queued_at: String,
+    error: Option<String>,
+    force: bool,
+    /// An edit refused by the table, which Overwrite theirs can save over someone else's change
+    can_overwrite: bool,
+}
+
+/// The connection's queued and refused changes, oldest first
+#[tauri::command]
+fn db_pending_list(state: State<'_, AppState>) -> Vec<PendingView> {
+    let settings = state.settings.lock().unwrap().database.clone();
+    outbox::changes(&state.user_folder, &settings.source())
+        .into_iter()
+        .map(|c| PendingView {
+            what: c.describe(),
+            can_overwrite: c.kind == outbox::Kind::Update && c.error.is_some(),
+            id: c.id,
+            queued_at: c.queued_at,
+            error: c.error,
+            force: c.force,
+        })
+        .collect()
+}
+
+/// Send the chosen changes again (`overwrite`: edits over someone else's change); they go now if the table can be
+/// reached
+#[tauri::command]
+async fn db_pending_retry(state: State<'_, AppState>, ids: Vec<String>, overwrite: bool) -> Result<DbState, String> {
+    let source = state.settings.lock().unwrap().database.source();
+    for id in &ids {
+        outbox::set_error(&state.user_folder, &source, id, None, overwrite)?;
+    }
+    refresh_database(&state).await
+}
+
+/// Drop the chosen changes; the sessions go back to what the table has
+#[tauri::command]
+fn db_pending_discard(state: State<'_, AppState>, ids: Vec<String>) -> Result<DbState, String> {
+    let settings = state.settings.lock().unwrap().database.clone();
+    for id in &ids {
+        outbox::remove(&state.user_folder, &settings.source(), id)?;
+    }
+    let mut db_state = state.database.lock().unwrap();
+    show_database(&state, &settings, &mut db_state);
+    Ok(db_state.clone())
 }
 
 /// Create / upgrade schema with the window's values (and a password typed there), as SuperXPuTTY's button
@@ -768,6 +977,7 @@ pub fn run() {
             sessions: Mutex::new(Sessions::default()),
             profiles: Mutex::new(profiles),
             database: Mutex::new(DbState::default()),
+            db_server: Mutex::new(Vec::new()),
         })
         .invoke_handler(tauri::generate_handler![
             sessions_load,
@@ -800,6 +1010,10 @@ pub fn run() {
             db_folder_settings_save,
             sessions_transfer,
             db_create_schema,
+            db_pending_list,
+            db_status,
+            db_pending_retry,
+            db_pending_discard,
             variables_save,
             profiles_list,
             profiles_save,

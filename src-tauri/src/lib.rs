@@ -30,6 +30,7 @@ mod streams;
 mod tray;
 mod variables;
 mod settings;
+mod sftp;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -2042,7 +2043,8 @@ pub fn run() {
             tauri::WindowEvent::Destroyed => {
                 applog::info(format!("Window {} closed; its sessions end", window.label()));
                 pty::close_window(&window.state::<pty::Ptys>(), window.label());
-                rdp::close_window(&window.state::<rdp::Rdps>(), window.label())
+                rdp::close_window(&window.state::<rdp::Rdps>(), window.label());
+                sftp::close_window(&window.state::<sftp::Sftps>(), window.label())
             }
             _ => {}
         })
@@ -2057,6 +2059,7 @@ pub fn run() {
         })
         .manage(pty::Ptys::default())
         .manage(rdp::Rdps::default())
+        .manage(sftp::Sftps::default())
         .manage(logs::Logs::default())
         .manage(AppState {
             user_folder,
@@ -2162,6 +2165,19 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_close,
+            sftp::sftp_open,
+            sftp::sftp_close,
+            sftp::sftp_answer,
+            sftp::sftp_list,
+            sftp::sftp_mkdir,
+            sftp::sftp_rename,
+            sftp::sftp_delete,
+            sftp::sftp_cancel,
+            sftp::sftp_transfer,
+            sftp::local_list,
+            sftp::local_mkdir,
+            sftp::local_rename,
+            sftp::local_reveal,
             rdp::rdp_open,
             rdp::rdp_key,
             rdp::rdp_keys,

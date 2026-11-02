@@ -1,44 +1,94 @@
-//! Connect external's login: the Terminal window's ssh gets the session's password without it ever being on the
-//! command line, in the environment or on screen. The command carries a one-time token instead, and ssh is told to
-//! ask SuperXTerminal itself for passwords (`SSH_ASKPASS`, this app's own program, with `SSH_ASKPASS_REQUIRE=force`).
-//! Run that way, the program swaps the token for the password over a socket only this user can reach, and the token
-//! is then spent. Anything else ssh asks (trusting a new host key, a key's passphrase, the password again after a
-//! wrong one) is asked in the Terminal window, as ssh would itself.
+//! Logins for ssh run by the app itself rather than in a tab: Connect external's Terminal window and the SFTP file
+//! transfer's connection. Their ssh gets the session's password without it ever being on the command line, in the
+//! environment or on screen. The command carries a token instead, and ssh is told to ask SuperXTerminal itself
+//! (`SSH_ASKPASS`, this app's own program, with `SSH_ASKPASS_REQUIRE=force`). Run that way, the program asks the
+//! running app over a socket only this user can reach: the password, once; anything else (trusting a new host key,
+//! a key's passphrase, the password again after a wrong one) is asked in the terminal when there is one (Connect
+//! external), else by the app in a dialog (file transfer).
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Set on the ssh command: the token, and that this program is being run as ssh's askpass
 pub const TOKEN_VAR: &str = "SXT_ASKPASS";
 
-/// How long a token waits for ssh to use it
+/// How long a token lasts: a password waits two minutes for ssh; one that can ask the user, as long as it's kept
 const LIFETIME: Duration = Duration::from_secs(120);
 
-/// Tokens not yet used, with their password and when they were made
-static TOKENS: Mutex<Option<HashMap<String, (String, Instant)>>> = Mutex::new(None);
+/// Asks the user ssh's question (the prompt, and whether the answer is secret); None when cancelled
+pub type Asker = Arc<dyn Fn(&str, bool) -> Option<String> + Send + Sync>;
+
+struct Entry {
+    /// Given once, at the first password question
+    password: Option<String>,
+    /// For questions the password doesn't answer; a token with one lasts until it's dropped
+    asker: Option<Asker>,
+    made: Instant,
+}
+
+static TOKENS: Mutex<Option<HashMap<String, Entry>>> = Mutex::new(None);
 
 /// The socket, in this user's own temporary folder
 fn socket_path() -> std::path::PathBuf {
     std::env::temp_dir().join("SuperXTerminal").join("askpass.sock")
 }
 
-/// A token for a password, good once, for two minutes; the listener starts with the first one
-#[cfg(unix)]
+/// A token for a password, good once, for two minutes (Connect external)
 pub fn register(password: &str) -> Result<String, String> {
+    add(Entry { password: Some(password.to_string()), asker: None, made: Instant::now() })
+}
+
+/// A token that gives its password (if any) once and asks the user anything else; drop it with `forget`
+pub fn register_asking(password: Option<&str>, asker: Asker) -> Result<String, String> {
+    add(Entry { password: password.map(str::to_string), asker: Some(asker), made: Instant::now() })
+}
+
+/// The token's connection is done
+pub fn forget(token: &str) {
+    if let Some(tokens) = TOKENS.lock().unwrap().as_mut() {
+        tokens.remove(token);
+    }
+}
+
+#[cfg(unix)]
+fn add(entry: Entry) -> Result<String, String> {
     listen()?;
     let mut bytes = [0u8; 16];
     std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut bytes)).map_err(|e| e.to_string())?;
     let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
     let mut tokens = TOKENS.lock().unwrap();
     let tokens = tokens.get_or_insert_with(HashMap::new);
-    tokens.retain(|_, (_, made)| made.elapsed() < LIFETIME);
-    tokens.insert(token.clone(), (password.to_string(), Instant::now()));
+    tokens.retain(|_, e| e.asker.is_some() || e.made.elapsed() < LIFETIME);
+    tokens.insert(token.clone(), entry);
     Ok(token)
 }
 
-/// Answer tokens on the socket (once per run of the app): a line with a token gets its password, once
+#[cfg(not(unix))]
+fn add(_entry: Entry) -> Result<String, String> {
+    Err("Not on this system".into())
+}
+
+/// The answer to one request: "password" takes the token's password (once); "ask" asks the user
+fn answer(token: &str, kind: &str, prompt: &str) -> String {
+    let asker = {
+        let mut tokens = TOKENS.lock().unwrap();
+        let Some(entry) = tokens.as_mut().and_then(|t| t.get_mut(token)) else { return String::new() };
+        if entry.asker.is_none() && entry.made.elapsed() >= LIFETIME {
+            return String::new();
+        }
+        if kind == "password" {
+            return entry.password.take().unwrap_or_default();
+        }
+        entry.asker.clone()
+    };
+    // asked outside the lock: the user may take a while
+    let secret = !prompt.to_lowercase().contains("yes/no");
+    asker.and_then(|ask| ask(prompt, secret)).unwrap_or_default()
+}
+
+/// Answer requests on the socket (once per run of the app): "token\nkind\nprompt" (newlines in the prompt as \x01)
 #[cfg(unix)]
 fn listen() -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
@@ -57,22 +107,19 @@ fn listen() -> Result<(), String> {
                 .name("askpass".into())
                 .spawn(move || {
                     for stream in listener.incoming().flatten() {
-                        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-                        let mut line = String::new();
-                        let mut reader = BufReader::new(&stream);
-                        if reader.read_line(&mut line).is_err() {
-                            continue;
-                        }
-                        let password = TOKENS
-                            .lock()
-                            .unwrap()
-                            .as_mut()
-                            .and_then(|tokens| tokens.remove(line.trim()))
-                            .filter(|(_, made)| made.elapsed() < LIFETIME)
-                            .map(|(password, _)| password)
-                            .unwrap_or_default();
-                        let mut stream = &stream;
-                        let _ = stream.write_all(password.as_bytes());
+                        // each on its own thread: a question can wait on the user
+                        std::thread::spawn(move || {
+                            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                            let mut request = String::new();
+                            if BufReader::new(&stream).read_to_string(&mut request).is_err() {
+                                return;
+                            }
+                            let mut parts = request.splitn(3, '\n');
+                            let (token, kind, prompt) = (parts.next().unwrap_or(""), parts.next().unwrap_or("password"), parts.next().unwrap_or(""));
+                            let reply = answer(token.trim(), kind.trim(), &prompt.replace('\x01', "\n"));
+                            let mut stream = &stream;
+                            let _ = stream.write_all(reply.as_bytes());
+                        });
                     }
                 })
                 .map_err(|e| e.to_string())?;
@@ -81,13 +128,8 @@ fn listen() -> Result<(), String> {
         .clone()
 }
 
-#[cfg(not(unix))]
-pub fn register(_password: &str) -> Result<String, String> {
-    Err("Not on this system".into())
-}
-
 /// Run as ssh's askpass (the token is set): print the answer to ssh's question and say so. The password question
-/// is answered with the token's password the first time; anything else is asked in the terminal.
+/// is answered with the token's password the first time; anything else is asked in the terminal, or by the app.
 #[cfg(unix)]
 pub fn helper() -> bool {
     let Ok(token) = std::env::var(TOKEN_VAR) else { return false };
@@ -95,9 +137,12 @@ pub fn helper() -> bool {
     let lower = prompt.to_lowercase();
     let mut answer = None;
     if lower.contains("password") && !lower.contains("passphrase") {
-        answer = fetch(&token).filter(|p| !p.is_empty());
+        answer = fetch(&token, "password", &prompt).filter(|p| !p.is_empty());
     }
-    let answer = answer.or_else(|| ask_in_terminal(&prompt, !lower.contains("yes/no"))).unwrap_or_default();
+    let answer = answer
+        .or_else(|| ask_in_terminal(&prompt, !lower.contains("yes/no")))
+        .or_else(|| fetch(&token, "ask", &prompt))
+        .unwrap_or_default();
     println!("{answer}");
     true
 }
@@ -107,19 +152,20 @@ pub fn helper() -> bool {
     false
 }
 
-/// The token's password from the running app, if it's still waiting
+/// Ask the running app
 #[cfg(unix)]
-fn fetch(token: &str) -> Option<String> {
+fn fetch(token: &str, kind: &str, prompt: &str) -> Option<String> {
     let mut stream = std::os::unix::net::UnixStream::connect(socket_path()).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
-    stream.write_all(format!("{token}\n").as_bytes()).ok()?;
+    // a question waits on the user
+    stream.set_read_timeout(Some(Duration::from_secs(if kind == "ask" { 600 } else { 5 }))).ok()?;
+    stream.write_all(format!("{token}\n{kind}\n{}", prompt.replace('\n', "\x01")).as_bytes()).ok()?;
     stream.shutdown(std::net::Shutdown::Write).ok()?;
-    let mut password = String::new();
-    stream.read_to_string(&mut password).ok()?;
-    Some(password)
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).ok()?;
+    Some(reply)
 }
 
-/// Ask in the Terminal window, hiding what's typed for a secret
+/// Ask in the terminal, hiding what's typed for a secret; None when there's no terminal
 #[cfg(unix)]
 fn ask_in_terminal(prompt: &str, secret: bool) -> Option<String> {
     use std::os::fd::AsRawFd;

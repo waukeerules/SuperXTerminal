@@ -421,7 +421,11 @@
         { label: "Delete", disabled: block, action: () => void remove(session) },
         ...transferItems([session], session.store, session.locked),
         { separator: true },
-        { label: "File transfer (SFTP)", disabled: "The SFTP file browser comes later" },
+        {
+          label: "File transfer (SFTP)",
+          disabled: (session.protocol || "SSH").toUpperCase() !== "SSH" && "File transfer is for SSH sessions",
+          action: () => context.tabs?.openSftp(session.store, session.id, session.name, session.icon, colors.forSession(session)),
+        },
         { label: "FileZilla (external)", action: () => void external(session, "filezilla") },
       ];
     } else {

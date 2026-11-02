@@ -1,0 +1,716 @@
+//! File transfer, as SuperXPuTTY's File transfer (pscp): a session's files beside this Mac's, copied either way.
+//!
+//! The connection is OpenSSH's own (`ssh -s <host> sftp`, as sshfs does), started with the same arguments as the
+//! session's terminal tab (`launch.rs`), so keys, ssh-agent, ~/.ssh/config, jump hosts, older algorithms and
+//! known_hosts behave the same. The session's password, and any question ssh asks (a new host key, a passphrase),
+//! go through `askpass.rs`, asked in a dialog. SFTP itself is spoken over ssh's pipes by russh-sftp (Apache-2.0).
+//! Windows ships OpenSSH too, so this carries over to a Windows build.
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, UNIX_EPOCH};
+
+use futures_util::stream::{self, StreamExt};
+use russh_sftp::client::error::Error as SftpError;
+use russh_sftp::client::RawSftpSession;
+use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
+use serde::Serialize;
+use tauri::ipc::Channel;
+use tauri::{AppHandle, Emitter, State};
+
+use crate::sessions::Store;
+use crate::AppState;
+
+/// Bytes a read or write asks for, and how many are in flight at once
+const CHUNK: u32 = 32 * 1024;
+const IN_FLIGHT: usize = 16;
+
+struct Conn {
+    raw: Arc<RawSftpSession>,
+    child: tokio::sync::Mutex<tokio::process::Child>,
+    token: String,
+    window: String,
+}
+
+/// Every open file transfer, by the id given to its tab, and the transfers that can be cancelled
+#[derive(Default)]
+pub struct Sftps {
+    conns: Mutex<HashMap<u32, Arc<Conn>>>,
+    cancels: Mutex<HashMap<u32, Arc<AtomicBool>>>,
+}
+
+static NEXT: AtomicU32 = AtomicU32::new(1);
+
+/// What a tab opens on
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Opened {
+    id: u32,
+    /// The remote home folder, and where the remote pane starts (the session's remote path, else home)
+    home: String,
+    remote: String,
+    /// Where the local pane starts (the session's local path, else this Mac's home)
+    local: String,
+    /// user@host, for the tab
+    address: String,
+}
+
+/// One file or folder in a pane
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Entry {
+    name: String,
+    dir: bool,
+    link: bool,
+    size: u64,
+    /// Seconds since 1970; 0 when unknown
+    modified: u64,
+    /// As `ls -l` shows them (drwxr-xr-x)
+    permissions: String,
+    owner: String,
+    group: String,
+}
+
+#[derive(Serialize)]
+pub struct Listing {
+    path: String,
+    entries: Vec<Entry>,
+}
+
+/// A transfer's progress: its total once counted, then the bytes done and the file it's on
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum Progress {
+    Total { bytes: u64, files: u64 },
+    Done { bytes: u64, file: String },
+}
+
+/// A question ssh asks while connecting, for the window to put to the user (`sftp_answer` replies)
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Ask {
+    ask_id: u32,
+    title: String,
+    prompt: String,
+    secret: bool,
+}
+
+static ASKS: Mutex<Option<HashMap<u32, std::sync::mpsc::Sender<Option<String>>>>> = Mutex::new(None);
+
+/// Ask the user in the window, waiting up to ten minutes
+fn ask_user(app: &AppHandle, window: &str, title: &str, prompt: &str, secret: bool) -> Option<String> {
+    let ask_id = NEXT.fetch_add(1, Ordering::Relaxed);
+    let (tx, rx) = std::sync::mpsc::channel();
+    ASKS.lock().unwrap().get_or_insert_with(HashMap::new).insert(ask_id, tx);
+    let _ = app.emit_to(window, "sftp-ask", Ask { ask_id, title: title.into(), prompt: prompt.trim().into(), secret });
+    let answer = rx.recv_timeout(Duration::from_secs(600)).ok().flatten();
+    if let Some(asks) = ASKS.lock().unwrap().as_mut() {
+        asks.remove(&ask_id);
+    }
+    answer
+}
+
+/// The user's answer to an `sftp-ask` (None: cancelled)
+#[tauri::command]
+pub fn sftp_answer(ask_id: u32, answer: Option<String>) {
+    if let Some(tx) = ASKS.lock().unwrap().as_mut().and_then(|asks| asks.remove(&ask_id)) {
+        let _ = tx.send(answer);
+    }
+}
+
+fn plain(error: SftpError) -> String {
+    match error {
+        SftpError::Status(status) => match status.status_code {
+            StatusCode::NoSuchFile => "No such file or folder".into(),
+            StatusCode::PermissionDenied => "Permission denied".into(),
+            _ if !status.error_message.is_empty() => status.error_message,
+            code => code.to_string(),
+        },
+        other => other.to_string(),
+    }
+}
+
+fn conn(sftps: &Sftps, id: u32) -> Result<Arc<Conn>, String> {
+    sftps.conns.lock().unwrap().get(&id).cloned().ok_or_else(|| "The file transfer has closed.".to_string())
+}
+
+/// Connect to a session's files
+#[tauri::command]
+pub async fn sftp_open(
+    app: AppHandle,
+    window: tauri::Window,
+    state: State<'_, AppState>,
+    sftps: State<'_, Sftps>,
+    store: Store,
+    id: String,
+) -> Result<Opened, String> {
+    let (launch, title, local, remote) = {
+        let profiles = state.profiles.lock().unwrap().clone();
+        let values = crate::variables::values(&state.user_folder);
+        let serial_devices = state.settings.lock().unwrap().serial_devices.clone();
+        let sessions = state.sessions.lock().unwrap();
+        let stored = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
+        let session = crate::overrides::applied(&state.user_folder, stored);
+        let launch = crate::launch::launch(&sessions, &profiles, &values, &serial_devices, store, &session)?;
+        if launch.login.is_none() {
+            return Err("File transfer is for SSH sessions.".into());
+        }
+        let local = crate::variables::substitute(session.get("LocalPath").trim(), &values);
+        let remote = crate::variables::substitute(session.get("RemotePath").trim(), &values);
+        (launch, session.get("SessionName").to_string(), local, remote)
+    };
+    let login = launch.login.clone().unwrap_or_default();
+
+    // the terminal's ssh, without its terminal, running the sftp subsystem
+    let mut args: Vec<String> = launch.command.get_argv().iter().skip(1).map(|w| w.to_string_lossy().to_string()).filter(|w| w != "-tt").collect();
+    args.splice(0..0, ["-s".to_string(), "-T".to_string(), "-o".to_string(), "ServerAliveInterval=30".to_string()]);
+    args.push("sftp".into());
+
+    let label = window.label().to_string();
+    let (app_for_ask, label_for_ask, title_for_ask) = (app.clone(), label.clone(), title.clone());
+    let token = crate::askpass::register_asking(
+        launch.password.as_deref(),
+        Arc::new(move |prompt: &str, secret: bool| ask_user(&app_for_ask, &label_for_ask, &title_for_ask, prompt, secret)),
+    )?;
+    let program = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut child = tokio::process::Command::new("ssh")
+        .args(&args)
+        .env("SSH_ASKPASS", &program)
+        .env("SSH_ASKPASS_REQUIRE", "force")
+        .env(crate::askpass::TOKEN_VAR, &token)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Couldn't start ssh: {e}"))?;
+
+    // what ssh says on its way (refused, unreachable), for the error if it fails
+    let said = Arc::new(Mutex::new(String::new()));
+    if let Some(stderr) = child.stderr.take() {
+        let said = said.clone();
+        tokio::spawn(async move {
+            use tokio::io::AsyncBufReadExt;
+            let mut lines = tokio::io::BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let mut said = said.lock().unwrap();
+                said.push_str(&line);
+                said.push('\n');
+            }
+        });
+    }
+    let (stdin, stdout) = (child.stdin.take().unwrap(), child.stdout.take().unwrap());
+    let raw = Arc::new(RawSftpSession::new(tokio::io::join(stdout, stdin)));
+    // logging in can wait on the user (a host key, a password)
+    raw.set_timeout(600);
+    if let Err(e) = raw.init().await {
+        crate::askpass::forget(&token);
+        // ssh's own words, once it has ended
+        let _ = tokio::time::timeout(Duration::from_secs(3), child.wait()).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let said = said.lock().unwrap().trim().to_string();
+        let reason = if !said.is_empty() && !said.to_lowercase().starts_with("connection closed") {
+            said
+        } else if matches!(e, SftpError::UnexpectedBehavior(_) | SftpError::IO(_)) || said.to_lowercase().starts_with("connection closed") {
+            // logged in, then dropped: no SFTP there (network devices often have only SCP), or the login was refused
+            format!(
+                "{} closed the connection. It may not offer SFTP (many switches and routers only offer SCP), or it refused the login.",
+                login.host
+            )
+        } else {
+            plain(e)
+        };
+        return Err(format!("Couldn't open the file transfer: {reason}"));
+    }
+    raw.set_timeout(60);
+    let home = raw.realpath(".").await.map_err(plain)?.files.into_iter().next().map(|f| f.filename).unwrap_or_else(|| "/".into());
+    let remote = if remote.is_empty() { home.clone() } else { remote };
+    let local = if local.is_empty() { dirs::home_dir().unwrap_or_default().to_string_lossy().to_string() } else { local };
+    let address = if login.username.is_empty() { login.host.clone() } else { format!("{}@{}", login.username, login.host) };
+    crate::applog::info(format!("File transfer opened to {address}"));
+
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    sftps.conns.lock().unwrap().insert(id, Arc::new(Conn { raw, child: tokio::sync::Mutex::new(child), token, window: label }));
+    Ok(Opened { id, home, remote, local, address })
+}
+
+/// The tab closed: disconnect
+#[tauri::command]
+pub async fn sftp_close(sftps: State<'_, Sftps>, id: u32) -> Result<(), String> {
+    let conn = sftps.conns.lock().unwrap().remove(&id);
+    if let Some(conn) = conn {
+        crate::askpass::forget(&conn.token);
+        let _ = conn.raw.close_session();
+        let _ = conn.child.lock().await.kill().await;
+    }
+    Ok(())
+}
+
+/// A window closed: its file transfers disconnect
+pub fn close_window(sftps: &Sftps, label: &str) {
+    sftps.conns.lock().unwrap().retain(|_, c| {
+        if c.window == label {
+            crate::askpass::forget(&c.token);
+            let _ = c.raw.close_session();
+            if let Ok(mut child) = c.child.try_lock() {
+                let _ = child.start_kill();
+            }
+            false
+        } else {
+            true
+        }
+    });
+}
+
+/// `drwxr-xr-x` from a mode
+fn mode_text(mode: u32) -> String {
+    let kind = match mode & 0o170000 {
+        0o040000 => 'd',
+        0o120000 => 'l',
+        _ => '-',
+    };
+    let mut text = String::from(kind);
+    for shift in [6, 3, 0] {
+        let bits = (mode >> shift) & 7;
+        text.push(if bits & 4 != 0 { 'r' } else { '-' });
+        text.push(if bits & 2 != 0 { 'w' } else { '-' });
+        text.push(if bits & 1 != 0 { 'x' } else { '-' });
+    }
+    text
+}
+
+/// A remote path joined to a name
+fn join(dir: &str, name: &str) -> String {
+    if dir.ends_with('/') { format!("{dir}{name}") } else { format!("{dir}/{name}") }
+}
+
+/// Everything in a remote folder
+async fn read_dir(raw: &RawSftpSession, path: &str) -> Result<Vec<russh_sftp::protocol::File>, String> {
+    let handle = raw.opendir(path).await.map_err(plain)?.handle;
+    let mut files = Vec::new();
+    loop {
+        match raw.readdir(handle.as_str()).await {
+            Ok(name) => files.extend(name.files),
+            Err(SftpError::Status(s)) if s.status_code == StatusCode::Eof => break,
+            Err(e) => {
+                let _ = raw.close(handle).await;
+                return Err(plain(e));
+            }
+        }
+    }
+    let _ = raw.close(handle).await;
+    files.retain(|f| f.filename != "." && f.filename != "..");
+    Ok(files)
+}
+
+/// A remote folder's files, its path made absolute (`..` and `~` resolved)
+#[tauri::command]
+pub async fn sftp_list(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<Listing, String> {
+    let conn = conn(&sftps, id)?;
+    let raw = &conn.raw;
+    let path = raw.realpath(if path.trim().is_empty() { "." } else { path.trim() }).await.map_err(plain)?.files.into_iter().next().map(|f| f.filename).unwrap_or(path);
+    let mut entries = Vec::new();
+    for file in read_dir(raw, &path).await? {
+        let attrs = &file.attrs;
+        let link = attrs.is_symlink();
+        // a link shows as what it points to
+        let target = if link { raw.stat(join(&path, &file.filename)).await.ok().map(|a| a.attrs) } else { None };
+        let shown = target.as_ref().unwrap_or(attrs);
+        // OpenSSH's long name (as ls -l) has the owner and group names
+        let words: Vec<&str> = file.longname.split_whitespace().collect();
+        let (owner, group) = if words.len() >= 4 {
+            (words[2].to_string(), words[3].to_string())
+        } else {
+            (attrs.uid.map(|u| u.to_string()).unwrap_or_default(), attrs.gid.map(|g| g.to_string()).unwrap_or_default())
+        };
+        entries.push(Entry {
+            name: file.filename.clone(),
+            dir: shown.is_dir(),
+            link,
+            size: shown.size.unwrap_or(0),
+            modified: shown.mtime.unwrap_or(0) as u64,
+            permissions: attrs.permissions.map(mode_text).unwrap_or_default(),
+            owner,
+            group,
+        });
+    }
+    Ok(Listing { path, entries })
+}
+
+/// A new remote folder
+#[tauri::command]
+pub async fn sftp_mkdir(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<(), String> {
+    conn(&sftps, id)?.raw.mkdir(path, FileAttributes::empty()).await.map(|_| ()).map_err(plain)
+}
+
+/// Rename or move a remote file or folder
+#[tauri::command]
+pub async fn sftp_rename(sftps: State<'_, Sftps>, id: u32, from: String, to: String) -> Result<(), String> {
+    conn(&sftps, id)?.raw.rename(from, to).await.map(|_| ()).map_err(plain)
+}
+
+/// Delete a remote file, or a folder and everything in it
+#[tauri::command]
+pub async fn sftp_delete(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<(), String> {
+    let conn = conn(&sftps, id)?;
+    delete(&conn.raw, &path).await
+}
+
+async fn delete(raw: &RawSftpSession, path: &str) -> Result<(), String> {
+    let attrs = raw.lstat(path).await.map_err(plain)?.attrs;
+    if attrs.is_dir() {
+        for file in read_dir(raw, path).await? {
+            Box::pin(delete(raw, &join(path, &file.filename))).await?;
+        }
+        raw.rmdir(path).await.map(|_| ()).map_err(plain)
+    } else {
+        raw.remove(path).await.map(|_| ()).map_err(plain)
+    }
+}
+
+/// Stop a transfer
+#[tauri::command]
+pub fn sftp_cancel(sftps: State<'_, Sftps>, transfer: u32) {
+    if let Some(flag) = sftps.cancels.lock().unwrap().get(&transfer) {
+        flag.store(true, Ordering::Relaxed);
+    }
+}
+
+/// One file to copy: where from, where to, its size and time
+struct Item {
+    from: String,
+    to: String,
+    size: u64,
+    modified: u64,
+}
+
+/// Copy files and folders into a folder: up (this Mac's paths to the remote folder) or down. Progress goes to
+/// `on_progress`; folders are copied with everything in them.
+#[tauri::command]
+pub async fn sftp_transfer(
+    sftps: State<'_, Sftps>,
+    id: u32,
+    transfer: u32,
+    upload: bool,
+    sources: Vec<String>,
+    target: String,
+    on_progress: Channel<Progress>,
+) -> Result<(), String> {
+    let conn = conn(&sftps, id)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    sftps.cancels.lock().unwrap().insert(transfer, cancel.clone());
+    let result = run_transfer(&conn.raw, upload, &sources, &target, &cancel, &on_progress).await;
+    sftps.cancels.lock().unwrap().remove(&transfer);
+    result
+}
+
+async fn run_transfer(
+    raw: &RawSftpSession,
+    upload: bool,
+    sources: &[String],
+    target: &str,
+    cancel: &AtomicBool,
+    on_progress: &Channel<Progress>,
+) -> Result<(), String> {
+    // the files, folders made on the way
+    let mut items = Vec::new();
+    for source in sources {
+        let name = source.trim_end_matches('/').rsplit(['/', std::path::MAIN_SEPARATOR]).next().unwrap_or(source).to_string();
+        if upload {
+            gather_local(raw, std::path::Path::new(source), &join(target, &name), &mut items).await?;
+        } else {
+            gather_remote(raw, source, &std::path::Path::new(target).join(&name), &mut items).await?;
+        }
+    }
+    let total: u64 = items.iter().map(|i| i.size).sum();
+    let _ = on_progress.send(Progress::Total { bytes: total, files: items.len() as u64 });
+    let mut done = 0u64;
+    for item in &items {
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Cancelled".into());
+        }
+        let file = item.from.rsplit(['/', std::path::MAIN_SEPARATOR]).next().unwrap_or(&item.from).to_string();
+        let report = |bytes: u64| {
+            let _ = on_progress.send(Progress::Done { bytes: done + bytes, file: file.clone() });
+        };
+        if upload {
+            upload_file(raw, item, cancel, &report).await?;
+        } else {
+            download_file(raw, item, cancel, &report).await?;
+        }
+        done += item.size;
+        let _ = on_progress.send(Progress::Done { bytes: done, file: file.clone() });
+    }
+    Ok(())
+}
+
+/// This Mac's file or folder (made on the remote side as it's found), for an upload
+async fn gather_local(raw: &RawSftpSession, from: &std::path::Path, to: &str, items: &mut Vec<Item>) -> Result<(), String> {
+    let meta = std::fs::metadata(from).map_err(|e| format!("{}: {e}", from.display()))?;
+    if meta.is_dir() {
+        // already there is fine
+        let _ = raw.mkdir(to, FileAttributes::empty()).await;
+        let mut children: Vec<_> = std::fs::read_dir(from).map_err(|e| e.to_string())?.flatten().map(|e| e.path()).collect();
+        children.sort();
+        for child in children {
+            let name = child.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            Box::pin(gather_local(raw, &child, &join(to, &name), items)).await?;
+        }
+    } else {
+        let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+        items.push(Item { from: from.to_string_lossy().to_string(), to: to.to_string(), size: meta.len(), modified });
+    }
+    Ok(())
+}
+
+/// A remote file or folder (made on this Mac as it's found), for a download
+async fn gather_remote(raw: &RawSftpSession, from: &str, to: &std::path::Path, items: &mut Vec<Item>) -> Result<(), String> {
+    let attrs = raw.stat(from).await.map_err(|e| format!("{from}: {}", plain(e)))?.attrs;
+    if attrs.is_dir() {
+        std::fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
+        let mut children = read_dir(raw, from).await?;
+        children.sort_by(|a, b| a.filename.cmp(&b.filename));
+        for child in children {
+            Box::pin(gather_remote(raw, &join(from, &child.filename), &to.join(&child.filename), items)).await?;
+        }
+    } else {
+        items.push(Item { from: from.to_string(), to: to.to_string_lossy().to_string(), size: attrs.size.unwrap_or(0), modified: attrs.mtime.unwrap_or(0) as u64 });
+    }
+    Ok(())
+}
+
+/// Write at an offset, on any system
+fn write_at(file: &std::fs::File, data: &[u8], offset: u64) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::FileExt::write_all_at(file, data, offset)
+    }
+    #[cfg(windows)]
+    {
+        let mut written = 0;
+        while written < data.len() {
+            written += std::os::windows::fs::FileExt::seek_write(file, &data[written..], offset + written as u64)?;
+        }
+        Ok(())
+    }
+}
+
+/// Read at an offset (fewer bytes only at the end), on any system
+fn read_at(file: &std::fs::File, buffer: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    #[cfg(unix)]
+    {
+        let mut read = 0;
+        while read < buffer.len() {
+            let n = std::os::unix::fs::FileExt::read_at(file, &mut buffer[read..], offset + read as u64)?;
+            if n == 0 {
+                break;
+            }
+            read += n;
+        }
+        Ok(read)
+    }
+    #[cfg(windows)]
+    {
+        let mut read = 0;
+        while read < buffer.len() {
+            let n = std::os::windows::fs::FileExt::seek_read(file, &mut buffer[read..], offset + read as u64)?;
+            if n == 0 {
+                break;
+            }
+            read += n;
+        }
+        Ok(read)
+    }
+}
+
+/// Download one file, several reads in flight, into place
+async fn download_file(raw: &RawSftpSession, item: &Item, cancel: &AtomicBool, report: &impl Fn(u64)) -> Result<(), String> {
+    let local = std::fs::File::create(&item.to).map_err(|e| format!("{}: {e}", item.to))?;
+    let handle = raw.open(item.from.as_str(), OpenFlags::READ, FileAttributes::empty()).await.map_err(|e| format!("{}: {}", item.from, plain(e)))?.handle;
+    let offsets: Vec<u64> = (0..item.size.div_ceil(CHUNK as u64)).map(|i| i * CHUNK as u64).collect();
+    let mut reads = stream::iter(offsets).map(|offset| {
+        let handle = handle.clone();
+        async move { (offset, raw.read(handle, offset, CHUNK).await) }
+    }).buffered(IN_FLIGHT);
+    let mut done = 0u64;
+    let mut result = Ok(());
+    while let Some((offset, read)) = reads.next().await {
+        if cancel.load(Ordering::Relaxed) {
+            result = Err("Cancelled".to_string());
+            break;
+        }
+        let mut data = match read {
+            Ok(data) => data.data,
+            Err(SftpError::Status(s)) if s.status_code == StatusCode::Eof => Vec::new(),
+            Err(e) => {
+                result = Err(plain(e));
+                break;
+            }
+        };
+        // a short read before the end: the rest of the chunk, in turn
+        while data.len() < CHUNK as usize && offset + (data.len() as u64) < item.size {
+            match raw.read(handle.as_str(), offset + data.len() as u64, CHUNK - data.len() as u32).await {
+                Ok(more) if !more.data.is_empty() => data.extend(more.data),
+                _ => break,
+            }
+        }
+        if let Err(e) = write_at(&local, &data, offset) {
+            result = Err(e.to_string());
+            break;
+        }
+        done += data.len() as u64;
+        report(done);
+    }
+    drop(reads);
+    let _ = raw.close(handle).await;
+    result?;
+    if item.modified != 0 {
+        let _ = local.set_modified(UNIX_EPOCH + Duration::from_secs(item.modified));
+    }
+    Ok(())
+}
+
+/// Upload one file, several writes in flight
+async fn upload_file(raw: &RawSftpSession, item: &Item, cancel: &AtomicBool, report: &impl Fn(u64)) -> Result<(), String> {
+    let local = std::fs::File::open(&item.from).map_err(|e| format!("{}: {e}", item.from))?;
+    let flags = OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE;
+    let handle = raw.open(item.to.as_str(), flags, FileAttributes::empty()).await.map_err(|e| format!("{}: {}", item.to, plain(e)))?.handle;
+    let offsets: Vec<u64> = (0..item.size.div_ceil(CHUNK as u64)).map(|i| i * CHUNK as u64).collect();
+    let local = &local;
+    let mut writes = stream::iter(offsets).map(|offset| {
+        let handle = handle.clone();
+        async move {
+            if cancel.load(Ordering::Relaxed) {
+                return Err("Cancelled".to_string());
+            }
+            let mut buffer = vec![0u8; CHUNK as usize];
+            let n = read_at(local, &mut buffer, offset).map_err(|e| e.to_string())?;
+            buffer.truncate(n);
+            raw.write(handle, offset, buffer).await.map_err(plain)?;
+            Ok(n as u64)
+        }
+    }).buffer_unordered(IN_FLIGHT);
+    let mut done = 0u64;
+    let mut result = Ok(());
+    while let Some(written) = writes.next().await {
+        match written {
+            Ok(n) => {
+                done += n;
+                report(done);
+            }
+            Err(e) => {
+                result = Err(e);
+                break;
+            }
+        }
+    }
+    drop(writes);
+    let _ = raw.close(handle.as_str()).await;
+    result?;
+    if item.modified != 0 {
+        let attrs = FileAttributes { atime: Some(item.modified as u32), mtime: Some(item.modified as u32), ..FileAttributes::empty() };
+        let _ = raw.setstat(item.to.as_str(), attrs).await;
+    }
+    Ok(())
+}
+
+// ---- this Mac's side ----
+
+/// A user or group id's name, as ls shows it
+#[cfg(unix)]
+fn id_name(id: u32, group: bool) -> String {
+    static NAMES: Mutex<Option<HashMap<(u32, bool), String>>> = Mutex::new(None);
+    let mut names = NAMES.lock().unwrap();
+    let names = names.get_or_insert_with(HashMap::new);
+    names
+        .entry((id, group))
+        .or_insert_with(|| {
+            // SAFETY: the C library's lookups, read under the lock above
+            unsafe {
+                let name = if group {
+                    let g = libc::getgrgid(id);
+                    if g.is_null() { std::ptr::null() } else { (*g).gr_name }
+                } else {
+                    let p = libc::getpwuid(id);
+                    if p.is_null() { std::ptr::null() } else { (*p).pw_name }
+                };
+                if name.is_null() { id.to_string() } else { std::ffi::CStr::from_ptr(name).to_string_lossy().to_string() }
+            }
+        })
+        .clone()
+}
+
+/// A folder on this Mac (`~` is home), its path made absolute
+#[tauri::command]
+pub fn local_list(path: String) -> Result<Listing, String> {
+    let path = path.trim();
+    let path = if path.is_empty() || path == "~" {
+        dirs::home_dir().unwrap_or_default()
+    } else if let Some(rest) = path.strip_prefix("~/") {
+        dirs::home_dir().unwrap_or_default().join(rest)
+    } else {
+        std::path::PathBuf::from(path)
+    };
+    let path = std::fs::canonicalize(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut entries = Vec::new();
+    for entry in std::fs::read_dir(&path).map_err(|e| format!("{}: {e}", path.display()))?.flatten() {
+        let Ok(lmeta) = entry.metadata() else { continue };
+        let link = lmeta.file_type().is_symlink();
+        let meta = if link { std::fs::metadata(entry.path()).unwrap_or(lmeta.clone()) } else { lmeta.clone() };
+        let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+        #[cfg(unix)]
+        let (permissions, owner, group) = {
+            use std::os::unix::fs::MetadataExt;
+            (mode_text(lmeta.mode()), id_name(lmeta.uid(), false), id_name(lmeta.gid(), true))
+        };
+        #[cfg(not(unix))]
+        let (permissions, owner, group) = (String::new(), String::new(), String::new());
+        entries.push(Entry {
+            name: entry.file_name().to_string_lossy().to_string(),
+            dir: meta.is_dir(),
+            link,
+            size: if meta.is_dir() { 0 } else { meta.len() },
+            modified,
+            permissions,
+            owner,
+            group,
+        });
+    }
+    Ok(Listing { path: path.to_string_lossy().to_string(), entries })
+}
+
+/// A new folder on this Mac
+#[tauri::command]
+pub fn local_mkdir(path: String) -> Result<(), String> {
+    std::fs::create_dir(&path).map_err(|e| e.to_string())
+}
+
+/// Rename a file or folder on this Mac
+#[tauri::command]
+pub fn local_rename(from: String, to: String) -> Result<(), String> {
+    if std::path::Path::new(&to).exists() {
+        return Err(format!("{to} already exists."));
+    }
+    std::fs::rename(&from, &to).map_err(|e| e.to_string())
+}
+
+/// Show a file or folder in Finder
+#[tauri::command]
+pub fn local_reveal(path: String) -> Result<(), String> {
+    std::process::Command::new("open").args(["-R", &path]).status().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writes_modes_as_ls_does() {
+        assert_eq!(mode_text(0o40755), "drwxr-xr-x");
+        assert_eq!(mode_text(0o100644), "-rw-r--r--");
+        assert_eq!(mode_text(0o120777), "lrwxrwxrwx");
+        assert_eq!(join("/", "etc"), "/etc");
+        assert_eq!(join("/home/me", "a b"), "/home/me/a b");
+    }
+}

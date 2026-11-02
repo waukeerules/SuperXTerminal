@@ -191,5 +191,5 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 ## Later
 
-- ⬜ SFTP file browser
+- ✅ File transfer (SFTP), as SuperXPuTTY's File transfer (pscp): a tab with this Mac's files beside the session's (path, Up, Home, Refresh, New folder; Name, Size, Last Mod, Perm, Owner, Group, sorted by a heading), and the transfers below (Id, Source, Target, Start, End, Progress, Status, Message; one at a time, Stop). Copy by dragging across or onto a folder, a double click, Upload/Download, the right-click menu, or files from Finder onto the remote side; folders with everything in them; times kept; replace-or-skip for names already there; rename, and delete (remote) after asking. The connection is the session's own ssh (`ssh -s … sftp`, the tab's arguments from launch.rs: keys, agent, ~/.ssh/config, jump hosts, older algorithms), its password and ssh's questions (a new host key) through askpass.rs as dialogs; SFTP spoken by russh-sftp (Apache-2.0), `src-tauri/src/sftp.rs`, `src/lib/transfer/`. Windows ships OpenSSH, so it carries over. Checked: Media Server, 5 MB file and a nested folder up and down (same SHA-1, time kept, 5 MB in about 0.4 s), drag, replace-or-skip, delete; Lab Switch says it may not offer SFTP. Later: SCP for network devices
 - ⬜ Import PuTTY profiles from a `reg export`

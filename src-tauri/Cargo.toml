@@ -31,7 +31,7 @@ dirs = "7"
 tokio-postgres = "0.7"
 postgres-native-tls = "0.5"
 native-tls = "0.2"
-tokio = { version = "1", features = ["time", "rt", "net"] }
+tokio = { version = "1", features = ["time", "rt", "net", "process", "io-util", "sync"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 serde = { version = "1", features = ["derive"] }
@@ -43,6 +43,8 @@ ironrdp-graphics = "0.9"
 smallvec = "1"
 ironrdp-cliprdr = "0.7"
 ironrdp-core = "0.2"
+russh-sftp = "3.0.1"
+futures-util = "0.3"
 
 # the main window's WebKit settings (Writing Tools off), as Tauri itself uses them
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -68,3 +68,10 @@ export async function askOne(message: string, secret: boolean): Promise<string |
   const answers = await ask({ title: message || (secret ? "Password" : "Input"), okLabel: "OK", fields: [{ label: secret ? "Password:" : "", value: "", secret }] });
   return answers ? answers[0] : null;
 }
+
+/** A name, starting as `value` (New Folder, Rename); null if cancelled or left empty */
+export async function askName(title: string, label: string, value = "", okLabel = "OK"): Promise<string | null> {
+  const answers = await ask({ title, okLabel, fields: [{ label, value, secret: false }] });
+  const name = answers?.[0].trim();
+  return name ? name : null;
+}

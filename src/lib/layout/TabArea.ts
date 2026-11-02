@@ -25,6 +25,7 @@ import { OutputHost } from "../terminal/OutputHost";
 import { RdpHost } from "../terminal/RdpHost";
 import type { ScriptTarget } from "../scripting/spsl";
 import SessionTab from "./SessionTab.svelte";
+import FileTransfer from "../transfer/FileTransfer.svelte";
 import { isDark } from "../settings/store.svelte";
 import { tabStates } from "./tabStates.svelte";
 
@@ -185,6 +186,32 @@ class RdpPanel implements IContentRenderer {
     this.host?.dispose();
     for (const [id, host] of this.tabs.rdpHosts) if (host === this.host) this.tabs.rdpHosts.delete(id);
     this.host = null;
+  }
+}
+
+/** A file transfer tab: the session's files beside this Mac's (FileTransfer.svelte) */
+class SftpPanel implements IContentRenderer {
+  readonly element: HTMLElement;
+  private view: ReturnType<typeof mount> | null = null;
+
+  constructor() {
+    this.element = document.createElement("div");
+    this.element.className = "terminal-panel";
+  }
+
+  init(parameters: GroupPanelPartInitParameters): void {
+    const { target, environment } = parameters.params as TerminalParams;
+    if (target.kind !== "session") return;
+    if (environment) {
+      this.element.style.padding = "3px";
+      this.element.style.background = environment;
+    }
+    this.view = mount(FileTransfer, { target: this.element, props: { store: target.store, id: target.id } });
+  }
+
+  dispose(): void {
+    if (this.view) void unmount(this.view);
+    this.view = null;
   }
 }
 
@@ -369,6 +396,7 @@ export class TabArea {
         options.name === "output" ? new OutputPanel(this)
         : options.name === "compare" ? new ComparePanel(this)
         : options.name === "rdp" ? new RdpPanel(this)
+        : options.name === "sftp" ? new SftpPanel()
         : new TerminalPanel(this),
       // dockview only uses createTabComponent for a named tab component, so make ours the default
       defaultTabComponent: "session",
@@ -423,6 +451,23 @@ export class TabArea {
     this.api.addPanel({
       id: panelId,
       component: "rdp",
+      title,
+      params: { target: { kind: "session", store, id }, local: false, icon, environment } satisfies TerminalParams,
+      renderer: "always",
+    });
+    this.sessions.set(panelId, `${store}:${id}`);
+    this.onOpenChanged(new Set(this.sessions.values()));
+    this.changed();
+    return panelId;
+  }
+  /** A session's files in a tab of their own (File transfer (SFTP) in the session's menu) */
+  openSftp(store: "saved" | "private" | "database", id: string, title: string, icon: string, environment: string | null): string {
+    const panelId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    title = `${title} (SFTP)`;
+    this.titles.set(panelId, title);
+    this.api.addPanel({
+      id: panelId,
+      component: "sftp",
       title,
       params: { target: { kind: "session", store, id }, local: false, icon, environment } satisfies TerminalParams,
       renderer: "always",
@@ -488,6 +533,10 @@ export class TabArea {
     if (!panel || !params) return;
     if (params.target.kind === "localShell") {
       this.openLocalShell();
+      return;
+    }
+    if (panel.view.contentComponent === "sftp" && params.target.kind === "session") {
+      this.openSftp(params.target.store, params.target.id, this.originalTitle(id).replace(/ \(SFTP\)$/, ""), params.icon, params.environment ?? null);
       return;
     }
     if (this.rdpHosts.has(id) && params.target.kind === "session") {

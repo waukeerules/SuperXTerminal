@@ -42,6 +42,7 @@
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { ask } from "@tauri-apps/plugin-dialog";
+  import { askOne } from "./lib/scripting/asking.svelte";
 
   let tabElement: HTMLDivElement;
   let tabs = $state<TabArea | null>(null);
@@ -438,6 +439,19 @@
 
   // asked to open something while running (a second start, a link): this window, in front, takes it
   void getCurrentWebviewWindow().listen("open-request", () => void openRequests());
+  // a file transfer's ssh asking something while it logs in (sftp.rs): a new host key, a password
+  void getCurrentWebviewWindow().listen<{ askId: number; title: string; prompt: string; secret: boolean }>("sftp-ask", async (event) => {
+    const { askId, title, prompt, secret } = event.payload;
+    let answer: string | null;
+    if (/yes\/no/i.test(prompt)) {
+      const trust = await ask(prompt.replace(/\s*Are you sure you want to continue connecting.*$/s, ""),
+        { title: `${title}: connect to this host?`, kind: "warning", okLabel: "Connect", cancelLabel: "Cancel" });
+      answer = trust ? "yes" : "no";
+    } else {
+      answer = await askOne(`${title}: ${prompt}`, secret);
+    }
+    void invoke("sftp_answer", { askId, answer }).catch(() => {});
+  });
 
   /** The window as a layout: the tabs and how they're split, and the panes */
   function layoutNow(): Layout | null {

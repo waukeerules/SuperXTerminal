@@ -34,7 +34,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ `web/terminal`, `web/output`, `web/shared` and `web/lib` copied from SuperXPuTTY with their licences (default rules and themes still missing: not in SuperXPuTTY's repository)
 - ✅ Licence checks (`cargo deny check` in `src-tauri/`, `npm run licenses`), including security advisories
 - ✅ Builds made locally; the GitHub Actions workflow (macOS, Windows, Linux) runs only when started by hand, so pushes cost nothing
-- ⬜ Known issue: development builds ask for the Keychain password again after each rebuild (a new unsigned app each time, to macOS); signed builds (M6) stop it
+- ⬜ Known issue: development builds ask for the Keychain password again after each rebuild (a new unsigned app each time, to macOS); signed builds (M6) stop it. Each item is now read once per run and kept in memory, so it's one prompt per item per build, not one per database check
 - ⬜ Known issue: a small round macOS badge sits beside the terminal cursor, over the end of the prompt (seen in the user's own screenshots too). Not in the page, not a separate window; not fixed by `writingsuggestions`, a transparent caret, or `TSMLanguageIndicatorEnabled`. Next: find it with Web Inspector
 - ⬜ To check: after renaming a Database folder, it showed closed once (it had been open)
 - ⬜ To check: a click on a menu item sometimes does nothing the first time (seen twice while testing with simulated clicks)
@@ -89,14 +89,14 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 - ✅ Connect as `SuperPuTTY`, with the nickname (checked against the team's PostgreSQL 17.5)
 - ✅ Read in pages in the background; `@db/` ids (the team's 4 sessions, folders, icons and colours as in SuperXPuTTY)
-- 🚧 Cache (`DatabaseSessions.cache.xml`) and retry while offline: written in SuperXPuTTY's format and shown when the database can't be reached; not yet tried offline
+- 🚧 Cache (`DatabaseSessions.cache.xml`) and retry while offline, as SuperXPuTTY: the cache is shown at once at start, then the table is read; a cache from another connection (its Source) isn't used; while offline the change check stops and a full read is tried every 2 minutes; the root shows "(3,214)", "(loading...)" or "(offline, cached 09:41)". Not yet tried offline in the app
 - 🚧 Writes (insert, update, delete, read back) and the outbox: writes done (Edit Session, New session, Delete, Colour; folder New, Rename, Delete, Colour, Folder settings; dragging), each read back, with conflicts refused (checked on test rows in the team's table); the offline outbox next
-- 🚧 Locks (`locked`, `locked_fields`) checked in the UI: locked rows can't be edited, deleted or moved, and locked fields are greyed in Edit Session; not yet tried on a locked row (the table has none)
+- 🚧 Locks (`locked`, `locked_fields`) checked in the UI: locked rows can't be edited, deleted or moved, and locked fields are greyed in Edit Session; the table's guard trigger checked on a test table (`sxt_test_sessions`: locked row, locked fields, the locks themselves, managed_by; scripts under another application name not stopped); not yet seen in the app
 - ✅ Changes noticed every 30 s (`<table>_version`): a session added in SuperXPuTTY on Windows appeared on the Mac within the check
 - ✅ `deleted_at` rows hidden (in the query; columns a table lacks read as defaults)
 - ✅ Folders table (colours, defaults): read, applied and written (Colour, Folder settings…; moved and removed with renamed and deleted folders)
 - ✅ Move to / Copy to between Database and Saved/Private (and between Saved and Private): to the same folder path, without database fields; a move out of the table asks first and leaves locked rows; clashing names are refused and stay put. Checked with a test session through all three
-- 🚧 Database settings dialog, Create / upgrade schema, read-only: Tools > Database Sessions… with Test connection and Read only; Create / upgrade schema next
+- 🚧 Database settings dialog, Create / upgrade schema, read-only: Tools > Database Sessions… with Test connection and Read only. Create / upgrade schema ported from SuperXPuTTY (same SQL, so either app's run leaves the same table), enabled when Test finds something missing; checked on a test table (new table, and upgrading an older one). Not yet clicked in the app
 - ✅ Database settings export/import (SuperXPuTTY's JSON), Clear; password in the Keychain
 
 ## M3 Scripting and commands

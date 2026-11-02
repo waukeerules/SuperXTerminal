@@ -154,6 +154,15 @@ export interface DbState {
   writable: boolean;
   error: string;
   source: string;
+  /** How many sessions the last read (or the cache) had */
+  count: number;
+  /** When the sessions shown were read, "HH:MM" */
+  syncedAt: string;
+}
+
+/** Show the cached Database sessions at once, before the table is read */
+export function cachedDatabase(): Promise<DbState> {
+  return invoke<DbState>("db_cached");
 }
 
 /** Read the Database sessions table again (or keep the cache when it can't be reached) */

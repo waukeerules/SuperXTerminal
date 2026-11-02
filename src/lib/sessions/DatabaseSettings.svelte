@@ -2,8 +2,8 @@
   Tools > Database Sessions, as SuperXPuTTY's window: the PostgreSQL table both apps share. The connection is
   named SuperPuTTY so the table's lock trigger treats the Mac like SuperXPuTTY, and the nickname goes into
   updated_by. The password is kept in the Keychain (a {key} placeholder from an imported file works too).
-  Export/Import use SuperXPuTTY's file, so settings move between Mac and Windows. Create / upgrade schema comes
-  later in M2.
+  Export/Import use SuperXPuTTY's file, so settings move between Mac and Windows. Create / upgrade schema, enabled
+  when Test connection finds something missing, makes the same table, triggers and folders table as SuperXPuTTY's.
 -->
 <script lang="ts">
   import { onMount } from "svelte";
@@ -54,14 +54,50 @@
     if (!s) return;
     say("Connecting…");
     try {
-      const t = await invoke<{ serverVersion: string; tableExists: boolean; rows: number; canWrite: boolean; hasVersionTable: boolean }>(
-        "db_test", { database: { ...s, port: Number(s.port) }, password: password ?? null });
-      if (!t.tableExists) say(`Connected to PostgreSQL ${t.serverVersion}, but ${s.schema}.${s.table} isn't there yet.`, "error");
-      else
-        say(`Connected to PostgreSQL ${t.serverVersion}: ${t.rows} sessions, ${t.canWrite && !s.readOnly ? "can change them" : "read only"}` +
-          `${t.hasVersionTable ? "" : "; no change counter, so run Create / upgrade schema from SuperXPuTTY"}.`, "ok");
+      const t = await invoke<TestResult>("db_test", { database: { ...s, port: Number(s.port) }, password: password ?? null });
+      say(describe(t), t.missing.length && s.readOnly ? "error" : "ok");
+      needsSchema = t.missing.length > 0 && !s.readOnly;
     } catch (e) {
       say(String(e), "error");
+      needsSchema = false;
+    }
+  }
+
+  interface TestResult {
+    serverVersion: string;
+    tableExists: boolean;
+    rows: number;
+    canWrite: boolean;
+    hasVersionTable: boolean;
+    missing: string[];
+  }
+
+  /** Whether Test connection found something for Create / upgrade schema to add */
+  let needsSchema = $state(false);
+
+  /** What Test connection found, as SuperXPuTTY's ProbeResult */
+  function describe(t: TestResult): string {
+    if (!s) return "";
+    const table = `${s.schema}.${s.table}`;
+    const found = t.tableExists
+      ? `${t.rows.toLocaleString()} sessions, ${t.canWrite && !s.readOnly ? "can change them" : "read only"}`
+      : `but ${table} isn't there yet`;
+    const missing = t.tableExists && t.missing.length ? `; missing ${t.missing.join(", ")}: run Create / upgrade schema` : "";
+    const readOnly = t.missing.length && s.readOnly ? " (Read only is on, so nothing is created.)" : "";
+    return `Connected to PostgreSQL ${t.serverVersion}${t.tableExists ? ": " : ", "}${found}${missing}.${readOnly}`;
+  }
+
+  /** Create / upgrade schema, then test again */
+  async function createSchema(): Promise<void> {
+    if (!s) return;
+    say("Creating…");
+    needsSchema = false;
+    try {
+      const done = await invoke<string>("db_create_schema", { database: { ...s, port: Number(s.port) }, password: password ?? null });
+      const t = await invoke<TestResult>("db_test", { database: { ...s, port: Number(s.port) }, password: null });
+      say(`${done} ${describe(t)}`, "ok");
+    } catch (e) {
+      say(`Couldn't create the schema: ${e}`, "error");
     }
   }
 
@@ -144,7 +180,7 @@
       <label class="check"><input type="checkbox" bind:checked={s.readOnly} /> Read only: never create or change anything in the database</label>
       <div class="buttons">
         <button onclick={test}>Test connection</button>
-        <button disabled title="Comes later in M2; SuperXPuTTY's still works">Create / upgrade schema</button>
+        <button disabled={!needsSchema} title="Test connection first; it's enabled when something is missing" onclick={createSchema}>Create / upgrade schema</button>
         <button onclick={exportFile}>Export…</button>
         <button onclick={importFile}>Import…</button>
         <button onclick={clear}>Clear</button>

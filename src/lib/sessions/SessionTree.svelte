@@ -16,6 +16,7 @@
     transferSessions,
     unavailableReason,
     refreshDatabase,
+    cachedDatabase,
     databaseChanged,
     type DbState,
     type FolderSetting,
@@ -61,6 +62,8 @@
   let newFolders = $state<Record<Store, string[]>>({ saved: [], private: [], database: [] });
   /** How Database sessions stand; null until the first read */
   let db = $state<DbState | null>(null);
+  /** Whether the table is being read */
+  let dbLoading = $state(false);
 
   const iconSize = $derived(settings.iconSize);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
@@ -75,7 +78,7 @@
   const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query, newFolders.saved) : null);
   const privateRoot = $derived(loaded ? buildTree("private", "Private sessions", loaded.sessions, query, newFolders.private) : null);
   const databaseRoot = $derived(
-    loaded && db?.enabled ? buildTree("database", db.error ? "Database sessions — offline" : "Database sessions", loaded.sessions, query, newFolders.database) : null,
+    loaded && db?.enabled ? buildTree("database", `Database sessions (${dbStatus(db, dbLoading)})`, loaded.sessions, query, newFolders.database) : null,
   );
 
   // read again whenever the settings folder changes (Settings > General); the first run reads them at start
@@ -85,12 +88,13 @@
     void reload();
   });
 
-  // Database sessions: read the table at start and when its settings are saved, then check for changes every
-  // "Check every" seconds (a one-row query), reading it again only when it changed, as SuperXPuTTY does
+  // Database sessions, as SuperXPuTTY: show the cache at once, read the table, then check for changes every "Check
+  // every" seconds (a one-row query), reading it again only when it changed; while it can't be reached, try again
+  // every 2 minutes
   $effect(() => {
     if (!settings.loaded) return;
-    void readDatabase();
-    const saved = () => void readDatabase();
+    void startDatabase();
+    const saved = () => void startDatabase();
     window.addEventListener(DATABASE_SAVED, saved);
     return () => window.removeEventListener(DATABASE_SAVED, saved);
   });
@@ -100,27 +104,58 @@
     const timer = setInterval(() => void checkDatabase(), seconds * 1000);
     return () => clearInterval(timer);
   });
+  $effect(() => {
+    if (!db?.enabled || !db.error) return;
+    const timer = setInterval(() => void readDatabase(), RETRY_MS);
+    return () => clearInterval(timer);
+  });
 
-  /** Read the table (or the cache when it can't be reached) and show it */
+  /** SuperXPuTTY's RetryInterval */
+  const RETRY_MS = 2 * 60 * 1000;
+
+  /** Show this connection's cache, then read the table */
+  async function startDatabase(): Promise<void> {
+    try {
+      db = await cachedDatabase();
+      loaded = await loadSessions();
+    } catch (e) {
+      error = String(e);
+    }
+    await readDatabase();
+  }
+
+  /** Read the table (keeping what's shown when it can't be reached) and show it */
   async function readDatabase(): Promise<void> {
+    if (dbLoading) return;
+    dbLoading = true;
     try {
       db = await refreshDatabase();
       loaded = await loadSessions();
     } catch (e) {
       error = String(e);
+    } finally {
+      dbLoading = false;
     }
   }
 
-  /** Read the table again if it changed; not while a window is open, so a session being edited isn't replaced */
+  /** Read the table again if it changed; not while a window is open, so a session being edited isn't replaced, and
+   * not while offline (the retry takes over) */
   async function checkDatabase(): Promise<void> {
-    if (editing || folderSettings || prompt || menu) return;
+    if (editing || folderSettings || prompt || menu || dbLoading || db?.error) return;
     try {
       if (await databaseChanged()) await readDatabase();
-      else if (db?.error) await readDatabase();
     } catch {
-      // unreachable: keep the cached sessions; the next check tries again
-      if (db && !db.error) db = { ...db, error: "The database can't be reached" };
+      // as SuperXPuTTY: a failed check reads the table, which reports offline and starts retrying
+      await readDatabase();
     }
+  }
+
+  /** The root's status in brackets, as SuperXPuTTY's StatusText: "3,214", "loading...", "offline, cached 09:41" */
+  function dbStatus(state: DbState, loading: boolean): string {
+    const readOnly = state.writable ? "" : ", read-only";
+    if (loading) return "loading...";
+    if (state.error) return (state.syncedAt ? `offline, cached ${state.syncedAt}` : "offline") + readOnly;
+    return state.count.toLocaleString() + readOnly;
   }
 
   /** Read the settings, custom icons and session files again */

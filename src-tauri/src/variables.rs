@@ -10,10 +10,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+
+use crate::secrets;
 use serde_json::{Map, Value};
 
-/// The Keychain service secrets are kept under (with profiles' passwords)
-const KEYCHAIN_SERVICE: &str = "SuperXTerminal";
 
 /// One variable as the window shows it; a secret's value never leaves the core
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -44,9 +44,9 @@ fn file(user_folder: &Path) -> std::path::PathBuf {
     user_folder.join("EnvironmentVariables.json")
 }
 
-/// The Keychain entry for a secret variable
-fn entry(key: &str) -> Option<keyring::Entry> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, &format!("variable:{}", key.to_lowercase())).ok()
+/// The Keychain account for a secret variable
+fn account(key: &str) -> String {
+    format!("variable:{}", key.to_lowercase())
 }
 
 /// Every variable for the window, secrets without their values
@@ -56,7 +56,7 @@ pub fn list(user_folder: &Path) -> Vec<Variable> {
         .map(|e| {
             let key = e.get("Key").and_then(Value::as_str).unwrap_or("").to_string();
             let secret = e.get("Secret").and_then(Value::as_bool).unwrap_or(false);
-            let has_value = secret && entry(&key).and_then(|k| k.get_password().ok()).is_some_and(|v| !v.is_empty());
+            let has_value = secret && secrets::get(&account(&key)).is_some();
             Variable {
                 value: if secret { String::new() } else { e.get("Value").and_then(Value::as_str).unwrap_or("").to_string() },
                 from_windows: secret && !has_value && e.get("ProtectedValue").is_some(),
@@ -77,7 +77,7 @@ pub fn values(user_folder: &Path) -> HashMap<String, String> {
             continue;
         }
         let value = if e.get("Secret").and_then(Value::as_bool).unwrap_or(false) {
-            entry(&key).and_then(|k| k.get_password().ok())
+            secrets::get(&account(&key))
         } else {
             e.get("Value").and_then(Value::as_str).map(str::to_string)
         };
@@ -112,7 +112,7 @@ pub fn save(user_folder: &Path, variables: &[Variable]) -> Result<(), String> {
         if variable.secret {
             e.remove("Value");
             if !variable.value.is_empty() {
-                entry(key).ok_or("The Keychain isn't available")?.set_password(&variable.value).map_err(|e| e.to_string())?;
+                secrets::set(&account(key), &variable.value)?;
             }
         } else {
             e.insert("Value".into(), Value::String(variable.value.clone()));
@@ -136,9 +136,7 @@ pub fn save(user_folder: &Path, variables: &[Variable]) -> Result<(), String> {
 
 /// Forget a secret's stored value
 fn forget(key: &str) {
-    if let Some(entry) = entry(key) {
-        let _ = entry.delete_credential();
-    }
+    let _ = secrets::set(&account(key), "");
 }
 
 /// Replace each `{key}` with its value in one pass; undefined keys stay, as SessionVariables.Substitute

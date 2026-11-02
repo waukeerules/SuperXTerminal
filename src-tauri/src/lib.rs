@@ -7,6 +7,7 @@ mod highlighting;
 mod launch;
 mod profiles;
 mod pty;
+mod secrets;
 mod sessions;
 mod variables;
 mod settings;
@@ -47,6 +48,10 @@ struct DbState {
     /// The optional columns the table has (color, jump_host, highlight_rules), which writes include
     #[serde(skip)]
     optional_columns: Vec<String>,
+    /// How many sessions the last read (or the cache) had
+    count: usize,
+    /// When the sessions shown were read, "HH:MM", for "offline, cached 09:41"
+    synced_at: String,
 }
 
 /// The user's profiles, "Default Settings" first; passwords are only marked as stored, never sent
@@ -332,23 +337,57 @@ async fn refresh_database(state: &AppState) -> Result<DbState, String> {
             db_state.writable = fetched.writable;
             db_state.optional_columns = fetched.optional_columns.clone();
             db_state.error.clear();
+            db_state.count = fetched.sessions.len();
+            db_state.synced_at = chrono::Local::now().format("%H:%M").to_string();
             let mut sessions = state.sessions.lock().unwrap();
             sessions.database = fetched.sessions;
             sessions.folders.insert(sessions::Store::Database, fetched.folders.into_iter().map(|f| (f.path.clone(), f)).collect());
         }
         Err(error) => {
             // keep showing what was last read, from the cache if nothing is loaded yet
-            let mut sessions = state.sessions.lock().unwrap();
-            if sessions.database.is_empty() {
-                let (cached, folders, writable) = db::read_cache(&user_folder);
-                sessions.database = cached;
-                sessions.folders.insert(sessions::Store::Database, folders.into_iter().map(|f| (f.path.clone(), f)).collect());
-                db_state.writable = writable;
+            if db_state.token.is_empty() && db_state.synced_at.is_empty() {
+                show_cache(state, &settings, &mut db_state);
             }
+            db_state.token.clear();
             db_state.error = error;
         }
     }
     Ok(db_state.clone())
+}
+
+/// Show this connection's cache, as SuperXPuTTY does at start before the table is read; nothing if it's another's
+fn show_cache(state: &AppState, settings: &db::DbSettings, db_state: &mut DbState) {
+    let mut sessions = state.sessions.lock().unwrap();
+    match db::read_cache(&state.user_folder, settings) {
+        Some(cached) => {
+            db_state.writable = cached.writable;
+            db_state.optional_columns = cached.optional_columns;
+            db_state.count = cached.sessions.len();
+            db_state.synced_at = cached.synced_at.get(11..16).unwrap_or_default().to_string();
+            sessions.database = cached.sessions;
+            sessions.folders.insert(sessions::Store::Database, cached.folders.into_iter().map(|f| (f.path.clone(), f)).collect());
+        }
+        None => {
+            *db_state = DbState { enabled: true, source: db_state.source.clone(), ..DbState::default() };
+            sessions.database.clear();
+            sessions.folders.remove(&sessions::Store::Database);
+        }
+    }
+}
+
+/// Show the cached sessions at once, before the table is read (at start and after the settings change)
+#[tauri::command]
+fn db_cached(state: State<'_, AppState>) -> DbState {
+    let settings = state.settings.lock().unwrap().database.clone();
+    let mut db_state = state.database.lock().unwrap();
+    if !settings.enabled {
+        state.sessions.lock().unwrap().database.clear();
+        *db_state = DbState::default();
+        return db_state.clone();
+    }
+    *db_state = DbState { enabled: true, source: format!("{}.{}", settings.schema, settings.table), ..DbState::default() };
+    show_cache(&state, &settings, &mut db_state);
+    db_state.clone()
 }
 
 /// The Database connection, the user's folder and the table's optional columns, for a write
@@ -565,6 +604,16 @@ async fn sessions_transfer(
     Ok(TransferReport { done: arrived.len(), problems })
 }
 
+/// Create / upgrade schema with the window's values (and a password typed there), as SuperXPuTTY's button
+#[tauri::command]
+async fn db_create_schema(state: State<'_, AppState>, database: db::DbSettings, password: Option<String>) -> Result<String, String> {
+    if let Some(password) = password.filter(|p| !p.is_empty()) {
+        db::set_password(&password)?;
+    }
+    let user_folder = state.user_folder.clone();
+    db::create_or_upgrade_schema(&database, &user_folder).await
+}
+
 /// Whether the table changed since the last read (one small query); the UI refreshes when it did
 #[tauri::command]
 async fn db_check(state: State<'_, AppState>) -> Result<bool, String> {
@@ -739,6 +788,7 @@ pub fn run() {
             db_settings_save,
             db_test,
             db_refresh,
+            db_cached,
             db_check,
             db_export,
             db_import,
@@ -749,6 +799,7 @@ pub fn run() {
             db_folder_delete,
             db_folder_settings_save,
             sessions_transfer,
+            db_create_schema,
             variables_save,
             profiles_list,
             profiles_save,

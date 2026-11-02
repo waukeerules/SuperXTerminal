@@ -9,11 +9,11 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::secrets;
+
 /// The profile every session without one uses, and every profile falls back to, as PuTTY's
 pub const DEFAULT_PROFILE: &str = "Default Settings";
 
-/// The Keychain service passwords are kept under
-const KEYCHAIN_SERVICE: &str = "SuperXTerminal";
 
 /// One profile. Empty fields aren't set, and fall back to "Default Settings", then to ssh's own defaults.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -99,25 +99,17 @@ pub fn is_default(name: &str) -> bool {
     name.trim().is_empty() || name.trim().eq_ignore_ascii_case(DEFAULT_PROFILE)
 }
 
-/// The Keychain entry for a profile's password
-fn entry(profile: &str) -> Option<keyring::Entry> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, &format!("profile:{}", profile.to_lowercase())).ok()
+/// The Keychain account for a profile's password
+fn account(profile: &str) -> String {
+    format!("profile:{}", profile.to_lowercase())
 }
 
 /// A profile's stored password, if it has one
 pub fn password(profile: &str) -> Option<String> {
-    entry(profile)?.get_password().ok().filter(|p| !p.is_empty())
+    secrets::get(&account(profile))
 }
 
 /// Store a profile's password, or forget it when `password` is empty
 pub fn set_password(profile: &str, password: &str) -> Result<(), String> {
-    let entry = entry(profile).ok_or("The Keychain isn't available")?;
-    if password.is_empty() {
-        match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(e.to_string()),
-        }
-    } else {
-        entry.set_password(password).map_err(|e| e.to_string())
-    }
+    secrets::set(&account(profile), password)
 }

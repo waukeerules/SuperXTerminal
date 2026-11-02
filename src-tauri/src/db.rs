@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio_postgres::{Client, NoTls};
 
 use crate::sessions::{self, FolderSetting, StoredSession};
-use crate::variables;
+use crate::{secrets, variables};
 
 /// The application name every connection uses: the guard trigger enforces locks only for this name
 const APPLICATION_NAME: &str = "SuperPuTTY";
@@ -101,8 +101,7 @@ fn quote(name: &str) -> String {
 
 /// The database password: the Keychain's, else the settings' {key} placeholder resolved from Environment Variables
 fn password(settings: &DbSettings, user_folder: &Path) -> Option<String> {
-    let stored = keyring::Entry::new("SuperXTerminal", KEYCHAIN_ACCOUNT).ok().and_then(|e| e.get_password().ok());
-    stored.filter(|p| !p.is_empty()).or_else(|| {
+    secrets::get(KEYCHAIN_ACCOUNT).or_else(|| {
         (!settings.password_placeholder.is_empty())
             .then(|| variables::substitute(&settings.password_placeholder, &variables::values(user_folder)))
     })
@@ -110,20 +109,12 @@ fn password(settings: &DbSettings, user_folder: &Path) -> Option<String> {
 
 /// Keep the database password in the Keychain, or forget it when empty
 pub fn set_password(password: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new("SuperXTerminal", KEYCHAIN_ACCOUNT).map_err(|e| e.to_string())?;
-    if password.is_empty() {
-        match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(e.to_string()),
-        }
-    } else {
-        entry.set_password(password).map_err(|e| e.to_string())
-    }
+    secrets::set(KEYCHAIN_ACCOUNT, password)
 }
 
 /// Whether a password is stored
 pub fn has_password() -> bool {
-    keyring::Entry::new("SuperXTerminal", KEYCHAIN_ACCOUNT).ok().and_then(|e| e.get_password().ok()).is_some_and(|p| !p.is_empty())
+    secrets::get(KEYCHAIN_ACCOUNT).is_some()
 }
 
 /// Connect as SuperXPuTTY does: application name SuperPuTTY, 8 s timeout, the chosen SSL mode, and the nickname.
@@ -380,6 +371,9 @@ pub struct TestResult {
     pub rows: i64,
     pub can_write: bool,
     pub has_version_table: bool,
+    /// What Create / upgrade schema would add, as SuperXPuTTY's Probe: the table, columns, triggers, change counter,
+    /// folders table; empty when it's up to date
+    pub missing: Vec<String>,
 }
 
 /// Connect and describe the server and the table, as the window's Test connection
@@ -401,7 +395,58 @@ pub async fn test(settings: &DbSettings, user_folder: &Path, typed: Option<&str>
     };
     let versions = format!("{}.{}_version", settings.schema, settings.table);
     let has_version_table: bool = client.query_one("SELECT to_regclass($1) IS NOT NULL", &[&versions]).await.map_err(describe)?.get(0);
-    Ok(TestResult { server_version, table_exists, rows, can_write, has_version_table })
+    let (schema, name) = (settings.schema.as_str(), settings.table.as_str());
+    let mut missing = Vec::new();
+    if !table_exists {
+        missing.push("the table".to_string());
+    } else {
+        let present: Vec<String> = client
+            .query("SELECT column_name::text FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2", &[&schema, &name])
+            .await
+            .map_err(describe)?
+            .iter()
+            .map(|r| r.get(0))
+            .collect();
+        let columns: Vec<&str> = COLUMNS.iter().map(|(c, _)| *c).filter(|c| !present.iter().any(|p| p == c)).collect();
+        if !columns.is_empty() {
+            missing.push(format!("columns {}", columns.join(", ")));
+        }
+        let triggers = vec![format!("{name}_changed"), format!("{name}_touch"), format!("{name}_guard")];
+        let count: i64 = client
+            .query_one("SELECT count(*) FROM pg_trigger WHERE tgrelid = to_regclass($1) AND tgname = ANY($2)", &[&qualified, &triggers])
+            .await
+            .map_err(describe)?
+            .get(0);
+        if count != 3 {
+            missing.push("the change and lock triggers".into());
+        }
+        // the notify function must raise the counter too: an older SuperPuTTY's Create / upgrade puts back one that doesn't
+        let counter: bool = client
+            .query_one(
+                "SELECT to_regclass($1) IS NOT NULL AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace \
+                 WHERE n.nspname = $2 AND p.proname = $3 AND strpos(p.prosrc, $4) > 0)",
+                &[&versions, &schema, &format!("{name}_notify"), &format!("{name}_version")],
+            )
+            .await
+            .map_err(describe)?
+            .get(0);
+        if !counter {
+            missing.push("the change counter".into());
+        }
+        let folder_columns: Vec<&str> = FOLDER_COLUMNS.iter().map(|(c, _)| *c).collect();
+        let count: i64 = client
+            .query_one(
+                "SELECT count(*) FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = ANY($3)",
+                &[&schema, &format!("{name}_folders"), &folder_columns],
+            )
+            .await
+            .map_err(describe)?
+            .get(0);
+        if count != FOLDER_COLUMNS.len() as i64 {
+            missing.push("the folder settings table".into());
+        }
+    }
+    Ok(TestResult { server_version, table_exists, rows, can_write, has_version_table, missing })
 }
 
 /// The cache file in the user's folder
@@ -409,14 +454,40 @@ pub fn cache_file(user_folder: &Path) -> PathBuf {
     user_folder.join("DatabaseSessions.cache.xml")
 }
 
-/// The last read, from the cache: sessions, folders, whether it was writable
-pub fn read_cache(user_folder: &Path) -> (Vec<StoredSession>, Vec<FolderSetting>, bool) {
+/// The last read, as kept in the cache
+pub struct Cached {
+    pub sessions: Vec<StoredSession>,
+    pub folders: Vec<FolderSetting>,
+    pub writable: bool,
+    pub optional_columns: Vec<String>,
+    /// When it was read, e.g. "2026-11-02T09:41:07.1234567-06:00"
+    pub synced_at: String,
+}
+
+/// The cache, as SuperXPuTTY's LoadCache: only when it came from this connection (its Source), so another table's
+/// or server's sessions are never shown in its place
+pub fn read_cache(user_folder: &Path, settings: &DbSettings) -> Option<Cached> {
     let path = cache_file(user_folder);
+    let text = std::fs::read_to_string(&path).ok()?;
+    let element = |name: &str| -> Option<String> {
+        let start = text.find(&format!("<{name}>"))? + name.len() + 2;
+        let end = start + text[start..].find(&format!("</{name}>"))?;
+        Some(text[start..end].to_string())
+    };
+    if element("Source")? != sessions::escape(&settings.source()) {
+        return None;
+    }
     let mut problems = Vec::new();
-    let sessions = sessions::read_sessions_file(&path, &mut problems);
-    let folders = sessions::read_folder_settings(&path, &mut problems);
-    let writable = std::fs::read_to_string(&path).map(|t| t.contains("<Writable>true</Writable>")).unwrap_or(false);
-    (sessions, folders, writable)
+    let optional_columns = element("OptionalColumns")
+        .map(|list| list.split("<string>").skip(1).filter_map(|s| s.split("</string>").next()).map(str::to_string).collect())
+        .unwrap_or_default();
+    Some(Cached {
+        sessions: sessions::read_sessions_file(&path, &mut problems),
+        folders: sessions::read_folder_settings(&path, &mut problems),
+        writable: element("Writable").as_deref() == Some("true") && !settings.read_only,
+        optional_columns,
+        synced_at: element("SyncedAt").unwrap_or_default(),
+    })
 }
 
 /// Write the cache in SuperXPuTTY's format (its CacheFile, as XmlSerializer writes it)
@@ -504,6 +575,109 @@ pub struct ExportFile {
 
 #[cfg(test)]
 mod tests {
+    /// Create / upgrade schema and the lock trigger on a table of its own, superputty.sxt_test_sessions, which it
+    /// drops first. Run with SXT_DB_HOST, SXT_DB_USER and SXT_DB_PASSWORD set:
+    /// `cargo test schema_and_locks -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn schema_and_locks_on_a_test_table() {
+        tauri::async_runtime::block_on(schema_and_locks());
+    }
+
+    async fn schema_and_locks() {
+        let env = |k: &str| std::env::var(k).expect(k);
+        let folder = std::env::temp_dir().join("sxt-db-test");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("EnvironmentVariables.json"),
+            serde_json::json!({ "Variables": [{ "Key": "dbpw", "Value": env("SXT_DB_PASSWORD"), "Secret": false }] }).to_string(),
+        )
+        .unwrap();
+        let settings = DbSettings {
+            enabled: true,
+            host: env("SXT_DB_HOST"),
+            user: env("SXT_DB_USER"),
+            table: "sxt_test_sessions".into(),
+            nickname: "sxt-test".into(),
+            password_placeholder: "{dbpw}".into(),
+            ..DbSettings::default()
+        };
+        let client = connect(&settings, &folder, None).await.unwrap();
+        client
+            .batch_execute(
+                "DROP TABLE IF EXISTS superputty.sxt_test_sessions, superputty.sxt_test_sessions_version, superputty.sxt_test_sessions_folders; \
+                 DROP FUNCTION IF EXISTS superputty.sxt_test_sessions_touch(), superputty.sxt_test_sessions_notify(), superputty.sxt_test_sessions_guard()",
+            )
+            .await
+            .unwrap();
+
+        let done = create_or_upgrade_schema(&settings, &folder).await.unwrap();
+        println!("first run: {done}");
+        assert!(done.starts_with("Done: created table superputty.sxt_test_sessions"), "{done}");
+        assert!(test(&settings, &folder, None).await.unwrap().missing.is_empty());
+        assert_eq!(create_or_upgrade_schema(&settings, &folder).await.unwrap(), "The schema is already up to date.");
+
+        // a table made by an older version: no lock columns, no triggers, no folders table
+        client
+            .batch_execute(
+                "ALTER TABLE superputty.sxt_test_sessions DROP COLUMN locked_fields, DROP COLUMN color; \
+                 DROP TRIGGER sxt_test_sessions_guard ON superputty.sxt_test_sessions; DROP TABLE superputty.sxt_test_sessions_folders",
+            )
+            .await
+            .unwrap();
+        let missing = test(&settings, &folder, None).await.unwrap().missing;
+        println!("older table is missing: {missing:?}");
+        assert_eq!(missing.len(), 3, "{missing:?}");
+        let done = create_or_upgrade_schema(&settings, &folder).await.unwrap();
+        println!("upgrade: {done}");
+        assert!(done.contains("added column color") && done.contains("added column locked_fields"), "{done}");
+        assert!(test(&settings, &folder, None).await.unwrap().missing.is_empty());
+
+        let v0: i64 = client.query_one("SELECT version FROM superputty.sxt_test_sessions_version", &[]).await.unwrap().get(0);
+        client
+            .batch_execute(
+                "INSERT INTO superputty.sxt_test_sessions (folder, name, host) VALUES ('Test', 'open', '10.0.0.1'); \
+                 INSERT INTO superputty.sxt_test_sessions (folder, name, host, locked) VALUES ('Test', 'locked', '10.0.0.2', true); \
+                 INSERT INTO superputty.sxt_test_sessions (folder, name, host, locked_fields) VALUES ('Test', 'host-locked', '10.0.0.3', '{host,name}')",
+            )
+            .await
+            .unwrap();
+        let v1: i64 = client.query_one("SELECT version FROM superputty.sxt_test_sessions_version", &[]).await.unwrap().get(0);
+        assert_eq!(v1, v0 + 3, "each statement raises the version");
+        let by: String = client.query_one("SELECT updated_by FROM superputty.sxt_test_sessions WHERE name = 'open'", &[]).await.unwrap().get(0);
+        assert_eq!(by, "sxt-test", "updated_by is the nickname");
+
+        // as SuperPuTTY (this connection's application_name): what the guard refuses
+        let refused = [
+            ("UPDATE superputty.sxt_test_sessions SET notes = 'x' WHERE name = 'locked'", "\"locked\" is locked in the database"),
+            ("DELETE FROM superputty.sxt_test_sessions WHERE name = 'locked'", "\"locked\" is locked in the database"),
+            ("UPDATE superputty.sxt_test_sessions SET host = '10.9.9.9' WHERE name = 'host-locked'", "host of \"host-locked\" is locked"),
+            ("UPDATE superputty.sxt_test_sessions SET locked = true WHERE name = 'open'", "the locks on \"open\" can only be changed"),
+            ("UPDATE superputty.sxt_test_sessions SET external_id = 'x' WHERE name = 'open'", "who manages \"open\""),
+        ];
+        for (sql, expected) in refused {
+            let error = describe(client.batch_execute(sql).await.unwrap_err());
+            println!("refused: {error}");
+            assert!(error.contains("locked: ") && error.contains(expected), "{sql}: {error}");
+        }
+        client.batch_execute("UPDATE superputty.sxt_test_sessions SET username = 'admin' WHERE name = 'host-locked'").await.unwrap();
+
+        // the app's own write refuses a locked field before it reaches the trigger, and reads the locks
+        let fetched = fetch_all(&settings, &folder).await.unwrap();
+        assert_eq!(fetched.sessions.len(), 3);
+        let locked = fetched.sessions.iter().find(|s| s.get("SessionName") == "locked").unwrap();
+        assert_eq!(locked.get("DatabaseLocked"), "true");
+        let host_locked = fetched.sessions.iter().find(|s| s.get("SessionName") == "host-locked").unwrap();
+        assert_eq!(host_locked.get("DatabaseLockedFields"), "host,name");
+
+        // other programs (the scripts that manage the table) aren't stopped
+        let script = DbSettings { nickname: String::new(), ..settings.clone() };
+        let other = connect(&script, &folder, None).await.unwrap();
+        other.batch_execute("SET application_name = 'inventory-script'").await.unwrap();
+        other.batch_execute("UPDATE superputty.sxt_test_sessions SET notes = 'by script' WHERE name = 'locked'").await.unwrap();
+        println!("the rows stay in superputty.sxt_test_sessions for a look in the app");
+    }
+
     use super::*;
     use chrono::TimeZone;
 
@@ -766,4 +940,216 @@ pub async fn set_folder(settings: &DbSettings, user_folder: &Path, f: &FolderSet
         }
         Err(e) => Err(write_error(e)),
     }
+}
+
+/// The sessions table's columns, as SuperXPuTTY's Columns (Create / upgrade schema adds any that are missing)
+const COLUMNS: [(&str, &str); 26] = [
+    ("id", "uuid PRIMARY KEY DEFAULT gen_random_uuid()"),
+    ("folder", "text NOT NULL DEFAULT ''"),
+    ("name", "text NOT NULL"),
+    ("protocol", "text NOT NULL DEFAULT 'SSH'"),
+    ("host", "text NOT NULL DEFAULT ''"),
+    ("port", "integer NOT NULL DEFAULT 0"),
+    ("username", "text NOT NULL DEFAULT ''"),
+    ("putty_profile", "text NOT NULL DEFAULT 'Default Settings'"),
+    ("extra_args", "text NOT NULL DEFAULT ''"),
+    ("icon", "text"),
+    ("notes", "text"),
+    ("spsl_script", "text"),
+    ("rdp_options", "text"),
+    ("local_path", "text"),
+    ("remote_path", "text"),
+    ("color", "text"),
+    ("jump_host", "text"),
+    ("highlight_rules", "text"),
+    ("locked", "boolean NOT NULL DEFAULT false"),
+    ("locked_fields", "text[] NOT NULL DEFAULT '{}'"),
+    ("managed_by", "text"),
+    ("external_id", "text"),
+    ("created_at", "timestamptz NOT NULL DEFAULT now()"),
+    ("updated_at", "timestamptz NOT NULL DEFAULT now()"),
+    ("updated_by", "text NOT NULL DEFAULT current_user"),
+    ("deleted_at", "timestamptz"),
+];
+
+/// The folders table's columns, as SuperXPuTTY's FolderColumns
+const FOLDER_COLUMNS: [(&str, &str); 9] = [
+    ("folder", "text PRIMARY KEY"),
+    ("color", "text"),
+    ("username", "text"),
+    ("putty_profile", "text"),
+    ("port", "integer"),
+    ("jump_host", "text"),
+    ("highlight_rules", "text"),
+    ("updated_at", "timestamptz NOT NULL DEFAULT now()"),
+    ("updated_by", "text NOT NULL DEFAULT current_user"),
+];
+
+/// Who changed a row: the user's nickname, else the login, as SuperXPuTTY's ChangedBy
+const CHANGED_BY: &str = "coalesce(nullif(current_setting('superputty.nickname', true), ''), current_user)";
+
+/// Create the database, schema, table, triggers and folders table, or add whatever is missing, exactly as
+/// SuperXPuTTY's CreateOrUpgradeSchema, so either app's tables work with both. It never drops or rewrites data, and
+/// runs only from the window's button, never when Read only is ticked. Returns what it did.
+pub async fn create_or_upgrade_schema(settings: &DbSettings, user_folder: &Path) -> Result<String, String> {
+    if settings.read_only {
+        return Err("The database connection is read-only, so nothing is created or changed.".into());
+    }
+    let mut done: Vec<String> = Vec::new();
+    let mut client = match connect(settings, user_folder, None).await {
+        Ok(client) => client,
+        Err(e) if e.contains("does not exist") && e.contains("database") => {
+            let server = DbSettings { database: "postgres".into(), nickname: String::new(), ..settings.clone() };
+            let admin = connect(&server, user_folder, None).await?;
+            admin.batch_execute(&format!("CREATE DATABASE {}", quote(&settings.database))).await.map_err(describe)?;
+            done.push(format!("created database {}", settings.database));
+            connect(settings, user_folder, None).await?
+        }
+        Err(e) => return Err(e),
+    };
+    let version: i32 = client
+        .query_one("SELECT current_setting('server_version_num')::int", &[])
+        .await
+        .map_err(describe)?
+        .get(0);
+    if version < 130000 {
+        return Err("PostgreSQL 13 or later is needed.".into());
+    }
+
+    let (schema, name) = (settings.schema.as_str(), settings.table.as_str());
+    let table = settings.table();
+    let qualified = format!("{schema}.{name}");
+    let table_exists: bool = client.query_one("SELECT to_regclass($1) IS NOT NULL", &[&qualified]).await.map_err(describe)?.get(0);
+    let present: Vec<String> = client
+        .query("SELECT column_name::text FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2", &[&schema, &name])
+        .await
+        .map_err(describe)?
+        .iter()
+        .map(|r| r.get(0))
+        .collect();
+    // what's there before, as SuperXPuTTY's Probe, for what "Done:" lists
+    let before = test(settings, user_folder, None).await?.missing;
+    let had_counter = !before.iter().any(|m| m == "the change counter") && table_exists;
+    let had_folders = !before.iter().any(|m| m == "the folder settings table") && table_exists;
+    let had_triggers = !before.iter().any(|m| m == "the change and lock triggers") && table_exists;
+
+    let grants: Vec<(String, String)> = client
+        .query(
+            "SELECT grantee::text, string_agg(privilege_type, ', ') FROM information_schema.role_table_grants \
+             WHERE table_schema = $1 AND table_name = $2 AND privilege_type IN ('SELECT', 'INSERT', 'UPDATE', 'DELETE') \
+             AND grantee <> current_user GROUP BY grantee",
+            &[&schema, &name],
+        )
+        .await
+        .map_err(describe)?
+        .iter()
+        .map(|r| (r.get(0), r.get(1)))
+        .collect();
+
+    let q = |s: &str| quote(s);
+    let mut sql: Vec<String> = vec![format!("CREATE SCHEMA IF NOT EXISTS {}", q(schema))];
+    if !table_exists {
+        let columns: Vec<String> = COLUMNS.iter().map(|(c, t)| format!("{} {t}", q(c))).collect();
+        sql.push(format!(
+            "CREATE TABLE IF NOT EXISTS {table} ({}, UNIQUE (folder, name), CHECK (name <> '' AND strpos(name, '/') = 0), \
+             CHECK (folder = '' OR (left(folder, 1) <> '/' AND right(folder, 1) <> '/')))",
+            columns.join(", ")
+        ));
+        sql.push(format!("COMMENT ON TABLE {table} IS 'SuperPuTTY sessions: folder is the tree path (e.g. Lab/Core), '''' at the top'"));
+        done.push(format!("created table {qualified}"));
+    } else {
+        for (c, t) in COLUMNS.iter().filter(|(c, _)| *c != "id" && !present.iter().any(|p| p == c)) {
+            sql.push(format!("ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {} {t}", q(c)));
+            done.push(format!("added column {c}"));
+        }
+    }
+    sql.push(format!(
+        "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {table} (managed_by, external_id) WHERE external_id IS NOT NULL",
+        q(&format!("{name}_external_id"))
+    ));
+    let touch = format!("{}.{}", q(schema), q(&format!("{name}_touch")));
+    sql.push(format!(
+        "CREATE OR REPLACE FUNCTION {touch}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN \
+         IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN NEW.updated_at := now(); NEW.updated_by := {CHANGED_BY}; RETURN NEW; END IF; \
+         RETURN OLD; END $$"
+    ));
+    let versions = settings.version_table();
+    sql.push(format!("CREATE TABLE IF NOT EXISTS {versions} (version bigint NOT NULL, changed_at timestamptz NOT NULL DEFAULT now())"));
+    sql.push(format!("INSERT INTO {versions} (version) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM {versions})"));
+    sql.push(format!("GRANT SELECT ON {versions} TO PUBLIC"));
+    sql.push(format!("COMMENT ON TABLE {versions} IS 'Raised on every change to {name}; SuperPuTTY reads it to notice changes'"));
+    let notify = format!("{}.{}", q(schema), q(&format!("{name}_notify")));
+    sql.push(format!(
+        "CREATE OR REPLACE FUNCTION {notify}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER \
+         SET search_path = pg_catalog, pg_temp AS $$ BEGIN \
+         UPDATE {versions} SET version = version + 1, changed_at = now(); \
+         PERFORM pg_notify('superputty_sessions', TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME); RETURN NULL; END $$"
+    ));
+    if !had_counter {
+        done.push(format!("added the change counter {name}_version"));
+    }
+    let trigger = |t: &str| q(&format!("{name}_{t}"));
+    sql.push(format!("DROP TRIGGER IF EXISTS {} ON {table}", trigger("touch")));
+    sql.push(format!("CREATE TRIGGER {} BEFORE INSERT OR UPDATE ON {table} FOR EACH ROW EXECUTE FUNCTION {touch}()", trigger("touch")));
+    let guard = format!("{}.{}", q(schema), q(&format!("{name}_guard")));
+    sql.push(format!(
+        "CREATE OR REPLACE FUNCTION {guard}() RETURNS trigger LANGUAGE plpgsql AS $$ DECLARE f text; BEGIN \
+         IF coalesce(current_setting('application_name', true), '') <> '{APPLICATION_NAME}' THEN \
+         IF TG_OP = 'DELETE' THEN RETURN OLD; END IF; RETURN NEW; END IF; \
+         IF TG_OP = 'DELETE' THEN \
+         IF OLD.locked THEN RAISE EXCEPTION 'locked: \"%\" is locked in the database', OLD.name; END IF; RETURN OLD; END IF; \
+         IF NEW.locked IS DISTINCT FROM OLD.locked OR NEW.locked_fields IS DISTINCT FROM OLD.locked_fields THEN \
+         RAISE EXCEPTION 'locked: the locks on \"%\" can only be changed in the database', OLD.name; END IF; \
+         IF NEW.managed_by IS DISTINCT FROM OLD.managed_by OR NEW.external_id IS DISTINCT FROM OLD.external_id \
+         OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN \
+         RAISE EXCEPTION 'locked: who manages \"%\", and when it was created, can only be changed in the database', OLD.name; END IF; \
+         IF OLD.locked AND (to_jsonb(NEW) - 'updated_at' - 'updated_by') IS DISTINCT FROM (to_jsonb(OLD) - 'updated_at' - 'updated_by') THEN \
+         RAISE EXCEPTION 'locked: \"%\" is locked in the database', OLD.name; END IF; \
+         FOREACH f IN ARRAY OLD.locked_fields LOOP \
+         IF (to_jsonb(NEW) -> f) IS DISTINCT FROM (to_jsonb(OLD) -> f) THEN \
+         RAISE EXCEPTION 'locked: % of \"%\" is locked in the database', f, OLD.name; END IF; END LOOP; \
+         RETURN NEW; END $$"
+    ));
+    sql.push(format!("DROP TRIGGER IF EXISTS {} ON {table}", trigger("guard")));
+    sql.push(format!("CREATE TRIGGER {} BEFORE UPDATE OR DELETE ON {table} FOR EACH ROW EXECUTE FUNCTION {guard}()", trigger("guard")));
+    sql.push(format!("DROP TRIGGER IF EXISTS {} ON {table}", trigger("changed")));
+    sql.push(format!(
+        "CREATE TRIGGER {} AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE ON {table} FOR EACH STATEMENT EXECUTE FUNCTION {notify}()",
+        trigger("changed")
+    ));
+    let folders = settings.folders_table();
+    let folder_columns: Vec<String> = FOLDER_COLUMNS.iter().map(|(c, t)| format!("{} {t}", q(c))).collect();
+    sql.push(format!(
+        "CREATE TABLE IF NOT EXISTS {folders} ({}, CHECK (folder <> '' AND left(folder, 1) <> '/' AND right(folder, 1) <> '/'))",
+        folder_columns.join(", ")
+    ));
+    sql.push(format!("COMMENT ON TABLE {folders} IS 'SuperPuTTY folder settings, inherited by the sessions under each folder of {name}'"));
+    for (c, t) in FOLDER_COLUMNS.iter().filter(|(c, _)| *c != "folder") {
+        sql.push(format!("ALTER TABLE {folders} ADD COLUMN IF NOT EXISTS {} {t}", q(c)));
+    }
+    sql.push(format!("DROP TRIGGER IF EXISTS {} ON {folders}", trigger("folders_touch")));
+    sql.push(format!("CREATE TRIGGER {} BEFORE INSERT OR UPDATE ON {folders} FOR EACH ROW EXECUTE FUNCTION {touch}()", trigger("folders_touch")));
+    sql.push(format!("DROP TRIGGER IF EXISTS {} ON {folders}", trigger("folders_changed")));
+    sql.push(format!(
+        "CREATE TRIGGER {} AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE ON {folders} FOR EACH STATEMENT EXECUTE FUNCTION {notify}()",
+        trigger("folders_changed")
+    ));
+    // whoever may read or change the sessions may do the same with their folders
+    for (grantee, privileges) in &grants {
+        let who = if grantee == "PUBLIC" { "PUBLIC".to_string() } else { q(grantee) };
+        sql.push(format!("GRANT {privileges} ON {folders} TO {who}"));
+    }
+    if !had_folders {
+        done.push(format!("added or updated the folder settings table {name}_folders"));
+    }
+    if !had_triggers {
+        done.push("added the change and lock triggers".into());
+    }
+
+    let transaction = client.transaction().await.map_err(describe)?;
+    for statement in &sql {
+        transaction.batch_execute(statement).await.map_err(describe)?;
+    }
+    transaction.commit().await.map_err(describe)?;
+    Ok(if done.is_empty() { "The schema is already up to date.".into() } else { format!("Done: {}.", done.join(", ")) })
 }

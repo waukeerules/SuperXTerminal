@@ -1,5 +1,6 @@
 //! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
 
+mod highlighting;
 mod launch;
 mod profiles;
 mod pty;
@@ -131,6 +132,19 @@ fn icons_custom(state: State<'_, AppState>) -> Vec<(String, String)> {
     icons
 }
 
+/// The highlighting rule sets and themes in the team's and the user's `highlighting` folders (the UI adds the defaults)
+#[tauri::command]
+fn highlighting_load(state: State<'_, AppState>) -> highlighting::Highlighting {
+    let shared = state.settings.lock().unwrap().settings_folder.clone().map(|f| f.join("highlighting"));
+    let user = state.user_folder.join("highlighting");
+    let mut folders: Vec<&std::path::Path> = Vec::new();
+    if let Some(shared) = &shared {
+        folders.push(shared);
+    }
+    folders.push(&user);
+    highlighting::load(&folders)
+}
+
 /// Use another settings folder (chosen in the UI), and remember it
 #[tauri::command]
 fn settings_set_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -214,6 +228,7 @@ pub fn run() {
             settings_get,
             settings_set_folder,
             icons_custom,
+            highlighting_load,
             profiles_list,
             profiles_save,
             profiles_delete,

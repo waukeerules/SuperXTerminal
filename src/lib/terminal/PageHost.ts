@@ -9,6 +9,7 @@
  * with TerminalControl, so a flood of output can't outrun the page.
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { highlighting } from "./highlighting";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
 type PtyEvent =
@@ -42,9 +43,9 @@ const MENU_KEYS = [
 ];
 
 /**
- * A stand-in theme until SuperXPuTTY's theme files are loaded (M4; they're missing from its Git repository): the
- * look the terminal has without one. The page applies colours, the session's cursor colour included, only
- * through a theme, so with none the cursor stayed white.
+ * A stand-in theme for when no theme files are found (SuperXPuTTY's defaults are missing from its Git repository):
+ * the look the terminal has without one. The page applies colours, the session's cursor colour included, only
+ * through a theme, so with none the cursor stayed white. It has no highlighting styles, so rules colour nothing.
  */
 const STAND_IN_THEMES = [{ name: "PuTTY", base: "vs-dark", colors: { background: "#000000", foreground: "#FFFFFF" } }];
 
@@ -60,6 +61,9 @@ export class PageHost {
   private queue: string[] = [];
   /** A chunk has been sent and not yet acknowledged */
   private waiting = false;
+  /** Settles once the page has its settings; output is held until then */
+  private configured: Promise<void> | null = null;
+  private settled = false;
   /** The size the page last asked for, kept until the pseudo terminal is open */
   private size = { cols: 80, rows: 24 };
   private readonly onWindowMessage = (event: MessageEvent) => this.receive(event);
@@ -153,13 +157,14 @@ export class PageHost {
     if (value) this.post({ type: "paste", text: value });
   }
 
-  /** The page's settings: the profile's cursor and bell; no highlighting rules or themes yet (M4) */
-  private sendConfig(look: Look): void {
+  /** The page's settings: the highlighting rules and themes, and the profile's cursor and bell */
+  private async sendConfig(look: Look): Promise<void> {
     const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const files = await highlighting();
     this.post({
       type: "config",
-      ruleSets: [],
-      themes: STAND_IN_THEMES,
+      ruleSets: files.ruleSets,
+      themes: files.themes.length ? files.themes : STAND_IN_THEMES,
       dark,
       bell: look.bell,
       cursor: { style: look.cursor, blink: look.blink },
@@ -183,7 +188,8 @@ export class PageHost {
         this.queue.push(event.data);
         this.flush();
       } else if (event.type === "started") {
-        this.sendConfig(event.look);
+        // output waits until the page has its settings, so the first lines are highlighted too
+        this.configured = this.sendConfig(event.look);
       } else if (event.type === "notice") {
         this.post({ type: "notice", text: event.text, kind: event.kind });
       } else if (event.type === "exit") {
@@ -195,14 +201,22 @@ export class PageHost {
       this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel });
     } catch (error) {
       // nothing started, so the page has had no settings yet
-      this.sendConfig({ cursor: "block", blink: true, bell: "visual" });
+      await this.sendConfig({ cursor: "block", blink: true, bell: "visual" });
       this.post({ type: "notice", text: String(error), kind: "error" });
     }
   }
 
-  /** Send the next chunk of output if the page has drawn the last one */
+  /** Send the next chunk of output if the page has drawn the last one and has its settings */
   private flush(): void {
     if (this.waiting || this.queue.length === 0) return;
+    if (!this.configured) return;
+    if (!this.settled) {
+      void this.configured.then(() => {
+        this.settled = true;
+        this.flush();
+      });
+      return;
+    }
     // join what's waiting into one chunk; base64 can't be joined, so decode and re-encode
     const data = this.queue.length === 1 ? this.queue[0] : joinBase64(this.queue);
     this.queue = [];

@@ -108,7 +108,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 ## M4 Terminal extras
 
-- ⬜ Highlighting rules (cisco, junos, generic, auto, user rules), per session and folder, per tab
+- 🚧 Highlighting rules (cisco, junos, generic, auto, user rules), per session and folder, per tab: the team's and the user's `highlighting` folders are read and Auto picks a set (checked with `my-cisco`); colours wait for SuperXPuTTY's default themes and rules, missing from its Git repository
 - ⬜ Terminal preferences in Settings (theme, font, cursor, bell, copy on select, mark matches)
 - ⬜ Highlighted Output (Monaco) beside the tab, from the menu's Open as Document
 - ⬜ Terminal right-click menu complete, with Mac shortcuts (Cmd+C/V/F/K/W)

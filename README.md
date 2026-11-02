@@ -14,6 +14,24 @@ Planning done; starting M0. No code yet.
 
 Mac first; CI also builds Windows and Linux.
 
+## Building
+
+Needs Rust (`rustup`, stable) and Node (LTS). Then, in this folder:
+
+```bash
+npm install          # once, and after package.json changes
+npm run tauri dev    # run the app; UI changes reload live, Rust changes rebuild and restart
+npm run tauri build  # release build: the .app and .dmg in src-tauri/target/release/bundle/
+```
+
+Checks:
+
+```bash
+npm run check                          # Svelte and TypeScript
+npm run licenses                       # licences of the shipped npm packages
+(cd src-tauri && cargo deny check)     # Rust licences, advisories and sources (cargo install cargo-deny)
+```
+
 ## Licence
 
 To be decided. SuperXPuTTY is MIT.

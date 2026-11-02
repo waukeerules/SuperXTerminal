@@ -236,6 +236,7 @@ All supported, against **the same table** (see [Sharing data](#3-sharing-data-wi
 - **Turned into `ssh` arguments** per launch: `-l`, `-p`, `-i … -o IdentitiesOnly=yes`, `-J`, `-o …`, and the password through the askpass helper.
 - **Filling them:** created by hand in Settings → Profiles. Later, optionally, imported from a `reg export` of `HKCU\Software\SimonTatham\PuTTY\Sessions`, keeping the fields `ssh` can use.
 - **Telnet, Raw and Serial** use a profile's terminal settings, and Serial its line settings, when they're set.
+- **Older devices.** PuTTY still accepts old algorithms (with a warning); macOS's OpenSSH 10 refuses them. So Cisco gear that worked in SuperXPuTTY fails with "no matching key exchange method" or "no matching cipher". A profile's **Allow older algorithms** option (on in "Default Settings", so sessions behave as they did in PuTTY) adds them for that connection only: `-o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1 -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa -o Ciphers=+aes256-cbc,aes192-cbc,aes128-cbc`. Checked against the lab switch (IOS, 2026-11-01). `diffie-hellman-group1-sha1` and `3des-cbc` are left out: OpenSSH 10 no longer has them.
 
 ### Terminal
 

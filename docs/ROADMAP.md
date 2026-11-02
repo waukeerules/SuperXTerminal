@@ -11,7 +11,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 | Milestone | Status |
 |---|---|
-| [M0 Skeleton](#m0-skeleton) | ⬜ |
+| [M0 Skeleton](#m0-skeleton) | 🚧 |
 | [M1 MVP](#m1-mvp) | ⬜ |
 | [M2 Database sessions](#m2-database-sessions) | ⬜ |
 | [M3 Scripting and commands](#m3-scripting-and-commands) | ⬜ |
@@ -26,14 +26,15 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Done when:** the app opens on a Mac, with an empty tree and one local shell tab; CI builds all three platforms.
 
-- ⬜ Rust (`rustup`) and Node toolchain set up; versions pinned (`rust-toolchain.toml`, `.nvmrc`)
-- ⬜ Tauri 2 + Svelte 5 + TypeScript app that opens a window
-- ⬜ Main window layout: menu bar, toolbars, sessions sidebar, tab area, button bar, status bar (empty)
-- ⬜ dockview tab area with one tab
-- ⬜ PTY (`portable-pty`) running the login shell in that tab, drawn by `web/terminal` (xterm.js) through the `chrome.webview` shim
-- ⬜ `web/terminal`, `web/output`, `web/shared` and `web/lib` copied from SuperXPuTTY with their licences
-- ⬜ Licence checks (`cargo-deny`, npm licence check) and `cargo audit`
-- ⬜ CI: macOS, Windows and Linux builds, unsigned
+- ✅ Rust (`rustup`) and Node toolchain set up; versions pinned (`rust-toolchain.toml`, `.nvmrc`)
+- ✅ Tauri 2 + Svelte 5 + TypeScript app that opens a window
+- ✅ Main window layout: menu bar, toolbars, sessions sidebar, tab area, button bar, status bar (empty, with tooltips saying which milestone fills them)
+- ✅ dockview tab area with one tab (and more, from New Local Shell)
+- ✅ PTY (`portable-pty`) running the login shell in that tab, drawn by `web/terminal` (xterm.js) through the `chrome.webview` shim; the page starts the shell (checked), drawing and typing checked in the app (typed by Claude, read back by screenshot)
+- ✅ `web/terminal`, `web/output`, `web/shared` and `web/lib` copied from SuperXPuTTY with their licences (default rules and themes still missing: not in SuperXPuTTY's repository)
+- ✅ Licence checks (`cargo deny check` in `src-tauri/`, `npm run licenses`), including security advisories
+- 🚧 CI: macOS, Windows and Linux builds, unsigned; workflow written, not run until the repository is on GitHub
+- ⬜ Known issue: in the app (WKWebView) a small round macOS badge sits beside the terminal cursor and covers the end of the prompt. Not in the page's DOM, not a separate window. Not fixed by `writingsuggestions="false"`, a transparent caret, or `TSMLanguageIndicatorEnabled` off for the app. Next: find it with Web Inspector
 
 ## M1 MVP
 
@@ -67,6 +68,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ⬜ Profiles: Settings → Profiles, "Default Settings", matched by name
 - ⬜ Profile and session passwords in the Keychain, through the askpass helper
 - ⬜ Key files and agent
+- ⬜ Allow older algorithms (profile option, on by default): SHA-1 key exchange, `ssh-rsa`, CBC ciphers
 - ⬜ Launch order: override, session, folder default, profile, defaults
 - ⬜ `{key}` placeholders; Environment Variables with Keychain secrets
 - ⬜ Quick connect toolbar

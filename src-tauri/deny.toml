@@ -1,0 +1,34 @@
+# cargo-deny: licences, security advisories and crate sources for the Rust core.
+# The allowed licences match scripts/check-licenses.mjs (docs/PLAN.md §1 Licensing). Run `cargo deny check` here.
+
+[graph]
+all-features = false
+
+[licenses]
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "CC0-1.0",
+  "0BSD",
+  "Unicode-3.0",
+  "MPL-2.0",
+]
+confidence-threshold = 0.9
+# the list is shared with the npm check, so not every licence appears on the Rust side
+unused-allowed-license = "allow"
+
+[advisories]
+# unmaintained crates deep in Tauri's tree are reported, not failed; vulnerabilities still fail
+unmaintained = "none"
+
+[bans]
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

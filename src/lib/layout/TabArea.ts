@@ -51,6 +51,7 @@ class TabLabel implements ITabRenderer {
           environment,
           iconSize: this.tabs.iconSize,
           customs: this.tabs.customs,
+          tabId: parameters.api.id,
           onClose: () => parameters.api.close(),
         },
       });

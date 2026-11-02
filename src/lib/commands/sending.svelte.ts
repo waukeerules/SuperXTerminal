@@ -24,7 +24,7 @@ export const context: { tabs: TabArea | null; status: (text: string) => void; op
 export const selection = $state({ iconGroup: "" });
 
 /** The scripts running now, for the status bar */
-export const running = $state<{ runs: { run: ScriptRun; tab: string; started: number; source: string }[] }>({ runs: [] });
+export const running = $state<{ runs: { run: ScriptRun; tab: string; tabId: string; started: number; source: string }[] }>({ runs: [] });
 
 /** Tabs that can be typed into */
 function receiving(tabs: TabInfo[]): TabInfo[] {
@@ -93,7 +93,7 @@ const host: ScriptHost = {
 export function runScriptIn(tab: TabInfo, script: string, name: string, fromStart = false, source = ""): void {
   const lines = script.split("\n").filter((l) => l.trim() && !l.trimStart().startsWith("#")).length;
   const run = new ScriptRun(name, tab.title, lines);
-  const entry = { run, tab: tab.title, started: Date.now(), source };
+  const entry = { run, tab: tab.title, tabId: tab.id, started: Date.now(), source };
   running.runs = [...running.runs, entry];
   void runScript(tab.host, host, run, script, fromStart).finally(() => {
     // the list holds proxies of the entries, so compare the run (a class, which isn't proxied)

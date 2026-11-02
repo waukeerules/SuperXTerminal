@@ -7,7 +7,7 @@ A macOS counterpart of [SuperXPuTTY](https://github.com/waukeerules/superputty):
 
 ## Status
 
-M0 (skeleton), M1 (sessions tree, SSH, profiles) and M2 (Database sessions) are done; M3 (scripting and commands) is nearly done.
+M0 (skeleton), M1 (sessions tree, SSH, profiles) M2 (Database sessions) and M3 (scripting and commands) are done; M4 (terminal extras) is under way.
 
 - **[docs/PLAN.md](docs/PLAN.md):** the plan. It covers the options and the chosen stack (Tauri 2 and Svelte 5, reusing SuperXPuTTY's xterm.js and Monaco pages), licensing, the feature matrix, data compatibility, the UI mapping, milestones and open questions.
 - **[docs/ROADMAP.md](docs/ROADMAP.md):** progress, one line per feature, ticked ✅ as each is delivered.

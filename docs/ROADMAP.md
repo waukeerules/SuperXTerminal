@@ -14,8 +14,8 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 | [M0 Skeleton](#m0-skeleton) | ✅ |
 | [M1 MVP](#m1-mvp) | ✅ |
 | [M2 Database sessions](#m2-database-sessions) | ✅ |
-| [M3 Scripting and commands](#m3-scripting-and-commands) | 🚧 |
-| [M4 Terminal extras](#m4-terminal-extras) | ⬜ |
+| [M3 Scripting and commands](#m3-scripting-and-commands) | ✅ |
+| [M4 Terminal extras](#m4-terminal-extras) | 🚧 |
 | [M5 The rest](#m5-the-rest) | ⬜ |
 | [M6 Distribution](#m6-distribution) | ⬜ |
 | [Later](#later) | ⬜ |
@@ -109,7 +109,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ `{prompt:...}` and `{secret:...}` snippet prompts (one window, each name once, last value offered); `{key}` placeholders filled first for buttons and scripts, offering Environment Variables when one has no value
 - ✅ SPSL parser and runner: SENDLINE, SENDCHAR, SENDKEY (modifiers, names, {KEY n}; xterm sequences as TerminalKeys, US layout for characters), WAITFOR (/t:, reads the page's output as TerminalControl), SLEEP, PROMPT, PWDPROMPT, OPENSESSION; stops on a WAITFOR timeout, an error or a cancelled password; status-bar progress with Stop. Checked on the lab switch (enable, password, show clock, Ctrl+Z, disable)
 - ✅ Script Editor: saved scripts (`<SettingsFolder>/scripts`, .spsl and .txt, CRLF), Insert, Save as, Delete, Open file, Save to file, Run as (Send lines / SPSL script), the SPSL panel (commands, saved scripts, Check script). It floats over the window without blocking it, so Always on top isn't needed
-- 🚧 Session's own script on open: a file (absolute, file://, or relative to the settings folder) or a URL, run when it starts #!/bin/spsl, its first WAITFOR seeing everything since the session started; a Windows path is reported as not on this Mac. Not yet tried with a session that has one
+- ✅ Session's own script on open: a file (absolute, file://, or relative to the settings folder) or a URL, run when it starts #!/bin/spsl, its first WAITFOR seeing everything since the session started; a Windows path is reported as not on this Mac. Checked on the lab switch (WAITFOR the prompt, show clock, SLEEP, show version); the tab shows a spinner while a script runs
 - ✅ Send Key (`TerminalKeys`): the tab menu's keys and Other Key… (any key as SENDKEY writes it)
 
 ## M4 Terminal extras

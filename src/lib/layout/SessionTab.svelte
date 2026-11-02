@@ -5,6 +5,7 @@
 <script lang="ts">
   import Icon from "../icons/Icon.svelte";
   import type { CustomIcon } from "../icons/custom";
+  import { running } from "../commands/sending.svelte";
 
   interface Props {
     title: string;
@@ -12,14 +13,24 @@
     environment: string | null;
     iconSize: number;
     customs: ReadonlyMap<string, CustomIcon>;
+    /** The tab's id: a spinner shows in place of the icon while a script runs in it, as SuperXPuTTY's */
+    tabId: string;
     onClose: () => void;
   }
 
-  let { title, icon, environment, iconSize, customs, onClose }: Props = $props();
+  let { title, icon, environment, iconSize, customs, tabId, onClose }: Props = $props();
+  const scripting = $derived(running.runs.some((r) => r.tabId === tabId));
 </script>
 
 <span class="tab" class:coloured={!!environment} style:--env={environment ?? "transparent"}>
-  <Icon key={icon} size={Math.round(iconSize * 0.75)} {customs} />
+  {#if scripting}
+    <!-- the icon's cell, so the label doesn't move -->
+    <span class="cell" style:width="{Math.round(Math.round(iconSize * 0.75) * 1.36)}px" style:height="{Math.round(Math.round(iconSize * 0.75) * 1.36)}px">
+      <span class="spinner" title="A script is running" style:width="{Math.round(iconSize * 0.75)}px" style:height="{Math.round(iconSize * 0.75)}px"></span>
+    </span>
+  {:else}
+    <Icon key={icon} size={Math.round(iconSize * 0.75)} {customs} />
+  {/if}
   <span class="title">{title}</span>
   <button class="close" title="Close" aria-label="Close {title}"
     onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); onClose(); }}>✕</button>
@@ -39,6 +50,28 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .cell {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .spinner {
+    box-sizing: border-box;
+    flex: none;
+    border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .close {

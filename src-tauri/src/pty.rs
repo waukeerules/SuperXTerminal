@@ -4,8 +4,11 @@
 //! with `pty_open`, types into it with `pty_write` and resizes it with `pty_resize`. Output comes back on the tab's
 //! own `Channel` as base64, the form the page's "data" message already takes. What runs in it is a [`Target`]: the
 //! user's login shell, or a stored session started as `launch.rs` builds it.
+//!
+//! A tab can move to another window (Move to New Window): its output goes through an [`Outlet`], which keeps the
+//! recent output, and `pty_attach` gives the session to the new window's page, replaying that output first.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -47,12 +50,71 @@ pub enum PtyEvent {
     Started { local: bool, look: Look, link: String },
 }
 
+/// How much recent output a session keeps, to replay when its tab moves to another window
+const KEPT_OUTPUT: usize = 2 * 1024 * 1024;
+
+/// Where a session's output goes: its tab's channel, which changes when the tab moves to another window, and what
+/// the new tab needs to carry on: how the session started, the recent output, and how it ended, if it has
+#[derive(Clone)]
+struct Outlet(Arc<Mutex<OutletState>>);
+
+struct OutletState {
+    channel: Channel<PtyEvent>,
+    started: Option<PtyEvent>,
+    recent: VecDeque<u8>,
+    exit: Option<Option<u32>>,
+}
+
+impl Outlet {
+    fn new(channel: Channel<PtyEvent>) -> Outlet {
+        Outlet(Arc::new(Mutex::new(OutletState { channel, started: None, recent: VecDeque::new(), exit: None })))
+    }
+
+    /// Pass an event on to the tab (a tab that's gone, or moving, misses it; the output is kept all the same)
+    fn send(&self, event: PtyEvent) {
+        let mut state = self.0.lock().unwrap();
+        match &event {
+            PtyEvent::Started { .. } => state.started = Some(event.clone()),
+            PtyEvent::Exit { code } => state.exit = Some(*code),
+            _ => {}
+        }
+        let _ = state.channel.send(event);
+    }
+
+    /// Pass output on, keeping the last [`KEPT_OUTPUT`] bytes of it
+    fn data(&self, bytes: &[u8]) {
+        let mut state = self.0.lock().unwrap();
+        state.recent.extend(bytes);
+        let over = state.recent.len().saturating_sub(KEPT_OUTPUT);
+        state.recent.drain(..over);
+        let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let _ = state.channel.send(PtyEvent::Data { data });
+    }
+
+    /// Send the output to another tab from now on, after how it started, what it has shown and how it ended
+    fn attach(&self, channel: Channel<PtyEvent>) {
+        let mut state = self.0.lock().unwrap();
+        state.channel = channel;
+        if let Some(started) = state.started.clone() {
+            let _ = state.channel.send(started);
+        }
+        let recent: Vec<u8> = state.recent.iter().copied().collect();
+        for chunk in recent.chunks(64 * 1024) {
+            let _ = state.channel.send(PtyEvent::Data { data: base64::engine::general_purpose::STANDARD.encode(chunk) });
+        }
+        if let Some(code) = state.exit {
+            let _ = state.channel.send(PtyEvent::Exit { code });
+        }
+    }
+}
+
 /// One open pseudo terminal: the master side (for resizing), its writer (for typing) and the program in it
 struct Session {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     kind: SessionKind,
     /// The window whose tab it is; closing that window ends it
     window: String,
+    outlet: Outlet,
 }
 
 /// A program in a pseudo terminal (ssh, a shell), or a Telnet, Raw or Serial stream in the core
@@ -109,12 +171,13 @@ pub fn pty_open(
         Some(crate::streams::Target::Serial { .. }) => "serial",
         None => "pty",
     };
-    let _ = on_event.send(PtyEvent::Started { local, look, link: link.into() });
+    let outlet = Outlet::new(on_event);
+    outlet.send(PtyEvent::Started { local, look, link: link.into() });
     for text in notices {
-        let _ = on_event.send(PtyEvent::Notice { text, kind: "info".into() });
+        outlet.send(PtyEvent::Notice { text, kind: "info".into() });
     }
     if let Some(target) = stream {
-        return open_stream(&ptys, &target, cols, rows, on_event, window.label());
+        return open_stream(&ptys, &target, cols, rows, outlet, window.label());
     }
 
     let pair = native_pty_system()
@@ -143,6 +206,7 @@ pub fn pty_open(
 
     let typist = writer.clone();
     let ending = child.clone();
+    let output = outlet.clone();
     std::thread::Builder::new()
         .name(format!("pty-{id}"))
         .spawn(move || {
@@ -152,10 +216,8 @@ pub fn pty_open(
                 match reader.read(&mut buffer) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        let data = base64::engine::general_purpose::STANDARD.encode(&buffer[..n]);
-                        if on_event.send(PtyEvent::Data { data }).is_err() {
-                            break;
-                        }
+                        // on even while no tab takes it (one moving to another window); closing the tab ends the program
+                        output.data(&buffer[..n]);
                         if let Some(answer) = prompt.as_mut().and_then(|p| p.answer(&buffer[..n])) {
                             let mut writer = typist.lock().unwrap();
                             let _ = writer.write_all(answer.as_bytes()).and_then(|_| writer.flush());
@@ -177,19 +239,20 @@ pub fn pty_open(
                     Err(_) => break,
                 }
             }
-            let _ = on_event.send(PtyEvent::Exit { code });
+            output.send(PtyEvent::Exit { code });
         })
         .map_err(|e| e.to_string())?;
 
-    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Pty { master: pair.master, child }, window: window.label().to_string() });
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Pty { master: pair.master, child }, window: window.label().to_string(), outlet });
     Ok(id)
 }
 
 /// Start a Telnet, Raw or Serial stream and pass its output on, as a pseudo terminal's. The other end closing is a
 /// clean end (the tab closes, as plink's would); a broken connection isn't (the tab stays and can reconnect).
-fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u16, on_event: Channel<PtyEvent>, window: &str) -> Result<u32, String> {
+fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u16, outlet: Outlet, window: &str) -> Result<u32, String> {
     let (stream, mut reader) = crate::streams::open(target, cols, rows)?;
     let id = ptys.next.fetch_add(1, Ordering::Relaxed) + 1;
+    let output = outlet.clone();
     std::thread::Builder::new()
         .name(format!("stream-{id}"))
         .spawn(move || {
@@ -197,23 +260,18 @@ fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u1
             let code = loop {
                 match reader.read(&mut buffer) {
                     Ok(0) => break 0,
-                    Ok(n) => {
-                        let data = base64::engine::general_purpose::STANDARD.encode(&buffer[..n]);
-                        if on_event.send(PtyEvent::Data { data }).is_err() {
-                            break 0;
-                        }
-                    }
+                    Ok(n) => output.data(&buffer[..n]),
                     Err(e) => {
-                        let _ = on_event.send(PtyEvent::Notice { text: format!("Connection lost: {e}"), kind: "error".into() });
+                        output.send(PtyEvent::Notice { text: format!("Connection lost: {e}"), kind: "error".into() });
                         break 1;
                     }
                 }
             };
-            let _ = on_event.send(PtyEvent::Exit { code: Some(code) });
+            output.send(PtyEvent::Exit { code: Some(code) });
         })
         .map_err(|e| e.to_string())?;
     let writer = stream.writer.clone();
-    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Stream(stream), window: window.to_string() });
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Stream(stream), window: window.to_string(), outlet });
     Ok(id)
 }
 
@@ -307,6 +365,17 @@ pub fn pty_resize(ptys: State<'_, Ptys>, id: u32, cols: u16, rows: u16) -> Resul
 pub fn pty_close(ptys: State<'_, Ptys>, id: u32) -> Result<(), String> {
     let session = ptys.sessions.lock().unwrap().remove(&id);
     end(session);
+    Ok(())
+}
+
+/// Move to New Window: the session `id` goes to a tab in this window, which gets how it started, the recent output
+/// and, if it has ended, how; its output comes here from now on, and closing this window ends it
+#[tauri::command]
+pub fn pty_attach(window: tauri::WebviewWindow, ptys: State<'_, Ptys>, id: u32, on_event: Channel<PtyEvent>) -> Result<(), String> {
+    let mut sessions = ptys.sessions.lock().unwrap();
+    let session = sessions.get_mut(&id).ok_or("The session ended before its tab moved.")?;
+    session.window = window.label().to_string();
+    session.outlet.attach(on_event);
     Ok(())
 }
 

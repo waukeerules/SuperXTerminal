@@ -137,6 +137,10 @@ export class PageHost implements ScriptTarget {
   readonly started = new Promise<void>((resolve) => (this.markStarted = resolve));
   /** The pseudo terminal's id, once it's open */
   private ptyId: number | null = null;
+  /** Move to New Window: the running session this tab takes over instead of starting one */
+  private adoptId: number | null = null;
+  /** The session went to another window's tab: closing this one leaves it running */
+  private released = false;
   /** Output waiting for the page to acknowledge the chunk before it */
   private queue: string[] = [];
   /** A chunk has been sent and not yet acknowledged */
@@ -181,7 +185,7 @@ export class PageHost implements ScriptTarget {
     if (this.log) void invoke("log_close", { id: this.log.id, temporary: this.log.temporary });
     this.log = null;
     window.removeEventListener("message", this.onWindowMessage);
-    if (this.ptyId !== null) {
+    if (this.ptyId !== null && !this.released) {
       void invoke("pty_close", { id: this.ptyId });
       this.ptyId = null;
     }
@@ -457,9 +461,24 @@ export class PageHost implements ScriptTarget {
     });
   }
 
-  /** Start the tab's program at the page's size and pass its output on */
-  private async open(): Promise<void> {
-    if (this.ptyId !== null) return;
+  /**
+   * Move to New Window: give the session up to another window's tab, without ending it; its id, or null when there's
+   * none to give (it never started). The tab can then close.
+   */
+  release(): number | null {
+    if (this.ptyId === null) return null;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.released = true;
+    return this.ptyId;
+  }
+
+  /** Take over a running session (`id`) from another window's tab, before the page is ready */
+  adopt(id: number): void {
+    this.adoptId = id;
+  }
+
+  /** The channel a session's events come in on: output, how it started, notices and its end */
+  private outputChannel(): Channel<PtyEvent> {
     const channel = new Channel<PtyEvent>();
     channel.onmessage = (event) => {
       if (event.type === "data") {
@@ -479,6 +498,32 @@ export class PageHost implements ScriptTarget {
         this.onState();
       }
     };
+    return channel;
+  }
+
+  /** Start the tab's program at the page's size and pass its output on */
+  private async open(): Promise<void> {
+    if (this.ptyId !== null) return;
+    const channel = this.outputChannel();
+    if (this.adoptId !== null) {
+      // the session another window gave up: it replays how it started and what it has shown, then carries on here
+      const id = this.adoptId;
+      this.adoptId = null;
+      try {
+        await invoke("pty_attach", { id, onEvent: channel });
+        this.ptyId = id;
+        this.startedAt = Date.now();
+        await invoke("pty_resize", { id, ...this.size }).catch(() => {});
+        if (!this.log) this.log = await invoke<{ id: number; path: string; temporary: boolean }>("log_open", { name: this.title }).catch(() => null);
+        this.markStarted();
+      } catch (error) {
+        if (!this.configured) await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
+        this.post({ type: "notice", text: String(error), kind: "error" });
+        this.ended = true;
+        this.onState();
+      }
+      return;
+    }
     try {
       this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel });
       this.startedAt = Date.now();

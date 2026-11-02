@@ -1639,8 +1639,17 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &tools, &window])
 }
 
-/// What each new window opens first ("store:id"), by its label; taken once by `window_start`
-static WINDOW_OPENS: Mutex<Option<std::collections::HashMap<String, String>>> = Mutex::new(None);
+/// What a new window starts with: a session to open ("store:id", Connect in new window), or a running tab to take over
+/// (Move to New Window: its session's pty id, title and how its tab looks, as the window that had it describes it)
+#[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct WindowStart {
+    open: Option<String>,
+    adopt: Option<serde_json::Value>,
+}
+
+/// What each new window starts with, by its label; taken once by `window_start`
+static WINDOW_OPENS: Mutex<Option<std::collections::HashMap<String, WindowStart>>> = Mutex::new(None);
 /// The window last brought to the front, which the menu bar's commands go to
 static FRONT_WINDOW: Mutex<Option<String>> = Mutex::new(None);
 /// The number of the next window ("window-2" ...)
@@ -1649,10 +1658,10 @@ static NEXT_WINDOW: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32:
 /// File > New Window, and Connect in new window (`open` the session, "store:id"), as SuperXPuTTY's new instance: another
 /// window with its own Sessions tree and tabs
 #[tauri::command]
-fn window_new(app: AppHandle, open: Option<String>) -> Result<(), String> {
+fn window_new(app: AppHandle, open: Option<String>, adopt: Option<serde_json::Value>) -> Result<(), String> {
     let label = format!("window-{}", NEXT_WINDOW.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-    if let Some(open) = open {
-        WINDOW_OPENS.lock().unwrap().get_or_insert_with(Default::default).insert(label.clone(), open);
+    if open.is_some() || adopt.is_some() {
+        WINDOW_OPENS.lock().unwrap().get_or_insert_with(Default::default).insert(label.clone(), WindowStart { open, adopt });
     }
     let handle = app.clone();
     // windows are made on the main thread (the web view's settings need it)
@@ -1671,9 +1680,9 @@ fn window_new(app: AppHandle, open: Option<String>) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-/// What a window opens when it starts: a session ("store:id") for Connect in new window, else None (a Local Shell)
+/// What a window starts with: a session to open or a tab to take over; None for a Local Shell
 #[tauri::command]
-fn window_start(window: tauri::WebviewWindow) -> Option<String> {
+fn window_start(window: tauri::WebviewWindow) -> Option<WindowStart> {
     WINDOW_OPENS.lock().unwrap().as_mut().and_then(|opens| opens.remove(window.label()))
 }
 
@@ -1866,7 +1875,8 @@ pub fn run() {
             pty::pty_open,
             pty::pty_write,
             pty::pty_resize,
-            pty::pty_close
+            pty::pty_close,
+            pty::pty_attach
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

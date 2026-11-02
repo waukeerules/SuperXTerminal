@@ -30,6 +30,17 @@ export interface TerminalParams {
   icon: string;
   /** The environment colour: the tab's colour and the frame around the terminal; null for none */
   environment: string | null;
+  /** Move to New Window: the running session (its pty id) this tab takes over from another window */
+  adopt?: number;
+}
+
+/** A tab on its way to another window (Move to New Window): its running session, titles, settings and session */
+export interface MovingTab {
+  ptyId: number;
+  title: string;
+  original: string;
+  params: TerminalParams;
+  session: string;
 }
 
 /** A tab's label: SessionTab, with the session's icon and colour */
@@ -166,7 +177,7 @@ class TerminalPanel implements IContentRenderer {
   /** Load the page for this tab and connect it to a new shell */
   init(parameters: GroupPanelPartInitParameters): void {
     const id = parameters.api.id;
-    const { target, local, environment } = parameters.params as TerminalParams;
+    const { target, local, environment, adopt } = parameters.params as TerminalParams;
     // SuperXPuTTY's frame: the environment colour shows as a 3 px border around the terminal
     if (environment) {
       this.element.style.padding = "3px";
@@ -190,6 +201,7 @@ class TerminalPanel implements IContentRenderer {
         this.tabs.notify();
       },
     );
+    if (adopt !== undefined) this.host.adopt(adopt);
     this.tabs.hosts.set(id, this.host);
     this.host.title = parameters.api.title ?? "";
     parameters.api.onDidTitleChange((e) => {
@@ -466,6 +478,31 @@ export class TabArea {
         };
       }),
     );
+  }
+
+  /**
+   * Move to New Window: the tab leaves this window with its session still running, for another window to `adopt`;
+   * null when it has no session to give (it never started)
+   */
+  release(id: string): MovingTab | null {
+    const panel = this.api.getPanel(id);
+    const params = this.paramsOf(id);
+    const ptyId = this.hosts.get(id)?.release() ?? null;
+    if (!panel || !params || ptyId === null) return null;
+    const moving = { ptyId, title: panel.title ?? "", original: this.originalTitle(id), params: { ...params, adopt: undefined }, session: this.sessions.get(id) ?? "" };
+    panel.api.close();
+    return moving;
+  }
+
+  /** Take over a tab another window gave up: the same session, carrying on, with its title and look */
+  adopt(moving: MovingTab): void {
+    const panelId = this.add(moving.original, { ...moving.params, adopt: moving.ptyId });
+    if (moving.title !== moving.original) this.rename(panelId, moving.title);
+    if (moving.session) {
+      this.sessions.set(panelId, moving.session);
+      this.onOpenChanged(new Set(this.sessions.values()));
+    }
+    this.changed();
   }
 
   /**

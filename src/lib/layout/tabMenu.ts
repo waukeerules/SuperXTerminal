@@ -20,6 +20,8 @@ export interface TabMenuHost {
   rename: (id: string, title: string) => void;
   /** Open a serial tab's Serial Settings */
   serialSettings: (id: string) => void;
+  /** Move the tab, with its session running, to a new window */
+  moveToNewWindow: (id: string) => void;
   status: (text: string) => void;
 }
 
@@ -163,6 +165,7 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
       action: () => tabs.split(id, "below"),
     },
     ...(tabs.groupCount() > 1 ? [{ label: "Join All Tabs", action: () => tabs.joinAll() } as MenuItem] : []),
+    { label: "Move to New Window", action: () => host.moveToNewWindow(id) },
     { separator: true },
     { label: "Close", action: () => tabs.command(id, "close") },
     { label: "Close others", disabled: list.length < 2, action: () => tabs.command(id, "closeOthers") },

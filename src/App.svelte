@@ -33,6 +33,7 @@
   import SerialSettings from "./lib/terminal/SerialSettings.svelte";
   import QuickSelector, { type QuickItem } from "./lib/sessions/QuickSelector.svelte";
   import type { PageHost } from "./lib/terminal/PageHost";
+  import type { MovingTab } from "./lib/layout/TabArea";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
@@ -135,6 +136,7 @@
             open: (session) => t.openById(session.id),
             saveAs: (store, sessionId, title) => void t.saveSessionAs(store, sessionId, title),
             rename: (tabId, title) => (renaming = { id: tabId, title }),
+            moveToNewWindow: (tabId) => void moveToNewWindow(tabId),
             serialSettings: (tabId) => {
               const host = tabs?.hosts.get(tabId);
               const target = tabs?.paramsOf(tabId)?.target;
@@ -306,7 +308,14 @@
    * read the sessions)
    */
   async function start(): Promise<void> {
-    const open = await invoke<string | null>("window_start").catch(() => null);
+    const begin = await invoke<{ open: string | null; adopt: MovingTab | null } | null>("window_start").catch(() => null);
+    // Move to New Window: the tab another window gave up, its session carrying on here
+    if (begin?.adopt && tabs) {
+      tabs.adopt(begin.adopt);
+      status = `Moved here: ${begin.adopt.title}`;
+      return;
+    }
+    const open = begin?.open;
     if (open) {
       for (let tries = 0; tries < 100; tries++) {
         const session = tree?.allSessions().find((s) => `${s.store}:${s.id}` === open);
@@ -319,6 +328,23 @@
       status = `The session ${open.slice(open.indexOf(":") + 1)} wasn't found`;
     }
     newShell();
+  }
+
+  /**
+   * Move to New Window: the tab goes to a new window with its session still running; the new window replays what it
+   * has shown and carries on
+   */
+  async function moveToNewWindow(tabId: string): Promise<void> {
+    const moving = tabs?.release(tabId);
+    if (!moving) {
+      status = "This tab has no running session to move";
+      return;
+    }
+    try {
+      await invoke("window_new", { open: null, adopt: moving });
+    } catch (e) {
+      status = `Couldn't open a window: ${e}`;
+    }
   }
 
   /** Open another Local Shell tab (File > New Local Shell, Cmd+T) */

@@ -36,6 +36,8 @@ export interface AppSettings {
   sessionLogFolder: string;
   /** Saved sessions (Sessions.xml and Folders.xml in the settings folder) are used, as SuperXPuTTY's UseSessionsXml */
   useSessionsXml: boolean;
+  /** The Sessions pane's width in points, as dragged at its edge */
+  sessionsPaneWidth: number;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -58,6 +60,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   sessionLogEnabled: false,
   sessionLogFolder: "",
   useSessionsXml: true,
+  sessionsPaneWidth: 280,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

@@ -136,6 +136,38 @@
     return () => tabs?.dispose();
   });
 
+  /** The Sessions pane's width while its edge is dragged; the setting otherwise */
+  let paneWidth = $state<number | null>(null);
+  const PANE_DEFAULT = 280;
+  const clampWidth = (w: number) => Math.round(Math.max(160, Math.min(w, window.innerWidth - 320)));
+
+  /**
+   * Drag the Sessions pane's edge, as SuperXPuTTY's docked pane splitter: 8 points wide with a grip line down its
+   * middle so it's easy to find; the width is kept in the settings. Tabs' web pages don't take the pointer while
+   * dragging, so it isn't lost over a terminal.
+   */
+  function startResize(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startWidth = settings.sessionsPaneWidth || PANE_DEFAULT;
+    document.body.classList.add("resizing-pane");
+    const move = (e: PointerEvent) => (paneWidth = clampWidth(startWidth + e.clientX - startX));
+    const done = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", done);
+      handle.removeEventListener("pointercancel", done);
+      document.body.classList.remove("resizing-pane");
+      if (paneWidth !== null && paneWidth !== settings.sessionsPaneWidth) void saveSettings({ sessionsPaneWidth: paneWidth });
+      paneWidth = null;
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", done);
+    handle.addEventListener("pointercancel", done);
+  }
+
   /** Open a session from the tree in a new tab */
   function openSession(session: SessionView, environment: string | null): void {
     // RDP and VNC open in their own apps, as SuperXPuTTY's launchers
@@ -201,13 +233,16 @@
   {/if}
 
   <div class="main">
-    <aside class="sessions">
+    <aside class="sessions" style:width="{paneWidth ?? clampWidth(settings.sessionsPaneWidth || PANE_DEFAULT)}px">
       <div class="pane-title">Sessions</div>
       <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsTab = "Profiles")} onLook={(_, icons) => {
         customs = icons;
         if (tabs) tabs.customs = icons;
       }} />
     </aside>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="splitter" title="Drag to resize; double-click for the usual width" onpointerdown={startResize}
+      ondblclick={() => void saveSettings({ sessionsPaneWidth: PANE_DEFAULT })}></div>
     <div class="tabs" bind:this={tabElement}></div>
   </div>
 
@@ -261,11 +296,35 @@
   }
 
   .sessions {
-    width: 280px;
+    flex: none;
     display: flex;
     flex-direction: column;
+    min-width: 0;
     background: var(--bg-pane);
+  }
+
+  /* the pane's edge: 8 points to grab, with a line down the middle that lightens under the pointer */
+  .splitter {
+    flex: none;
+    width: 8px;
+    cursor: col-resize;
+    background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat, var(--bg-pane);
     border-right: 1px solid var(--border);
+  }
+
+  .splitter:hover,
+  :global(body.resizing-pane) .splitter {
+    background: linear-gradient(var(--accent), var(--accent)) center / 2px 100% no-repeat, var(--bg-pane);
+  }
+
+  :global(body.resizing-pane),
+  :global(body.resizing-pane *) {
+    cursor: col-resize !important;
+    user-select: none;
+  }
+
+  :global(body.resizing-pane iframe) {
+    pointer-events: none;
   }
 
   .pane-title {

@@ -50,6 +50,8 @@ pub struct AppSettings {
     /// Saved sessions (Sessions.xml and Folders.xml in the settings folder) are read and written, as SuperXPuTTY's
     /// UseSessionsXml; off, only Private and Database sessions are used and the files are left as they are
     pub use_sessions_xml: bool,
+    /// The Sessions pane's width in points, as dragged at its edge
+    pub sessions_pane_width: u32,
 }
 
 impl Default for AppSettings {
@@ -74,6 +76,7 @@ impl Default for AppSettings {
             session_log_folder: String::new(),
             serial_devices: std::collections::BTreeMap::new(),
             use_sessions_xml: true,
+            sessions_pane_width: 280,
         }
     }
 }

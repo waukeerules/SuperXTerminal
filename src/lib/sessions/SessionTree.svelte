@@ -590,6 +590,21 @@
     void changeShortcuts(recordOpened(session.id));
   }
 
+  /** Every session, for the tab menu's New session and Copy host address */
+  export function allSessions(): SessionView[] {
+    return loaded?.sessions ?? [];
+  }
+
+  /** The tab menu's Save session as…: Edit Session for a new saved session, from a tab's session, named as the tab */
+  export async function saveSessionAs(store: Store, id: string, title: string): Promise<void> {
+    try {
+      const fields = await getSession(store, id);
+      editing = { store: loaded?.savedFile === null ? "private" : "saved", id: null, fields: { ...fields, name: title } };
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   /** Open a session by its id (SPSL's OPENSESSION), looking in Saved, Private then Database sessions; false if none */
   export function openById(id: string): boolean {
     const session = ["saved", "private", "database"]

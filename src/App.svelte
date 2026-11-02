@@ -24,6 +24,9 @@
   import { context, runScriptIn } from "./lib/commands/sending.svelte";
   import { saveSettings } from "./lib/settings/store.svelte";
   import type { CustomIcon } from "./lib/icons/custom";
+  import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
+  import Prompt from "./lib/ui/Prompt.svelte";
+  import { tabMenu } from "./lib/layout/tabMenu";
 
   let tabElement: HTMLDivElement;
   let tabs = $state<TabArea | null>(null);
@@ -36,6 +39,8 @@
   let editorOpen = $state(false);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
   let tree: SessionTree | undefined = $state();
+  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  let renaming = $state<{ id: string; title: string } | null>(null);
 
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
   void listen<string>("menu", (event) => {
@@ -65,6 +70,25 @@
     context.status = (text) => (status = text);
     context.openSession = (id) => tree?.openById(id) ?? false;
     context.editVariables = () => (variablesOpen = true);
+    tabs.onTabMenu = (id, x, y) => {
+      if (!tabs || !tree) return;
+      const t = tree;
+      menu = {
+        x,
+        y,
+        items: tabMenu(
+          {
+            tabs,
+            sessions: t.allSessions(),
+            open: (session) => t.openById(session.id),
+            saveAs: (store, sessionId, title) => void t.saveSessionAs(store, sessionId, title),
+            rename: (tabId, title) => (renaming = { id: tabId, title }),
+            status: (text) => (status = text),
+          },
+          id,
+        ),
+      };
+    };
     tabs.openLocalShell();
     status = "Opened session: Local Shell";
     return () => tabs?.dispose();
@@ -151,6 +175,17 @@
 {/if}
 
 <Ask />
+
+{#if menu}
+  <Menu items={menu.items} x={menu.x} y={menu.y} onClose={() => (menu = null)} />
+{/if}
+
+{#if renaming}
+  <Prompt title="Rename tab" value={renaming.title} validate={(name) => (name.trim() ? "" : "Give the tab a name")}
+    onOk={(name) => { if (renaming) tabs?.rename(renaming.id, name.trim()); renaming = null; }} onCancel={() => (renaming = null)} />
+{/if}
+
+<svelte:window onclick={() => (menu = null)} />
 
 <style>
   .window {

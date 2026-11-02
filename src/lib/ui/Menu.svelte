@@ -6,7 +6,7 @@
   /** One menu entry */
   export type MenuItem =
     | { separator: true }
-    | { label: string; action?: () => void; disabled?: string | boolean; bold?: boolean; items?: MenuItem[]; swatch?: string };
+    | { label: string; action?: () => void; disabled?: string | boolean; bold?: boolean; items?: MenuItem[]; swatch?: string; checked?: boolean };
 </script>
 
 <script lang="ts">
@@ -64,6 +64,7 @@
         onmouseenter={() => (open = item.items ? index : null)} onclick={() => choose(item)}
         onkeydown={(e) => e.key === "Enter" && choose(item)}>
         {#if item.swatch !== undefined}<span class="swatch" style:background={item.swatch || "transparent"}></span>{/if}
+        {#if item.checked !== undefined}<span class="check">{item.checked ? "✓" : ""}</span>{/if}
         <span class="label">{item.label}</span>
         {#if item.items}<span class="arrow">▸</span>{/if}
         {#if item.items && open === index}
@@ -123,6 +124,12 @@
 
   .arrow {
     font-size: 10px;
+  }
+
+  /* in the left margin, as Windows menus draw it, so labels stay lined up */
+  .check {
+    position: absolute;
+    left: 7px;
   }
 
   .swatch {

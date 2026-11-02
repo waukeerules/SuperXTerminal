@@ -121,7 +121,9 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ⬜ Search Output; Activity and Silence alerts
 - ⬜ Paste check
 - ⬜ Session logs (kept or temporary, time stamps)
-- ⬜ Dropped sessions reconnect (badge, Reconnect, Stop Reconnecting)
+- ✅ Tab right-click menu, as SuperXPuTTY's: New session (every session by folder), Duplicate session, Copy host address, Save session as, Rename tab, Refresh tab, Accept commands, Send Key, Special Command (not in the built-in terminal), Copy all, Restart session / Reconnect, Clear scrollback, Reset terminal, Close, Close others, Close others to the right, Close all. The output items come with the rest of M4. Checked on the lab switch
+- ✅ A session that ends cleanly (a logout) closes its tab, as SuperXPuTTY's; any other end keeps the tab and its output, and Enter reconnects. Checked: exit on the switch closed the tab; a refused connection stayed, and Enter tried again
+- ⬜ Dropped sessions reconnect automatically (Options' auto reconnect, the tab badge, Stop Reconnecting)
 
 ## M5 The rest
 

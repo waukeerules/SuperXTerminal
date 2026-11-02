@@ -50,7 +50,8 @@ pub enum PtyEvent {
 struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    child: Box<dyn Child + Send + Sync>,
+    /// Shared with the reader thread, which waits for its exit code once the output ends
+    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
 }
 
 /// Every open pseudo terminal, by the id given to its tab
@@ -108,7 +109,7 @@ pub fn pty_open(
             command.cwd(home);
         }
     }
-    let child = pair.slave.spawn_command(command).map_err(|e| e.to_string())?;
+    let child = Arc::new(Mutex::new(pair.slave.spawn_command(command).map_err(|e| e.to_string())?));
     // the slave side belongs to the child now; keeping it open here would stop the reader seeing the end
     drop(pair.slave);
 
@@ -117,6 +118,7 @@ pub fn pty_open(
     let id = ptys.next.fetch_add(1, Ordering::Relaxed) + 1;
 
     let typist = writer.clone();
+    let ending = child.clone();
     std::thread::Builder::new()
         .name(format!("pty-{id}"))
         .spawn(move || {
@@ -138,7 +140,20 @@ pub fn pty_open(
                     }
                 }
             }
-            let _ = on_event.send(PtyEvent::Exit { code: None });
+            // the exit code says whether the session ended cleanly (a logout closes its tab, as SuperXPuTTY's does);
+            // the output can end a moment before the program does, so wait a little for it
+            let mut code = None;
+            for _ in 0..40 {
+                match ending.lock().unwrap().try_wait() {
+                    Ok(Some(status)) => {
+                        code = Some(status.exit_code());
+                        break;
+                    }
+                    Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                    Err(_) => break,
+                }
+            }
+            let _ = on_event.send(PtyEvent::Exit { code });
         })
         .map_err(|e| e.to_string())?;
 
@@ -198,9 +213,10 @@ pub fn pty_resize(ptys: State<'_, Ptys>, id: u32, cols: u16, rows: u16) -> Resul
 /// Close a tab's pseudo terminal: end its program if it's still running and forget it
 #[tauri::command]
 pub fn pty_close(ptys: State<'_, Ptys>, id: u32) -> Result<(), String> {
-    if let Some(mut session) = ptys.sessions.lock().unwrap().remove(&id) {
-        let _ = session.child.kill();
-        let _ = session.child.wait();
+    if let Some(session) = ptys.sessions.lock().unwrap().remove(&id) {
+        let mut child = session.child.lock().unwrap();
+        let _ = child.kill();
+        let _ = child.wait();
     }
     Ok(())
 }

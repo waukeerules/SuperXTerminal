@@ -104,8 +104,8 @@ export class PageHost implements ScriptTarget {
    * @param target what the tab runs
    * @param local whether it's a local shell (the page treats Ctrl+C and Open in PuTTY differently)
    * @param cursorColor the session's environment colour, which the cursor is drawn in as in SuperXPuTTY; null for none
-   * @param onExit called when a local shell ends, so its tab closes; a session's tab stays open instead, so its last
-   *   output (e.g. why ssh couldn't connect) can be read. SuperXPuTTY's reconnect comes in M4
+   * @param onExit called when the tab should close: a local shell ended, or a session ended cleanly (a logout), as
+   *   SuperXPuTTY's TerminalControl. Any other end keeps the tab, with its output, and Enter reconnects
    * @param onTabCommand the page's tab menu items: "close", "closeOthers", "closeRight" or "closeAll"
    */
   constructor(
@@ -116,6 +116,7 @@ export class PageHost implements ScriptTarget {
     private readonly cursorColor: string | null,
     private readonly onExit: () => void,
     private readonly onTabCommand: (command: string) => void,
+    private readonly onState: () => void = () => {},
   ) {
     window.addEventListener("message", this.onWindowMessage);
   }
@@ -154,7 +155,12 @@ export class PageHost implements ScriptTarget {
         if (this.ptyId !== null) await invoke("pty_resize", { id: this.ptyId, ...this.size });
         break;
       case "input":
-        if (this.ptyId !== null) await invoke("pty_write", { id: this.ptyId, data: String(message.data) });
+        // while the session is down, Enter reconnects (TerminalControl.OnInput)
+        if (this.ended) {
+          if (String(message.data).includes("\r")) await this.reconnect();
+        } else if (this.ptyId !== null) {
+          await invoke("pty_write", { id: this.ptyId, data: String(message.data) });
+        }
         break;
       case "ack":
         this.waiting = false;
@@ -181,7 +187,7 @@ export class PageHost implements ScriptTarget {
   }
 
   /** Send Key: a menu key ("^C"), or for "Other Key..." one asked for as SENDKEY writes it, as SuperXPuTTY's */
-  private async sendKey(key: string | null): Promise<void> {
+  async sendKey(key: string | null): Promise<void> {
     const written = key ?? (await askOne("Send Key: a key as SENDKEY writes it, e.g. ^C, ESC, F5, ^HOME or {TAB 3}", false));
     if (!written) return;
     try {
@@ -233,6 +239,36 @@ export class PageHost implements ScriptTarget {
     this.mark = Math.max(this.mark, this.recentStart) + characters;
   }
 
+  /** Whether the session has ended (the tab menu offers Reconnect) */
+  get isEnded(): boolean {
+    return this.ended;
+  }
+
+  /** Connect again in the same tab, keeping the scrollback (Reconnect, Restart session) */
+  async reconnect(): Promise<void> {
+    if (this.ptyId !== null) {
+      const old = this.ptyId;
+      this.ptyId = null;
+      await invoke("pty_close", { id: old });
+    }
+    this.ended = false;
+    this.queue = [];
+    this.waiting = false;
+    this.post({ type: "notice", text: "Reconnecting...", kind: "info" });
+    await this.open();
+    this.onState();
+  }
+
+  /** One of the page's actions: "copyAll", "clearScrollback" or "reset" */
+  action(name: string): void {
+    this.post({ type: "action", name });
+  }
+
+  /** Refresh tab: fit the terminal to the tab again and redraw it */
+  refresh(): void {
+    this.frame.contentWindow?.dispatchEvent(new Event("resize"));
+  }
+
   /** Paste the given text, or the clipboard's, into the terminal */
   private async paste(text: string | null): Promise<void> {
     const value = text ?? (await navigator.clipboard.readText().catch(() => ""));
@@ -276,8 +312,10 @@ export class PageHost implements ScriptTarget {
         this.post({ type: "notice", text: event.text, kind: event.kind });
       } else if (event.type === "exit") {
         this.ended = true;
-        if (this.local) this.onExit();
-        else this.post({ type: "notice", text: "Session ended.", kind: "info" });
+        // a clean end (a logout) or a local shell closes the tab, as PuTTY's window would
+        if (this.local || event.code === 0) this.onExit();
+        else this.post({ type: "notice", text: "Session ended. Press Enter to reconnect.", kind: "info" });
+        this.onState();
       }
     };
     try {

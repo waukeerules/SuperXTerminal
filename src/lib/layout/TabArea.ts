@@ -21,7 +21,7 @@ import SessionTab from "./SessionTab.svelte";
 import { isDark } from "../settings/store.svelte";
 
 /** What a terminal tab is given when it's added: what to run, whether it's a local shell, and how its tab looks */
-interface TerminalParams {
+export interface TerminalParams {
   target: Target;
   local: boolean;
   icon: string;
@@ -38,19 +38,30 @@ class TabLabel implements ITabRenderer {
     this.element.className = "session-tab";
   }
 
-  /** Draw the label for its panel */
+  /** Draw the label for its panel, again whenever the tab is renamed */
   init(parameters: TabPartInitParameters): void {
-    const { icon, environment } = parameters.params as TerminalParams;
-    this.label = mount(SessionTab, {
-      target: this.element,
-      props: {
-        title: parameters.title,
-        icon,
-        environment,
-        iconSize: this.tabs.iconSize,
-        customs: this.tabs.customs,
-        onClose: () => parameters.api.close(),
-      },
+    const draw = (title: string) => {
+      if (this.label) void unmount(this.label);
+      const { icon, environment } = parameters.params as TerminalParams;
+      this.label = mount(SessionTab, {
+        target: this.element,
+        props: {
+          title,
+          icon,
+          environment,
+          iconSize: this.tabs.iconSize,
+          customs: this.tabs.customs,
+          onClose: () => parameters.api.close(),
+        },
+      });
+    };
+    draw(parameters.title);
+    parameters.api.onDidTitleChange((e) => draw(e.title));
+    // the tab's own menu, as SuperXPuTTY's (App builds it)
+    this.element.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      parameters.api.setActive();
+      this.tabs.onTabMenu?.(parameters.api.id, event.clientX, event.clientY);
     });
   }
 
@@ -107,6 +118,7 @@ class TerminalPanel implements IContentRenderer {
       environment,
       () => parameters.api.close(),
       (command) => this.tabs.command(id, command),
+      () => this.tabs.notify(),
     );
     this.tabs.hosts.set(id, this.host);
     frame.src = `/web/terminal/index.html?tab=${encodeURIComponent(id)}`;
@@ -135,6 +147,8 @@ export class TabArea {
   private readonly refusing = new Set<string>();
   /** Told when the active tab changes, or tabs open or close */
   private readonly listeners = new Set<() => void>();
+  /** A tab was right-clicked: App shows its menu */
+  onTabMenu: ((id: string, x: number, y: number) => void) | null = null;
 
   /**
    * Create the tab area inside `element`
@@ -183,9 +197,13 @@ export class TabArea {
     this.add(title, { target: { kind: "quickConnect", ...quick }, local, icon: local ? "terminal" : "computer", environment: null });
   }
 
+  /** Each tab's title as opened, by panel id */
+  private readonly titles = new Map<string, string>();
+
   /** Add a terminal tab and show it; returns its panel id */
   private add(title: string, params: TerminalParams): string {
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.titles.set(id, title);
     this.api.addPanel({
       id,
       component: "terminal",
@@ -205,6 +223,50 @@ export class TabArea {
 
   private changed(): void {
     for (const listener of this.listeners) listener();
+  }
+
+  /** A tab's session started or ended */
+  notify(): void {
+    this.changed();
+  }
+
+  /** What a tab runs, for its menu: its target and how its tab looks */
+  paramsOf(id: string): TerminalParams | null {
+    return (this.api.getPanel(id)?.params as unknown as TerminalParams) ?? null;
+  }
+
+  /** Rename a tab (its menu's Rename tab) */
+  rename(id: string, title: string): void {
+    this.api.getPanel(id)?.api.setTitle(title);
+  }
+
+  /** Open the same thing again in a new tab (Duplicate session) */
+  duplicate(id: string): void {
+    const panel = this.api.getPanel(id);
+    const params = this.paramsOf(id);
+    if (!panel || !params) return;
+    if (params.target.kind === "localShell") {
+      this.openLocalShell();
+      return;
+    }
+    const panelId = this.add(this.originalTitle(id), params);
+    const session = this.sessions.get(id);
+    if (session) {
+      this.sessions.set(panelId, session);
+      this.onOpenChanged(new Set(this.sessions.values()));
+    }
+  }
+
+  /** The title a tab opened with, before any rename */
+  private originalTitle(id: string): string {
+    return this.titles.get(id) ?? this.api.getPanel(id)?.title ?? "";
+  }
+
+  /** Turn a tab's Accept commands on or off */
+  setAccept(id: string, on: boolean): void {
+    if (on) this.refusing.delete(id);
+    else this.refusing.add(id);
+    this.changed();
   }
 
   /** The open terminal tabs in the order they show, group by group */

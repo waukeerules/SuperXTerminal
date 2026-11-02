@@ -7,6 +7,7 @@ mod external;
 mod folders;
 mod highlighting;
 mod importing;
+mod keys;
 mod launch;
 mod layouts;
 mod logs;
@@ -680,7 +681,12 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
         _ => 24,
     };
     current.tree_font_size = current.tree_font_size.clamp(10, 24);
+    current.shortcuts = keys::cleaned(&current.shortcuts);
     current.save(&state.user_folder)?;
+    // the menu bar's keys follow Settings > Shortcuts
+    if let Ok(bar) = menu(&app, &current.shortcuts) {
+        let _ = app.set_menu(bar);
+    }
     // every window reads them again, so another window's next save doesn't put back what it had
     let _ = app.emit(SETTINGS_CHANGED, ());
     Ok(current.clone())
@@ -1531,8 +1537,10 @@ const SETTINGS_CHANGED: &str = "settings-changed";
 /// The menu bar: the app menu (with Settings..., Cmd+,), File (New Local Shell, Cmd+T), Edit (which WebKit needs for
 /// Cmd+C/V), Tools (Environment Variables...) and Window.
 /// SuperXPuTTY's File, View and Tools menus join it as their features arrive.
-fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>) -> tauri::Result<Menu<R>> {
+    // an action's item, with its key now (keys.rs: the user's, else the Mac default)
+    let action = |id: &str| MenuItem::with_id(app, id, keys::label(id), true, keys::key(shortcuts, id).as_deref());
+    let plain = |id: &str, label: &str| MenuItem::with_id(app, id, label, true, None::<&str>);
     let app_menu = Submenu::with_items(
         app,
         "SuperXTerminal",
@@ -1540,7 +1548,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         &[
             &PredefinedMenuItem::about(app, None, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &settings,
+            &action("settings")?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, None)?,
             &PredefinedMenuItem::separator(app)?,
@@ -1556,10 +1564,10 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "File",
         true,
         &[
-            &MenuItem::with_id(app, "newWindow", "New Window", true, Some("CmdOrCtrl+N"))?,
-            &MenuItem::with_id(app, "newLocalShell", "New Local Shell", true, Some("CmdOrCtrl+T"))?,
+            &action("newWindow")?,
+            &action("newLocalShell")?,
             // SuperXPuTTY's File > Open session… (its Quick Selector)
-            &MenuItem::with_id(app, "openSession", "Open Session…", true, Some("CmdOrCtrl+O"))?,
+            &action("openSession")?,
             &PredefinedMenuItem::separator(app)?,
             // SuperXPuTTY's File > Import sessions and Export sessions to CSV
             &Submenu::with_items(
@@ -1567,20 +1575,20 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
                 "Import Sessions",
                 true,
                 &[
-                    &MenuItem::with_id(app, "import:csv", "From CSV File…", true, None::<&str>)?,
-                    &MenuItem::with_id(app, "import:mobaxterm", "From MobaXterm File…", true, None::<&str>)?,
-                    &MenuItem::with_id(app, "import:rdp", "From Remote Desktop (.rdp) Files…", true, None::<&str>)?,
-                    &MenuItem::with_id(app, "import:ssh", "From ssh config…", true, None::<&str>)?,
+                    &plain("import:csv", "From CSV File…")?,
+                    &plain("import:mobaxterm", "From MobaXterm File…")?,
+                    &plain("import:rdp", "From Remote Desktop (.rdp) Files…")?,
+                    &plain("import:ssh", "From ssh config…")?,
                 ],
             )?,
-            &MenuItem::with_id(app, "exportCsv", "Export Sessions to CSV…", true, None::<&str>)?,
+            &plain("exportCsv", "Export Sessions to CSV…")?,
             &PredefinedMenuItem::separator(app)?,
             // SuperXPuTTY's File > Save layout and Save layout as...
-            &MenuItem::with_id(app, "saveLayout", "Save Layout", true, None::<&str>)?,
-            &MenuItem::with_id(app, "saveLayoutAs", "Save Layout As…", true, None::<&str>)?,
+            &action("saveLayout")?,
+            &action("saveLayoutAs")?,
             &PredefinedMenuItem::separator(app)?,
             // Cmd+W closes the tab, as in Terminal and iTerm2; the window closes with its red button
-            &MenuItem::with_id(app, "closeTab", "Close Tab", true, Some("CmdOrCtrl+W"))?,
+            &action("closeTab")?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -1596,9 +1604,11 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            // the terminal's own Find (its Ctrl+Shift+F) and Clear Scrollback, with the Mac's keys
-            &MenuItem::with_id(app, "find", "Find…", true, Some("CmdOrCtrl+F"))?,
-            &MenuItem::with_id(app, "clearScrollback", "Clear Scrollback", true, Some("CmdOrCtrl+K"))?,
+            // the terminal's own Find (its Ctrl+Shift+F), Clear Scrollback, Reset and Copy All, with the Mac's keys
+            &action("find")?,
+            &action("copyAll")?,
+            &action("clearScrollback")?,
+            &action("resetTerminal")?,
         ],
     )?;
     let window = Submenu::with_items(
@@ -1609,12 +1619,22 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::minimize(app, None)?,
             &PredefinedMenuItem::maximize(app, None)?,
             &PredefinedMenuItem::separator(app)?,
+            &action("nextTab")?,
+            &action("prevTab")?,
             // SuperXPuTTY's Switch session…: the Quick Selector over the open tabs
-            &MenuItem::with_id(app, "switchSession", "Switch Session…", true, Some("CmdOrCtrl+Shift+O"))?,
+            &action("switchSession")?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "splitRight", "Split Right", true, Some("CmdOrCtrl+D"))?,
-            &MenuItem::with_id(app, "splitDown", "Split Down", true, Some("CmdOrCtrl+Shift+D"))?,
-            &MenuItem::with_id(app, "joinAll", "Join All Tabs", true, None::<&str>)?,
+            &action("duplicateSession")?,
+            &action("renameTab")?,
+            &action("restartSession")?,
+            &PredefinedMenuItem::separator(app)?,
+            &action("splitRight")?,
+            &action("splitDown")?,
+            &action("joinAll")?,
+            &PredefinedMenuItem::separator(app)?,
+            &action("gotoCommandBar")?,
+            &action("gotoConnectionBar")?,
+            &action("focusActiveSession")?,
         ],
     )?;
     let tools = Submenu::with_items(
@@ -1622,11 +1642,11 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "Tools",
         true,
         &[
-            &MenuItem::with_id(app, "scriptEditor", "Script Editor…", true, None::<&str>)?,
+            &action("scriptEditor")?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "databaseSessions", "Database Sessions…", true, None::<&str>)?,
-            &MenuItem::with_id(app, "environmentVariables", "Environment Variables…", true, None::<&str>)?,
-            &MenuItem::with_id(app, "environmentColours", "Environment Colours…", true, None::<&str>)?,
+            &plain("databaseSessions", "Database Sessions…")?,
+            &plain("environmentVariables", "Environment Variables…")?,
+            &plain("environmentColours", "Environment Colours…")?,
         ],
     )?;
     // shown or hidden, as SuperXPuTTY's View > Send Commands and View > Button Bar
@@ -1635,15 +1655,23 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "View",
         true,
         &[
-            &MenuItem::with_id(app, "toggleSendCommands", "Send Commands", true, None::<&str>)?,
-            &MenuItem::with_id(app, "toggleButtonBar", "Button Bar", true, None::<&str>)?,
+            &action("toggleSendCommands")?,
+            &action("toggleButtonBar")?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "toggleSessionsAutoHide", "Auto Hide Sessions", true, None::<&str>)?,
-            &MenuItem::with_id(app, "toggleLayouts", "Layouts", true, None::<&str>)?,
-            &MenuItem::with_id(app, "toggleSessionDetail", "Session Detail", true, None::<&str>)?,
+            &action("toggleSessionsAutoHide")?,
+            &action("toggleLayouts")?,
+            &action("toggleSessionDetail")?,
+            &PredefinedMenuItem::separator(app)?,
+            &action("fullScreen")?,
         ],
     )?;
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &tools, &window])
+}
+
+/// The Shortcuts editor's rows: every action, its default and its key now
+#[tauri::command]
+fn shortcuts_keys(state: State<'_, AppState>) -> Vec<keys::Row> {
+    keys::rows(&state.settings.lock().unwrap().shortcuts)
 }
 
 /// What a new window starts with: a session to open ("store:id", Connect in new window), or a running tab to take over
@@ -1801,7 +1829,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .menu(menu)
+        .menu({
+            let shortcuts = settings.shortcuts.clone();
+            move |app| menu(app, &shortcuts)
+        })
         // menu items the UI handles arrive there as a "menu" event with the item's id
         .on_menu_event(|app, event| {
             // to the window in front only: with several windows, Cmd+T opens one shell, in that window
@@ -1875,6 +1906,7 @@ pub fn run() {
             sessions_export_csv,
             window_new,
             layouts_list,
+            shortcuts_keys,
             layout_read,
             layout_save,
             layout_delete,

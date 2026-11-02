@@ -1,12 +1,12 @@
 <!--
-  The Settings window (Cmd+,), SuperXPuTTY's Tools > Options for the Mac: General, Profiles and Terminal; the other tabs
-  (Terminal, Shortcuts) are shown greyed out until their milestones.
+  The Settings window (Cmd+,), SuperXPuTTY's Tools > Options for the Mac: General, Profiles, Terminal and Shortcuts.
 -->
 <script lang="ts">
   import { untrack } from "svelte";
   import ProfilesTab from "./ProfilesTab.svelte";
   import GeneralTab from "./GeneralTab.svelte";
   import TerminalTab from "./TerminalTab.svelte";
+  import ShortcutsTab from "./ShortcutsTab.svelte";
 
   interface Props {
     onClose: () => void;
@@ -23,7 +23,7 @@
     { name: "General" },
     { name: "Profiles" },
     { name: "Terminal" },
-    { name: "Shortcuts", later: "comes in M5" },
+    { name: "Shortcuts" },
   ];
 </script>
 
@@ -43,7 +43,7 @@
       <button class="close" onclick={onClose} aria-label="Close">✕</button>
     </header>
     <main>
-      {#if current === "General"}<GeneralTab />{:else if current === "Terminal"}<TerminalTab />{:else}<ProfilesTab />{/if}
+      {#if current === "General"}<GeneralTab />{:else if current === "Terminal"}<TerminalTab />{:else if current === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab />{/if}
     </main>
   </div>
 </div>

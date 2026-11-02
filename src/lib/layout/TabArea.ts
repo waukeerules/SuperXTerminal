@@ -597,6 +597,16 @@ export class TabArea {
     active?.api.setActive();
   }
 
+  /** Next Tab and Previous Tab, as SuperXPuTTY's: the tab after (or before) the active one, in the order shown, round */
+  cycle(by: 1 | -1): void {
+    const list = this.allTabs();
+    if (list.length < 2) return;
+    const at = list.findIndex((t) => t.active);
+    const next = list[(at + by + list.length) % list.length];
+    this.activate(next.id);
+    this.focusActive();
+  }
+
   /** Switch to a tab */
   activate(id: string): void {
     this.api.getPanel(id)?.api.setActive();

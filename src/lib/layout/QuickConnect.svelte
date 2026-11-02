@@ -79,7 +79,7 @@
       {#each PROTOCOLS as p}<option value={p} disabled={!!unavailableReason(p)} title={unavailableReason(p) ?? ""}>{p}</option>{/each}
     </select>
   </label>
-  <label class="grow">Host <input bind:value={host} placeholder="e.g. 192.168.0.5" onkeydown={enter} /></label>
+  <label class="grow">Host <input id="quick-connect-host" bind:value={host} placeholder="e.g. 192.168.0.5" onkeydown={enter} /></label>
   <label class="grow">Login <input bind:value={username} placeholder="e.g. admin" onkeydown={enter} /></label>
   <label class="grow">Password <input type="password" bind:value={password} onkeydown={enter} /></label>
   <label>Profile

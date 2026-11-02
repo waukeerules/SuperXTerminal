@@ -13,6 +13,8 @@
     "dialog:allow-ask",
     "dialog:allow-message",
     "dialog:allow-save",
-    "core:window:allow-request-user-attention"
+    "core:window:allow-request-user-attention",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen"
   ]
 }

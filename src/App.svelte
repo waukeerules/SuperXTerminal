@@ -89,6 +89,13 @@
       else askLayoutName();
     } else if (event.payload === "saveLayoutAs") askLayoutName();
     else if (event.payload === "toggleLayouts") void saveSettings({ showLayouts: !settings.showLayouts });
+    else if (event.payload === "nextTab") tabs?.cycle(1);
+    else if (event.payload === "prevTab") tabs?.cycle(-1);
+    else if (["duplicateSession", "renameTab", "restartSession", "resetTerminal", "copyAll"].includes(event.payload)) activeTabAction(event.payload);
+    else if (event.payload === "gotoCommandBar") void focusBar("send-command", () => saveSettings({ showSendCommands: true }));
+    else if (event.payload === "gotoConnectionBar") void focusBar("quick-connect-host");
+    else if (event.payload === "focusActiveSession") tabs?.focusActive();
+    else if (event.payload === "fullScreen") void toggleFullScreen();
     else if (event.payload === "toggleSessionDetail") void saveSettings({ showSessionDetail: !settings.showSessionDetail });
     else if (event.payload === "databaseSessions") databaseOpen = true;
     else if (event.payload === "scriptEditor") editorOpen = true;
@@ -498,6 +505,37 @@
     } catch (e) {
       status = `Couldn't open a window: ${e}`;
     }
+  }
+
+  /** The menu's actions on the active tab, as its tab menu's (SuperXPuTTY's DuplicateSession, RenameTab, ...) */
+  function activeTabAction(action: string): void {
+    const id = tabs?.api.activePanel?.id;
+    const host = id ? tabs?.hosts.get(id) : undefined;
+    if (!id || !tabs || !host) return;
+    if (action === "duplicateSession") tabs.duplicate(id);
+    else if (action === "renameTab") renaming = { id, title: tabs.api.getPanel(id)?.title ?? "" };
+    else if (action === "restartSession") {
+      if (tabs.paramsOf(id)?.local && !host.isEnded) status = "A local shell starts again with New Local Shell";
+      else void host.reconnect();
+    } else if (action === "resetTerminal") host.action("reset");
+    else if (action === "copyAll") host.action("copyAll");
+  }
+
+  /** Go to Command Bar and Go to Quick Connect, as SuperXPuTTY's: the keyboard in that toolbar's box (shown first if hidden) */
+  async function focusBar(id: string, show?: () => Promise<void>): Promise<void> {
+    if (!document.getElementById(id) && show) {
+      await show();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const box = document.getElementById(id) as HTMLInputElement | null;
+    box?.focus();
+    box?.select();
+  }
+
+  /** View > Full Screen, as SuperXPuTTY's FullScreen */
+  async function toggleFullScreen(): Promise<void> {
+    const win = getCurrentWindow();
+    await win.setFullscreen(!(await win.isFullscreen()));
   }
 
   /** Open another Local Shell tab (File > New Local Shell, Cmd+T) */

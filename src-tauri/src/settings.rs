@@ -61,6 +61,8 @@ pub struct AppSettings {
     /// View > Layouts and View > Session Detail: the panes under the Sessions tree
     pub show_layouts: bool,
     pub show_session_detail: bool,
+    /// Settings > Shortcuts: the actions' keys the user changed ("" for none); the others have keys.rs's defaults
+    pub shortcuts: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for AppSettings {
@@ -90,6 +92,7 @@ impl Default for AppSettings {
             default_layout_name: String::new(),
             show_layouts: false,
             show_session_detail: false,
+            shortcuts: std::collections::BTreeMap::new(),
         }
     }
 }

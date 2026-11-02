@@ -157,11 +157,13 @@ fn stream(
     let mut profile_name = session.get("PuttySession").to_string();
     let mut rules = session.get("HighlightRules").to_string();
     let mut jump_host = session.get("JumpHost").to_string();
+    // a local override of "none" keeps the folders' and profile's jump host off
+    let no_jump_host = session.get(crate::overrides::NO_JUMP_HOST);
     for folder in sessions.along(store, session.folder()) {
         if port == 0 {
             port = folder.port;
         }
-        if jump_host.is_empty() {
+        if jump_host.is_empty() && no_jump_host.is_empty() {
             jump_host = folder.jump_host.clone();
         }
         if rules.is_empty() {
@@ -268,6 +270,8 @@ fn ssh(
     let mut username = session.get("Username").to_string();
     let mut port = session.port();
     let mut jump_host = session.get("JumpHost").to_string();
+    // a local override of "none" keeps the folders' and profile's jump host off
+    let no_jump_host = session.get(crate::overrides::NO_JUMP_HOST);
     let mut profile_name = session.get("PuttySession").to_string();
     let mut rules = session.get("HighlightRules").to_string();
     for folder in sessions.along(store, session.folder()) {
@@ -277,7 +281,7 @@ fn ssh(
         if port == 0 {
             port = folder.port;
         }
-        if jump_host.is_empty() {
+        if jump_host.is_empty() && no_jump_host.is_empty() {
             jump_host = folder.jump_host.clone();
         }
         if rules.is_empty() {
@@ -306,7 +310,7 @@ fn ssh(
     if port == 0 {
         port = if profile.port != 0 { profile.port } else { default.port };
     }
-    if jump_host.is_empty() {
+    if jump_host.is_empty() && no_jump_host.is_empty() {
         jump_host = first(&profile.jump_host, &default.jump_host).to_string();
     }
 

@@ -29,6 +29,8 @@
     recordOpened,
     forgetRecent,
     setGroupExpanded,
+    loadOverrides,
+    type Override,
     type Shortcuts,
     type DbState,
     type FolderSetting,
@@ -38,6 +40,8 @@
     type Store,
   } from "./api";
   import EditSession from "./EditSession.svelte";
+  import BulkEdit from "./BulkEdit.svelte";
+  import Overrides from "./Overrides.svelte";
   import FolderSettings from "./FolderSettings.svelte";
   import PendingChanges from "./PendingChanges.svelte";
   import Prompt from "../ui/Prompt.svelte";
@@ -66,6 +70,16 @@
   let { openSessions, onOpen, onLook, onOpenProfiles }: Props = $props();
 
   let selected = $state("");
+  /** Sessions selected together with Cmd+click and Shift+click, as "store:id" (SuperXPuTTY's multiple selection) */
+  let multi = $state<ReadonlySet<string>>(new Set());
+  /** Where a Shift+click range starts: the session last clicked without Shift */
+  let anchor = "";
+  /** Edit sessions… open: its title and sessions */
+  let bulk = $state<{ title: string; sessions: SessionView[] } | null>(null);
+  /** Local overrides… open, for these sessions */
+  let overriding = $state<SessionView[] | null>(null);
+  /** The user's local overrides, by session id */
+  let overrides = $state<Record<string, Override>>({});
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   /** The session being edited: its store, its id (null for new) and its fields */
   let editing = $state<{ store: Store; id: string | null; fields: SessionFields; lockedFields?: string } | null>(null);
@@ -100,15 +114,19 @@
   let shortcuts = $state<Shortcuts>({ Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false });
 
   const colors = $derived(new EnvironmentColors(loaded?.folders ?? [], parseRules(settings.environmentColorRules)));
-  const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query, newFolders.saved, descending) : null);
+  /** The sessions as shown: a local override's note in place of the stored one, in the tooltip and the search */
+  const shown = $derived(
+    (loaded?.sessions ?? []).map((s) => (overrides[s.id]?.Note !== undefined ? { ...s, note: overrides[s.id].Note ?? "" } : s)),
+  );
+  const saved = $derived(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending) : null);
   const privateRoot = $derived(
-    loaded ? buildTree("private", "Private sessions", loaded.sessions, query, newFolders.private, descending) : null,
+    loaded ? buildTree("private", "Private sessions", shown, query, newFolders.private, descending) : null,
   );
   const databaseRoot = $derived(
-    loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), loaded.sessions, query, newFolders.database, descending) : null,
+    loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), shown, query, newFolders.database, descending) : null,
   );
-  const favorites = $derived(loaded ? buildGroup("favorites", "Favorites", shortcuts.Favorites, loaded.sessions, query) : null);
-  const recent = $derived(loaded ? buildGroup("recent", "Recent", shortcuts.Recent, loaded.sessions, query) : null);
+  const favorites = $derived(loaded ? buildGroup("favorites", "Favorites", shortcuts.Favorites, shown, query) : null);
+  const recent = $derived(loaded ? buildGroup("recent", "Recent", shortcuts.Recent, shown, query) : null);
   const roots = $derived([favorites, recent, saved, privateRoot, databaseRoot].filter((r): r is FolderNode => r !== null));
   const searching = $derived(query.trim() !== "");
   /** What's open: while searching every folder holding a match (but those closed since), else as the user left it */
@@ -195,7 +213,7 @@
   /** Read the table again if it changed; not while a window is open, so a session being edited isn't replaced, and
    * not while offline (the retry takes over) */
   async function checkDatabase(): Promise<void> {
-    if (editing || folderSettings || prompt || menu || showPending || dbLoading || db?.error) return;
+    if (editing || bulk || overriding || folderSettings || prompt || menu || showPending || dbLoading || db?.error) return;
     try {
       if (await databaseChanged()) await readDatabase();
     } catch {
@@ -221,6 +239,7 @@
       onLook(settings.iconSize, customs);
       loaded = await loadSessions();
       shortcuts = await loadShortcuts();
+      overrides = await loadOverrides();
       if (db?.enabled) db = await databaseStatus();
       error = "";
     } catch (e) {
@@ -325,6 +344,24 @@
     // folder settings aren't queued while offline, as in SuperXPuTTY: they need the table
     const folderBlock = (store: Store): string | false =>
       dbBlock(store) || (store === "database" && db?.error ? "Folder settings are saved only while the database can be reached" : false);
+    if ("session" in target && multi.size > 1 && multi.has(`${target.session.store}:${target.session.id}`)) {
+      const list = selectedSessions();
+      const runnable = list.filter((s) => unavailableReason(s.protocol) === null);
+      const stores = new Set(list.map((s) => s.store));
+      const [only] = stores;
+      items = [
+        { label: `Connect ${runnable.length} sessions`, bold: true, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
+        { separator: true },
+        { label: `Edit ${list.length} sessions…`, action: () => void editSessions("for the selection", list) },
+        { label: `Local overrides for ${list.length} sessions…`, action: () => (overriding = list) },
+        { label: `Delete ${list.length} sessions`, action: () => void removeSessions(list) },
+        ...(stores.size === 1
+          ? transferItems(list, only, list.some((s) => s.locked))
+          : [{ label: "Move to / Copy to", disabled: "The selection is in more than one root" } as MenuItem]),
+      ];
+      menu = { x: event.clientX, y: event.clientY, items };
+      return;
+    }
     if ("session" in target) {
       const session = target.session;
       const block = dbBlock(session.store, session.locked);
@@ -349,7 +386,7 @@
         { label: "Copy host address", action: () => void navigator.clipboard.writeText(session.host) },
         { label: "Duplicate as…", disabled: session.store === "database" && !db?.writable && "Database sessions can't be written now", action: () => void duplicateAs(session) },
         { label: "Edit", disabled: block, action: () => void edit(session) },
-        { label: "Local overrides…", disabled: "Local overrides come in M5" },
+        { label: "Local overrides…", action: () => (overriding = [session]) },
         { label: "Delete", disabled: block, action: () => void remove(session) },
         ...transferItems([session], session.store, session.locked),
         { separator: true },
@@ -387,6 +424,11 @@
                 ],
               },
               { label: "Folder settings…", disabled: folderBlock(folder.store), action: () => (folderSettings = { store: folder.store, setting: settingOf(folder) }) },
+              {
+                label: "Edit sessions…",
+                disabled: sessionsIn(folder).length === 0 ? "No sessions here" : dbBlock(folder.store),
+                action: () => void editSessions(`in ${folder.name}`, sessionsIn(folder)),
+              },
               { label: "Delete folder", disabled: block, action: () => void removeFolder(folder) },
               ...transferItems(sessionsIn(folder), folder.store, sessionsIn(folder).some((s) => s.locked)),
             ] as MenuItem[])),
@@ -397,6 +439,103 @@
       ];
     }
     menu = { x: event.clientX, y: event.clientY, items };
+  }
+
+  /** A click on a session or folder: Cmd+click adds or removes a session from the selection, Shift+click selects the
+   * sessions shown between the last click and this one, anything else selects just it (SuperXPuTTY's
+   * BeforeSelectMulti, with Cmd for Ctrl). A right-click (no event) keeps the selection when it's on a selected one. */
+  function select(key: string, event?: MouseEvent): void {
+    const isSession = isSessionKey(key);
+    if (!event) {
+      if (!multi.has(key)) multi = new Set();
+      selected = key;
+      return;
+    }
+    if (isSession && (event.metaKey || event.ctrlKey)) {
+      const next = new Set(multi.size ? multi : isSessionKey(selected) ? [selected] : []);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      multi = next;
+      selected = key;
+      anchor = key;
+      return;
+    }
+    if (isSession && event.shiftKey && anchor) {
+      const order = visibleSessionKeys();
+      const [a, b] = [order.indexOf(anchor), order.indexOf(key)];
+      if (a >= 0 && b >= 0) {
+        multi = new Set(order.slice(Math.min(a, b), Math.max(a, b) + 1));
+        selected = key;
+        return;
+      }
+    }
+    multi = new Set();
+    selected = key;
+    if (isSession) anchor = key;
+  }
+
+  /** Whether a selection key is a session in its own root (not a folder, nor a Favorites or Recent entry) */
+  function isSessionKey(key: string): boolean {
+    const [store, second] = key.split(":");
+    return ["saved", "private", "database"].includes(store) && second !== "folder" && key.length > store.length + 1;
+  }
+
+  /** The sessions shown in the roots, top to bottom, for Shift+click */
+  function visibleSessionKeys(): string[] {
+    const out: string[] = [];
+    const walk = (node: FolderNode) => {
+      if (!shownExpanded.has(node.key)) return;
+      node.folders.forEach(walk);
+      for (const s of node.sessions) out.push(`${s.store}:${s.id}`);
+    };
+    [saved, privateRoot, databaseRoot].forEach((root) => root && walk(root));
+    return out;
+  }
+
+  /** The sessions selected together */
+  function selectedSessions(): SessionView[] {
+    return (loaded?.sessions ?? []).filter((s) => multi.has(`${s.store}:${s.id}`));
+  }
+
+  /** Edit sessions…: the ones that can be changed here, after saying which can't (SuperXPuTTY's BulkEditSessions) */
+  async function editSessions(title: string, list: SessionView[]): Promise<void> {
+    const editable = list.filter((s) => s.store !== "database" || (db?.writable && !s.locked));
+    const skipped = list.filter((s) => !editable.includes(s));
+    if (editable.length === 0) {
+      error = "None of these sessions can be edited here: they're locked in the database, or it can't be written.";
+      return;
+    }
+    if (skipped.length) {
+      const names = skipped.slice(0, 10).map((s) => s.name).join("\n") + (skipped.length > 10 ? `\n... and ${skipped.length - 10} more` : "");
+      const sure = await ask(`These can't be edited here and will be left out:\n\n${names}\n\nEdit the other ${editable.length}?`, { title: "Edit sessions", okLabel: "Edit" });
+      if (!sure) return;
+    }
+    bulk = { title, sessions: editable };
+  }
+
+  /** Delete several sessions after one question; locked Database ones are left (SuperXPuTTY's DeleteSessions) */
+  async function removeSessions(list: SessionView[]): Promise<void> {
+    const deletable = list.filter((s) => s.store !== "database" || (db?.writable && !s.locked));
+    const left = list.length - deletable.length;
+    if (deletable.length === 0) {
+      error = "None of these sessions can be deleted here: they're locked in the database, or it can't be written.";
+      return;
+    }
+    const names = deletable.slice(0, 10).map((s) => s.name).join("\n") + (deletable.length > 10 ? `\n... and ${deletable.length - 10} more` : "");
+    const sure = await ask(`Delete these ${deletable.length} sessions?\n\n${names}${left ? `\n\n${left} locked in the database will be left.` : ""}`,
+      { title: "Delete sessions", kind: "warning", okLabel: "Delete" });
+    if (!sure) return;
+    multi = new Set();
+    const problems: string[] = [];
+    for (const s of deletable) {
+      try {
+        await deleteSession(s.store, s.id);
+      } catch (e) {
+        problems.push(`${s.name}: ${e}`);
+      }
+    }
+    await reload();
+    error = problems.join(" ");
   }
 
   /** Add to Favorites, or Remove from Favorites when it's there */
@@ -604,7 +743,7 @@
   $effect(() => {
     if (!settings.loaded) return;
     const timer = setInterval(async () => {
-      if (editing || folderSettings || prompt || menu || showPending) return;
+      if (editing || bulk || overriding || folderSettings || prompt || menu || showPending) return;
       if (await invoke<boolean>("sessions_files_changed")) {
         await reload();
         context.status("The sessions changed on disk; read them again");
@@ -746,28 +885,28 @@
       <p class="message">Skipped: {problem}</p>
     {/each}
     {#if favorites}
-      <TreeFolder node={favorites} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
-        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
+      <TreeFolder node={favorites} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+        onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if recent}
-      <TreeFolder node={recent} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
-        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
+      <TreeFolder node={recent} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+        onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if loaded.savedFile === null}
       <p class="message">Choose the settings folder: the folder that holds the team's Sessions.xml.</p>
       <button onclick={choose}>Choose Settings Folder...</button>
     {:else if saved}
-      <TreeFolder node={saved} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
-        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
+      <TreeFolder node={saved} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+        onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if privateRoot}
-      <TreeFolder node={privateRoot} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
-        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
+      <TreeFolder node={privateRoot} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+        onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if databaseRoot}
       <div class="db-root" title={db?.error ? `Showing the last read: ${db.error}` : `${db?.source}${db?.writable ? "" : " (read only)"}`}>
-        <TreeFolder node={databaseRoot} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
-          onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
+        <TreeFolder node={databaseRoot} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+          onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
       </div>
     {/if}
   {/if}
@@ -781,6 +920,21 @@
   <EditSession store={editing.store} id={editing.id} fields={editing.fields} folders={foldersAlong(editing.store, editing.fields.folder)}
     {iconSize} {customs} {onOpenProfiles} lockedFields={editing.lockedFields ?? ""} onCancel={() => (editing = null)}
     onSaved={async (id) => { const store = editing?.store; editing = null; await reload(); selected = `${store}:${id}`; }} />
+{/if}
+
+{#if bulk}
+  <BulkEdit title={bulk.title} sessions={bulk.sessions} {iconSize} {customs} onCancel={() => (bulk = null)}
+    onDone={async (done, problems) => {
+      bulk = null;
+      await reload();
+      context.status(`Edited ${done} session${done === 1 ? "" : "s"}`);
+      error = problems.length ? `Left alone: ${problems.join(" ")}` : "";
+    }} />
+{/if}
+
+{#if overriding}
+  <Overrides sessions={overriding} onCancel={() => (overriding = null)}
+    onSaved={async () => { overriding = null; overrides = await loadOverrides(); }} />
 {/if}
 
 {#if folderSettings}

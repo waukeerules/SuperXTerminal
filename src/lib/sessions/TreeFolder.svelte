@@ -9,7 +9,7 @@
   import type { CustomIcon } from "../icons/custom";
   import type { EnvironmentColors } from "../icons/environment";
   import { DRAG_TYPE, type Dragged, type FolderNode, type Group } from "./tree";
-  import { unavailableReason, type SessionView } from "./api";
+  import { overriddenFields, unavailableReason, type Override, type SessionView } from "./api";
 
   interface Props {
     node: FolderNode;
@@ -22,16 +22,21 @@
     openSessions: ReadonlySet<string>;
     /** The selected session or folder, as "store:id" or "store:folder:path" */
     selected: string;
+    /** Sessions selected together (Cmd+click, Shift+click), as "store:id" */
+    multi: ReadonlySet<string>;
+    /** The user's local overrides, by session id, for the tooltip */
+    overrides: Record<string, Override>;
     onToggle: (key: string) => void;
     onOpen: (session: SessionView) => void;
-    onSelect: (key: string) => void;
+    /** A click (with its modifiers) or a right-click (no event) on a session or folder */
+    onSelect: (key: string, event?: MouseEvent) => void;
     /** A right-click on a session or folder */
     onMenu: (event: MouseEvent, target: { session: SessionView; group?: Group } | { folder: FolderNode }) => void;
     /** Something dragged in the tree was dropped on a folder */
     onDrop: (folder: FolderNode, dragged: Dragged) => void;
   }
 
-  let { node, depth, expanded, colors, iconSize, customs, openSessions, selected, onToggle, onOpen, onSelect, onMenu, onDrop }: Props = $props();
+  let { node, depth, expanded, colors, iconSize, customs, openSessions, selected, multi, overrides, onToggle, onOpen, onSelect, onMenu, onDrop }: Props = $props();
 
   let over = $state(false);
 
@@ -69,6 +74,8 @@
     const lines = [`${session.protocol || "SSH"}: ${address}`];
     if (session.note) lines.push(session.note);
     if (session.updatedBy) lines.push(`Changed by ${session.updatedBy}`);
+    const mine = overriddenFields(overrides[session.id]);
+    if (mine.length) lines.push(`Your local overrides: ${mine.join(", ")}`);
     if (session.locked) lines.push("Locked in the database");
     if (session.pending) lines.unshift(session.pendingNote);
     const reason = unavailableReason(session.protocol);
@@ -90,14 +97,14 @@
 
 {#if open}
   {#each node.folders as child (child.key)}
-    <TreeFolder node={child} depth={depth + 1} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
+    <TreeFolder node={child} depth={depth + 1} {expanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
       {onToggle} {onOpen} {onSelect} {onMenu} {onDrop} />
   {/each}
   {#each node.sessions as session (session.store + ":" + session.id)}
     {@const reason = unavailableReason(session.protocol)}
     {@const key = node.group ? `${node.group}:${session.store}:${session.id}` : `${session.store}:${session.id}`}
-    <div class="row session" class:dimmed={reason !== null} class:pending={session.pending} class:selected={selected === key}
-      onclick={() => onSelect(key)} draggable={!session.locked && !node.group}
+    <div class="row session" class:dimmed={reason !== null} class:pending={session.pending} class:selected={selected === key || multi.has(key)}
+      onclick={(e) => onSelect(key, e)} draggable={!session.locked && !node.group}
       ondragstart={(e) => drag(e, { kind: "session", store: session.store, id: session.id })}
       oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session, group: node.group }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
       style:height="{Math.round(iconSize * 1.36) + 4}px"

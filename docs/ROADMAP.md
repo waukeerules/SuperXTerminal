@@ -131,9 +131,9 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Tree and data**
 - ✅ Favorites and Recent (`SessionShortcuts.json`, in SuperXPuTTY's format, in the user's own folder): groups at the top of the tree, shown only when they hold something, opened as last left; Add to / Remove from Favorites, Show in Sessions tree, Remove from Recent, Clear Recent; the last 10 sessions opened from the tree; they follow renames and moves and forget deleted sessions. Checked in the app
-- ⬜ Multi-select with Connect, Delete, Edit sessions...
-- ⬜ Edit sessions... (bulk edit)
-- ⬜ Local overrides (`SessionOverrides.json`)
+- ✅ Multi-select, as SuperXPuTTY's (Cmd+click adds or removes a session, Shift+click selects the range shown): Connect N sessions, Edit N sessions…, Local overrides for N sessions…, Delete N sessions (one question; locked Database ones left), Move to / Copy to. Checked
+- ✅ Edit sessions… (a folder's, or the selection's), as dlgBulkEdit: the sessions ticked, only the fields ticked (username, profile, port, connection type, icon, colour, extra arguments, jump host, highlight); Saved and Private files written once each, Database sessions in one batch, with locked rows and fields left and listed. Checked on Private sessions (the file back byte for byte)
+- ✅ Local overrides (`SessionOverrides.json` in the user's folder, SuperXPuTTY's format): host, port, username, profile, extra arguments, jump host ("" for none) and the user's own note, used when the session opens (tabs and Connect external) without changing it; for several sessions a half-ticked field leaves each as it is. From the tree's menu and Edit Session; shown in the tooltip, the note in the search; renames, moves and deletes followed. Checked: a port override used at launch, the half-ticked merge
 - ✅ Duplicate as… (Edit Session for a new session filled in from the copied one), Copy host address, and the tab menu's Duplicate session and Save session as…
 - ⬜ CSV export/import
 - ✅ Sessions.xml, Folders.xml and the private files read again when they change elsewhere (a teammate, SuperXPuTTY, an editor), compared by contents every 3 s, not while a window is open. Checked with an outside change

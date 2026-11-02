@@ -90,7 +90,9 @@ pub fn pty_open(
         Target::Session { store, id } => {
             let sessions = state.sessions.lock().unwrap();
             let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
-            launch::launch(&sessions, &profiles, &values, &serial_devices, store, session)?
+            // the user's local overrides beat the session's values and its folders'
+            let session = crate::overrides::applied(&state.user_folder, session);
+            launch::launch(&sessions, &profiles, &values, &serial_devices, store, &session)?
         }
         Target::QuickConnect(quick) => {
             let sessions = state.sessions.lock().unwrap();

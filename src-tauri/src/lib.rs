@@ -13,12 +13,14 @@ mod pty;
 mod scripts;
 mod secrets;
 mod outbox;
+mod overrides;
 mod sessions;
 mod shortcuts;
 mod streams;
 mod variables;
 mod settings;
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -236,7 +238,7 @@ fn session_save(
 fn session_delete(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<(), String> {
     let path = store_file(&state, store)?;
     editing::delete(&path, &id)?;
-    shortcuts::forget(&state.user_folder, |s| s == id);
+    forget_id(&state, &id);
     Ok(())
 }
 
@@ -286,19 +288,28 @@ fn session_move(state: State<'_, AppState>, store: sessions::Store, id: String, 
 fn follow_id(state: &AppState, old: &str, new: &str) {
     if old != new {
         shortcuts::follow(&state.user_folder, |id| (id == old).then(|| new.to_string()));
+        overrides::follow(&state.user_folder, |id| (id == old).then(|| new.to_string()));
     }
+}
+
+/// Favorites, Recent and local overrides forget a deleted session
+fn forget_id(state: &AppState, gone: &str) {
+    shortcuts::forget(&state.user_folder, |s| s == gone);
+    overrides::forget(&state.user_folder, |s| s == gone);
 }
 
 /// Favorites and Recent follow the sessions below a renamed or moved folder ("Lab" or "@db/Lab")
 fn follow_folder(state: &AppState, from: &str, to: &str) {
     let below = format!("{from}/");
     shortcuts::follow(&state.user_folder, |id| id.strip_prefix(&below).map(|rest| format!("{to}/{rest}")));
+    overrides::follow(&state.user_folder, |id| id.strip_prefix(&below).map(|rest| format!("{to}/{rest}")));
 }
 
 /// Favorites and Recent forget the sessions below a deleted folder
 fn forget_folder(state: &AppState, path: &str) {
     let below = format!("{path}/");
     shortcuts::forget(&state.user_folder, |id| id.starts_with(&below));
+    overrides::forget(&state.user_folder, |id| id.starts_with(&below));
 }
 
 /// The settings folder, or the user's folder when none is chosen, for shared files (ButtonBars.xml, scripts)
@@ -479,7 +490,7 @@ fn session_external(state: State<'_, AppState>, store: sessions::Store, id: Stri
     let values = variables::values(&state.user_folder);
     let serial_devices = state.settings.lock().unwrap().serial_devices.clone();
     let sessions = state.sessions.lock().unwrap();
-    let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
+    let session = &overrides::applied(&state.user_folder, sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?);
     // the folders' username and port, as for a tab
     let mut username = session.get("Username").to_string();
     let mut port = session.port();
@@ -546,6 +557,18 @@ fn serial_device_set(state: State<'_, AppState>, name: String, device: String) -
     let mut settings = state.settings.lock().unwrap();
     settings.serial_devices.insert(name, device);
     settings.save(&state.user_folder)
+}
+
+/// The user's local overrides, by session id
+#[tauri::command]
+fn overrides_get(state: State<'_, AppState>) -> BTreeMap<String, overrides::Override> {
+    overrides::load(&state.user_folder)
+}
+
+/// Set (or, when empty, remove) sessions' local overrides; returns them all
+#[tauri::command]
+fn overrides_set(state: State<'_, AppState>, changes: Vec<(String, overrides::Override)>) -> Result<BTreeMap<String, overrides::Override>, String> {
+    overrides::set(&state.user_folder, changes)
 }
 
 /// The Favorites and Recent lists
@@ -932,7 +955,7 @@ async fn db_session_delete(state: State<'_, AppState>, id: String) -> Result<(),
     change.row_id = stored.get("DatabaseId").to_string();
     change.from = stored.id().trim_start_matches("@db/").to_string();
     submit_one(&state, change).await?;
-    shortcuts::forget(&state.user_folder, |s| s == id);
+    forget_id(&state, &id);
     Ok(())
 }
 
@@ -1117,6 +1140,131 @@ async fn sessions_transfer(
         }
     }
     Ok(TransferReport { done: arrived.len(), problems })
+}
+
+/// The new values for Edit sessions…; None leaves a field as each session has it (SuperXPuTTY's SessionBulkEdit.Change)
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct BulkChange {
+    username: Option<String>,
+    profile: Option<String>,
+    port: Option<u16>,
+    protocol: Option<String>,
+    icon: Option<String>,
+    color: Option<String>,
+    extra_args: Option<String>,
+    jump_host: Option<String>,
+    highlight_rules: Option<String>,
+}
+
+impl BulkChange {
+    /// The session attributes changed and their new values
+    fn attributes(&self) -> Vec<(&'static str, String)> {
+        let mut out = Vec::new();
+        let mut put = |name: &'static str, value: &Option<String>| {
+            if let Some(v) = value {
+                out.push((name, v.trim().to_string()));
+            }
+        };
+        put("Username", &self.username);
+        put("PuttySession", &self.profile.as_ref().map(|p| if p.trim().is_empty() { "Default Settings".into() } else { p.clone() }));
+        put("Port", &self.port.map(|p| p.to_string()));
+        put("Proto", &self.protocol);
+        put("ImageKey", &self.icon);
+        put("Color", &self.color);
+        put("ExtraArgs", &self.extra_args);
+        put("JumpHost", &self.jump_host);
+        put("HighlightRules", &self.highlight_rules);
+        out
+    }
+
+    /// The table's columns of the fields changed, to check against locked_fields
+    fn columns(&self) -> Vec<&'static str> {
+        self.attributes()
+            .iter()
+            .map(|(name, _)| match *name {
+                "Username" => "username",
+                "PuttySession" => "putty_profile",
+                "Port" => "port",
+                "Proto" => "protocol",
+                "ImageKey" => "icon",
+                "Color" => "color",
+                "ExtraArgs" => "extra_args",
+                "JumpHost" => "jump_host",
+                _ => "highlight_rules",
+            })
+            .collect()
+    }
+}
+
+/// Change the same fields on many sessions at once, as SuperXPuTTY's Edit sessions…: Saved and Private ones in their
+/// files, written once each; Database ones to the table in one batch, leaving those with a changed field locked.
+#[tauri::command]
+async fn sessions_bulk_edit(state: State<'_, AppState>, items: Vec<(sessions::Store, String)>, change: BulkChange) -> Result<TransferReport, String> {
+    use sessions::Store;
+    let attributes = change.attributes();
+    if attributes.is_empty() {
+        return Err("Tick the fields to change.".into());
+    }
+    let mut done = 0;
+    let mut problems = Vec::new();
+    for store in [Store::Saved, Store::Private] {
+        let ids: Vec<&String> = items.iter().filter(|(s, _)| *s == store).map(|(_, id)| id).collect();
+        if ids.is_empty() {
+            continue;
+        }
+        let path = store_file(&state, store)?;
+        sessions::update_file(&path, |list| {
+            for id in &ids {
+                match list.iter_mut().find(|s| s.id() == id.as_str()) {
+                    Some(session) => {
+                        for (name, value) in &attributes {
+                            session.set(name, value);
+                        }
+                        done += 1;
+                    }
+                    None => problems.push(format!("{id}: no longer in its file.")),
+                }
+            }
+            Ok(())
+        })?;
+    }
+    let columns = change.columns();
+    let mut changes = Vec::new();
+    for (_, id) in items.iter().filter(|(s, _)| *s == Store::Database) {
+        let stored = match db_session(&state, id) {
+            Ok(s) => s,
+            Err(e) => {
+                problems.push(e);
+                continue;
+            }
+        };
+        let name = stored.get("SessionName").to_string();
+        if stored.get("DatabaseLocked") == "true" {
+            problems.push(format!("{name}: locked in the database."));
+            continue;
+        }
+        let locked: Vec<&str> = stored.get("DatabaseLockedFields").split(',').map(str::trim).collect();
+        if let Some(column) = columns.iter().find(|c| locked.contains(c)) {
+            problems.push(format!("{name}: {column} is locked in the database."));
+            continue;
+        }
+        let mut copy = stored.clone();
+        for (attribute, value) in &attributes {
+            copy.set(attribute, value);
+        }
+        let mut pending = outbox::PendingChange::new(outbox::Kind::Update);
+        pending.row_id = stored.get("DatabaseId").to_string();
+        pending.version = stored.get("DatabaseVersion").to_string();
+        pending.row = Some(db::Row::of(&copy, stored.folder()));
+        changes.push(pending);
+    }
+    if !changes.is_empty() {
+        let submitted = submit(&state, changes).await?;
+        done += submitted.done;
+        problems.extend(submitted.problems);
+    }
+    Ok(TransferReport { done, problems })
 }
 
 /// How Database sessions stand now, without reading anything (after a change from the tree)
@@ -1469,6 +1617,9 @@ pub fn run() {
             session_external,
             serial_device_set,
             pty::pty_special,
+            overrides_get,
+            sessions_bulk_edit,
+            overrides_set,
             pty::pty_serial_get,
             pty::pty_serial_set,
             log_open,

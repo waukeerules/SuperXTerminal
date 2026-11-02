@@ -267,3 +267,59 @@ export const DATABASE_SAVED = "superxterminal:database-saved";
 export function transferSessions(from: Store, ids: string[], to: Store, move: boolean): Promise<{ done: number; problems: string[] }> {
   return invoke("sessions_transfer", { from, ids, to, deleteSource: move });
 }
+
+/** The new values for Edit sessions…: a field left out stays as each session has it */
+export interface BulkChange {
+  username?: string;
+  profile?: string;
+  port?: number;
+  protocol?: string;
+  icon?: string;
+  color?: string;
+  extraArgs?: string;
+  jumpHost?: string;
+  highlightRules?: string;
+}
+
+/**
+ * Change the same fields on many sessions at once, as SuperXPuTTY's Edit sessions…: Database sessions with a changed
+ * field locked are left out, and listed in `problems`.
+ */
+export function bulkEdit(items: [Store, string][], change: BulkChange): Promise<{ done: number; problems: string[] }> {
+  return invoke("sessions_bulk_edit", { items, change });
+}
+
+/**
+ * One session's local overrides (SessionOverrides.json, as SuperXPuTTY's): the user's own values, used when it opens
+ * instead of the stored ones. Absent (or Port 0) isn't overridden; JumpHost "" means none.
+ */
+export interface Override {
+  Host?: string;
+  Port: number;
+  Username?: string;
+  PuttyProfile?: string;
+  ExtraArgs?: string;
+  JumpHost?: string;
+  Note?: string;
+}
+
+/** Everyone's overrides here, by session id */
+export function loadOverrides(): Promise<Record<string, Override>> {
+  return invoke("overrides_get");
+}
+
+/** Set sessions' overrides (an empty one removes them); returns them all */
+export function saveOverrides(changes: [string, Override][]): Promise<Record<string, Override>> {
+  return invoke("overrides_set", { changes });
+}
+
+/** The names of the fields an override sets, for the tree's tooltip */
+export function overriddenFields(o: Override | undefined): string[] {
+  if (!o) return [];
+  const names: [keyof Override, string][] = [
+    ["Host", "Host"], ["Username", "Username"], ["PuttyProfile", "Profile"], ["ExtraArgs", "Extra args"], ["JumpHost", "Jump host"], ["Note", "Notes"],
+  ];
+  const out = names.filter(([k]) => o[k] !== undefined && o[k] !== null).map(([, n]) => n);
+  if (o.Port > 0) out.splice(1, 0, "Port");
+  return out;
+}

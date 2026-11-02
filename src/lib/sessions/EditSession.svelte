@@ -2,7 +2,7 @@
   Edit Session, as SuperXPuTTY's: connection details, notes and file transfer paths, saved back to the session's
   own file (Sessions.xml for Saved sessions, PrivateSessions.xml for Private ones). Also used for a new session.
   "PuTTY session profile" becomes Profile: the name is looked up in the user's own profiles (Settings > Profiles).
-  Fields the Mac doesn't use yet (RDP options, Local overrides) are greyed with the reason.
+  Fields the Mac doesn't use yet (RDP options) are greyed with the reason; Local overrides… opens the user's own values.
 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
@@ -15,6 +15,7 @@
   import { highlighting } from "../terminal/highlighting";
   import { listProfiles, DEFAULT_PROFILE } from "../settings/profiles";
   import SerialLineFields from "./SerialLineFields.svelte";
+  import Overrides from "./Overrides.svelte";
   import { lineOf, withLine } from "./serial";
   import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
@@ -47,6 +48,8 @@
   let choosingIcon = $state(false);
   let choosingColour = $state(false);
   let error = $state("");
+  /** Local overrides… open over this window */
+  let overriding = $state(false);
   /** The serial devices plugged in (/dev/cu.*), for the Serial line list */
   let serialDevices = $state<string[]>([]);
 
@@ -109,7 +112,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && onCancel()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && !overriding && onCancel()} />
 
 <div class="backdrop" role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
@@ -232,13 +235,18 @@
     </fieldset>
 
     <footer>
-      <button disabled title="Local overrides come in M5">Local overrides…</button>
+      <button disabled={id === null} title={id === null ? "Save the session first" : "Your own values for this session, used when it opens; only you get them"}
+        onclick={() => (overriding = true)}>Local overrides…</button>
       <span class="error">{error}</span>
       <button class="primary" onclick={save}>Save</button>
       <button onclick={onCancel}>Cancel</button>
     </footer>
   </div>
 </div>
+
+{#if overriding && id !== null}
+  <Overrides sessions={[{ id, store, name: fields.name }]} onCancel={() => (overriding = false)} onSaved={() => (overriding = false)} />
+{/if}
 
 {#if choosingIcon}
   <IconPicker value={draft.icon} {customs} onCancel={() => (choosingIcon = false)}

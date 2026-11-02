@@ -13,7 +13,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 |---|---|
 | [M0 Skeleton](#m0-skeleton) | ✅ |
 | [M1 MVP](#m1-mvp) | ✅ |
-| [M2 Database sessions](#m2-database-sessions) | ⬜ |
+| [M2 Database sessions](#m2-database-sessions) | 🚧 |
 | [M3 Scripting and commands](#m3-scripting-and-commands) | ⬜ |
 | [M4 Terminal extras](#m4-terminal-extras) | ⬜ |
 | [M5 The rest](#m5-the-rest) | ⬜ |
@@ -85,17 +85,17 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Done when:** Mac and Windows users edit the same table and see each other's changes within 30 s.
 
-- ⬜ Connect as `SuperPuTTY`, with the nickname
-- ⬜ Read in pages in the background; `@db/` ids
-- ⬜ Cache (`DatabaseSessions.cache.xml`) and retry while offline
+- ✅ Connect as `SuperPuTTY`, with the nickname (checked against the team's PostgreSQL 17.5)
+- ✅ Read in pages in the background; `@db/` ids (the team's 4 sessions, folders, icons and colours as in SuperXPuTTY)
+- 🚧 Cache (`DatabaseSessions.cache.xml`) and retry while offline: written in SuperXPuTTY's format and shown when the database can't be reached; not yet tried offline
 - ⬜ Writes (insert, update, delete, read back) and the outbox
 - ⬜ Locks (`locked`, `locked_fields`) checked in the UI
-- ⬜ Changes noticed every 30 s (`<table>_version`)
-- ⬜ `deleted_at` rows hidden
-- ⬜ Folders table (colours, defaults)
+- 🚧 Changes noticed every 30 s (`<table>_version`): written; not yet seen working (needs a change made in the table)
+- ✅ `deleted_at` rows hidden (in the query; columns a table lacks read as defaults)
+- 🚧 Folders table (colours, defaults): read and applied; writing comes with the next part
 - ⬜ Move to / Copy to between Database and Saved/Private
-- ⬜ Database settings dialog, Create / upgrade schema, read-only
-- ⬜ Database settings export/import (JSON), Clear; password in the Keychain
+- 🚧 Database settings dialog, Create / upgrade schema, read-only: Tools > Database Sessions… with Test connection and Read only; Create / upgrade schema next
+- ✅ Database settings export/import (SuperXPuTTY's JSON), Clear; password in the Keychain
 
 ## M3 Scripting and commands
 

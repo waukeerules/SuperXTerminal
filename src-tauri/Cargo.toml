@@ -26,6 +26,10 @@ base64 = "0.23"
 quick-xml = "0.42"
 tauri-plugin-dialog = "2"
 dirs = "7"
+tokio-postgres = "0.7"
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+tokio = { version = "1", features = ["time"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 serde = { version = "1", features = ["derive"] }

@@ -14,6 +14,8 @@ export interface AppSettings {
   /** "system" (follow macOS), "light" or "dark" */
   theme: string;
   treeFontSize: number;
+  /** Database sessions' connection, as the core keeps it (the password is in the Keychain) */
+  database?: { checkSeconds: number; enabled: boolean };
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -23,7 +25,13 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   environmentColorRules: "",
   theme: "system",
   treeFontSize: 14,
+  database: { checkSeconds: 30, enabled: false },
 });
+
+/** Database sessions' "Check every", in seconds; 0 when they're off or never checked */
+export function databaseCheckSeconds(): number {
+  return settings.database?.enabled ? Number(settings.database.checkSeconds) || 0 : 0;
+}
 
 /** Whether macOS is in dark mode, kept up to date */
 const systemDark = $state({ value: matchMedia("(prefers-color-scheme: dark)").matches });

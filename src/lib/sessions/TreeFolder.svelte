@@ -56,8 +56,8 @@
     onDrop(node, JSON.parse(data) as Dragged);
   }
 
-  /** The roots' icons, as SuperXPuTTY's tree: a folder for Saved sessions, a padlock for Private ones */
-  const ROOT_ICONS: Record<string, string> = { saved: "folder", private: "lock" };
+  /** The roots' icons, as SuperXPuTTY's tree: a folder for Saved sessions, a padlock for Private ones, a database */
+  const ROOT_ICONS: Record<string, string> = { saved: "folder", private: "lock", database: "database" };
 
   const open = $derived(expanded.has(node.key));
   const isRoot = $derived(node.path === "");
@@ -67,6 +67,8 @@
     const address = `${session.username ? session.username + "@" : ""}${session.host}${session.port ? ":" + session.port : ""}`;
     const lines = [`${session.protocol || "SSH"}: ${address}`];
     if (session.note) lines.push(session.note);
+    if (session.updatedBy) lines.push(`Changed by ${session.updatedBy}`);
+    if (session.locked) lines.push("Locked in the database");
     const reason = unavailableReason(session.protocol);
     if (reason) lines.push(reason);
     return lines.join("\n");
@@ -74,7 +76,7 @@
 </script>
 
 <div class="row folder" class:root={isRoot} class:selected={selected === `${node.store}:folder:${node.path}`} class:over
-  draggable={!isRoot} ondragstart={(e) => drag(e, { kind: "folder", store: node.store, path: node.path })}
+  draggable={!isRoot && node.store !== "database"} ondragstart={(e) => drag(e, { kind: "folder", store: node.store, path: node.path })}
   ondragover={dragOver} ondragleave={() => (over = false)} ondrop={drop}
   oncontextmenu={(e) => { e.preventDefault(); onSelect(`${node.store}:folder:${node.path}`); onMenu(e, { folder: node }); }} style:padding-left="{depth * 18 + 2}px" style:height="{Math.round(iconSize * 1.36) + 4}px"
   role="treeitem" aria-expanded={open} aria-selected="false" tabindex="-1"
@@ -93,7 +95,7 @@
     {@const reason = unavailableReason(session.protocol)}
     {@const key = `${session.store}:${session.id}`}
     <div class="row session" class:dimmed={reason !== null} class:selected={selected === key}
-      onclick={() => onSelect(key)} draggable="true"
+      onclick={() => onSelect(key)} draggable={session.store !== "database"}
       ondragstart={(e) => drag(e, { kind: "session", store: session.store, id: session.id })}
       oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
       style:height="{Math.round(iconSize * 1.36) + 4}px"

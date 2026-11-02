@@ -143,7 +143,7 @@ export class TabArea {
   }
 
   /** Open a tab for a stored session, with its icon and environment colour */
-  openSession(store: "saved" | "private", id: string, title: string, local: boolean, icon: string, environment: string | null): void {
+  openSession(store: "saved" | "private" | "database", id: string, title: string, local: boolean, icon: string, environment: string | null): void {
     const panelId = this.add(title, { target: { kind: "session", store, id }, local, icon, environment });
     this.sessions.set(panelId, `${store}:${id}`);
     this.onOpenChanged(new Set(this.sessions.values()));

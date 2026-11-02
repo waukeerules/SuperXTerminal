@@ -5,7 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 /** Which file a session is from: Sessions.xml (shared) or PrivateSessions.xml (the user's own) */
-export type Store = "saved" | "private";
+export type Store = "saved" | "private" | "database";
 
 /** One session, as the tree shows it */
 export interface SessionView {
@@ -21,6 +21,10 @@ export interface SessionView {
   icon: string;
   color: string;
   note: string;
+  /** Database sessions: who changed it last (their SuperXPuTTY nickname) */
+  updatedBy: string;
+  /** Database sessions: locked against changes in the table */
+  locked: boolean;
 }
 
 /** One folder's own settings: its colour and the defaults its sessions inherit */
@@ -135,3 +139,24 @@ export function saveFolderSettings(store: Store, fields: FolderSetting): Promise
 export function moveSession(store: Store, id: string, folder: string): Promise<string> {
   return invoke<string>("session_move", { store, id, folder });
 }
+
+/** How Database sessions stand: on or off, whether the user may change them, and why the last read failed */
+export interface DbState {
+  enabled: boolean;
+  writable: boolean;
+  error: string;
+  source: string;
+}
+
+/** Read the Database sessions table again (or keep the cache when it can't be reached) */
+export function refreshDatabase(): Promise<DbState> {
+  return invoke<DbState>("db_refresh");
+}
+
+/** Whether the table changed since the last read */
+export function databaseChanged(): Promise<boolean> {
+  return invoke<boolean>("db_check");
+}
+
+/** The window event sent when Database sessions' settings are saved, so the tree reads the table again */
+export const DATABASE_SAVED = "superxterminal:database-saved";

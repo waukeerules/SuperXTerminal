@@ -22,6 +22,8 @@ pub struct AppSettings {
     pub theme: String,
     /// The sessions tree's text size in pixels, as SuperXPuTTY's session tree font
     pub tree_font_size: u32,
+    /// Database sessions' connection (the password is in the Keychain)
+    pub database: crate::db::DbSettings,
 }
 
 impl Default for AppSettings {
@@ -32,6 +34,7 @@ impl Default for AppSettings {
             environment_color_rules: String::new(),
             theme: "system".into(),
             tree_font_size: 14,
+            database: crate::db::DbSettings::default(),
         }
     }
 }

@@ -24,6 +24,8 @@ pub enum Store {
     Saved,
     /// `PrivateSessions.xml` in the user's own folder
     Private,
+    /// The Database sessions table (`db.rs`), as last read or cached
+    Database,
 }
 
 /// One session as stored: its attributes in file order
@@ -43,9 +45,11 @@ impl StoredSession {
         self.get("SessionId")
     }
 
-    /// The folder part of the id ("" at the top), as SuperXPuTTY's `GetSessionParentId`
+    /// The folder part of the id ("" at the top), as SuperXPuTTY's `GetSessionParentId`; for a Database session
+    /// (id "@db/<folder>/<name>"), the table's own folder
     pub fn folder(&self) -> &str {
-        self.id().rsplit_once('/').map(|(folder, _)| folder).unwrap_or("")
+        let id = self.id().strip_prefix("@db/").unwrap_or(self.id());
+        id.rsplit_once('/').map(|(folder, _)| folder).unwrap_or("")
     }
 
     /// The port, or 0 when it isn't set or isn't a number
@@ -67,7 +71,8 @@ pub struct FolderSetting {
     pub highlight_rules: String,
 }
 
-/// What the UI shows for a session: everything but secrets
+/// What the UI shows for a session: everything but secrets (and, for Database sessions, who changed it last and
+/// whether it's locked)
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionView {
@@ -83,6 +88,8 @@ pub struct SessionView {
     pub icon: String,
     pub color: String,
     pub note: String,
+    pub updated_by: String,
+    pub locked: bool,
 }
 
 /// Every session and folder setting, as last read
@@ -90,6 +97,7 @@ pub struct SessionView {
 pub struct Sessions {
     pub saved: Vec<StoredSession>,
     pub private: Vec<StoredSession>,
+    pub database: Vec<StoredSession>,
     pub folders: HashMap<Store, HashMap<String, FolderSetting>>,
 }
 
@@ -122,6 +130,7 @@ impl Sessions {
         let list = match store {
             Store::Saved => &self.saved,
             Store::Private => &self.private,
+            Store::Database => &self.database,
         };
         list.iter().find(|s| s.id() == id)
     }
@@ -144,7 +153,8 @@ impl Sessions {
     pub fn views(&self) -> Vec<SessionView> {
         let saved = self.saved.iter().map(|s| view(s, Store::Saved));
         let private = self.private.iter().map(|s| view(s, Store::Private));
-        saved.chain(private).collect()
+        let database = self.database.iter().map(|s| view(s, Store::Database));
+        saved.chain(private).chain(database).collect()
     }
 }
 
@@ -167,8 +177,20 @@ fn view(session: &StoredSession, store: Store) -> SessionView {
         icon: session.get("ImageKey").to_string(),
         color: session.get("Color").to_string(),
         note: session.get("Note").to_string(),
+        updated_by: session.get("DatabaseUpdatedBy").to_string(),
+        locked: session.get("DatabaseLocked") == "true",
         id,
     }
+}
+
+/// Read the sessions of a file with `<SessionData>` elements (Sessions.xml, the Database cache)
+pub fn read_sessions_file(path: &Path, problems: &mut Vec<String>) -> Vec<StoredSession> {
+    read_sessions(path, problems)
+}
+
+/// Read the folder settings of a file with `<FolderSetting>` elements (Folders.xml, the Database cache)
+pub fn read_folder_settings(path: &Path, problems: &mut Vec<String>) -> Vec<FolderSetting> {
+    read_folders(path, problems).into_values().collect()
 }
 
 /// Read an `ArrayOfSessionData` file; no file means no sessions
@@ -368,6 +390,7 @@ pub fn file_of(store: Store, settings_folder: Option<&Path>, user_folder: &Path)
     match store {
         Store::Saved => settings_folder.map(|f| f.join("Sessions.xml")),
         Store::Private => Some(user_folder.join("PrivateSessions.xml")),
+        Store::Database => None,
     }
 }
 

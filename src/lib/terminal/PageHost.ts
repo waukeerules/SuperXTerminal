@@ -31,7 +31,7 @@ interface Look {
 /** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
 export type Target =
   | { kind: "localShell" }
-  | { kind: "session"; store: "saved" | "private"; id: string }
+  | { kind: "session"; store: "saved" | "private" | "database"; id: string }
   | ({ kind: "quickConnect" } & QuickConnect);
 
 /** Quick connect's toolbar fields (`QuickConnect` in `src-tauri/src/launch.rs`) */

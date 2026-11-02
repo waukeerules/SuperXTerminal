@@ -1,5 +1,6 @@
 //! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
 
+mod db;
 mod editing;
 mod folders;
 mod highlighting;
@@ -26,6 +27,23 @@ pub struct AppState {
     settings: Mutex<AppSettings>,
     sessions: Mutex<Sessions>,
     profiles: Mutex<Profiles>,
+    /// Database sessions' state: the change token of the last read, and how the last read went
+    database: Mutex<DbState>,
+}
+
+/// How Database sessions stand, for the tree's root
+#[derive(Clone, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DbState {
+    enabled: bool,
+    /// The last read's change token; "" when only the cache has been read
+    #[serde(skip)]
+    token: String,
+    writable: bool,
+    /// Why the last read failed, if it did (the cached sessions are shown meanwhile)
+    error: String,
+    /// The table's name, "schema.table", for the root's tooltip
+    source: String,
 }
 
 /// The user's profiles, "Default Settings" first; passwords are only marked as stored, never sent
@@ -94,7 +112,15 @@ fn profiles_delete(state: State<'_, AppState>, name: String) -> Result<Vec<Profi
 fn sessions_load(state: State<'_, AppState>) -> SessionsLoaded {
     let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
     let mut problems = Vec::new();
-    let loaded = Sessions::load(settings_folder.as_deref(), &state.user_folder, &mut problems);
+    let mut loaded = Sessions::load(settings_folder.as_deref(), &state.user_folder, &mut problems);
+    // Database sessions come from the table (or its cache), not the files: keep them
+    {
+        let mut current = state.sessions.lock().unwrap();
+        loaded.database = std::mem::take(&mut current.database);
+        if let Some(folders) = current.folders.remove(&sessions::Store::Database) {
+            loaded.folders.insert(sessions::Store::Database, folders);
+        }
+    }
     let result = SessionsLoaded {
         sessions: loaded.views(),
         folders: loaded
@@ -150,6 +176,9 @@ fn highlighting_load(state: State<'_, AppState>) -> highlighting::Highlighting {
 
 /// The file a store's sessions are in, or an error when there's no settings folder yet
 fn store_file(state: &AppState, store: sessions::Store) -> Result<PathBuf, String> {
+    if store == sessions::Store::Database {
+        return Err("Changing Database sessions comes with the next part of M2.".into());
+    }
     let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
     sessions::file_of(store, settings_folder.as_deref(), &state.user_folder).ok_or_else(|| "Choose the settings folder first.".into())
 }
@@ -246,6 +275,133 @@ fn settings_save(state: State<'_, AppState>, settings: AppSettings) -> Result<Ap
     Ok(current.clone())
 }
 
+/// Database sessions' settings for the window, and whether a password is stored
+#[tauri::command]
+fn db_settings_get(state: State<'_, AppState>) -> (db::DbSettings, bool) {
+    (state.settings.lock().unwrap().database.clone(), db::has_password())
+}
+
+/// Save Database sessions' settings; `password` None keeps the stored one, "" forgets it
+#[tauri::command]
+fn db_settings_save(state: State<'_, AppState>, database: db::DbSettings, password: Option<String>) -> Result<(), String> {
+    if let Some(password) = password {
+        db::set_password(&password)?;
+    }
+    let mut settings = state.settings.lock().unwrap();
+    settings.database = database;
+    settings.save(&state.user_folder)?;
+    // a new connection: its first read sets a new token
+    state.database.lock().unwrap().token.clear();
+    Ok(())
+}
+
+/// Test connection with the window's values (and a password typed there, not saved yet)
+#[tauri::command]
+async fn db_test(state: State<'_, AppState>, database: db::DbSettings, password: Option<String>) -> Result<db::TestResult, String> {
+    let user_folder = state.user_folder.clone();
+    db::test(&database, &user_folder, password.as_deref()).await
+}
+
+/// Read the table again (or, when it can't be reached, keep the cache) and say how it went
+#[tauri::command]
+async fn db_refresh(state: State<'_, AppState>) -> Result<DbState, String> {
+    let settings = state.settings.lock().unwrap().database.clone();
+    let user_folder = state.user_folder.clone();
+    if !settings.enabled {
+        state.sessions.lock().unwrap().database.clear();
+        let mut db_state = state.database.lock().unwrap();
+        *db_state = DbState::default();
+        return Ok(db_state.clone());
+    }
+    let result = db::fetch_all(&settings, &user_folder).await;
+    let mut db_state = state.database.lock().unwrap();
+    db_state.enabled = true;
+    db_state.source = format!("{}.{}", settings.schema, settings.table);
+    match result {
+        Ok(fetched) => {
+            let _ = db::write_cache(&user_folder, &settings, &fetched);
+            db_state.token = fetched.token.clone();
+            db_state.writable = fetched.writable;
+            db_state.error.clear();
+            let mut sessions = state.sessions.lock().unwrap();
+            sessions.database = fetched.sessions;
+            sessions.folders.insert(sessions::Store::Database, fetched.folders.into_iter().map(|f| (f.path.clone(), f)).collect());
+        }
+        Err(error) => {
+            // keep showing what was last read, from the cache if nothing is loaded yet
+            let mut sessions = state.sessions.lock().unwrap();
+            if sessions.database.is_empty() {
+                let (cached, folders, writable) = db::read_cache(&user_folder);
+                sessions.database = cached;
+                sessions.folders.insert(sessions::Store::Database, folders.into_iter().map(|f| (f.path.clone(), f)).collect());
+                db_state.writable = writable;
+            }
+            db_state.error = error;
+        }
+    }
+    Ok(db_state.clone())
+}
+
+/// Whether the table changed since the last read (one small query); the UI refreshes when it did
+#[tauri::command]
+async fn db_check(state: State<'_, AppState>) -> Result<bool, String> {
+    let settings = state.settings.lock().unwrap().database.clone();
+    let token = state.database.lock().unwrap().token.clone();
+    if !settings.enabled || token.is_empty() {
+        return Ok(token.is_empty() && settings.enabled);
+    }
+    let user_folder = state.user_folder.clone();
+    let (changed, _) = db::check(&settings, &user_folder, &token).await?;
+    Ok(changed)
+}
+
+/// Save the connection to a JSON file colleagues can import, as SuperXPuTTY's Export: no password unless it's a
+/// {key} placeholder, and no nickname
+#[tauri::command]
+fn db_export(database: db::DbSettings, path: String) -> Result<(), String> {
+    let file = db::ExportFile {
+        format: "superxputty-database-settings".into(),
+        version: 1,
+        host: database.host,
+        port: database.port,
+        database: database.database,
+        schema: database.schema,
+        table: database.table,
+        user: database.user,
+        password: Some(database.password_placeholder).filter(|p| p.starts_with('{') && p.ends_with('}')),
+        ssl_mode: database.ssl_mode,
+        read_only: database.read_only,
+        check_seconds: database.check_seconds,
+    };
+    let text = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
+    std::fs::write(path, text).map_err(|e| e.to_string())
+}
+
+/// Read an exported connection (SuperXPuTTY's or ours) into the window's values
+#[tauri::command]
+fn db_import(state: State<'_, AppState>, path: String) -> Result<db::DbSettings, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let file: db::ExportFile = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| format!("Not a Database sessions settings file: {e}"))?;
+    if file.format != "superxputty-database-settings" {
+        return Err("Not a Database sessions settings file.".into());
+    }
+    let current = state.settings.lock().unwrap().database.clone();
+    Ok(db::DbSettings {
+        enabled: true,
+        host: file.host,
+        port: file.port,
+        database: file.database,
+        schema: file.schema,
+        table: file.table,
+        user: file.user,
+        ssl_mode: file.ssl_mode,
+        read_only: file.read_only,
+        check_seconds: file.check_seconds,
+        password_placeholder: file.password.unwrap_or_default(),
+        nickname: current.nickname,
+    })
+}
+
 /// Use another settings folder (chosen in the UI), and remember it
 #[tauri::command]
 fn settings_set_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -312,7 +468,10 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         app,
         "Tools",
         true,
-        &[&MenuItem::with_id(app, "environmentVariables", "Environment Variables…", true, None::<&str>)?],
+        &[
+            &MenuItem::with_id(app, "databaseSessions", "Database Sessions…", true, None::<&str>)?,
+            &MenuItem::with_id(app, "environmentVariables", "Environment Variables…", true, None::<&str>)?,
+        ],
     )?;
     Menu::with_items(app, &[&app_menu, &file, &edit, &tools, &window])
 }
@@ -336,6 +495,7 @@ pub fn run() {
             settings: Mutex::new(settings),
             sessions: Mutex::new(Sessions::default()),
             profiles: Mutex::new(profiles),
+            database: Mutex::new(DbState::default()),
         })
         .invoke_handler(tauri::generate_handler![
             sessions_load,
@@ -352,6 +512,13 @@ pub fn run() {
             folder_delete,
             folder_settings_save,
             variables_list,
+            db_settings_get,
+            db_settings_save,
+            db_test,
+            db_refresh,
+            db_check,
+            db_export,
+            db_import,
             variables_save,
             profiles_list,
             profiles_save,

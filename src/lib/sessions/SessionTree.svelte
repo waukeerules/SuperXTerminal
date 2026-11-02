@@ -14,6 +14,9 @@
     moveSession,
     saveFolderSettings,
     unavailableReason,
+    refreshDatabase,
+    databaseChanged,
+    type DbState,
     type FolderSetting,
     type SessionFields,
     type SessionsLoaded,
@@ -29,7 +32,8 @@
   import { ask } from "@tauri-apps/plugin-dialog";
   import { loadCustomIcons, type CustomIcon } from "../icons/custom";
   import { EnvironmentColors, parseRules } from "../icons/environment";
-  import { chooseSettingsFolder, settings } from "../settings/store.svelte";
+  import { chooseSettingsFolder, databaseCheckSeconds, settings } from "../settings/store.svelte";
+  import { DATABASE_SAVED } from "./api";
 
   interface Props {
     /** Sessions with an open tab, as "store:id" */
@@ -53,7 +57,9 @@
   /** A name being asked for (New folder, Rename) */
   let prompt = $state<{ title: string; value: string; validate: (name: string) => string; onOk: (name: string) => void } | null>(null);
   /** Folders made in the tree with no sessions yet, by store: they exist only here until a session goes in */
-  let newFolders = $state<Record<Store, string[]>>({ saved: [], private: [] });
+  let newFolders = $state<Record<Store, string[]>>({ saved: [], private: [], database: [] });
+  /** How Database sessions stand; null until the first read */
+  let db = $state<DbState | null>(null);
 
   const iconSize = $derived(settings.iconSize);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
@@ -67,6 +73,9 @@
   const colors = $derived(new EnvironmentColors(loaded?.folders ?? [], parseRules(settings.environmentColorRules)));
   const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query, newFolders.saved) : null);
   const privateRoot = $derived(loaded ? buildTree("private", "Private sessions", loaded.sessions, query, newFolders.private) : null);
+  const databaseRoot = $derived(
+    loaded && db?.enabled ? buildTree("database", db.error ? "Database sessions — offline" : "Database sessions", loaded.sessions, query) : null,
+  );
 
   // read again whenever the settings folder changes (Settings > General); the first run reads them at start
   $effect(() => {
@@ -74,6 +83,44 @@
     void settings.settingsFolder;
     void reload();
   });
+
+  // Database sessions: read the table at start and when its settings are saved, then check for changes every
+  // "Check every" seconds (a one-row query), reading it again only when it changed, as SuperXPuTTY does
+  $effect(() => {
+    if (!settings.loaded) return;
+    void readDatabase();
+    const saved = () => void readDatabase();
+    window.addEventListener(DATABASE_SAVED, saved);
+    return () => window.removeEventListener(DATABASE_SAVED, saved);
+  });
+  $effect(() => {
+    const seconds = databaseCheckSeconds();
+    if (!db?.enabled || !seconds) return;
+    const timer = setInterval(() => void checkDatabase(), seconds * 1000);
+    return () => clearInterval(timer);
+  });
+
+  /** Read the table (or the cache when it can't be reached) and show it */
+  async function readDatabase(): Promise<void> {
+    try {
+      db = await refreshDatabase();
+      loaded = await loadSessions();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  /** Read the table again if it changed; not while a window is open, so a session being edited isn't replaced */
+  async function checkDatabase(): Promise<void> {
+    if (editing || folderSettings || prompt || menu) return;
+    try {
+      if (await databaseChanged()) await readDatabase();
+      else if (db?.error) await readDatabase();
+    } catch {
+      // unreachable: keep the cached sessions; the next check tries again
+      if (db && !db.error) db = { ...db, error: "The database can't be reached" };
+    }
+  }
 
   /** Read the settings, custom icons and session files again */
   async function reload(): Promise<void> {
@@ -149,7 +196,34 @@
   /** The right-click menu for a session or folder, as SuperXPuTTY's; what the Mac can't do yet is greyed with why */
   function showMenu(event: MouseEvent, target: { session: SessionView } | { folder: FolderNode }): void {
     let items: MenuItem[];
-    if ("session" in target) {
+    const readOnlyDb = "Changing Database sessions comes with the next part of M2";
+    if ("session" in target && target.session.store === "database") {
+      const session = target.session;
+      items = [
+        { label: "Connect", bold: true, action: () => open(session) },
+        { label: "Connect external", disabled: "Open in Terminal.app or iTerm2: comes in M5" },
+        { label: "Add to Favorites", disabled: "Favorites come in M5" },
+        { label: "Colour", disabled: readOnlyDb },
+        { separator: true },
+        { label: "Copy host address", action: () => void navigator.clipboard.writeText(session.host) },
+        { label: "Edit", disabled: readOnlyDb },
+        { label: "Delete", disabled: readOnlyDb },
+        { label: "Move to", disabled: readOnlyDb },
+        { label: "Copy to", disabled: readOnlyDb },
+      ];
+    } else if ("folder" in target && target.folder.store === "database") {
+      const folder = target.folder;
+      const runnable = sessionsIn(folder).filter((s) => unavailableReason(s.protocol) === null);
+      items = [
+        ...(folder.path === "" ? [{ label: "Refresh", action: () => void readDatabase() }, { separator: true } as MenuItem] : []),
+        { label: "New session…", disabled: readOnlyDb },
+        { label: "New folder…", disabled: readOnlyDb },
+        { separator: true },
+        { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
+        { label: "Expand all", action: () => (expanded = new Set([...expanded, ...folderKeys(folder)])) },
+        { label: "Collapse all", action: () => (expanded = new Set([...expanded].filter((k) => !folderKeys(folder).slice(1).includes(k)))) },
+      ];
+    } else if ("session" in target) {
       const session = target.session;
       items = [
         { label: "Connect", bold: true, action: () => open(session) },
@@ -302,6 +376,10 @@
 
   /** Something dragged in the tree was dropped on a folder: move it there (within its own store) */
   async function dropped(target: FolderNode, dragged: Dragged): Promise<void> {
+    if (dragged.store === "database" || target.store === "database") {
+      error = "Changing Database sessions comes with the next part of M2.";
+      return;
+    }
     if (dragged.store !== target.store) {
       error = "Moving between Saved and Private sessions comes with Move to / Copy to (M2).";
       return;
@@ -362,6 +440,12 @@
     {#if privateRoot}
       <TreeFolder node={privateRoot} depth={0} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
         onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
+    {/if}
+    {#if databaseRoot}
+      <div class="db-root" title={db?.error ? `Showing the last read: ${db.error}` : `${db?.source}${db?.writable ? "" : " (read only)"}`}>
+        <TreeFolder node={databaseRoot} depth={0} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
+          onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
+      </div>
     {/if}
   {/if}
 </div>

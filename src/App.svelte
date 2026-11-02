@@ -9,6 +9,8 @@
   import SessionTree from "./lib/sessions/SessionTree.svelte";
   import Settings from "./lib/settings/Settings.svelte";
   import EnvironmentVariables from "./lib/settings/EnvironmentVariables.svelte";
+  import DatabaseSettings from "./lib/sessions/DatabaseSettings.svelte";
+  import { DATABASE_SAVED } from "./lib/sessions/api";
   import { isDark, loadSettings, settings } from "./lib/settings/store.svelte";
   import QuickConnect from "./lib/layout/QuickConnect.svelte";
   import { listen } from "@tauri-apps/api/event";
@@ -21,12 +23,14 @@
   /** The Settings window's tab while it's open; null when closed */
   let settingsTab = $state<string | null>(null);
   let variablesOpen = $state(false);
+  let databaseOpen = $state(false);
 
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
   void listen<string>("menu", (event) => {
     if (event.payload === "settings") settingsTab = "General";
     else if (event.payload === "newLocalShell") newShell();
     else if (event.payload === "environmentVariables") variablesOpen = true;
+    else if (event.payload === "databaseSessions") databaseOpen = true;
   });
 
   void loadSettings();
@@ -59,6 +63,14 @@
     status = "Opened session: Local Shell";
   }
 </script>
+
+{#if databaseOpen}
+  <DatabaseSettings onCancel={() => (databaseOpen = false)} onSaved={async () => {
+    databaseOpen = false;
+    await loadSettings();
+    window.dispatchEvent(new Event(DATABASE_SAVED));
+  }} />
+{/if}
 
 {#if variablesOpen}
   <EnvironmentVariables onClose={() => (variablesOpen = false)} />

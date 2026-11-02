@@ -32,16 +32,18 @@ impl Shared {
         }
     }
 
-    /// The tab got the keyboard: text copied on the Mac since is offered to Windows (it asks for it when pasted)
-    pub fn announce(&self) {
-        let Some(text) = mac::read() else { return };
+    /// The tab got the keyboard, or ⌘V: text copied on the Mac since is offered to Windows (it asks for it when
+    /// pasted); whether there was any
+    pub fn announce(&self) -> bool {
+        let Some(text) = mac::read() else { return false };
         let mut last = self.last.lock().unwrap();
         if text.is_empty() || *last == text {
-            return;
+            return false;
         }
         *last = text;
         drop(last);
         self.send(ClipboardMessage::SendInitiateCopy(vec![ClipboardFormat::new(ClipboardFormatId::CF_UNICODETEXT)]));
+        true
     }
 }
 
@@ -50,13 +52,15 @@ pub struct Factory(pub Shared);
 
 impl CliprdrBackendFactory for Factory {
     fn build_cliprdr_backend(&self) -> Box<dyn CliprdrBackend> {
-        Box::new(Backend { shared: self.0.clone() })
+        Box::new(Backend { shared: self.0.clone(), started: std::time::Instant::now() })
     }
 }
 
 #[derive(Debug)]
 pub struct Backend {
     shared: Shared,
+    /// When the channel started: what Windows' clipboard already held then isn't fetched
+    started: std::time::Instant,
 }
 
 impl ironrdp_core::AsAny for Backend {
@@ -92,8 +96,13 @@ impl CliprdrBackend for Backend {
 
     fn on_process_negotiated_capabilities(&mut self, _capabilities: ClipboardGeneralCapabilityFlags) {}
 
-    /// Copied in the remote desktop: its text is fetched at once, for the Mac's clipboard
+    /// Copied in the remote desktop: its text is fetched at once, for the Mac's clipboard. Windows also announces
+    /// what its clipboard holds as the session starts; that isn't a copy of the user's, so it doesn't replace the
+    /// Mac's clipboard
     fn on_remote_copy(&mut self, available_formats: &[ClipboardFormat]) {
+        if self.started.elapsed() < std::time::Duration::from_secs(3) {
+            return;
+        }
         if available_formats.iter().any(|f| f.id == ClipboardFormatId::CF_UNICODETEXT) {
             self.shared.send(ClipboardMessage::SendInitiatePaste(ClipboardFormatId::CF_UNICODETEXT));
         }

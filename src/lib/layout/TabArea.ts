@@ -23,6 +23,7 @@ import type { CustomIcon } from "../icons/custom";
 import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
 import { OutputHost } from "../terminal/OutputHost";
 import { RdpHost } from "../terminal/RdpHost";
+import type { ScriptTarget } from "../scripting/spsl";
 import SessionTab from "./SessionTab.svelte";
 import { isDark } from "../settings/store.svelte";
 import { tabStates } from "./tabStates.svelte";
@@ -251,6 +252,17 @@ class ComparePanel implements IContentRenderer {
   }
 }
 
+/** What Send Commands, the button bar and scripts type into: a terminal tab's PageHost or a Remote Desktop's RdpHost */
+export interface CommandTarget extends ScriptTarget {
+  readonly canReceiveCommands: boolean;
+}
+
+/** A tab that commands can go to: a terminal, or (`rdp`) a Remote Desktop */
+export interface CommandTab extends Omit<TabInfo, "host"> {
+  host: CommandTarget;
+  rdp?: boolean;
+}
+
 /** An open terminal tab, for Send Commands, the button bar and scripts */
 export interface TabInfo {
   id: string;
@@ -476,6 +488,10 @@ export class TabArea {
     if (!panel || !params) return;
     if (params.target.kind === "localShell") {
       this.openLocalShell();
+      return;
+    }
+    if (this.rdpHosts.has(id) && params.target.kind === "session") {
+      this.openRdp(params.target.store, params.target.id, this.originalTitle(id), params.icon, params.environment ?? null);
       return;
     }
     const panelId = this.add(this.originalTitle(id), params);
@@ -777,10 +793,34 @@ export class TabArea {
     );
   }
 
+  /** The tabs commands can go to, terminals and Remote Desktops, in the order they show */
+  commandTabs(): CommandTab[] {
+    const active = this.api.activePanel?.id;
+    return this.api.groups.flatMap((group) =>
+      group.panels.flatMap((panel): CommandTab[] => {
+        const rdp = this.rdpHosts.get(panel.id);
+        const host = rdp ?? this.hosts.get(panel.id);
+        if (!host) return [];
+        const params = panel.params as unknown as TerminalParams;
+        return [{
+          id: panel.id,
+          title: panel.title ?? "",
+          session: this.sessions.get(panel.id) ?? "",
+          icon: params.icon,
+          host,
+          rdp: !!rdp,
+          acceptCommands: !this.refusing.has(panel.id),
+          visible: group.activePanel === panel,
+          active: panel.id === active,
+        }];
+      }),
+    );
+  }
+
   /** Set the tabs that accept commands (Select sessions to send to) */
   setAccepting(ids: Set<string>): void {
     this.refusing.clear();
-    for (const id of this.hosts.keys()) if (!ids.has(id)) this.refusing.add(id);
+    for (const id of [...this.hosts.keys(), ...this.rdpHosts.keys()]) if (!ids.has(id)) this.refusing.add(id);
     this.changed();
   }
 

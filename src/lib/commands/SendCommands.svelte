@@ -106,7 +106,7 @@
   function showGroups(event: MouseEvent): void {
     event.stopPropagation();
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const icons = [...new Set((context.tabs?.tabList() ?? []).map((t) => t.icon.split("#")[0].toLowerCase()))].sort();
+    const icons = [...new Set((context.tabs?.commandTabs() ?? []).map((t) => t.icon.split("#")[0].toLowerCase()))].sort();
     menu = {
       x: rect.left,
       y: rect.bottom,

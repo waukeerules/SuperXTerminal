@@ -8,6 +8,7 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { askLogin, askOne } from "../scripting/asking.svelte";
+import { settings } from "../settings/store.svelte";
 
 type Event =
   | { type: "connecting"; host: string }
@@ -39,6 +40,8 @@ const SCANCODES: Record<string, [number, boolean]> = {
   AltRight: [0x38, true], Home: [0x47, true], ArrowUp: [0x48, true], PageUp: [0x49, true], ArrowLeft: [0x4b, true],
   ArrowRight: [0x4d, true], End: [0x4f, true], ArrowDown: [0x50, true], PageDown: [0x51, true], Insert: [0x52, true],
   Delete: [0x53, true], ContextMenu: [0x5d, true], NumpadEqual: [0x0d, false],
+  // the Windows keys, sent only from the tab's Send Keys (⌘ stays the Mac's)
+  MetaLeft: [0x5b, true], MetaRight: [0x5c, true],
 };
 
 /** The modifiers kept in step with each key's event: its flag, the key pressed for it, the keys that are it */
@@ -47,6 +50,9 @@ const MODIFIERS: ["ctrlKey" | "shiftKey" | "altKey", string, string[]][] = [
   ["shiftKey", "ShiftLeft", ["ShiftLeft", "ShiftRight"]],
   ["altKey", "AltLeft", ["AltLeft", "AltRight"]],
 ];
+
+/** ⌘ and these keys go to Windows as Ctrl and the same key */
+const CTRL_FOR_COMMAND: Record<string, string> = { KeyC: "KeyC", KeyV: "KeyV", KeyX: "KeyX", KeyA: "KeyA", KeyZ: "KeyZ" };
 
 /** What the tab is: a stored session */
 export interface RdpTarget {
@@ -70,6 +76,15 @@ export class RdpHost {
   private readonly observer: ResizeObserver;
   private pendingMove: { x: number; y: number } | null = null;
   private disposed = false;
+  /** Caps Lock as last sent */
+  private capsLock: boolean | null = null;
+  /** Reconnecting after a drop (Settings > General > Dropped sessions): the attempt and its timer */
+  private attempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  private countdown: ReturnType<typeof setInterval> | undefined;
+  /** The desktop showed since connecting, so a later end is a drop rather than a failed login */
+  private shown = false;
+  private generation = 0;
 
   constructor(private readonly target: RdpTarget, private readonly title: () => string) {
     this.element = document.createElement("div");
@@ -105,9 +120,12 @@ export class RdpHost {
       return;
     }
     this.ended = false;
-    this.show(`Connecting to ${this.title()}…`);
+    this.shown = false;
+    if (this.attempts === 0) this.show(`Connecting to ${this.title()}…`);
+    // what an earlier connection still sends (its end, as it closes) is ignored
+    const generation = ++this.generation;
     const channel = new Channel<ArrayBuffer | Event>();
-    channel.onmessage = (message) => this.receive(message);
+    channel.onmessage = (message) => generation === this.generation && this.receive(message);
     const { width: w, height: h, scale } = this.size();
     try {
       const opened = await invoke<{ id: number; width: number; height: number; fixed: boolean; smartSizing: boolean; scale: number }>("rdp_open", {
@@ -159,6 +177,10 @@ export class RdpHost {
         }
         const pixels = new Uint8ClampedArray(message, 16, w * h * 4);
         this.context.putImageData(new ImageData(pixels, w, h), x, y);
+        if (!this.shown) {
+          this.shown = true;
+          this.attempts = 0;
+        }
         if (this.overlay.style.display !== "none" && !this.ended) this.overlay.style.display = "none";
       } else if (head === "SXP1") {
         const [w, h, hx, hy] = [4, 6, 8, 10].map((at) => view.getUint16(at, true));
@@ -192,10 +214,32 @@ export class RdpHost {
     this.overlay.style.display = "flex";
   }
 
-  private end(text: string, _clean: boolean): void {
+  private end(text: string, clean: boolean): void {
     this.ended = true;
     this.id = null;
+    this.releaseKeys();
     this.show(text);
+    // dropped (it had been showing, or this was a try at reconnecting): again in a while, as a terminal tab does
+    const max = settings.autoReconnectAttempts || 6;
+    if (!clean && !this.disposed && settings.autoReconnect && (this.shown || this.attempts > 0) && this.attempts < max) {
+      this.attempts++;
+      let left = Math.max(1, settings.autoReconnectDelaySeconds || 10);
+      const say = () => this.show(`${text.split("\n")[0]}\n\nReconnecting in ${left} s (try ${this.attempts} of ${max}). Click to reconnect now.`);
+      say();
+      this.countdown = setInterval(() => {
+        left--;
+        if (left > 0) say();
+      }, 1000);
+      this.reconnectTimer = setTimeout(() => {
+        clearInterval(this.countdown);
+        this.reconnectTimer = undefined;
+        this.show(`Reconnecting to ${this.title()} (try ${this.attempts} of ${max})…`);
+        void this.connect();
+      }, left * 1000);
+    } else if (this.attempts > 0 && !clean) {
+      this.attempts = 0;
+      this.show(`${text.split("\n")[0]}\n\nGave up reconnecting. Click or press Enter to try again.`);
+    }
   }
 
   /** A point on the canvas as it shows on screen, to the remote desktop's pixels (the picture may be letterboxed) */
@@ -230,7 +274,7 @@ export class RdpHost {
     c.addEventListener("mousedown", (e) => {
       c.focus();
       if (this.ended) {
-        void this.connect();
+        void this.reconnect();
         return;
       }
       e.preventDefault();
@@ -249,16 +293,32 @@ export class RdpHost {
       mouse(this.remote(e), null, false, delta < 0 ? 1 : -1, horizontal);
     }, { passive: false });
     this.overlay.addEventListener("mousedown", () => {
-      if (this.ended) void this.connect();
+      if (this.ended) void this.reconnect();
     });
 
     const key = (e: KeyboardEvent, down: boolean) => {
-      // ⌘ shortcuts are SuperXTerminal's (⌘W, ⌘T, ⌘D ...)
-      if (e.metaKey || e.key === "Meta") return;
+      if (this.id === null) return;
+      if (e.metaKey || e.key === "Meta") {
+        // ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z as Windows' Ctrl ones, as Microsoft's Mac client does; other ⌘ shortcuts stay
+        // SuperXTerminal's (⌘W, ⌘T, ⌘D ...)
+        const letter = CTRL_FOR_COMMAND[e.code];
+        if (!down || !letter || e.altKey || e.ctrlKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // macOS sends no key-up for a key pressed with ⌘, so the whole press goes now
+        void this.commandKey(e.shiftKey && e.code === "KeyZ" ? "KeyY" : letter);
+        return;
+      }
+      // Caps Lock goes as the lock's state (macOS reports it on and off, not as presses)
+      if (e.code === "CapsLock") {
+        this.syncLocks(e, true);
+        return;
+      }
       const code = SCANCODES[e.code];
-      if (!code || this.id === null) return;
+      if (!code) return;
       e.preventDefault();
       e.stopPropagation();
+      if (down) this.syncLocks(e);
       if (!MODIFIERS.some(([, , codes]) => codes.includes(e.code))) this.syncModifiers(e);
       if (down) this.held.set(e.code, code);
       else this.held.delete(e.code);
@@ -266,7 +326,7 @@ export class RdpHost {
     };
     c.addEventListener("keydown", (e) => {
       if (this.ended && e.key === "Enter") {
-        void this.connect();
+        void this.reconnect();
         return;
       }
       key(e, true);
@@ -300,6 +360,34 @@ export class RdpHost {
     }
   }
 
+  /** Caps Lock as the Mac has it (Num Lock always on: a Mac's keypad types numbers), sent when it changes */
+  private syncLocks(e: KeyboardEvent, force = false): void {
+    if (this.id === null) return;
+    const caps = e.getModifierState("CapsLock");
+    if (!force && caps === this.capsLock) return;
+    this.capsLock = caps;
+    void invoke("rdp_sync", { id: this.id, caps, num: true }).catch(() => {});
+  }
+
+  /** ⌘ and a letter as Ctrl and it; ⌘V first offers the Mac's clipboard, giving Windows a moment to take it in */
+  private async commandKey(code: string): Promise<void> {
+    if (this.id === null) return;
+    if (code === "KeyV" && (await invoke<boolean>("rdp_clipboard_announce", { id: this.id }).catch(() => false))) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    await this.sendCombo(["ControlLeft", code]);
+  }
+
+  /** Press keys in order and let them go in reverse (a combination: Ctrl+Alt+Delete), in one go */
+  async sendCombo(codes: string[]): Promise<void> {
+    if (this.id === null) return;
+    const keys = codes.map((c) => SCANCODES[c]).filter(Boolean);
+    const sequence = [...keys.map(([s, x]) => [s, x, true]), ...[...keys].reverse().map(([s, x]) => [s, x, false])];
+    // anything held (the Control of a ⌃-click) is let go first, so the combination is exactly these keys
+    this.releaseKeys();
+    await invoke("rdp_keys", { id: this.id, keys: sequence }).catch(() => {});
+  }
+
   /** Let go of every key still held (the tab lost the keyboard: ⌘Tab, a click elsewhere) */
   private releaseKeys(): void {
     if (this.id !== null) {
@@ -318,6 +406,98 @@ export class RdpHost {
     }, 400);
   }
 
+  // ---- what Send Commands, the button bar, scripts and the tab's menu use, as a terminal tab's PageHost ----
+
+  /** Connected and logged in, so typing goes somewhere */
+  get canReceiveCommands(): boolean {
+    return this.id !== null && !this.ended;
+  }
+
+  get isEnded(): boolean {
+    return this.ended;
+  }
+
+  get isReconnecting(): boolean {
+    return this.reconnectTimer !== undefined;
+  }
+
+  /** An RDP tab has no output to search or log */
+  readonly logPath: string | null = null;
+
+  /**
+   * Type text, as SuperXPuTTY's RdpControl.SendKeystrokes: characters as Unicode (so the remote keyboard layout
+   * doesn't matter), Enter, Tab, Backspace and Escape as keys, other control characters as Ctrl and their letter
+   */
+  async type(text: string): Promise<void> {
+    if (!this.canReceiveCommands || !text) return;
+    let run = "";
+    const flush = async () => {
+      if (run) await invoke("rdp_text", { id: this.id, text: run }).catch(() => {});
+      run = "";
+    };
+    for (const c of text) {
+      const n = c.charCodeAt(0);
+      if (n >= 1 && n <= 26 && !"\t\r\n\b".includes(c)) {
+        await flush();
+        await this.sendCombo(["ControlLeft", `Key${String.fromCharCode(64 + n)}`]);
+      } else run += c;
+    }
+    await flush();
+  }
+
+  /** WAITFOR has no output to look at in a Remote Desktop: it waits out its time, as in SuperXPuTTY */
+  markOutput(_atLineStart: boolean): void {}
+
+  outputSinceMark(): string {
+    return "";
+  }
+
+  advanceMark(_characters: number): void {}
+
+  async sendBreak(): Promise<void> {
+    throw new Error("A Remote Desktop tab can't send a Break");
+  }
+
+  /** Connect again (the tab's Reconnect), or after a drop */
+  async reconnect(): Promise<void> {
+    this.cancelReconnect();
+    this.close();
+    await this.connect();
+  }
+
+  /** Disconnect, keeping the tab (a click connects again) */
+  disconnect(): void {
+    this.cancelReconnect();
+    this.close();
+    this.end("Disconnected. Click or press Enter to connect again.", true);
+  }
+
+  /** The tab's Stop Reconnecting */
+  stopReconnecting(): void {
+    this.cancelReconnect();
+    if (this.ended) this.show("Not reconnecting. Click or press Enter to connect again.");
+  }
+
+  private cancelReconnect(): void {
+    clearTimeout(this.reconnectTimer);
+    clearInterval(this.countdown);
+    this.reconnectTimer = undefined;
+    this.attempts = 0;
+  }
+
+  /** Close the connection, its last messages ignored */
+  private close(): void {
+    this.generation++;
+    if (this.id !== null) void invoke("rdp_close", { id: this.id }).catch(() => {});
+    this.id = null;
+  }
+
+  /** The remote desktop as a picture on the Mac's clipboard */
+  async copyScreenshot(): Promise<void> {
+    const blob = await new Promise<Blob | null>((resolve) => this.canvas.toBlob(resolve, "image/png"));
+    if (blob) await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+  }
+
   /** The keyboard into the remote desktop */
   focus(): void {
     this.canvas.focus();
@@ -326,6 +506,8 @@ export class RdpHost {
   /** The tab closed: disconnect */
   dispose(): void {
     this.disposed = true;
+    clearTimeout(this.reconnectTimer);
+    clearInterval(this.countdown);
     this.observer.disconnect();
     clearTimeout(this.resizeTimer);
     if (this.id !== null) void invoke("rdp_close", { id: this.id }).catch(() => {});

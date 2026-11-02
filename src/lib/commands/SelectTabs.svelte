@@ -9,7 +9,7 @@
 
   let { onClose }: { onClose: () => void } = $props();
 
-  const tabs = context.tabs?.tabList() ?? [];
+  const tabs = context.tabs?.commandTabs() ?? [];
   let ticked = $state(new Set(tabs.filter((t) => t.acceptCommands).map((t) => t.id)));
   let visibleOnly = $state(settings.sendToVisibleOnly);
 

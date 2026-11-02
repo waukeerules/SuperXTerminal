@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use ironrdp_client::config::{ConfigBuilder, Destination};
 use ironrdp_client::rdp::{RdpClient, RdpInputEvent, RdpOutputEvent};
-use ironrdp_pdu::input::fast_path::{FastPathInputEvent, KeyboardFlags};
+use ironrdp_pdu::input::fast_path::{FastPathInputEvent, KeyboardFlags, SynchronizeFlags};
 use ironrdp_pdu::input::mouse::PointerFlags;
 use ironrdp_pdu::input::MousePdu;
 use serde::Serialize;
@@ -400,6 +400,123 @@ pub fn rdp_key(rdps: State<'_, Rdps>, id: u32, scancode: u8, extended: bool, dow
     send(&rdps, id, RdpInputEvent::FastPath(smallvec![FastPathInputEvent::KeyboardEvent(flags, scancode)]))
 }
 
+/// Several keys in one go, each (scancode, extended, down), so a combination arrives whole: Ctrl+Alt+Del from the
+/// tab's menu, ⌘C as Ctrl+C
+#[tauri::command]
+pub fn rdp_keys(rdps: State<'_, Rdps>, id: u32, keys: Vec<(u8, bool, bool)>) -> Result<(), String> {
+    let events = keys
+        .into_iter()
+        .map(|(scancode, extended, down)| {
+            let mut flags = KeyboardFlags::empty();
+            if extended {
+                flags |= KeyboardFlags::EXTENDED;
+            }
+            if !down {
+                flags |= KeyboardFlags::RELEASE;
+            }
+            FastPathInputEvent::KeyboardEvent(flags, scancode)
+        })
+        .collect();
+    send(&rdps, id, RdpInputEvent::FastPath(events))
+}
+
+/// The US keyboard's key for a character: its scancode and whether Shift is pressed with it
+fn us_key(c: char) -> Option<(u8, bool)> {
+    const ROWS: [(&str, &str, u8); 4] = [
+        ("`1234567890-=", "~!@#$%^&*()_+", 0x29),
+        ("qwertyuiop[]\\", "QWERTYUIOP{}|", 0x10),
+        ("asdfghjkl;'", "ASDFGHJKL:\"", 0x1e),
+        ("zxcvbnm,./", "ZXCVBNM<>?", 0x2c),
+    ];
+    if c == ' ' {
+        return Some((0x39, false));
+    }
+    for (plain, shifted, first) in ROWS {
+        for (shift, keys) in [(false, plain), (true, shifted)] {
+            if let Some(at) = keys.chars().position(|k| k == c) {
+                // the number row starts at ` (0x29) then 1 (0x02); \\ is 0x2b, after ]
+                let code = match (first, at) {
+                    (0x29, 0) => 0x29,
+                    (0x29, n) => 0x01 + n as u8,
+                    (0x10, 12) => 0x2b,
+                    (f, n) => f + n as u8,
+                };
+                return Some((code, shift));
+            }
+        }
+    }
+    None
+}
+
+/// Text typed (Send Commands, the button bar, scripts), as SuperXPuTTY's RdpControl.SendKeystrokes: a character on
+/// the US keyboard as its key (with Shift), as the remote is expected to use the same layout; any other as Unicode;
+/// Enter, Tab, Backspace and Escape as their keys.
+#[tauri::command]
+pub async fn rdp_text(rdps: State<'_, Rdps>, id: u32, text: String) -> Result<(), String> {
+    let key = |scancode: u8, down: bool| FastPathInputEvent::KeyboardEvent(if down { KeyboardFlags::empty() } else { KeyboardFlags::RELEASE }, scancode);
+    let mut presses: Vec<Vec<FastPathInputEvent>> = Vec::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let special = match c {
+            '\r' | '\n' => {
+                // \r\n is one Enter
+                if c == '\r' && chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                Some(0x1c)
+            }
+            '\t' => Some(0x0f),
+            '\u{8}' | '\u{7f}' => Some(0x0e),
+            '\u{1b}' => Some(0x01),
+            _ => None,
+        };
+        if let Some(scancode) = special.map(|s| (s, false)).or_else(|| us_key(c)) {
+            let (scancode, shift) = scancode;
+            let mut press = Vec::new();
+            if shift {
+                press.push(key(0x2a, true));
+            }
+            press.push(key(scancode, true));
+            press.push(key(scancode, false));
+            if shift {
+                press.push(key(0x2a, false));
+            }
+            presses.push(press);
+            continue;
+        }
+        let mut units = [0u16; 2];
+        for unit in c.encode_utf16(&mut units) {
+            presses.push(vec![
+                FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::empty(), *unit),
+                FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::RELEASE, *unit),
+            ]);
+        }
+    }
+    // each key down and up on its own, a little apart, as a keyboard sends them: Windows drops keys that come in a
+    // burst, or pressed and let go in one message
+    let input = rdps.sessions.lock().unwrap().get(&id).map(|s| s.input.clone()).ok_or("The Remote Desktop session has ended.")?;
+    for event in presses.into_iter().flatten() {
+        input
+            .send(RdpInputEvent::FastPath(smallvec![event]))
+            .map_err(|_| "The Remote Desktop session has ended.".to_string())?;
+        tokio::time::sleep(std::time::Duration::from_millis(6)).await;
+    }
+    Ok(())
+}
+
+/// Caps Lock and Num Lock as the Mac has them, so letters come out in the same case
+#[tauri::command]
+pub fn rdp_sync(rdps: State<'_, Rdps>, id: u32, caps: bool, num: bool) -> Result<(), String> {
+    let mut flags = SynchronizeFlags::empty();
+    if caps {
+        flags |= SynchronizeFlags::CAPS_LOCK;
+    }
+    if num {
+        flags |= SynchronizeFlags::NUM_LOCK;
+    }
+    send(&rdps, id, RdpInputEvent::FastPath(smallvec![FastPathInputEvent::SyncEvent(flags)]))
+}
+
 /// The mouse at (x, y) on the remote screen: moved, a button ("left", "right", "middle") pressed or let go, or the
 /// wheel turned (`wheel` in notches, + away from the user)
 #[tauri::command]
@@ -445,10 +562,9 @@ pub fn rdp_resize(rdps: State<'_, Rdps>, id: u32, width: u16, height: u16, scale
 
 /// The tab got the keyboard: text copied on the Mac meanwhile is offered to the remote desktop's clipboard
 #[tauri::command]
-pub fn rdp_clipboard_announce(rdps: State<'_, Rdps>, id: u32) {
-    if let Some(clipboard) = rdps.sessions.lock().unwrap().get(&id).and_then(|s| s.clipboard.clone()) {
-        clipboard.announce();
-    }
+pub fn rdp_clipboard_announce(rdps: State<'_, Rdps>, id: u32) -> bool {
+    let clipboard = rdps.sessions.lock().unwrap().get(&id).and_then(|s| s.clipboard.clone());
+    clipboard.is_some_and(|c| c.announce())
 }
 
 /// The tab closed: disconnect
@@ -474,6 +590,21 @@ pub fn close_window(rdps: &Rdps, label: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn types_us_keys() {
+        assert_eq!(us_key('a'), Some((0x1e, false)));
+        assert_eq!(us_key('A'), Some((0x1e, true)));
+        assert_eq!(us_key('1'), Some((0x02, false)));
+        assert_eq!(us_key('!'), Some((0x02, true)));
+        assert_eq!(us_key('0'), Some((0x0b, false)));
+        assert_eq!(us_key('`'), Some((0x29, false)));
+        assert_eq!(us_key('\\'), Some((0x2b, false)));
+        assert_eq!(us_key('|'), Some((0x2b, true)));
+        assert_eq!(us_key('"'), Some((0x28, true)));
+        assert_eq!(us_key('?'), Some((0x35, true)));
+        assert_eq!(us_key('é'), None);
+    }
 
     #[test]
     fn finds_the_changed_rectangle() {

@@ -53,7 +53,7 @@
     const tabs = context.tabs;
     if (!tabs) return;
     const update = () => {
-      const icon = tabs.tabList().find((t) => t.active)?.icon ?? "";
+      const icon = tabs.commandTabs().find((t) => t.active)?.icon ?? "";
       if (icon !== tabIcon) picked = false;
       tabIcon = icon;
     };

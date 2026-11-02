@@ -2,12 +2,13 @@
  * A tab's right-click menu, as SuperXPuTTY's ctlPuttyPanel menu for the built-in terminal: New session (every
  * session, by folder), Duplicate, Copy host address, Save session as; Rename tab, Refresh tab, Accept commands;
  * the output items (M4); Send Key and Special Command; Copy all, Restart (or Reconnect), Clear scrollback, Reset;
- * Close, Close others, Close others to the right, Close all.
+ * Close, Close others, Close others to the right, Close all. A Remote Desktop tab has its own (rdpMenu).
  */
 import type { MenuItem } from "../ui/Menu.svelte";
 import type { SessionView } from "../sessions/api";
 import type { TabArea } from "./TabArea";
 import { specialCommands } from "../terminal/PageHost";
+import type { RdpHost } from "../terminal/RdpHost";
 
 /** What the menu needs from the window */
 export interface TabMenuHost {
@@ -68,6 +69,8 @@ function specialItems(protocol: string, send: (command: string) => void): MenuIt
 
 /** The menu for the tab `id` */
 export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
+  const rdp = host.tabs.rdpHosts.get(id);
+  if (rdp) return rdpMenu(host, id, rdp);
   const { tabs } = host;
   const list = tabs.tabList();
   const tab = list.find((t) => t.id === id);
@@ -176,5 +179,92 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
     { label: "Close others", disabled: list.length < 2, action: () => tabs.command(id, "closeOthers") },
     { label: "Close others to the right", disabled: index === group.length - 1, action: () => tabs.command(id, "closeRight") },
     { label: "Close all", disabled: list.length < 2, action: () => tabs.command(id, "closeAll") },
+  ];
+}
+
+/** Keys Windows takes from a Remote Desktop that a Mac can't type into one, as Microsoft's client's Actions menu */
+const RDP_KEYS: [string, string[]][] = [
+  ["Ctrl+Alt+Delete", ["ControlLeft", "AltLeft", "Delete"]],
+  ["Ctrl+Shift+Esc  (Task Manager)", ["ControlLeft", "ShiftLeft", "Escape"]],
+  ["Windows key  (Start)", ["MetaLeft"]],
+  ["Windows+R  (Run)", ["MetaLeft", "KeyR"]],
+  ["Windows+E  (File Explorer)", ["MetaLeft", "KeyE"]],
+  ["Windows+D  (show the desktop)", ["MetaLeft", "KeyD"]],
+  ["Windows+L  (lock)", ["MetaLeft", "KeyL"]],
+  ["Alt+Tab", ["AltLeft", "Tab"]],
+  ["Alt+F4  (close the window)", ["AltLeft", "F4"]],
+  ["Print Screen", ["PrintScreen"]],
+];
+
+/** A Remote Desktop tab's menu: its keys, typing the Mac's clipboard, a screenshot, reconnecting, and the tab's own */
+function rdpMenu(host: TabMenuHost, id: string, rdp: RdpHost): MenuItem[] {
+  const { tabs } = host;
+  const tab = tabs.commandTabs().find((t) => t.id === id);
+  const params = tabs.paramsOf(id);
+  const target = params?.target;
+  const session = target?.kind === "session" ? host.sessions.find((s) => s.store === target.store && s.id === target.id) : undefined;
+  const group = tabs.api.getPanel(id)?.group.panels ?? [];
+  const index = group.findIndex((p) => p.id === id);
+  const all = tabs.allTabs();
+  const offline = !rdp.canReceiveCommands && "Not connected";
+  const send = (codes: string[]) => {
+    void rdp.sendCombo(codes);
+    rdp.focus();
+  };
+  return [
+    {
+      label: "Send Keys",
+      disabled: offline,
+      items: RDP_KEYS.map(([label, codes]) => ({ label, action: () => send(codes) })),
+    },
+    {
+      label: "Type Clipboard Text",
+      disabled: offline,
+      // for where pasting doesn't reach: the login screen, a console without clipboard sharing
+      action: async () => {
+        const text = await navigator.clipboard.readText().catch(() => "");
+        if (!text) {
+          host.status("The clipboard has no text to type");
+          return;
+        }
+        await rdp.type(text.replace(/\r\n/g, "\n"));
+        rdp.focus();
+      },
+    },
+    {
+      label: "Copy Screenshot",
+      disabled: offline,
+      action: () => void rdp.copyScreenshot().then(() => host.status("Remote desktop copied as a picture")).catch((e) => host.status(`Couldn't copy the screenshot: ${e}`)),
+    },
+    { separator: true },
+    { label: "Duplicate session", action: () => tabs.duplicate(id) },
+    {
+      label: "Copy host address",
+      disabled: !session?.host && "This tab has no host",
+      action: () => void navigator.clipboard.writeText(session?.port ? `${session.host} ${session.port}` : session?.host ?? ""),
+    },
+    { label: "Rename tab", action: () => host.rename(id, tabs.api.getPanel(id)?.title ?? "") },
+    { label: "Accept commands", checked: tab?.acceptCommands ?? true, action: () => tabs.setAccept(id, !(tab?.acceptCommands ?? true)) },
+    { separator: true },
+    ...(rdp.isReconnecting ? [{ label: "Stop Reconnecting", action: () => rdp.stopReconnecting() } as MenuItem] : []),
+    { label: "Reconnect", action: () => void rdp.reconnect() },
+    { label: "Disconnect", disabled: rdp.isEnded && "Not connected", action: () => rdp.disconnect() },
+    { separator: true },
+    {
+      label: "Split Right  ⌘D",
+      disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
+      action: () => tabs.split(id, "right"),
+    },
+    {
+      label: "Split Down  ⇧⌘D",
+      disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
+      action: () => tabs.split(id, "below"),
+    },
+    ...(tabs.groupCount() > 1 ? [{ label: "Join All Tabs", action: () => tabs.joinAll() } as MenuItem] : []),
+    { separator: true },
+    { label: "Close", action: () => tabs.command(id, "close") },
+    { label: "Close others", disabled: all.length < 2, action: () => tabs.command(id, "closeOthers") },
+    { label: "Close others to the right", disabled: index === group.length - 1, action: () => tabs.command(id, "closeRight") },
+    { label: "Close all", disabled: all.length < 2, action: () => tabs.command(id, "closeAll") },
   ];
 }

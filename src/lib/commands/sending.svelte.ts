@@ -6,7 +6,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
-import type { TabArea, TabInfo } from "../layout/TabArea";
+import type { CommandTab, TabArea } from "../layout/TabArea";
 import { settings } from "../settings/store.svelte";
 import { resolveSnippet, askOne } from "../scripting/asking.svelte";
 import { parseSendString } from "../scripting/sendString";
@@ -27,22 +27,22 @@ export const selection = $state({ iconGroup: "" });
 export const running = $state<{ runs: { run: ScriptRun; tab: string; tabId: string; started: number; source: string }[] }>({ runs: [] });
 
 /** Tabs that can be typed into */
-function receiving(tabs: TabInfo[]): TabInfo[] {
+function receiving(tabs: CommandTab[]): CommandTab[] {
   return tabs.filter((t) => t.host.canReceiveCommands);
 }
 
 /** The active tab, if it can be typed into */
-export function activeTarget(): TabInfo[] {
-  return receiving((context.tabs?.tabList() ?? []).filter((t) => t.active));
+export function activeTarget(): CommandTab[] {
+  return receiving((context.tabs?.commandTabs() ?? []).filter((t) => t.active));
 }
 
 /**
  * The Send Commands selection, as GetSelectedPuttyPanels: tabs in the order they show, only the icon group's if one
  * is chosen, each either visible ("Send to visible tabs only") or with Accept commands on
  */
-export function selectedTargets(): TabInfo[] {
+export function selectedTargets(): CommandTab[] {
   return receiving(
-    (context.tabs?.tabList() ?? []).filter(
+    (context.tabs?.commandTabs() ?? []).filter(
       (t) =>
         (!selection.iconGroup || t.icon.split("#")[0].toLowerCase() === selection.iconGroup.toLowerCase()) &&
         (settings.sendToVisibleOnly ? t.visible : t.acceptCommands),
@@ -66,7 +66,7 @@ export async function fillPlaceholders(text: string): Promise<string | null> {
 }
 
 /** Type a button's send string into tabs, step by step, as ButtonBarStrip's SendString */
-export async function sendString(text: string, targets: TabInfo[]): Promise<void> {
+export async function sendString(text: string, targets: CommandTab[]): Promise<void> {
   const steps = await parseSendString(text, () => navigator.clipboard.readText().catch(() => ""));
   await Promise.all(
     targets.map(async (tab) => {
@@ -90,7 +90,7 @@ const host: ScriptHost = {
  * Run an SPSL script in a tab, as ctlPuttyPanel.RunScript; `fromStart` for a session's own script (its first WAITFOR
  * sees everything since the session started). `source` is what started it (a button's label), for its spinner.
  */
-export function runScriptIn(tab: TabInfo, script: string, name: string, fromStart = false, source = ""): void {
+export function runScriptIn(tab: CommandTab, script: string, name: string, fromStart = false, source = ""): void {
   const lines = script.split("\n").filter((l) => l.trim() && !l.trimStart().startsWith("#")).length;
   const run = new ScriptRun(name, tab.title, lines);
   const entry = { run, tab: tab.title, tabId: tab.id, started: Date.now(), source };

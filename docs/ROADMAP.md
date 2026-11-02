@@ -60,7 +60,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Brand logos (26, from SuperXPuTTY's BrandLogos)
 - 🚧 Custom icons from `<SettingsFolder>/icons`: read and drawn as masks in any colour; not yet tried with a real one (the reference data has none)
 - ✅ Old PNG keys mapped onto templates
-- ✅ Environment colours: tree circle, tab (selected filled, others tinted with a top stripe), frame around the terminal
+- ✅ Environment colours: tree circle, tab (selected filled, others tinted with a top stripe), frame around the terminal, cursor
 - ✅ Colour resolution: session, else folder, else name rule (rules in `settings.json` until the Settings window)
 
 **Connecting**

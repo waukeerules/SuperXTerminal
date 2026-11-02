@@ -34,6 +34,13 @@ const MENU_KEYS = [
   { key: "ESC", label: "Esc", hint: "" },
 ];
 
+/**
+ * A stand-in theme until SuperXPuTTY's theme files are loaded (M4; they're missing from its Git repository): the
+ * look the terminal has without one. The page applies colours, the session's cursor colour included, only
+ * through a theme, so with none the cursor stayed white.
+ */
+const STAND_IN_THEMES = [{ name: "PuTTY", base: "vs-dark", colors: { background: "#000000", foreground: "#FFFFFF" } }];
+
 /** What each Send Key entry types */
 const KEY_TEXT: Record<string, string> = {
   "^C": "\x03", "^Z": "\x1a", "^6": "\x1e", "^]": "\x1d", "^D": "\x04", "^\\": "\x1c", ESC: "\x1b",
@@ -55,6 +62,7 @@ export class PageHost {
    * @param frame the iframe holding the page
    * @param target what the tab runs
    * @param local whether it's a local shell (the page treats Ctrl+C and Open in PuTTY differently)
+   * @param cursorColor the session's environment colour, which the cursor is drawn in as in SuperXPuTTY; null for none
    * @param onExit called when a local shell ends, so its tab closes; a session's tab stays open instead, so its last
    *   output (e.g. why ssh couldn't connect) can be read. SuperXPuTTY's reconnect comes in M4
    * @param onTabCommand the page's tab menu items: "close", "closeOthers", "closeRight" or "closeAll"
@@ -64,6 +72,7 @@ export class PageHost {
     private readonly frame: HTMLIFrameElement,
     private readonly target: Target,
     private readonly local: boolean,
+    private readonly cursorColor: string | null,
     private readonly onExit: () => void,
     private readonly onTabCommand: (command: string) => void,
   ) {
@@ -143,7 +152,7 @@ export class PageHost {
     this.post({
       type: "config",
       ruleSets: [],
-      themes: [],
+      themes: STAND_IN_THEMES,
       dark,
       bell: "visual",
       cursor: { style: "block", blink: true },
@@ -154,6 +163,7 @@ export class PageHost {
       menuKeys: MENU_KEYS,
       sessionRules: "",
       unlimitedScrollback: 1000000,
+      cursorColor: this.cursorColor,
     });
   }
 

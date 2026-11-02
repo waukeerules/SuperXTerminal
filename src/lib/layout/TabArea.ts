@@ -88,6 +88,7 @@ class TerminalPanel implements IContentRenderer {
       frame,
       target,
       local,
+      environment,
       () => parameters.api.close(),
       (command) => this.tabs.command(id, command),
     );

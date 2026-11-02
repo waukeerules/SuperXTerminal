@@ -30,6 +30,8 @@ pub struct SessionFields {
     pub note: String,
     pub local_path: String,
     pub remote_path: String,
+    /// Its own RDP options, as SuperXPuTTY's RdpOptions ("" for the defaults)
+    pub rdp_options: String,
 }
 
 impl SessionFields {
@@ -56,6 +58,7 @@ impl SessionFields {
             note: session.get("Note").to_string(),
             local_path: session.get("LocalPath").to_string(),
             remote_path: session.get("RemotePath").to_string(),
+            rdp_options: session.get("RdpOptions").to_string(),
         }
     }
 
@@ -84,6 +87,7 @@ impl SessionFields {
         session.set("Note", &self.note);
         session.set("LocalPath", self.local_path.trim());
         session.set("RemotePath", self.remote_path.trim());
+        session.set("RdpOptions", self.rdp_options.trim());
     }
 }
 
@@ -102,7 +106,7 @@ pub fn to_row(fields: &SessionFields, stored: Option<&StoredSession>) -> crate::
         icon: fields.icon.trim().to_string(),
         notes: fields.note.clone(),
         spsl_script: fields.script.trim().to_string(),
-        rdp_options: stored.map(|s| s.get("RdpOptions").to_string()).unwrap_or_default(),
+        rdp_options: fields.rdp_options.trim().to_string(),
         local_path: fields.local_path.trim().to_string(),
         remote_path: fields.remote_path.trim().to_string(),
         color: fields.color.trim().to_string(),

@@ -16,6 +16,8 @@ mod logs;
 mod profiles;
 mod pty;
 mod rdp;
+mod rdp_clipboard;
+mod rdp_options;
 mod scripts;
 mod secrets;
 mod outbox;
@@ -544,7 +546,7 @@ fn session_external(state: State<'_, AppState>, store: sessions::Store, id: Stri
     let host = variables::substitute(session.get("Host").trim(), &values);
     let username = variables::substitute(&username, &values);
     match (how.as_str(), session.get("Proto").to_ascii_uppercase().as_str()) {
-        ("open", "RDP") => external::open_rdp(session, &host, &username),
+        ("open", "RDP") => external::open_rdp(session, &host, &username, &state.settings.lock().unwrap().rdp_defaults.clone()),
         ("open", "VNC") => external::open_vnc(&host, port, &username),
         ("filezilla", _) => external::open_filezilla(&host, port, &username),
         ("terminal", _) => {
@@ -2126,6 +2128,7 @@ pub fn run() {
             rdp::rdp_mouse,
             rdp::rdp_resize,
             rdp::rdp_close,
+            rdp::rdp_clipboard_announce,
             pty::pty_attach
         ])
         .build(tauri::generate_context!())

@@ -922,6 +922,15 @@
     outline: none;
   }
 
+  /* SmartSizing off: the desktop at its own size, scrolled */
+  .tabs :global(.rdp-panel.actual-size) {
+    overflow: auto;
+  }
+
+  .tabs :global(.rdp-panel.actual-size .rdp-screen) {
+    object-fit: fill;
+  }
+
   .tabs :global(.rdp-overlay) {
     position: absolute;
     inset: 0;

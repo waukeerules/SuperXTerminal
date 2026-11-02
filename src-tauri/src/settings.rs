@@ -80,6 +80,9 @@ pub struct AppSettings {
     /// RDP sessions open in a tab with the built-in client (IronRDP), as SuperXPuTTY's General > Built-in client;
     /// off, in Windows App
     pub rdp_built_in: bool,
+    /// Settings > Remote Desktop: the user's defaults for RDP sessions, in SuperXPuTTY's RdpOptions format ("" for
+    /// SuperXPuTTY's own defaults)
+    pub rdp_defaults: String,
 }
 
 impl Default for AppSettings {
@@ -118,6 +121,7 @@ impl Default for AppSettings {
             show_status_bar: true,
             always_on_top: false,
             rdp_built_in: true,
+            rdp_defaults: String::new(),
         }
     }
 }

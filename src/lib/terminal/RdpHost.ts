@@ -41,6 +41,13 @@ const SCANCODES: Record<string, [number, boolean]> = {
   Delete: [0x53, true], ContextMenu: [0x5d, true], NumpadEqual: [0x0d, false],
 };
 
+/** The modifiers kept in step with each key's event: its flag, the key pressed for it, the keys that are it */
+const MODIFIERS: ["ctrlKey" | "shiftKey" | "altKey", string, string[]][] = [
+  ["ctrlKey", "ControlLeft", ["ControlLeft", "ControlRight"]],
+  ["shiftKey", "ShiftLeft", ["ShiftLeft", "ShiftRight"]],
+  ["altKey", "AltLeft", ["AltLeft", "AltRight"]],
+];
+
 /** What the tab is: a stored session */
 export interface RdpTarget {
   store: "saved" | "private" | "database";
@@ -80,12 +87,13 @@ export class RdpHost {
   }
 
   /**
-   * The desktop's size: the tab's, in points (not Retina pixels, a quarter of the pixels to send and draw, as
-   * Microsoft's Mac client does unless "Optimize for Retina displays" is on), at Windows' 100% scale
+   * The tab's size in points and the screen's scale (200 on Retina): the core makes the desktop that size in points
+   * (a quarter of Retina's pixels to send and draw, as Microsoft's Mac client does unless "Optimize for Retina
+   * displays" is on), in Retina pixels with the Retina option, or the options' fixed size
    */
   private size(): { width: number; height: number; scale: number } {
     const rect = this.element.getBoundingClientRect();
-    return { width: Math.max(200, Math.round(rect.width)), height: Math.max(200, Math.round(rect.height)), scale: 100 };
+    return { width: Math.max(200, Math.round(rect.width)), height: Math.max(200, Math.round(rect.height)), scale: Math.round((window.devicePixelRatio || 1) * 100) };
   }
 
   /** Connect, once the tab has a size */
@@ -102,7 +110,14 @@ export class RdpHost {
     channel.onmessage = (message) => this.receive(message);
     const { width: w, height: h, scale } = this.size();
     try {
-      this.id = await invoke<number>("rdp_open", { ...this.target, width: w, height: h, scale, username: this.username, password: this.password, onEvent: channel });
+      const opened = await invoke<{ id: number; width: number; height: number; fixed: boolean; smartSizing: boolean; scale: number }>("rdp_open", {
+        ...this.target, width: w, height: h, scale, username: this.username, password: this.password, onEvent: channel,
+      });
+      this.id = opened.id;
+      // SmartSizing off: the desktop at its own size (in points), scrolled when bigger than the tab, as SuperXPuTTY's
+      this.element.classList.toggle("actual-size", !opened.smartSizing);
+      this.canvas.style.width = opened.smartSizing ? "" : `${(opened.width * 100) / opened.scale}px`;
+      this.canvas.style.height = opened.smartSizing ? "" : `${(opened.height * 100) / opened.scale}px`;
     } catch (error) {
       const text = String(error);
       // no username in the session or its folders: both are asked, as Microsoft's client asks
@@ -244,6 +259,7 @@ export class RdpHost {
       if (!code || this.id === null) return;
       e.preventDefault();
       e.stopPropagation();
+      if (!MODIFIERS.some(([, , codes]) => codes.includes(e.code))) this.syncModifiers(e);
       if (down) this.held.set(e.code, code);
       else this.held.delete(e.code);
       void invoke("rdp_key", { id: this.id, scancode: code[0], extended: code[1], down }).catch(() => {});
@@ -257,6 +273,31 @@ export class RdpHost {
     });
     c.addEventListener("keyup", (e) => key(e, false));
     c.addEventListener("blur", () => this.releaseKeys());
+    // back in the tab: what was copied on the Mac meanwhile is offered to Windows' clipboard
+    c.addEventListener("focus", () => {
+      if (this.id !== null) void invoke("rdp_clipboard_announce", { id: this.id }).catch(() => {});
+    });
+  }
+
+  /** Ctrl, Shift and Option as the key's event says they are: one pressed before the tab had the keyboard (or by
+   *  a key without its own key-down, as macOS's automation sends) is pressed in Windows too, one let go meanwhile is
+   *  let go */
+  private syncModifiers(e: KeyboardEvent): void {
+    if (this.id === null) return;
+    for (const [flag, primary, codes] of MODIFIERS) {
+      const held = codes.filter((c) => this.held.has(c));
+      if (e[flag] && held.length === 0) {
+        const [scancode, extended] = SCANCODES[primary];
+        this.held.set(primary, [scancode, extended]);
+        void invoke("rdp_key", { id: this.id, scancode, extended, down: true }).catch(() => {});
+      } else if (!e[flag]) {
+        for (const c of held) {
+          const [scancode, extended] = this.held.get(c)!;
+          this.held.delete(c);
+          void invoke("rdp_key", { id: this.id, scancode, extended, down: false }).catch(() => {});
+        }
+      }
+    }
   }
 
   /** Let go of every key still held (the tab lost the keyboard: ⌘Tab, a click elsewhere) */
@@ -273,7 +314,6 @@ export class RdpHost {
     this.resizeTimer = setTimeout(() => {
       if (this.id === null) return;
       const { width, height, scale } = this.size();
-      if (width === this.canvas.width && height === this.canvas.height) return;
       void invoke("rdp_resize", { id: this.id, width, height, scale }).catch(() => {});
     }, 400);
   }

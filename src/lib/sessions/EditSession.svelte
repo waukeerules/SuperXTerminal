@@ -2,7 +2,7 @@
   Edit Session, as SuperXPuTTY's: connection details, notes and file transfer paths, saved back to the session's
   own file (Sessions.xml for Saved sessions, PrivateSessions.xml for Private ones). Also used for a new session.
   "PuTTY session profile" becomes Profile: the name is looked up in the user's own profiles (Settings > Profiles).
-  Fields the Mac doesn't use yet (RDP options) are greyed with the reason; Local overrides… opens the user's own values.
+  RDP options… opens the session's own Remote Desktop options; Local overrides… opens the user's own values.
 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
@@ -16,6 +16,7 @@
   import { listProfiles, DEFAULT_PROFILE } from "../settings/profiles";
   import SerialLineFields from "./SerialLineFields.svelte";
   import Overrides from "./Overrides.svelte";
+  import RdpSessionOptions from "./RdpSessionOptions.svelte";
   import { lineOf, withLine } from "./serial";
   import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
@@ -54,6 +55,8 @@
   let error = $state("");
   /** Local overrides… open over this window */
   let overriding = $state(false);
+  /** RDP options… open over this window */
+  let rdpOptioning = $state(false);
   /** The serial devices plugged in (/dev/cu.*), for the Serial line list */
   let serialDevices = $state<string[]>([]);
 
@@ -125,7 +128,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && !overriding && onCancel()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && !overriding && !rdpOptioning && onCancel()} />
 
 <div class="backdrop" role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
@@ -217,7 +220,9 @@
       <div class="row">
         <label class="grow">Extra arguments: <input bind:value={draft.extraArgs} placeholder="PuTTY-style, e.g. -pw secret -L 8080:localhost:80"
           disabled={locked("extra_args")} title={locked("extra_args") ? lockTip : ""} /></label>
-        <button disabled title="RDP sessions open in Windows App: comes in M5">RDP options…</button>
+        <button disabled={draft.protocol.toUpperCase() !== "RDP" || locked("rdp_options")}
+          title={locked("rdp_options") ? lockTip : draft.protocol.toUpperCase() !== "RDP" ? "For RDP sessions" : draft.rdpOptions ? `Its own: ${draft.rdpOptions}` : "Using the defaults (Settings > Remote Desktop)"}
+          onclick={() => (rdpOptioning = true)}>RDP options…{draft.rdpOptions ? " ●" : ""}</button>
       </div>
 
       <div class="row">
@@ -256,6 +261,11 @@
     </footer>
   </div>
 </div>
+
+{#if rdpOptioning}
+  <RdpSessionOptions name={draft.name} text={draft.rdpOptions ?? ""} onCancel={() => (rdpOptioning = false)}
+    onDone={(text) => { draft.rdpOptions = text; rdpOptioning = false; }} />
+{/if}
 
 {#if overriding && id !== null}
   <Overrides sessions={[{ id, store, name: fields.name }]} onCancel={() => (overriding = false)} onSaved={() => (overriding = false)} />

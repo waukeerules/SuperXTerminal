@@ -1,5 +1,5 @@
 <!--
-  The Settings window (Cmd+,), SuperXPuTTY's Tools > Options for the Mac: General, Profiles, Terminal and Shortcuts.
+  The Settings window (Cmd+,), SuperXPuTTY's Tools > Options for the Mac: General, Profiles, Terminal, Remote Desktop and Shortcuts.
 -->
 <script lang="ts">
   import { untrack } from "svelte";
@@ -7,6 +7,7 @@
   import GeneralTab from "./GeneralTab.svelte";
   import TerminalTab from "./TerminalTab.svelte";
   import ShortcutsTab from "./ShortcutsTab.svelte";
+  import RemoteDesktopTab from "./RemoteDesktopTab.svelte";
 
   interface Props {
     onClose: () => void;
@@ -23,6 +24,7 @@
     { name: "General" },
     { name: "Profiles" },
     { name: "Terminal" },
+    { name: "Remote Desktop" },
     { name: "Shortcuts" },
   ];
 </script>
@@ -43,7 +45,7 @@
       <button class="close" onclick={onClose} aria-label="Close">✕</button>
     </header>
     <main>
-      {#if current === "General"}<GeneralTab />{:else if current === "Terminal"}<TerminalTab />{:else if current === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab />{/if}
+      {#if current === "General"}<GeneralTab />{:else if current === "Terminal"}<TerminalTab />{:else if current === "Remote Desktop"}<RemoteDesktopTab />{:else if current === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab />{/if}
     </main>
   </div>
 </div>

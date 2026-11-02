@@ -116,6 +116,8 @@ export interface SessionFields {
   note: string;
   localPath: string;
   remotePath: string;
+  /** Its own RDP options, as SuperXPuTTY's RdpOptions ("" for the defaults) */
+  rdpOptions: string;
 }
 
 /** A session's fields for editing */

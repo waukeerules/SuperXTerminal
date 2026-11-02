@@ -42,10 +42,29 @@ enum RdpEvent {
     Ended { reason: String, clean: bool },
 }
 
-/// One open Remote Desktop: where its input goes, and the window whose tab it is
+/// One open Remote Desktop: where its input goes, the window whose tab it is, its clipboard, and how its desktop
+/// follows the tab (not at all when its size is fixed; in Retina pixels when that's on)
 struct Session {
     input: mpsc::UnboundedSender<RdpInputEvent>,
     window: String,
+    clipboard: Option<crate::rdp_clipboard::Shared>,
+    fixed: bool,
+    retina: bool,
+}
+
+/// What the tab is told once `rdp_open` has started: its id, the desktop's size, and how to show it
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Opened {
+    id: u32,
+    width: u16,
+    height: u16,
+    /// The size stays (Display=Fixed); else the desktop follows the tab
+    fixed: bool,
+    /// Scale the desktop to fit the tab (SmartSizing); else shown at its size, scrolled
+    smart_sizing: bool,
+    /// The desktop's scale (100, or the screen's with Retina): its pixels per point, times 100
+    scale: u32,
 }
 
 /// Every open Remote Desktop, by the id given to its tab
@@ -62,6 +81,8 @@ struct Target {
     domain: Option<String>,
     username: String,
     password: Option<String>,
+    /// The options it connects with: the defaults and the session's own
+    options: crate::rdp_options::RdpOptions,
 }
 
 /// The session's address and login, as SuperXPuTTY gives them to its RDP control: the user's local overrides
@@ -97,7 +118,9 @@ fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
         .filter(|p| !p.is_empty())
         .or_else(|| crate::profiles::password(if profile.is_empty() { "Default Settings" } else { profile }))
         .or_else(|| crate::profiles::password("Default Settings"));
-    Ok(Target { host, port: if port == 0 { 3389 } else { port }, domain, username, password })
+    let defaults = state.settings.lock().unwrap().rdp_defaults.clone();
+    let options = crate::rdp_options::RdpOptions::effective(&defaults, session.get("RdpOptions"));
+    Ok(Target { host, port: if port == 0 { 3389 } else { port }, domain, username, password, options })
 }
 
 /// ".\\user" is a local account (no domain); "CORP\\user" a domain one; "user@domain" as it is
@@ -114,8 +137,10 @@ pub const PASSWORD_NEEDED: &str = "RDP_PASSWORD_NEEDED";
 /// ... or no username either (the session and its folders have none): the tab asks for both
 pub const LOGIN_NEEDED: &str = "RDP_LOGIN_NEEDED";
 
-/// Connect a tab to a session's Remote Desktop at the tab's size (in device pixels); returns the id for the other
-/// calls. `username` and `password` are ones typed in the tab for this connection (never stored).
+/// Connect a tab to a session's Remote Desktop; returns its id, the desktop's size and how to show it. `width` and
+/// `height` are the tab's in points and `scale` the screen's (200 on Retina): the desktop is that size in points, in
+/// Retina pixels with the Retina option, or the options' fixed size. `username` and `password` are ones typed in the
+/// tab for this connection (never stored).
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn rdp_open(
@@ -130,7 +155,7 @@ pub fn rdp_open(
     username: Option<String>,
     password: Option<String>,
     on_event: Channel<InvokeResponseBody>,
-) -> Result<u32, String> {
+) -> Result<Opened, String> {
     let mut target = target(&state, store, &id)?;
     if let Some(typed) = username.filter(|u| !u.trim().is_empty()) {
         (target.domain, target.username) = split_user(typed.trim());
@@ -138,10 +163,15 @@ pub fn rdp_open(
     if target.username.is_empty() {
         return Err(LOGIN_NEEDED.into());
     }
-    let Some(password) = password.filter(|p| !p.is_empty()).or(target.password) else {
+    let Some(password) = password.filter(|p| !p.is_empty()).or(target.password.clone()) else {
         return Err(PASSWORD_NEEDED.into());
     };
+    let password_for_gateway = password.clone();
     let address = format!("{}:{}", target.host, target.port);
+    let options = &target.options;
+    let fixed = options.display.as_deref() == Some("Fixed");
+    let retina = options.retina == Some(true) && !fixed;
+    let (width, height, scale) = desktop_size(options, width, height, scale);
     let mut builder = ConfigBuilder::new()
         .with_destination(Destination::new(address.clone()).map_err(|e| e.to_string())?)
         .with_username(target.username.clone())
@@ -152,21 +182,47 @@ pub fn rdp_open(
         .with_client_build(0)
         .with_client_dir("C:\\Windows\\System32\\mstscax.dll")
         .with_platform(ironrdp_pdu::rdp::capability_sets::MajorPlatformType::OSX)
-        .with_desktop_width(width.max(200))
-        .with_desktop_height(height.max(200))
-        .with_desktop_scale_factor(scale.clamp(100, 500))
-        .with_color_depth(32)
+        .with_desktop_width(width)
+        .with_desktop_height(height)
+        .with_desktop_scale_factor(scale)
+        // IronRDP draws 16 or 32 bits; SuperXPuTTY's 15 and 24 are the nearest
+        .with_color_depth(if options.color_depth.unwrap_or(32) <= 16 { 16 } else { 32 })
         .with_credssp(true)
-        .with_sound(true);
+        // Audio=0 plays here; 1 (on the remote computer) and 2 (don't play) send none here
+        .with_sound(options.audio.unwrap_or(0) == 0);
     if let Some(domain) = &target.domain {
         builder = builder.with_domain(domain.clone());
+    }
+    // the Mac's clipboard, as this channel's own backend (IronRDP's engine has one only for Windows)
+    let clipboard = (options.clipboard != Some(false)).then(crate::rdp_clipboard::Shared::default);
+    builder = builder.with_clipboard(ironrdp_client::config::ClipboardType::Disable);
+    if let Some(shared) = clipboard.clone() {
+        builder = builder.with_static_channel(move |_| {
+            use ironrdp_cliprdr::backend::CliprdrBackendFactory;
+            Some(ironrdp_cliprdr::CliprdrClient::new(crate::rdp_clipboard::Factory(shared.clone()).build_cliprdr_backend()))
+        });
+    }
+    // RD Gateway, as SuperXPuTTY's: the session's own login is the gateway's too
+    if let Some(gateway) = options.gateway.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
+        let endpoint = if gateway.contains(':') { gateway.to_string() } else { format!("{gateway}:443") };
+        let gateway_user = match &target.domain {
+            Some(domain) => format!("{domain}\\{}", target.username),
+            None => target.username.clone(),
+        };
+        builder = builder
+            .with_transport(ironrdp_client::config::TransportKind::Gateway { endpoint })
+            .with_gateway_username(gateway_user)
+            .with_gateway_password(password_for_gateway.clone());
     }
     let config = builder.build().map_err(|e| e.to_string())?;
     let (output, mut events) = mpsc::channel(32);
     let client = RdpClient::new(config, output);
     let input = client.input_sender();
+    if let Some(shared) = &clipboard {
+        *shared.sender.lock().unwrap() = Some(input.clone());
+    }
     let rdp_id = rdps.next.fetch_add(1, Ordering::Relaxed) + 1;
-    rdps.sessions.lock().unwrap().insert(rdp_id, Session { input, window: window.label().to_string() });
+    rdps.sessions.lock().unwrap().insert(rdp_id, Session { input, window: window.label().to_string(), clipboard, fixed, retina });
     crate::applog::info(format!("Remote Desktop to {address} as {} (session {id}) in {}", target.username, window.label()));
     send_json(&on_event, &RdpEvent::Connecting { host: address.clone() });
 
@@ -243,7 +299,21 @@ pub fn rdp_open(
             }
         }
     });
-    Ok(rdp_id)
+    Ok(Opened { id: rdp_id, width, height, fixed, smart_sizing: options.smart_sizing != Some(false), scale })
+}
+
+/// The desktop's size and scale: the options' fixed size, else the tab's in points at 100%, or in Retina pixels at
+/// the screen's scale with the Retina option
+fn desktop_size(options: &crate::rdp_options::RdpOptions, width: u16, height: u16, scale: u32) -> (u16, u16, u32) {
+    let clamp = |v: u32| v.clamp(200, 8192) as u16;
+    if options.display.as_deref() == Some("Fixed") {
+        return (clamp(options.width.unwrap_or(1920)), clamp(options.height.unwrap_or(1080)), 100);
+    }
+    if options.retina == Some(true) {
+        let factor = scale.clamp(100, 300);
+        return (clamp(width as u32 * factor / 100), clamp(height as u32 * factor / 100), factor);
+    }
+    (clamp(width as u32), clamp(height as u32), 100)
 }
 
 /// A failure as the user can act on it
@@ -360,10 +430,25 @@ pub fn rdp_mouse(rdps: State<'_, Rdps>, id: u32, x: u16, y: u16, button: Option<
     send(&rdps, id, RdpInputEvent::FastPath(smallvec![FastPathInputEvent::MouseEvent(pdu)]))
 }
 
-/// The tab changed size (device pixels): the remote desktop follows (Fit the tab)
+/// The tab changed size (points, at the screen's `scale`): the remote desktop follows (Fit the tab), unless its size
+/// is fixed
 #[tauri::command]
 pub fn rdp_resize(rdps: State<'_, Rdps>, id: u32, width: u16, height: u16, scale: u32) -> Result<(), String> {
-    send(&rdps, id, RdpInputEvent::Resize { width: width.max(200), height: height.max(200), scale_factor: scale.clamp(100, 500), physical_size: None })
+    let (fixed, retina) = rdps.sessions.lock().unwrap().get(&id).map(|s| (s.fixed, s.retina)).unwrap_or((true, false));
+    if fixed {
+        return Ok(());
+    }
+    let options = crate::rdp_options::RdpOptions { retina: Some(retina), ..Default::default() };
+    let (width, height, scale_factor) = desktop_size(&options, width, height, scale);
+    send(&rdps, id, RdpInputEvent::Resize { width, height, scale_factor, physical_size: None })
+}
+
+/// The tab got the keyboard: text copied on the Mac meanwhile is offered to the remote desktop's clipboard
+#[tauri::command]
+pub fn rdp_clipboard_announce(rdps: State<'_, Rdps>, id: u32) {
+    if let Some(clipboard) = rdps.sessions.lock().unwrap().get(&id).and_then(|s| s.clipboard.clone()) {
+        clipboard.announce();
+    }
 }
 
 /// The tab closed: disconnect

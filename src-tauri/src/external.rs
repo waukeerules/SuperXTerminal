@@ -4,57 +4,49 @@
 
 use std::path::PathBuf;
 
+use crate::rdp_options::RdpOptions;
 use crate::sessions::StoredSession;
 
-/// A .rdp file's settings for a session: its address and username, then its RdpOptions ("Key=Value;Key=Value", as
-/// SuperXPuTTY's RdpOptions) as the matching .rdp settings
-pub fn rdp_file(session: &StoredSession, host: &str, username: &str) -> String {
+/// A .rdp file's settings for a session: its address and username, then the options it connects with (the
+/// defaults, Settings > Remote Desktop's, its own RdpOptions) as the matching .rdp settings
+pub fn rdp_file(session: &StoredSession, host: &str, username: &str, defaults: &str) -> String {
     let port = session.port();
     let address = if port != 0 && port != 3389 { format!("{host}:{port}") } else { host.to_string() };
     let mut lines = vec![format!("full address:s:{address}")];
     if !username.is_empty() {
         lines.push(format!("username:s:{username}"));
     }
-    let options: Vec<(String, String)> = session
-        .get("RdpOptions")
-        .split(';')
-        .filter_map(|pair| pair.split_once('='))
-        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-        .collect();
-    let get = |key: &str| options.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v.as_str());
-    let flag = |key: &str| get(key).map(|v| if v.eq_ignore_ascii_case("true") { 1 } else { 0 });
-    match get("DisplayMode") {
-        Some(mode) if mode.eq_ignore_ascii_case("Fixed") => {
-            lines.push("screen mode id:i:1".into());
-            if let (Some(w), Some(h)) = (get("FixedWidth"), get("FixedHeight")) {
-                lines.push(format!("desktopwidth:i:{w}"));
-                lines.push(format!("desktopheight:i:{h}"));
-            }
+    let o = RdpOptions::effective(defaults, session.get("RdpOptions"));
+    if o.display.as_deref() == Some("Fixed") {
+        lines.push("screen mode id:i:1".into());
+        if let (Some(w), Some(h)) = (o.width, o.height) {
+            lines.push(format!("desktopwidth:i:{w}"));
+            lines.push(format!("desktopheight:i:{h}"));
         }
-        Some(_) => lines.push("dynamic resolution:i:1".into()),
-        None => {}
+    } else {
+        lines.push("dynamic resolution:i:1".into());
     }
-    for (key, setting) in [
-        ("SmartSizing", "smart sizing"),
-        ("RedirectClipboard", "redirectclipboard"),
-        ("RedirectPrinters", "redirectprinters"),
-        ("RedirectSmartCards", "redirectsmartcards"),
-        ("RedirectMicrophone", "audiocapturemode"),
-        ("ConnectToConsole", "administrative session"),
+    for (value, setting) in [
+        (o.smart_sizing, "smart sizing"),
+        (o.clipboard, "redirectclipboard"),
+        (o.printers, "redirectprinters"),
+        (o.smart_cards, "redirectsmartcards"),
+        (o.microphone, "audiocapturemode"),
+        (o.console, "administrative session"),
     ] {
-        if let Some(on) = flag(key) {
-            lines.push(format!("{setting}:i:{on}"));
+        if let Some(on) = value {
+            lines.push(format!("{setting}:i:{}", on as u8));
         }
     }
-    if let Some(on) = flag("RedirectDrives") {
-        lines.push(format!("drivestoredirect:s:{}", if on == 1 { "*" } else { "" }));
+    if let Some(on) = o.drives {
+        lines.push(format!("drivestoredirect:s:{}", if on { "*" } else { "" }));
     }
-    for (key, setting) in [("ColorDepth", "session bpp"), ("AudioMode", "audiomode"), ("KeyboardHookMode", "keyboardhook"), ("AuthenticationLevel", "authentication level")] {
-        if let Some(value) = get(key).filter(|v| v.parse::<u32>().is_ok()) {
+    for (value, setting) in [(o.color_depth, "session bpp"), (o.audio, "audiomode"), (o.keyboard, "keyboardhook"), (o.authentication, "authentication level")] {
+        if let Some(value) = value {
             lines.push(format!("{setting}:i:{value}"));
         }
     }
-    if let Some(gateway) = get("GatewayHost").filter(|g| !g.is_empty()) {
+    if let Some(gateway) = o.gateway.filter(|g| !g.is_empty()) {
         lines.push(format!("gatewayhostname:s:{gateway}"));
         lines.push("gatewayusagemethod:i:1".into());
     }
@@ -62,12 +54,12 @@ pub fn rdp_file(session: &StoredSession, host: &str, username: &str) -> String {
 }
 
 /// Write a session's .rdp file (in the temporary folder) and open it in the Mac's Remote Desktop app
-pub fn open_rdp(session: &StoredSession, host: &str, username: &str) -> Result<String, String> {
+pub fn open_rdp(session: &StoredSession, host: &str, username: &str, defaults: &str) -> Result<String, String> {
     let folder = std::env::temp_dir().join("SuperXTerminal").join("rdp");
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     let name: String = session.get("SessionName").chars().map(|c| if c.is_alphanumeric() || " -_.".contains(c) { c } else { '_' }).collect();
     let path: PathBuf = folder.join(format!("{}.rdp", if name.trim().is_empty() { "session" } else { name.trim() }));
-    std::fs::write(&path, rdp_file(session, host, username)).map_err(|e| e.to_string())?;
+    std::fs::write(&path, rdp_file(session, host, username, defaults)).map_err(|e| e.to_string())?;
     let status = std::process::Command::new("open").arg(&path).status().map_err(|e| e.to_string())?;
     if !status.success() {
         return Err("No app opens .rdp files on this Mac: install Windows App from the App Store.".into());
@@ -130,11 +122,11 @@ mod tests {
             attributes: vec![
                 ("SessionName".into(), "Win".into()),
                 ("Port".into(), "3390".into()),
-                ("RdpOptions".into(), "DisplayMode=Fixed;FixedWidth=1280;FixedHeight=800;RedirectClipboard=False;GatewayHost=gw.example.com".into()),
+                ("RdpOptions".into(), "Display=Fixed;Width=1280;Height=800;Clipboard=0;Gateway=gw.example.com".into()),
             ],
         };
-        let file = rdp_file(&session, "10.0.0.5", "me");
-        for line in ["full address:s:10.0.0.5:3390", "username:s:me", "desktopwidth:i:1280", "redirectclipboard:i:0", "gatewayhostname:s:gw.example.com"] {
+        let file = rdp_file(&session, "10.0.0.5", "me", "ColorDepth=16");
+        for line in ["full address:s:10.0.0.5:3390", "username:s:me", "desktopwidth:i:1280", "redirectclipboard:i:0", "gatewayhostname:s:gw.example.com", "session bpp:i:16"] {
             assert!(file.contains(line), "{line} in {file}");
         }
     }

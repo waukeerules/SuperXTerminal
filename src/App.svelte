@@ -4,6 +4,7 @@
   button bar are filled in M1 and M3.
 -->
 <script lang="ts">
+  import Icon from "./lib/icons/Icon.svelte";
   import { onMount } from "svelte";
   import { TabArea } from "./lib/layout/TabArea";
   import SessionTree from "./lib/sessions/SessionTree.svelte";
@@ -86,7 +87,7 @@
     status = `Opened session: ${title} [${quick.protocol}]`;
   }} />
   <div class="toolbar" aria-label="Send Commands" title="Send Commands comes in M3">
-    <label class="grow">Command <input disabled class="grow" /></label>
+    <label class="grow"><Icon key="terminal" size={Math.round(settings.iconSize * 0.85)} />Command <input disabled class="grow" /></label>
   </div>
 
   <div class="main">

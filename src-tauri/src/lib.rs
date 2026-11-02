@@ -10,6 +10,7 @@ mod pty;
 mod secrets;
 mod outbox;
 mod sessions;
+mod shortcuts;
 mod variables;
 mod settings;
 
@@ -215,14 +216,20 @@ fn session_save(
 ) -> Result<String, String> {
     let path = store_file(&state, store)?;
     // ids must be unique across Saved and Private sessions, as in SuperXPuTTY
-    editing::save(&path, original_id.as_deref(), &fields, &other_ids(&state, store))
+    let id = editing::save(&path, original_id.as_deref(), &fields, &other_ids(&state, store))?;
+    if let Some(old) = original_id {
+        follow_id(&state, &old, &id);
+    }
+    Ok(id)
 }
 
 /// Delete a session from its file
 #[tauri::command]
 fn session_delete(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<(), String> {
     let path = store_file(&state, store)?;
-    editing::delete(&path, &id)
+    editing::delete(&path, &id)?;
+    shortcuts::forget(&state.user_folder, |s| s == id);
+    Ok(())
 }
 
 /// The session ids in the store other than `store`, which a change in `store` must not clash with
@@ -237,14 +244,18 @@ fn other_ids(state: &AppState, store: sessions::Store) -> Vec<String> {
 fn folder_move(state: State<'_, AppState>, store: sessions::Store, from: String, to: String) -> Result<(), String> {
     folders::check_name(to.rsplit('/').next().unwrap_or(&to))?;
     let path = store_file(&state, store)?;
-    folders::move_folder(&path, &from, &to, &other_ids(&state, store))
+    folders::move_folder(&path, &from, &to, &other_ids(&state, store))?;
+    follow_folder(&state, &from, &to);
+    Ok(())
 }
 
 /// Delete a folder and every session in it
 #[tauri::command]
 fn folder_delete(state: State<'_, AppState>, store: sessions::Store, path: String) -> Result<(), String> {
     let file = store_file(&state, store)?;
-    folders::delete_folder(&file, &path)
+    folders::delete_folder(&file, &path)?;
+    forget_folder(&state, &path);
+    Ok(())
 }
 
 /// Save a folder's settings (colour and defaults)
@@ -258,7 +269,72 @@ fn folder_settings_save(state: State<'_, AppState>, store: sessions::Store, fiel
 #[tauri::command]
 fn session_move(state: State<'_, AppState>, store: sessions::Store, id: String, folder: String) -> Result<String, String> {
     let file = store_file(&state, store)?;
-    folders::move_session(&file, &id, &folder, &other_ids(&state, store))
+    let new = folders::move_session(&file, &id, &folder, &other_ids(&state, store))?;
+    follow_id(&state, &id, &new);
+    Ok(new)
+}
+
+/// Favorites and Recent follow a session renamed or moved
+fn follow_id(state: &AppState, old: &str, new: &str) {
+    if old != new {
+        shortcuts::follow(&state.user_folder, |id| (id == old).then(|| new.to_string()));
+    }
+}
+
+/// Favorites and Recent follow the sessions below a renamed or moved folder ("Lab" or "@db/Lab")
+fn follow_folder(state: &AppState, from: &str, to: &str) {
+    let below = format!("{from}/");
+    shortcuts::follow(&state.user_folder, |id| id.strip_prefix(&below).map(|rest| format!("{to}/{rest}")));
+}
+
+/// Favorites and Recent forget the sessions below a deleted folder
+fn forget_folder(state: &AppState, path: &str) {
+    let below = format!("{path}/");
+    shortcuts::forget(&state.user_folder, |id| id.starts_with(&below));
+}
+
+/// The Favorites and Recent lists
+#[tauri::command]
+fn shortcuts_get(state: State<'_, AppState>) -> shortcuts::Shortcuts {
+    shortcuts::load(&state.user_folder)
+}
+
+/// Add a session to Favorites, or take it out
+#[tauri::command]
+fn shortcuts_favorite(state: State<'_, AppState>, id: String, on: bool) -> Result<shortcuts::Shortcuts, String> {
+    shortcuts::edit(&state.user_folder, |s| {
+        s.favorites.retain(|f| *f != id);
+        if on {
+            s.favorites.push(id);
+        }
+    })
+}
+
+/// Record a session opened from the tree, first in Recent
+#[tauri::command]
+fn shortcuts_opened(state: State<'_, AppState>, id: String) -> Result<shortcuts::Shortcuts, String> {
+    shortcuts::edit(&state.user_folder, |s| shortcuts::push_recent(&mut s.recent, &id))
+}
+
+/// Take one session out of Recent, or clear it (`id` None)
+#[tauri::command]
+fn shortcuts_forget_recent(state: State<'_, AppState>, id: Option<String>) -> Result<shortcuts::Shortcuts, String> {
+    shortcuts::edit(&state.user_folder, |s| match &id {
+        Some(id) => s.recent.retain(|r| r != id),
+        None => s.recent.clear(),
+    })
+}
+
+/// Remember Favorites or Recent being opened or closed by the user
+#[tauri::command]
+fn shortcuts_expanded(state: State<'_, AppState>, group: String, open: bool) -> Result<shortcuts::Shortcuts, String> {
+    shortcuts::edit(&state.user_folder, |s| {
+        if group == "favorites" {
+            s.favorites_expanded = open;
+        } else {
+            s.recent_expanded = open;
+        }
+    })
 }
 
 /// The user's Environment Variables for the window; secrets' values stay in the Keychain
@@ -566,6 +642,8 @@ async fn db_session_save(state: State<'_, AppState>, original_id: Option<String>
             change.version = stored.get("DatabaseVersion").to_string();
             change.row = Some(row);
             submit_one(&state, change).await?;
+            let new = editing::SessionFields { folder: fields.folder.clone(), ..fields.clone() }.id();
+            follow_id(&state, id, &format!("@db/{new}"));
         }
         None => {
             let mut change = outbox::PendingChange::new(outbox::Kind::Insert);
@@ -584,7 +662,9 @@ async fn db_session_delete(state: State<'_, AppState>, id: String) -> Result<(),
     let mut change = outbox::PendingChange::new(outbox::Kind::Delete);
     change.row_id = stored.get("DatabaseId").to_string();
     change.from = stored.id().trim_start_matches("@db/").to_string();
-    submit_one(&state, change).await
+    submit_one(&state, change).await?;
+    shortcuts::forget(&state.user_folder, |s| s == id);
+    Ok(())
 }
 
 /// Move a Database session to another folder of the table, then read it back; returns its new id
@@ -601,7 +681,9 @@ async fn db_session_move(state: State<'_, AppState>, id: String, folder: String)
     change.row = Some(row.clone());
     submit_one(&state, change).await?;
     let folder = folder.trim_matches('/');
-    Ok(if folder.is_empty() { format!("@db/{}", row.name) } else { format!("@db/{folder}/{}", row.name) })
+    let new = if folder.is_empty() { format!("@db/{}", row.name) } else { format!("@db/{folder}/{}", row.name) };
+    follow_id(&state, &id, &new);
+    Ok(new)
 }
 
 /// Rename or move a Database folder (every row below it, and its settings), then read the table back
@@ -622,7 +704,10 @@ async fn db_folder_move(state: State<'_, AppState>, from: String, to: String) ->
     let mut change = outbox::PendingChange::new(outbox::Kind::RenameFolder);
     change.from = from.trim_matches('/').to_string();
     change.to = to.trim_matches('/').to_string();
-    submit_one(&state, change).await
+    let (old, new) = (format!("@db/{}", change.from), format!("@db/{}", change.to));
+    submit_one(&state, change).await?;
+    follow_folder(&state, &old, &new);
+    Ok(())
 }
 
 /// Delete a Database folder and the sessions it shows, then read the table back
@@ -640,7 +725,10 @@ async fn db_folder_delete(state: State<'_, AppState>, path: String) -> Result<()
     }
     let mut change = outbox::PendingChange::new(outbox::Kind::DeleteFolder);
     change.from = path.trim_matches('/').to_string();
-    submit_one(&state, change).await
+    let gone = format!("@db/{}", change.from);
+    submit_one(&state, change).await?;
+    forget_folder(&state, &gone);
+    Ok(())
 }
 
 /// Save a Database folder's settings in the folders table, then read the table back
@@ -749,6 +837,14 @@ async fn sessions_transfer(
             if let Err(e) = store_file(&state, from).and_then(|path| editing::delete(&path, session.id())) {
                 problems.push(e);
             }
+        }
+    }
+    if delete_source {
+        // Favorites and Recent follow sessions moved to the other root
+        for session in arrived.iter().filter(|s| s.get("DatabaseLocked") != "true") {
+            let path = session.id().trim_start_matches("@db/");
+            let new = if to == Store::Database { format!("@db/{path}") } else { path.to_string() };
+            follow_id(&state, session.id(), &new);
         }
     }
     Ok(TransferReport { done: arrived.len(), problems })
@@ -1011,6 +1107,11 @@ pub fn run() {
             sessions_transfer,
             db_create_schema,
             db_pending_list,
+            shortcuts_get,
+            shortcuts_favorite,
+            shortcuts_opened,
+            shortcuts_forget_recent,
+            shortcuts_expanded,
             db_status,
             db_pending_retry,
             db_pending_discard,

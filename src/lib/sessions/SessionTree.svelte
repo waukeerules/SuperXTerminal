@@ -1,8 +1,11 @@
 <!--
-  The Sessions pane: the search box and the tree (Saved sessions from Sessions.xml, Private sessions from
-  PrivateSessions.xml), as in SuperXPuTTY. Favorites, Recent and Database sessions join it later (M5, M2).
+  The Sessions pane, as in SuperXPuTTY: the search box, the toolbar (new session, new folder, expand all, collapse
+  all, sort), and the tree: Favorites and Recent (the user's own shortcuts), Saved sessions from Sessions.xml,
+  Private sessions from PrivateSessions.xml and Database sessions from the team's table. A search opens every
+  folder holding a match; clearing it puts the tree back as it was.
 -->
 <script lang="ts">
+  import { untrack } from "svelte";
   import TreeFolder from "./TreeFolder.svelte";
   import {
     deleteSession,
@@ -19,6 +22,12 @@
     cachedDatabase,
     databaseStatus,
     databaseChanged,
+    loadShortcuts,
+    setFavorite,
+    recordOpened,
+    forgetRecent,
+    setGroupExpanded,
+    type Shortcuts,
     type DbState,
     type FolderSetting,
     type SessionFields,
@@ -32,7 +41,8 @@
   import Prompt from "../ui/Prompt.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { PALETTE } from "../icons/palette";
-  import { buildTree, folderKeys, sessionsIn, type Dragged, type FolderNode } from "./tree";
+  import { buildGroup, buildTree, folderKeys, sessionsIn, type Dragged, type FolderNode, type Group } from "./tree";
+  import Icon from "../icons/Icon.svelte";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { loadCustomIcons, type CustomIcon } from "../icons/custom";
   import { EnvironmentColors, parseRules } from "../icons/environment";
@@ -70,6 +80,8 @@
   let dbLoading = $state(false);
 
   const iconSize = $derived(settings.iconSize);
+  /** The toolbar's and search buttons' icons scale with the icon size, as SuperXPuTTY's toolbars do */
+  const toolSize = $derived(Math.round(settings.iconSize * 0.85));
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
 
   let loaded = $state<SessionsLoaded | null>(null);
@@ -77,13 +89,48 @@
   let query = $state("");
   // roots start open, as with SuperXPuTTY's "Expand tree on startup"
   let expanded = $state(new Set<string>(["saved:", "private:"]));
+  /** Folders the user closed during the current search (a search opens everything that holds a match) */
+  let closedInSearch = $state(new Set<string>());
+  /** Names Z to A (the toolbar's sort button); not saved, so A to Z returns on restart, as in SuperXPuTTY */
+  let descending = $state(false);
+  /** Favorites and Recent */
+  let shortcuts = $state<Shortcuts>({ Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false });
 
   const colors = $derived(new EnvironmentColors(loaded?.folders ?? [], parseRules(settings.environmentColorRules)));
-  const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query, newFolders.saved) : null);
-  const privateRoot = $derived(loaded ? buildTree("private", "Private sessions", loaded.sessions, query, newFolders.private) : null);
-  const databaseRoot = $derived(
-    loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), loaded.sessions, query, newFolders.database) : null,
+  const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query, newFolders.saved, descending) : null);
+  const privateRoot = $derived(
+    loaded ? buildTree("private", "Private sessions", loaded.sessions, query, newFolders.private, descending) : null,
   );
+  const databaseRoot = $derived(
+    loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), loaded.sessions, query, newFolders.database, descending) : null,
+  );
+  const favorites = $derived(loaded ? buildGroup("favorites", "Favorites", shortcuts.Favorites, loaded.sessions, query) : null);
+  const recent = $derived(loaded ? buildGroup("recent", "Recent", shortcuts.Recent, loaded.sessions, query) : null);
+  const roots = $derived([favorites, recent, saved, privateRoot, databaseRoot].filter((r): r is FolderNode => r !== null));
+  const searching = $derived(query.trim() !== "");
+  /** What's open: while searching every folder holding a match (but those closed since), else as the user left it */
+  const shownExpanded = $derived(
+    searching ? new Set(roots.flatMap(folderKeys).filter((k) => !closedInSearch.has(k))) : expanded,
+  );
+
+  // a new search starts with everything open again
+  $effect(() => {
+    void query;
+    closedInSearch = new Set();
+  });
+
+  // Favorites and Recent open as the user last left them (closed at first)
+  $effect(() => {
+    const wanted = [["favorites:", shortcuts.FavoritesExpanded], ["recent:", shortcuts.RecentExpanded]] as const;
+    untrack(() => {
+      const next = new Set(expanded);
+      for (const [key, open] of wanted) {
+        if (open) next.add(key);
+        else next.delete(key);
+      }
+      if (next.size !== expanded.size || [...next].some((k) => !expanded.has(k))) expanded = next;
+    });
+  });
 
   // read again whenever the settings folder changes (Settings > General); the first run reads them at start
   $effect(() => {
@@ -170,6 +217,7 @@
       customs = await loadCustomIcons();
       onLook(settings.iconSize, customs);
       loaded = await loadSessions();
+      shortcuts = await loadShortcuts();
       if (db?.enabled) db = await databaseStatus();
       error = "";
     } catch (e) {
@@ -237,8 +285,34 @@
   }
 
   /** The right-click menu for a session or folder, as SuperXPuTTY's; what the Mac can't do yet is greyed with why */
-  function showMenu(event: MouseEvent, target: { session: SessionView } | { folder: FolderNode }): void {
+  function showMenu(event: MouseEvent, target: { session: SessionView; group?: Group } | { folder: FolderNode }): void {
     let items: MenuItem[];
+    if ("session" in target && target.group) {
+      // a Favorites or Recent entry: a shortcut, so only what makes sense for one (SuperXPuTTY's shortcut menu)
+      const { session, group } = target;
+      items = [
+        { label: "Connect", bold: true, action: () => open(session) },
+        { label: "Show in Sessions tree", action: () => showInTree(session) },
+        { separator: true },
+        ...(group === "recent" ? [favoriteItem(session)] : []),
+        group === "favorites"
+          ? { label: "Remove from Favorites", action: () => void changeShortcuts(setFavorite(session.id, false)) }
+          : { label: "Remove from Recent", action: () => void changeShortcuts(forgetRecent(session.id)) },
+      ];
+      menu = { x: event.clientX, y: event.clientY, items };
+      return;
+    }
+    if ("folder" in target && target.folder.group) {
+      const runnable = target.folder.sessions.filter((s) => unavailableReason(s.protocol) === null);
+      items = [
+        { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
+        ...(target.folder.group === "recent"
+          ? [{ separator: true } as MenuItem, { label: "Clear Recent", action: () => void changeShortcuts(forgetRecent(null)) }]
+          : []),
+      ];
+      menu = { x: event.clientX, y: event.clientY, items };
+      return;
+    }
     // Database sessions change only when the login may write and Read only is off; a locked row not at all
     const dbBlock = (store: Store, locked = false): string | false =>
       store !== "database" ? false
@@ -255,7 +329,7 @@
         { label: "Connect", bold: true, action: () => open(session) },
         { label: "Connect external", disabled: "Open in Terminal.app or iTerm2: comes in M5" },
         { label: "Connect in new window", disabled: "Windows and splits come in M5" },
-        { label: "Add to Favorites", disabled: "Favorites come in M5" },
+        favoriteItem(session),
         {
           label: "Colour",
           disabled: block || (session.lockedFields.split(",").includes("color") && "The colour is locked in the database"),
@@ -316,6 +390,37 @@
       ];
     }
     menu = { x: event.clientX, y: event.clientY, items };
+  }
+
+  /** Add to Favorites, or Remove from Favorites when it's there */
+  function favoriteItem(session: SessionView): MenuItem {
+    const on = shortcuts.Favorites.includes(session.id);
+    return {
+      label: on ? "Remove from Favorites" : "Add to Favorites",
+      action: () => void changeShortcuts(setFavorite(session.id, !on)),
+    };
+  }
+
+  /** Show the lists a change returns */
+  async function changeShortcuts(change: Promise<Shortcuts>): Promise<void> {
+    try {
+      shortcuts = await change;
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  /** Select a session in its own root, opening the folders above it (SuperXPuTTY's Show in Sessions tree) */
+  function showInTree(session: SessionView): void {
+    query = "";
+    const keys = [`${session.store}:`];
+    let path = "";
+    for (const part of session.folder.split("/").filter(Boolean)) {
+      path = path ? `${path}/${part}` : part;
+      keys.push(`${session.store}:${path}`);
+    }
+    expanded = new Set([...expanded, ...keys]);
+    selected = `${session.store}:${session.id}`;
   }
 
   /** The roots' names, for Move to / Copy to */
@@ -481,19 +586,92 @@
   /** Open a session, passing on its environment colour for its tab */
   function open(session: SessionView): void {
     onOpen(session, colors.forSession(session));
+    // only sessions opened from the tree go in Recent, as in SuperXPuTTY
+    void changeShortcuts(recordOpened(session.id));
   }
 
   /** Open or close a folder */
   function toggle(key: string): void {
+    if (searching) {
+      // during a search only that search's view changes; clearing it puts the tree back as it was
+      const next = new Set(closedInSearch);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      closedInSearch = next;
+      return;
+    }
     const next = new Set(expanded);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
+    const open = !next.has(key);
+    if (open) next.add(key);
+    else next.delete(key);
     expanded = next;
+    if (key === "favorites:" || key === "recent:") void changeShortcuts(setGroupExpanded(key === "favorites:" ? "favorites" : "recent", open));
+  }
+
+  /** The folder the toolbar's New session and New folder go in: the selected folder, or the selected session's, else
+   * Saved sessions (Private sessions without a settings folder), as SuperXPuTTY's */
+  function toolbarFolder(): FolderNode | null {
+    const find = (node: FolderNode | null, path: string): FolderNode | null =>
+      !node ? null : node.path === path ? node : node.folders.map((f) => find(f, path)).find(Boolean) ?? null;
+    const rootOf = (store: string) => (store === "saved" ? saved : store === "private" ? privateRoot : store === "database" ? databaseRoot : null);
+    const [store, ...rest] = selected.split(":");
+    const fallback = loaded?.savedFile === null ? privateRoot : saved;
+    if (!rootOf(store)) return fallback;
+    if (rest[0] === "folder") return find(rootOf(store), rest.slice(1).join(":")) ?? fallback;
+    const id = rest.join(":");
+    const session = loaded?.sessions.find((s) => s.store === store && s.id === id);
+    return find(rootOf(store), session?.folder ?? "") ?? fallback;
+  }
+
+  /** The toolbar's New session */
+  function newSessionHere(): void {
+    const folder = toolbarFolder();
+    if (!folder) return;
+    if (folder.store === "database" && !db?.writable) {
+      error = "Database sessions can't be written now.";
+      return;
+    }
+    editing = { store: folder.store, id: null, fields: blank(folder.path) };
+  }
+
+  /** The toolbar's New folder */
+  function newFolderHere(): void {
+    const folder = toolbarFolder();
+    if (folder) newFolder(folder);
+  }
+
+  /** Expand all: every folder of every root */
+  function expandAll(): void {
+    query = "";
+    expanded = new Set(roots.flatMap(folderKeys));
+  }
+
+  /** Collapse all, leaving Saved sessions and Private sessions open so their top-level folders show */
+  function collapseAll(): void {
+    query = "";
+    expanded = new Set(["saved:", "private:"]);
   }
 
 </script>
 
-<input class="search" placeholder="Type to search..." bind:value={query} />
+<div class="search">
+  <input placeholder="Type to search..." bind:value={query}
+    onkeydown={(e) => { if (e.key === "Escape") query = ""; }} />
+  <button class="icon" title="Search (the tree filters as you type)" onclick={() => (query = query.trim())}>
+    <Icon key="search" size={toolSize} glyph />
+  </button>
+  <button class="icon" title="Clear the search" onclick={() => (query = "")}><Icon key="clear" size={toolSize} glyph /></button>
+</div>
+<div class="toolbar" role="toolbar" aria-label="Sessions">
+  <button class="icon" title="New session (in the selected folder)" onclick={newSessionHere}><Icon key="newsession" size={toolSize} glyph /></button>
+  <button class="icon" title="New folder (in the selected folder)" onclick={newFolderHere}><Icon key="newfolder" size={toolSize} glyph /></button>
+  <span class="gap"></span>
+  <button class="icon" title="Expand all" onclick={expandAll}><Icon key="expandall" size={toolSize} glyph /></button>
+  <button class="icon" title="Collapse all" onclick={collapseAll}><Icon key="collapseall" size={toolSize} glyph /></button>
+  <span class="gap"></span>
+  <button class="icon" title={descending ? "Sorted Z to A: click for A to Z" : "Sorted A to Z: click for Z to A (until SuperXTerminal restarts)"}
+    onclick={() => (descending = !descending)}><Icon key={descending ? "sortza" : "sortaz"} size={toolSize} glyph /></button>
+</div>
 
 <div class="tree" role="tree" style:font-size="{settings.treeFontSize}px">
   {#if error}
@@ -503,20 +681,28 @@
     {#each loaded.problems as problem}
       <p class="message">Skipped: {problem}</p>
     {/each}
+    {#if favorites}
+      <TreeFolder node={favorites} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
+        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
+    {/if}
+    {#if recent}
+      <TreeFolder node={recent} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
+        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
+    {/if}
     {#if loaded.savedFile === null}
       <p class="message">Choose the settings folder: the folder that holds the team's Sessions.xml.</p>
       <button onclick={choose}>Choose Settings Folder...</button>
     {:else if saved}
-      <TreeFolder node={saved} depth={0} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
+      <TreeFolder node={saved} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
         onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if privateRoot}
-      <TreeFolder node={privateRoot} depth={0} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
+      <TreeFolder node={privateRoot} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
         onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if databaseRoot}
       <div class="db-root" title={db?.error ? `Showing the last read: ${db.error}` : `${db?.source}${db?.writable ? "" : " (read only)"}`}>
-        <TreeFolder node={databaseRoot} depth={0} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
+        <TreeFolder node={databaseRoot} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected}
           onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
       </div>
     {/if}
@@ -550,11 +736,43 @@
 
 <style>
   .search {
-    margin: 0 8px 6px;
+    display: flex;
+    gap: 2px;
+    margin: 0 8px 4px;
+  }
+
+  .search input {
+    flex: 1;
+    min-width: 0;
     background: var(--bg-input);
     border: 1px solid var(--border);
     border-radius: 2px;
     padding: 2px 4px;
+  }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0 8px 2px;
+  }
+
+  .toolbar .gap {
+    width: 6px;
+  }
+
+  button.icon {
+    display: flex;
+    margin: 0;
+    padding: 1px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+  }
+
+  button.icon:hover {
+    border-color: var(--border);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
 
   .tree {

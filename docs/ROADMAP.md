@@ -53,8 +53,8 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Sessions tree**
 - ✅ Saved and Private roots, folders and sessions; closed folders draw nothing
-- ✅ Folder session counts, folders first, sort
-- ✅ Search box (filter while typing: name, host, username, folder, note)
+- ✅ Folder session counts, folders first, sort; the toolbar under the search box (New session and New folder in the selected folder, Expand all, Collapse all, A to Z / Z to A)
+- ✅ Search box (filter while typing: name, host, username, folder, note), with Search and Clear buttons and Escape; a search opens every folder holding a match, and clearing it puts the tree back as it was
 - ✅ Open sessions marked (green dot); tooltips (protocol, address, note, why it can't open)
 - ✅ New, rename, delete, drag to move (sessions and folders): New session… / New folder… (tree-only until a session goes in, as in SuperXPuTTY), Rename…, Delete folder (with its sessions, after asking), dragging sessions and folders within Saved or Private; plus Connect all, Expand all, Collapse all
 - ✅ Sessions the Mac can't open shown dimmed with the reason
@@ -76,7 +76,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Allow older algorithms (profile option, on in Default Settings): SHA-1 key exchange, `ssh-rsa`, CBC ciphers
 - ✅ Launch order: session, folder default, profile, Default Settings (local overrides join it in M5); tested
 - ✅ `{key}` placeholders; Environment Variables with Keychain secrets (Tools > Environment Variables; SuperXPuTTY's file, copied over as is: plain values come across, Windows-encrypted secrets ask to be typed again and stay in the file for Windows). Checked: Lab Switch - environment logs in
-- ✅ Quick connect toolbar: Protocol, Host (`host`, `host:port`, `user@host`, `ssh://host:port`), Login, Password (used once, never saved) and Profile; Enter connects, Clear empties it. Checked on the lab switch. File > New Local Shell (Cmd+T) replaces M0's button
+- ✅ Quick connect toolbar (with its monitor icon, and the terminal icon on the Command bar, as SuperXPuTTY): Protocol, Host (`host`, `host:port`, `user@host`, `ssh://host:port`), Login, Password (used once, never saved) and Profile; Enter connects, Clear empties it. Checked on the lab switch. File > New Local Shell (Cmd+T) replaces M0's button
 - ✅ Edit Session (all of SuperXPuTTY's fields, profile list, inherited folder values as hints, greyed fields explained, `-pw` shown masked and kept), from the session's right-click menu, which matches SuperXPuTTY's (Connect, Colour, Copy host address, Edit, Delete; the rest greyed with the milestone)
 
 **Settings**
@@ -128,7 +128,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 **Done when:** the feature matrix is complete except the SFTP browser.
 
 **Tree and data**
-- ⬜ Favorites and Recent (`SessionShortcuts.json`)
+- ✅ Favorites and Recent (`SessionShortcuts.json`, in SuperXPuTTY's format, in the user's own folder): groups at the top of the tree, shown only when they hold something, opened as last left; Add to / Remove from Favorites, Show in Sessions tree, Remove from Recent, Clear Recent; the last 10 sessions opened from the tree; they follow renames and moves and forget deleted sessions. Checked in the app
 - ⬜ Multi-select with Connect, Delete, Edit sessions...
 - ⬜ Edit sessions... (bulk edit)
 - ⬜ Local overrides (`SessionOverrides.json`)

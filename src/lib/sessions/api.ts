@@ -201,6 +201,39 @@ export function databaseStatus(): Promise<DbState> {
   return invoke<DbState>("db_status");
 }
 
+/** The user's Favorites and Recent sessions (SuperXPuTTY's SessionShortcuts.json), as session ids */
+export interface Shortcuts {
+  Favorites: string[];
+  /** Most recent first */
+  Recent: string[];
+  FavoritesExpanded: boolean;
+  RecentExpanded: boolean;
+}
+
+export function loadShortcuts(): Promise<Shortcuts> {
+  return invoke<Shortcuts>("shortcuts_get");
+}
+
+/** Add a session to Favorites (on) or take it out */
+export function setFavorite(id: string, on: boolean): Promise<Shortcuts> {
+  return invoke<Shortcuts>("shortcuts_favorite", { id, on });
+}
+
+/** Put a session just opened from the tree first in Recent */
+export function recordOpened(id: string): Promise<Shortcuts> {
+  return invoke<Shortcuts>("shortcuts_opened", { id });
+}
+
+/** Take a session out of Recent, or clear Recent (null) */
+export function forgetRecent(id: string | null): Promise<Shortcuts> {
+  return invoke<Shortcuts>("shortcuts_forget_recent", { id });
+}
+
+/** Remember the user opening or closing Favorites or Recent */
+export function setGroupExpanded(group: "favorites" | "recent", open: boolean): Promise<Shortcuts> {
+  return invoke<Shortcuts>("shortcuts_expanded", { group, open });
+}
+
 /** Show the cached Database sessions at once, before the table is read */
 export function cachedDatabase(): Promise<DbState> {
   return invoke<DbState>("db_cached");

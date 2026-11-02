@@ -1,13 +1,14 @@
 <!--
   One folder of the Sessions tree and everything under it (it shows itself for its subfolders). A root (Saved
-  sessions, Private sessions) is a folder with an empty path, shown in bold. Double-click a session to open it.
+  sessions, Private sessions) is a folder with an empty path, shown in bold; so are Favorites and Recent, whose
+  entries are shortcuts to sessions in the roots. Double-click a session to open it.
 -->
 <script lang="ts">
   import TreeFolder from "./TreeFolder.svelte";
   import Icon from "../icons/Icon.svelte";
   import type { CustomIcon } from "../icons/custom";
   import type { EnvironmentColors } from "../icons/environment";
-  import { DRAG_TYPE, type Dragged, type FolderNode } from "./tree";
+  import { DRAG_TYPE, type Dragged, type FolderNode, type Group } from "./tree";
   import { unavailableReason, type SessionView } from "./api";
 
   interface Props {
@@ -25,7 +26,7 @@
     onOpen: (session: SessionView) => void;
     onSelect: (key: string) => void;
     /** A right-click on a session or folder */
-    onMenu: (event: MouseEvent, target: { session: SessionView } | { folder: FolderNode }) => void;
+    onMenu: (event: MouseEvent, target: { session: SessionView; group?: Group } | { folder: FolderNode }) => void;
     /** Something dragged in the tree was dropped on a folder */
     onDrop: (folder: FolderNode, dragged: Dragged) => void;
   }
@@ -42,7 +43,7 @@
 
   /** Let tree items be dropped on this folder */
   function dragOver(event: DragEvent): void {
-    if (!event.dataTransfer?.types.includes(DRAG_TYPE)) return;
+    if (!event.dataTransfer?.types.includes(DRAG_TYPE) || node.group) return;
     event.preventDefault();
     over = true;
   }
@@ -57,7 +58,7 @@
   }
 
   /** The roots' icons, as SuperXPuTTY's tree: a folder for Saved sessions, a padlock for Private ones, a database */
-  const ROOT_ICONS: Record<string, string> = { saved: "folder", private: "lock", database: "database" };
+  const ROOT_ICONS: Record<string, string> = { saved: "folder", private: "lock", database: "database", favorites: "star", recent: "clock" };
 
   const open = $derived(expanded.has(node.key));
   const isRoot = $derived(node.path === "");
@@ -83,7 +84,7 @@
   role="treeitem" aria-expanded={open} aria-selected="false" tabindex="-1"
   onclick={() => onToggle(node.key)} onkeydown={(e) => e.key === "Enter" && onToggle(node.key)}>
   <span class="twisty">{open ? "▾" : "▸"}</span>
-  <Icon key={isRoot ? ROOT_ICONS[node.store] : "folder"} size={iconSize} environment={isRoot ? null : colors.forFolder(node.store, node.path)} {customs} />
+  <Icon key={isRoot ? ROOT_ICONS[node.group ?? node.store] : "folder"} size={iconSize} environment={isRoot ? null : colors.forFolder(node.store, node.path)} {customs} />
   <span class="label">{node.name} ({node.count})</span>
 </div>
 
@@ -94,11 +95,11 @@
   {/each}
   {#each node.sessions as session (session.store + ":" + session.id)}
     {@const reason = unavailableReason(session.protocol)}
-    {@const key = `${session.store}:${session.id}`}
+    {@const key = node.group ? `${node.group}:${session.store}:${session.id}` : `${session.store}:${session.id}`}
     <div class="row session" class:dimmed={reason !== null} class:pending={session.pending} class:selected={selected === key}
-      onclick={() => onSelect(key)} draggable={!session.locked}
+      onclick={() => onSelect(key)} draggable={!session.locked && !node.group}
       ondragstart={(e) => drag(e, { kind: "session", store: session.store, id: session.id })}
-      oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
+      oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session, group: node.group }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
       style:height="{Math.round(iconSize * 1.36) + 4}px"
       title={tooltip(session)} role="treeitem" aria-selected="false" aria-disabled={reason !== null} tabindex="-1"
       ondblclick={() => reason === null && onOpen(session)}

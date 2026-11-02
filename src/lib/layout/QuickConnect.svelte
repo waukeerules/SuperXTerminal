@@ -7,6 +7,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Icon from "../icons/Icon.svelte";
+  import { settings } from "../settings/store.svelte";
   import { PROTOCOLS, unavailableReason, opensAsLocalShell } from "../sessions/api";
   import { DEFAULT_PROFILE, PROFILES_CHANGED, listProfiles } from "../settings/profiles";
   import type { QuickConnect } from "../terminal/PageHost";
@@ -73,7 +74,7 @@
 </script>
 
 <div class="toolbar" aria-label="Quick connect">
-  <label>Protocol
+  <label><Icon key="computer" size={Math.round(settings.iconSize * 0.85)} />Protocol
     <select bind:value={protocol}>
       {#each PROTOCOLS as p}<option value={p} disabled={!!unavailableReason(p)} title={unavailableReason(p) ?? ""}>{p}</option>{/each}
     </select>

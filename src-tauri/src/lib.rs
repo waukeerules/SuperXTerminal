@@ -1,5 +1,6 @@
 //! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
 
+mod applog;
 mod buttonbars;
 mod cli;
 mod db;
@@ -164,7 +165,12 @@ fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
         private_file: state.user_folder.join("PrivateSessions.xml").display().to_string(),
         saved_off,
     };
+    let counts = (loaded.saved.len(), loaded.private.len(), loaded.database.len());
     *state.sessions.lock().unwrap() = loaded;
+    applog::info(format!("Read the sessions: {} saved, {} private, {} from the database", counts.0, counts.1, counts.2));
+    for problem in &result.problems {
+        applog::warn(format!("Sessions: {problem}"));
+    }
     tray::refresh(&app);
     result
 }
@@ -698,6 +704,7 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
     }
     let saved = current.clone();
     drop(current);
+    applog::info("Settings saved");
     // and the menu bar icon, Settings > General
     tray::refresh(&app);
     // every window reads them again, so another window's next save doesn't put back what it had
@@ -771,6 +778,7 @@ async fn refresh_database(state: &AppState) -> Result<DbState, String> {
             sessions.folders.insert(sessions::Store::Database, fetched.folders.into_iter().map(|f| (f.path.to_lowercase(), f)).collect());
         }
         Err(error) => {
+            applog::warn(format!("Database sessions couldn't be read: {error}"));
             // keep showing what was last read, from the cache if nothing is loaded yet
             if db_state.token.is_empty() && db_state.synced_at.is_empty() {
                 show_cache(state, &settings, &mut db_state);
@@ -1560,6 +1568,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>) ->
         true,
         &[
             &PredefinedMenuItem::about(app, None, None)?,
+            &action("checkUpdates")?,
             &PredefinedMenuItem::separator(app)?,
             &action("settings")?,
             &PredefinedMenuItem::separator(app)?,
@@ -1668,13 +1677,17 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>) ->
         "View",
         true,
         &[
+            &action("toggleSessionsPane")?,
             &action("toggleSendCommands")?,
             &action("toggleButtonBar")?,
+            &action("toggleStatusBar")?,
             &PredefinedMenuItem::separator(app)?,
             &action("toggleSessionsAutoHide")?,
             &action("toggleLayouts")?,
             &action("toggleSessionDetail")?,
+            &action("toggleLogViewer")?,
             &PredefinedMenuItem::separator(app)?,
+            &action("toggleAlwaysOnTop")?,
             &action("fullScreen")?,
         ],
     )?;
@@ -1726,6 +1739,34 @@ fn layout_delete(state: State<'_, AppState>, name: String) -> Result<(), String>
 #[tauri::command]
 fn layout_rename(state: State<'_, AppState>, from: String, to: String) -> Result<(), String> {
     layouts::rename(&shared_folder(&state), &from, &to)
+}
+
+/// The Log Viewer: entries after `after` (0 for all kept)
+#[tauri::command]
+fn applog_since(after: u64) -> Vec<applog::Entry> {
+    applog::since(after)
+}
+
+/// A line from the UI (the status bar's messages, as SuperXPuTTY's ReportStatus logs them)
+#[tauri::command]
+fn applog_write(level: String, text: String) {
+    match level.as_str() {
+        "WARN" => applog::warn(text),
+        "ERROR" => applog::error(text),
+        _ => applog::info(text),
+    }
+}
+
+/// The Log Viewer's Clear (the file keeps them)
+#[tauri::command]
+fn applog_clear() {
+    applog::clear();
+}
+
+/// The Log Viewer's Show Log File: the file in Finder
+#[tauri::command]
+fn applog_reveal() -> Result<(), String> {
+    std::process::Command::new("open").arg("-R").arg(applog::file()).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// What's been asked to open from outside (the command line, a second start, a link), waiting for the window in
@@ -1929,6 +1970,7 @@ pub fn run() {
     let user_folder = sessions::user_folder();
     let settings = AppSettings::load(&user_folder);
     let profiles = Profiles::load(&user_folder);
+    applog::info(format!("SuperXTerminal {} started (user folder {})", env!("CARGO_PKG_VERSION"), user_folder.display()));
     // started with something to open (SuperXPuTTY's command line)
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(request) = cli::from_args(&args) {
@@ -1956,7 +1998,10 @@ pub fn run() {
         // a window's tabs go with it: their shells and connections end
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::Focused(true) => *FRONT_WINDOW.lock().unwrap() = Some(window.label().to_string()),
-            tauri::WindowEvent::Destroyed => pty::close_window(&window.state::<pty::Ptys>(), window.label()),
+            tauri::WindowEvent::Destroyed => {
+                applog::info(format!("Window {} closed; its sessions end", window.label()));
+                pty::close_window(&window.state::<pty::Ptys>(), window.label())
+            }
             _ => {}
         })
         .setup(|app| {
@@ -2021,6 +2066,10 @@ pub fn run() {
             sessions_export_csv,
             window_new,
             layouts_list,
+            applog_since,
+            applog_write,
+            applog_clear,
+            applog_reveal,
             requests_take,
             links_make_default,
             shortcuts_keys,

@@ -48,6 +48,11 @@ pub const ACTIONS: &[Action] = &[
     Action { id: "toggleButtonBar", label: "Button Bar", default: "" },
     Action { id: "toggleLayouts", label: "Layouts", default: "" },
     Action { id: "toggleSessionDetail", label: "Session Detail", default: "" },
+    Action { id: "toggleLogViewer", label: "Log Viewer", default: "" },
+    Action { id: "toggleSessionsPane", label: "Sessions", default: "" },
+    Action { id: "toggleStatusBar", label: "Status Bar", default: "" },
+    Action { id: "toggleAlwaysOnTop", label: "Always on Top", default: "" },
+    Action { id: "checkUpdates", label: "Check for Updates…", default: "" },
 ];
 
 /// The keys macOS and the Edit menu keep: they can't be given to an action

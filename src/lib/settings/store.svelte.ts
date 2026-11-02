@@ -49,6 +49,15 @@ export interface AppSettings {
   shortcuts: Record<string, string>;
   /** The menu bar icon (SuperXPuTTY's Minimize to tray), and SuperXTerminal kept running there with no window */
   showInMenuBar: boolean;
+  /** View > Log Viewer */
+  showLogViewer: boolean;
+  /** Look for a newer release at start; the GitHub repository ("owner/name") looked at */
+  autoUpdateCheck: boolean;
+  updateRepository: string;
+  /** View > Sessions, Status Bar and Always on Top */
+  showSessionsPane: boolean;
+  showStatusBar: boolean;
+  alwaysOnTop: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -78,6 +87,12 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   showSessionDetail: false,
   shortcuts: {},
   showInMenuBar: false,
+  showLogViewer: false,
+  autoUpdateCheck: true,
+  updateRepository: "waukeerules/SuperXTerminal",
+  showSessionsPane: true,
+  showStatusBar: true,
+  alwaysOnTop: false,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

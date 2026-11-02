@@ -35,6 +35,8 @@
   import type { PageHost } from "./lib/terminal/PageHost";
   import type { MovingTab } from "./lib/layout/TabArea";
   import LayoutsList from "./lib/layout/LayoutsList.svelte";
+  import LogViewer from "./lib/layout/LogViewer.svelte";
+  import { checkForUpdates } from "./lib/settings/updates";
   import SessionDetail from "./lib/sessions/SessionDetail.svelte";
   import { AUTO_RESTORE, LAYOUTS_CHANGED, listLayouts, readLayout, renameLayout, saveLayout, type Layout } from "./lib/layout/layouts";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
@@ -89,6 +91,11 @@
       else askLayoutName();
     } else if (event.payload === "saveLayoutAs") askLayoutName();
     else if (event.payload === "toggleLayouts") void saveSettings({ showLayouts: !settings.showLayouts });
+    else if (event.payload === "toggleLogViewer") void saveSettings({ showLogViewer: !settings.showLogViewer });
+    else if (event.payload === "toggleSessionsPane") void saveSettings({ showSessionsPane: !settings.showSessionsPane });
+    else if (event.payload === "toggleStatusBar") void saveSettings({ showStatusBar: !settings.showStatusBar });
+    else if (event.payload === "toggleAlwaysOnTop") void saveSettings({ alwaysOnTop: !settings.alwaysOnTop });
+    else if (event.payload === "checkUpdates") void checkForUpdates(true);
     else if (event.payload === "nextTab") tabs?.cycle(1);
     else if (event.payload === "prevTab") tabs?.cycle(-1);
     else if (["duplicateSession", "renameTab", "restartSession", "resetTerminal", "copyAll"].includes(event.payload)) activeTabAction(event.payload);
@@ -338,7 +345,20 @@
     } finally {
       begun = true;
     }
+    // as SuperXPuTTY at start: a newer release is mentioned, nothing else
+    if (getCurrentWebviewWindow().label === "main" && settings.autoUpdateCheck) setTimeout(() => void checkForUpdates(false), 4000);
   }
+
+  // View > Always on Top, as SuperXPuTTY's AlwaysOnTop: every window, as the setting changes
+  $effect(() => {
+    void getCurrentWindow().setAlwaysOnTop(settings.alwaysOnTop).catch(() => {});
+  });
+
+  // the status bar's messages go in the app's log too, as SuperXPuTTY's ReportStatus
+  $effect(() => {
+    const text = status;
+    if (text && text !== "Ready") void invoke("applog_write", { level: "INFO", text }).catch(() => {});
+  });
 
   async function begin(): Promise<void> {
     const begin = await invoke<{ open: string | null; adopt: MovingTab | null; layout: string | null } | null>("window_start").catch(() => null);
@@ -612,7 +632,7 @@
     <SendCommands onOpenEditor={() => (editorOpen = true)} />
   {/if}
 
-  <div class="main" class:autohide={settings.sessionsAutoHide}>
+  <div class="main" class:autohide={settings.sessionsAutoHide} class:nopane={!settings.showSessionsPane}>
     {#if settings.sessionsAutoHide}
       <!-- the auto-hide strip, as DockPanelSuite's: a tab per folded pane, each only as tall as its name (more panes
            folded to this side would add theirs below) -->
@@ -656,10 +676,13 @@
     <div class="tabs" bind:this={tabElement}></div>
   </div>
 
+  {#if settings.showLogViewer}
+    <LogViewer onClose={() => void saveSettings({ showLogViewer: false })} />
+  {/if}
   {#if settings.showButtonBar}
     <ButtonBar {customs} />
   {/if}
-  <div class="statusbar">
+  <div class="statusbar" class:hidden={!settings.showStatusBar}>
     <span class="status">{status}</span>
     <ScriptStatus />
     {#if currentLayout}<span class="layout" title="The layout open now">{currentLayout}</span>{/if}
@@ -722,6 +745,16 @@
   .side {
     flex: none;
     display: flex;
+  }
+
+  /* View > Sessions off: the pane (and its auto-hide strip) go; the tree stays loaded for the menus and shortcuts */
+  .nopane .side,
+  .nopane .edge {
+    display: none;
+  }
+
+  .statusbar.hidden {
+    display: none;
   }
 
   /* auto hide: the pane lies over the tabs beside its edge tab, only while slid out (no transform, so the tree's

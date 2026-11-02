@@ -150,21 +150,33 @@ pub fn pty_open(
     let profiles = state.profiles.lock().unwrap().clone();
     let values = crate::variables::values(&state.user_folder);
     let serial_devices = state.settings.lock().unwrap().serial_devices.clone();
+    // what's opening, for the app's log (never a password: Quick connect's host and user only)
+    let what = match &target {
+        Target::LocalShell => "a Local Shell".to_string(),
+        Target::Session { id, .. } => format!("session {id}"),
+        Target::QuickConnect(quick) => format!("Quick connect {} {}", quick.protocol, quick.host),
+    };
     let launch = match target {
-        Target::LocalShell => launch::local_shell(&profiles),
+        Target::LocalShell => Ok(launch::local_shell(&profiles)),
         Target::Session { store, id } => {
             let sessions = state.sessions.lock().unwrap();
-            let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
-            // the user's local overrides beat the session's values and its folders'
-            let session = crate::overrides::applied(&state.user_folder, session);
-            launch::launch(&sessions, &profiles, &values, &serial_devices, store, &session)?
+            match sessions.find(store, &id) {
+                None => Err(format!("The session {id} is gone.")),
+                // the user's local overrides beat the session's values and its folders'
+                Some(session) => {
+                    let session = crate::overrides::applied(&state.user_folder, session);
+                    launch::launch(&sessions, &profiles, &values, &serial_devices, store, &session)
+                }
+            }
         }
         Target::QuickConnect(quick) => {
             let sessions = state.sessions.lock().unwrap();
-            launch::launch(&sessions, &profiles, &values, &serial_devices, Store::Saved, &quick.session()?)?
+            quick.session().and_then(|s| launch::launch(&sessions, &profiles, &values, &serial_devices, Store::Saved, &s))
         }
     };
-    let Launch { mut command, password, local, notices, look, stream } = launch;
+    let launch = launch.inspect_err(|e| crate::applog::warn(format!("Couldn't open {what}: {e}")));
+    let Launch { mut command, password, local, notices, look, stream } = launch?;
+    crate::applog::info(format!("Opening {what} in {}", window.label()));
     let link = match &stream {
         Some(crate::streams::Target::Telnet { .. }) => "telnet",
         Some(crate::streams::Target::Raw { .. }) => "raw",

@@ -18,6 +18,7 @@ import {
   type TabPartInitParameters,
 } from "dockview-core";
 import { mount, unmount } from "svelte";
+import { invoke } from "@tauri-apps/api/core";
 import type { CustomIcon } from "../icons/custom";
 import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
 import { OutputHost } from "../terminal/OutputHost";
@@ -154,6 +155,70 @@ class OutputPanel implements IContentRenderer {
   }
 }
 
+/** What a Compare Output panel is given: the two tabs it compares, and their titles */
+interface CompareParams {
+  left: string;
+  right: string;
+  leftTitle: string;
+  rightTitle: string;
+  icon: string;
+  environment: string | null;
+}
+
+/**
+ * Compare Output: web/compare (Monaco's diff editor) over two tabs' outputs, their session logs, sent again when
+ * the page asks (Refresh, Follow). A tab that has closed keeps the output it last had.
+ */
+class ComparePanel implements IContentRenderer {
+  readonly element: HTMLElement;
+  private frame: HTMLIFrameElement | null = null;
+  private params: CompareParams | null = null;
+  private id = "";
+  /** Each side's output as last read, kept when its tab closes */
+  private last = { left: "", right: "" };
+  private readonly onMessage = (event: MessageEvent) => {
+    const data = event.data;
+    if (event.source !== this.frame?.contentWindow || event.origin !== window.location.origin) return;
+    if (data?.channel === "sxt-compare-page" && data.tab === this.id && data.type === "refresh") void this.send();
+  };
+
+  constructor(private readonly tabs: TabArea) {
+    this.element = document.createElement("div");
+    this.element.className = "terminal-panel";
+  }
+
+  init(parameters: GroupPanelPartInitParameters): void {
+    this.id = parameters.api.id;
+    this.params = parameters.params as unknown as CompareParams;
+    const frame = document.createElement("iframe");
+    frame.className = "terminal-frame";
+    frame.setAttribute("aria-label", parameters.api.title ?? "Compare Output");
+    frame.src = `/web/compare/index.html?tab=${encodeURIComponent(this.id)}`;
+    this.frame = frame;
+    window.addEventListener("message", this.onMessage);
+    this.element.append(frame);
+  }
+
+  /** Read both outputs and send them to the page */
+  private async send(): Promise<void> {
+    if (!this.params || !this.frame?.contentWindow) return;
+    const read = async (id: string, side: "left" | "right") => {
+      const path = this.tabs.hosts.get(id)?.logPath;
+      if (path) this.last[side] = await invoke<[string, number]>("log_read", { path, offset: 0 }).then(([text]) => text, () => this.last[side]);
+      return this.last[side];
+    };
+    const [left, right] = await Promise.all([read(this.params.left, "left"), read(this.params.right, "right")]);
+    this.frame.contentWindow.postMessage(
+      { channel: "sxt-compare", left: { title: this.params.leftTitle, text: left }, right: { title: this.params.rightTitle, text: right } },
+      window.location.origin,
+    );
+  }
+
+  dispose(): void {
+    window.removeEventListener("message", this.onMessage);
+  }
+}
+
 /** An open terminal tab, for Send Commands, the button bar and scripts */
 export interface TabInfo {
   id: string;
@@ -256,7 +321,8 @@ export class TabArea {
   constructor(element: HTMLElement, private readonly onOpenChanged: (open: Set<string>) => void) {
     this.api = createDockview(element, {
       theme: isDark() ? themeDark : themeLight,
-      createComponent: (options) => (options.name === "output" ? new OutputPanel(this) : new TerminalPanel(this)),
+      createComponent: (options) =>
+        options.name === "output" ? new OutputPanel(this) : options.name === "compare" ? new ComparePanel(this) : new TerminalPanel(this),
       // dockview only uses createTabComponent for a named tab component, so make ours the default
       defaultTabComponent: "session",
       createTabComponent: () => new TabLabel(this),
@@ -392,6 +458,27 @@ export class TabArea {
     });
   }
 
+  /** Compare Output: the two tabs' outputs side by side, in a group beside the first */
+  openCompare(left: string, right: string): void {
+    const panelId = `compare-${left}-${right}`;
+    const existing = this.api.getPanel(panelId);
+    if (existing) {
+      existing.api.setActive();
+      return;
+    }
+    const [a, b] = [this.api.getPanel(left), this.api.getPanel(right)];
+    if (!a || !b) return;
+    const params: CompareParams = { left, right, leftTitle: a.title ?? "", rightTitle: b.title ?? "", icon: "document", environment: null };
+    this.api.addPanel({
+      id: panelId,
+      component: "compare",
+      title: `Compare: ${params.leftTitle} ↔ ${params.rightTitle}`,
+      params: params as unknown as Record<string, unknown>,
+      position: { referencePanel: left, direction: "right" },
+      renderer: "always",
+    });
+  }
+
   /** The active tab's page host, for the Edit menu's Find and Clear Scrollback */
   activeHost(): PageHost | null {
     const id = this.api.activePanel?.id;
@@ -487,11 +574,12 @@ export class TabArea {
 
   /**
    * The tabs as a layout: dockview's own JSON (the groups, their sizes, each tab's title and what it runs), without
-   * Highlighted Output panes (they follow a tab's log, which a new session won't have) or Quick connect passwords
+   * Highlighted Output and Compare Output panes (they follow tabs' logs, which new sessions won't have) or Quick connect
+   * passwords
    */
   layoutState(): SerializedDockview {
     const state = this.api.toJSON();
-    const dropped = new Set(Object.entries(state.panels).filter(([, p]) => p.contentComponent === "output").map(([id]) => id));
+    const dropped = new Set(Object.entries(state.panels).filter(([, p]) => p.contentComponent === "output" || p.contentComponent === "compare").map(([id]) => id));
     for (const id of dropped) delete state.panels[id];
     for (const panel of Object.values(state.panels)) {
       const params = { ...(panel.params as unknown as TerminalParams) };

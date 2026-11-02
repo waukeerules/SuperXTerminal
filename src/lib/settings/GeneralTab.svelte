@@ -7,6 +7,7 @@
   import { chooseSettingsFolder, saveSettings, settings } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
+  import { checkForUpdates } from "./updates";
 
   /** Choose where kept session logs go */
   async function chooseLogFolder(): Promise<void> {
@@ -51,6 +52,18 @@
       onchange={(e) => void saveSettings({ showInMenuBar: e.currentTarget.checked })} /> Show SuperXTerminal in the menu bar</label>
     <p class="hint">Its menu opens sessions (Favorites, Recent and every folder) without the window first, and
       SuperXTerminal keeps running there when its last window closes, as SuperXPuTTY's Minimize to tray.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Updates</legend>
+    <label class="check"><input type="checkbox" checked={settings.autoUpdateCheck}
+      onchange={(e) => void saveSettings({ autoUpdateCheck: e.currentTarget.checked })} /> Check for a newer version at start</label>
+    <div class="row">
+      <label class="repo">GitHub repository
+        <input value={settings.updateRepository} placeholder="waukeerules/SuperXTerminal"
+          onchange={(e) => void saveSettings({ updateRepository: e.currentTarget.value.trim() || "waukeerules/SuperXTerminal" })} /></label>
+      <button onclick={() => void checkForUpdates(true)}>Check Now</button>
+    </div>
   </fieldset>
 
   <fieldset>
@@ -134,6 +147,17 @@
 {/if}
 
 <style>
+  .repo {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .repo input {
+    flex: 1;
+  }
+
   .rules {
     flex: 1;
     display: flex;

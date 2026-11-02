@@ -66,6 +66,17 @@ pub struct AppSettings {
     /// The menu bar icon, as SuperXPuTTY's Minimize to tray: sessions from its menu, and SuperXTerminal kept running
     /// there when its last window closes
     pub show_in_menu_bar: bool,
+    /// View > Log Viewer: the app's log under the tabs
+    pub show_log_viewer: bool,
+    /// Look for a newer release at start, as SuperXPuTTY's AutoUpdateCheck
+    pub auto_update_check: bool,
+    /// The GitHub repository ("owner/name") whose latest release the check compares with, as SuperXPuTTY's
+    /// SuperPuTTY.UpdateRepository
+    pub update_repository: String,
+    /// SuperXPuTTY's View > Sessions, Status bar and Always on top
+    pub show_sessions_pane: bool,
+    pub show_status_bar: bool,
+    pub always_on_top: bool,
 }
 
 impl Default for AppSettings {
@@ -97,6 +108,12 @@ impl Default for AppSettings {
             show_session_detail: false,
             shortcuts: std::collections::BTreeMap::new(),
             show_in_menu_bar: false,
+            show_log_viewer: false,
+            auto_update_check: true,
+            update_repository: "waukeerules/SuperXTerminal".into(),
+            show_sessions_pane: true,
+            show_status_bar: true,
+            always_on_top: false,
         }
     }
 }

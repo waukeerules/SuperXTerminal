@@ -112,6 +112,11 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
     { label: "Search Output...", disabled: !tab.host.logPath && noLog, action: () => host.search(id) },
     { label: "Highlighted Output", disabled: !tab.host.logPath && noLog, action: () => tabs.openOutput(id) },
     {
+      label: "Compare Output With",
+      disabled: !tab.host.logPath ? noLog : list.length < 2 && "Open another tab to compare this one's output with",
+      items: list.filter((t) => t.id !== id).map((t) => ({ label: t.title, action: () => tabs.openCompare(id, t.id) })),
+    },
+    {
       label: "Watch for Activity",
       checked: watch.activity,
       disabled: !tab.host.logPath && noLog,

@@ -87,6 +87,30 @@ impl SessionFields {
     }
 }
 
+/// The fields as a Database row, a masked `-pw` put back from the stored session (`stored`, None for a new one)
+pub fn to_row(fields: &SessionFields, stored: Option<&StoredSession>) -> crate::db::Row {
+    let stored_extra = stored.map(|s| s.get("ExtraArgs")).unwrap_or("");
+    crate::db::Row {
+        folder: fields.folder.trim_matches('/').to_string(),
+        name: fields.name.trim().to_string(),
+        protocol: if fields.protocol.is_empty() { "SSH".into() } else { fields.protocol.clone() },
+        host: fields.host.trim().to_string(),
+        port: fields.port as i32,
+        username: fields.username.trim().to_string(),
+        putty_profile: if fields.profile.trim().is_empty() { "Default Settings".into() } else { fields.profile.trim().to_string() },
+        extra_args: unmask_password(&fields.extra_args, stored_extra),
+        icon: fields.icon.trim().to_string(),
+        notes: fields.note.clone(),
+        spsl_script: fields.script.trim().to_string(),
+        rdp_options: stored.map(|s| s.get("RdpOptions").to_string()).unwrap_or_default(),
+        local_path: fields.local_path.trim().to_string(),
+        remote_path: fields.remote_path.trim().to_string(),
+        color: fields.color.trim().to_string(),
+        jump_host: fields.jump_host.trim().to_string(),
+        highlight_rules: fields.highlight_rules.trim().to_string(),
+    }
+}
+
 /// Save a session: `original_id` is the one it's stored under, None for a new session. Returns its id.
 pub fn save(path: &std::path::Path, original_id: Option<&str>, fields: &SessionFields, ids_elsewhere: &[String]) -> Result<String, String> {
     let name = fields.name.trim();

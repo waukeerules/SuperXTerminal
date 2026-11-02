@@ -44,6 +44,9 @@ struct DbState {
     error: String,
     /// The table's name, "schema.table", for the root's tooltip
     source: String,
+    /// The optional columns the table has (color, jump_host, highlight_rules), which writes include
+    #[serde(skip)]
+    optional_columns: Vec<String>,
 }
 
 /// The user's profiles, "Default Settings" first; passwords are only marked as stored, never sent
@@ -305,6 +308,11 @@ async fn db_test(state: State<'_, AppState>, database: db::DbSettings, password:
 /// Read the table again (or, when it can't be reached, keep the cache) and say how it went
 #[tauri::command]
 async fn db_refresh(state: State<'_, AppState>) -> Result<DbState, String> {
+    refresh_database(&state).await
+}
+
+/// Read the table again, keeping the cache when it can't be reached; used by Refresh and after every change
+async fn refresh_database(state: &AppState) -> Result<DbState, String> {
     let settings = state.settings.lock().unwrap().database.clone();
     let user_folder = state.user_folder.clone();
     if !settings.enabled {
@@ -322,6 +330,7 @@ async fn db_refresh(state: State<'_, AppState>) -> Result<DbState, String> {
             let _ = db::write_cache(&user_folder, &settings, &fetched);
             db_state.token = fetched.token.clone();
             db_state.writable = fetched.writable;
+            db_state.optional_columns = fetched.optional_columns.clone();
             db_state.error.clear();
             let mut sessions = state.sessions.lock().unwrap();
             sessions.database = fetched.sessions;
@@ -340,6 +349,133 @@ async fn db_refresh(state: State<'_, AppState>) -> Result<DbState, String> {
         }
     }
     Ok(db_state.clone())
+}
+
+/// The Database connection, the user's folder and the table's optional columns, for a write
+fn db_write_context(state: &AppState) -> (db::DbSettings, PathBuf, Vec<String>) {
+    let settings = state.settings.lock().unwrap().database.clone();
+    let optional = state.database.lock().unwrap().optional_columns.clone();
+    (settings, state.user_folder.clone(), optional)
+}
+
+/// A Database session as last read, refusing one that's locked whole
+fn db_session(state: &AppState, id: &str) -> Result<sessions::StoredSession, String> {
+    let sessions = state.sessions.lock().unwrap();
+    let session = sessions.find(sessions::Store::Database, id).ok_or("The session is no longer in the database view; Refresh.")?.clone();
+    if session.get("DatabaseLocked") == "true" {
+        return Err(format!("\"{}\" is locked in the database.", session.get("SessionName")));
+    }
+    Ok(session)
+}
+
+/// Save a Database session from Edit Session (`original_id` None for a new one), then read the table back
+#[tauri::command]
+async fn db_session_save(state: State<'_, AppState>, original_id: Option<String>, fields: editing::SessionFields) -> Result<String, String> {
+    folders::check_name(&fields.name)?;
+    let (settings, user_folder, optional) = db_write_context(&state);
+    match &original_id {
+        Some(id) => {
+            let stored = db_session(&state, id)?;
+            // fields locked in the table can't change (the trigger refuses too; this says which)
+            let row = editing::to_row(&fields, Some(&stored));
+            let before = db::Row::of(&stored, stored.folder());
+            for locked in stored.get("DatabaseLockedFields").split(',').map(str::trim).filter(|f| !f.is_empty()) {
+                if db::column_of(&row, locked) != db::column_of(&before, locked) {
+                    return Err(format!("{locked} of \"{}\" is locked in the database.", before.name));
+                }
+            }
+            db::update(&settings, &user_folder, &optional, stored.get("DatabaseId"), stored.get("DatabaseVersion"), &row).await?;
+        }
+        None => {
+            db::insert(&settings, &user_folder, &optional, &editing::to_row(&fields, None)).await?;
+        }
+    }
+    refresh_database(&state).await?;
+    let id = editing::SessionFields { folder: fields.folder.clone(), ..fields }.id();
+    Ok(format!("@db/{id}"))
+}
+
+/// Delete a Database session, then read the table back
+#[tauri::command]
+async fn db_session_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let stored = db_session(&state, &id)?;
+    let (settings, user_folder, _) = db_write_context(&state);
+    db::delete(&settings, &user_folder, stored.get("DatabaseId")).await?;
+    refresh_database(&state).await?;
+    Ok(())
+}
+
+/// Move a Database session to another folder of the table, then read it back; returns its new id
+#[tauri::command]
+async fn db_session_move(state: State<'_, AppState>, id: String, folder: String) -> Result<String, String> {
+    let stored = db_session(&state, &id)?;
+    if stored.get("DatabaseLockedFields").split(',').any(|f| f.trim() == "folder") {
+        return Err(format!("The folder of \"{}\" is locked in the database.", stored.get("SessionName")));
+    }
+    let (settings, user_folder, optional) = db_write_context(&state);
+    let row = db::Row::of(&stored, &folder);
+    db::update(&settings, &user_folder, &optional, stored.get("DatabaseId"), stored.get("DatabaseVersion"), &row).await?;
+    refresh_database(&state).await?;
+    let folder = folder.trim_matches('/');
+    Ok(if folder.is_empty() { format!("@db/{}", row.name) } else { format!("@db/{folder}/{}", row.name) })
+}
+
+/// Rename or move a Database folder (every row below it, and its settings), then read the table back
+#[tauri::command]
+async fn db_folder_move(state: State<'_, AppState>, from: String, to: String) -> Result<(), String> {
+    folders::check_name(to.rsplit('/').next().unwrap_or(&to))?;
+    let blocked = {
+        let sessions = state.sessions.lock().unwrap();
+        sessions.database.iter().find(|s| {
+            let folder = s.folder();
+            (folder == from || folder.starts_with(&format!("{from}/")))
+                && (s.get("DatabaseLocked") == "true" || s.get("DatabaseLockedFields").split(',').any(|f| f.trim() == "folder"))
+        }).map(|s| s.get("SessionName").to_string())
+    };
+    if let Some(name) = blocked {
+        return Err(format!("\"{name}\" in this folder is locked in the database, so the folder can't be renamed here."));
+    }
+    let (settings, user_folder, _) = db_write_context(&state);
+    db::rename_folder(&settings, &user_folder, &from, &to).await?;
+    refresh_database(&state).await?;
+    Ok(())
+}
+
+/// Delete a Database folder and the sessions it shows, then read the table back
+#[tauri::command]
+async fn db_folder_delete(state: State<'_, AppState>, path: String) -> Result<(), String> {
+    let blocked = {
+        let sessions = state.sessions.lock().unwrap();
+        sessions.database.iter().find(|s| {
+            let folder = s.folder();
+            (folder == path || folder.starts_with(&format!("{path}/"))) && s.get("DatabaseLocked") == "true"
+        }).map(|s| s.get("SessionName").to_string())
+    };
+    if let Some(name) = blocked {
+        return Err(format!("\"{name}\" in this folder is locked in the database, so the folder can't be removed here."));
+    }
+    let (settings, user_folder, _) = db_write_context(&state);
+    db::delete_folder(&settings, &user_folder, &path).await?;
+    refresh_database(&state).await?;
+    Ok(())
+}
+
+/// Save a Database folder's settings in the folders table, then read the table back
+#[tauri::command]
+async fn db_folder_settings_save(state: State<'_, AppState>, fields: folders::FolderFields) -> Result<(), String> {
+    let (settings, user_folder, _) = db_write_context(&state);
+    let setting = sessions::FolderSetting {
+        path: fields.path,
+        color: fields.color,
+        username: fields.username,
+        putty_profile: fields.putty_profile,
+        port: fields.port,
+        jump_host: fields.jump_host,
+        highlight_rules: fields.highlight_rules,
+    };
+    db::set_folder(&settings, &user_folder, &setting).await?;
+    refresh_database(&state).await?;
+    Ok(())
 }
 
 /// Whether the table changed since the last read (one small query); the UI refreshes when it did
@@ -519,6 +655,12 @@ pub fn run() {
             db_check,
             db_export,
             db_import,
+            db_session_save,
+            db_session_delete,
+            db_session_move,
+            db_folder_move,
+            db_folder_delete,
+            db_folder_settings_save,
             variables_save,
             profiles_list,
             profiles_save,

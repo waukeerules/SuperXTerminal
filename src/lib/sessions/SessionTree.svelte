@@ -51,7 +51,7 @@
   let selected = $state("");
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   /** The session being edited: its store, its id (null for new) and its fields */
-  let editing = $state<{ store: Store; id: string | null; fields: SessionFields } | null>(null);
+  let editing = $state<{ store: Store; id: string | null; fields: SessionFields; lockedFields?: string } | null>(null);
   /** A folder whose settings are being edited */
   let folderSettings = $state<{ store: Store; setting: FolderSetting } | null>(null);
   /** A name being asked for (New folder, Rename) */
@@ -74,7 +74,7 @@
   const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query, newFolders.saved) : null);
   const privateRoot = $derived(loaded ? buildTree("private", "Private sessions", loaded.sessions, query, newFolders.private) : null);
   const databaseRoot = $derived(
-    loaded && db?.enabled ? buildTree("database", db.error ? "Database sessions — offline" : "Database sessions", loaded.sessions, query) : null,
+    loaded && db?.enabled ? buildTree("database", db.error ? "Database sessions — offline" : "Database sessions", loaded.sessions, query, newFolders.database) : null,
   );
 
   // read again whenever the settings folder changes (Settings > General); the first run reads them at start
@@ -163,7 +163,7 @@
   /** Open Edit Session for a session */
   async function edit(session: SessionView): Promise<void> {
     try {
-      editing = { store: session.store, id: session.id, fields: await getSession(session.store, session.id) };
+      editing = { store: session.store, id: session.id, fields: await getSession(session.store, session.id), lockedFields: session.lockedFields };
     } catch (e) {
       error = String(e);
     }
@@ -182,7 +182,7 @@
 
   /** Delete a session, after asking */
   async function remove(session: SessionView): Promise<void> {
-    const file = session.store === "saved" ? "Sessions.xml" : "PrivateSessions.xml";
+    const file = session.store === "saved" ? "Sessions.xml" : session.store === "private" ? "PrivateSessions.xml" : "the database";
     const sure = await ask(`Delete the session "${session.id}" from ${file}?`, { title: "Delete session", kind: "warning", okLabel: "Delete" });
     if (!sure) return;
     try {
@@ -196,35 +196,16 @@
   /** The right-click menu for a session or folder, as SuperXPuTTY's; what the Mac can't do yet is greyed with why */
   function showMenu(event: MouseEvent, target: { session: SessionView } | { folder: FolderNode }): void {
     let items: MenuItem[];
-    const readOnlyDb = "Changing Database sessions comes with the next part of M2";
-    if ("session" in target && target.session.store === "database") {
+    // Database sessions change only when the login may write and Read only is off; a locked row not at all
+    const dbBlock = (store: Store, locked = false): string | false =>
+      store !== "database" ? false
+      : !db?.writable ? "Read only: this login can't change the table, or Read only is ticked in Database Sessions"
+      : db.error ? "The database can't be reached right now"
+      : locked ? "Locked in the database"
+      : false;
+    if ("session" in target) {
       const session = target.session;
-      items = [
-        { label: "Connect", bold: true, action: () => open(session) },
-        { label: "Connect external", disabled: "Open in Terminal.app or iTerm2: comes in M5" },
-        { label: "Add to Favorites", disabled: "Favorites come in M5" },
-        { label: "Colour", disabled: readOnlyDb },
-        { separator: true },
-        { label: "Copy host address", action: () => void navigator.clipboard.writeText(session.host) },
-        { label: "Edit", disabled: readOnlyDb },
-        { label: "Delete", disabled: readOnlyDb },
-        { label: "Move to", disabled: readOnlyDb },
-        { label: "Copy to", disabled: readOnlyDb },
-      ];
-    } else if ("folder" in target && target.folder.store === "database") {
-      const folder = target.folder;
-      const runnable = sessionsIn(folder).filter((s) => unavailableReason(s.protocol) === null);
-      items = [
-        ...(folder.path === "" ? [{ label: "Refresh", action: () => void readDatabase() }, { separator: true } as MenuItem] : []),
-        { label: "New session…", disabled: readOnlyDb },
-        { label: "New folder…", disabled: readOnlyDb },
-        { separator: true },
-        { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
-        { label: "Expand all", action: () => (expanded = new Set([...expanded, ...folderKeys(folder)])) },
-        { label: "Collapse all", action: () => (expanded = new Set([...expanded].filter((k) => !folderKeys(folder).slice(1).includes(k)))) },
-      ];
-    } else if ("session" in target) {
-      const session = target.session;
+      const block = dbBlock(session.store, session.locked);
       items = [
         { label: "Connect", bold: true, action: () => open(session) },
         { label: "Connect external", disabled: "Open in Terminal.app or iTerm2: comes in M5" },
@@ -232,6 +213,7 @@
         { label: "Add to Favorites", disabled: "Favorites come in M5" },
         {
           label: "Colour",
+          disabled: block || (session.lockedFields.split(",").includes("color") && "The colour is locked in the database"),
           items: [
             { label: "None", swatch: "", action: () => void setColour(session, "") },
             ...PALETTE.map((p) => ({ label: p.name, swatch: p.color, action: () => void setColour(session, p.color) })),
@@ -240,11 +222,11 @@
         { separator: true },
         { label: "Copy host address", action: () => void navigator.clipboard.writeText(session.host) },
         { label: "Duplicate as…", disabled: "Comes in M5" },
-        { label: "Edit", action: () => void edit(session) },
+        { label: "Edit", disabled: block, action: () => void edit(session) },
         { label: "Local overrides…", disabled: "Local overrides come in M5" },
-        { label: "Delete", action: () => void remove(session) },
-        { label: "Move to", disabled: "Comes with Database sessions (M2)" },
-        { label: "Copy to", disabled: "Comes with Database sessions (M2)" },
+        { label: "Delete", disabled: block, action: () => void remove(session) },
+        { label: "Move to", disabled: "Comes later in M2" },
+        { label: "Copy to", disabled: "Comes later in M2" },
         { separator: true },
         { label: "File transfer (SFTP)", disabled: "The SFTP file browser comes later" },
         { label: "FileZilla (external)", disabled: "Comes in M5" },
@@ -253,22 +235,26 @@
       const folder = target.folder;
       const isRoot = folder.path === "";
       const runnable = sessionsIn(folder).filter((s) => unavailableReason(s.protocol) === null);
+      const block = dbBlock(folder.store, sessionsIn(folder).some((s) => s.locked));
+      const canAdd = dbBlock(folder.store);
       items = [
-        { label: "New session…", action: () => (editing = { store: folder.store, id: null, fields: blank(folder.path) }) },
-        { label: "New folder…", action: () => newFolder(folder) },
+        ...(folder.store === "database" && isRoot ? [{ label: "Refresh", action: () => void readDatabase() }, { separator: true } as MenuItem] : []),
+        { label: "New session…", disabled: canAdd, action: () => (editing = { store: folder.store, id: null, fields: blank(folder.path) }) },
+        { label: "New folder…", disabled: canAdd, action: () => newFolder(folder) },
         ...(isRoot
           ? []
           : ([
-              { label: "Rename…", action: () => rename(folder) },
+              { label: "Rename…", disabled: block, action: () => rename(folder) },
               {
                 label: "Colour",
+                disabled: canAdd,
                 items: [
                   { label: "None", swatch: "", action: () => void setFolderColour(folder, "") },
                   ...PALETTE.map((p) => ({ label: p.name, swatch: p.color, action: () => void setFolderColour(folder, p.color) })),
                 ],
               },
-              { label: "Folder settings…", action: () => (folderSettings = { store: folder.store, setting: settingOf(folder) }) },
-              { label: "Delete folder", action: () => void removeFolder(folder) },
+              { label: "Folder settings…", disabled: canAdd, action: () => (folderSettings = { store: folder.store, setting: settingOf(folder) }) },
+              { label: "Delete folder", disabled: block, action: () => void removeFolder(folder) },
             ] as MenuItem[])),
         { separator: true },
         { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
@@ -376,10 +362,6 @@
 
   /** Something dragged in the tree was dropped on a folder: move it there (within its own store) */
   async function dropped(target: FolderNode, dragged: Dragged): Promise<void> {
-    if (dragged.store === "database" || target.store === "database") {
-      error = "Changing Database sessions comes with the next part of M2.";
-      return;
-    }
     if (dragged.store !== target.store) {
       error = "Moving between Saved and Private sessions comes with Move to / Copy to (M2).";
       return;
@@ -456,7 +438,7 @@
 
 {#if editing}
   <EditSession store={editing.store} id={editing.id} fields={editing.fields} folders={foldersAlong(editing.store, editing.fields.folder)}
-    {iconSize} {customs} {onOpenProfiles} onCancel={() => (editing = null)}
+    {iconSize} {customs} {onOpenProfiles} lockedFields={editing.lockedFields ?? ""} onCancel={() => (editing = null)}
     onSaved={async (id) => { const store = editing?.store; editing = null; await reload(); selected = `${store}:${id}`; }} />
 {/if}
 

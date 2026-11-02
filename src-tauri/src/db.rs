@@ -4,7 +4,9 @@
 //! application `SuperPuTTY`, so the table's guard trigger enforces locks for the Mac too; docs/PLAN.md §3), sets the
 //! user's nickname for `updated_by`, reads the table in pages of 500, reads the folders table, and checks the change
 //! version every few seconds. The last read is cached in SuperXPuTTY's own `DatabaseSessions.cache.xml` format,
-//! so the sessions still open while the database is down. Writing comes in the next slice.
+//! so the sessions still open while the database is down. Changes are written as SuperXPuTTY writes them: an
+//! update only applies if the row is unchanged since it was read (its `updated_at`), and the lock trigger's
+//! refusals come back as plain messages.
 //!
 //! Each row becomes a session like those in Sessions.xml, with id `@db/<folder>/<name>` and SuperXPuTTY's
 //! `Database*` attributes (`DatabaseVersion` is `updated_at` as .NET ticks, as SuperXPuTTY stores it).
@@ -279,7 +281,7 @@ pub async fn fetch_all(settings: &DbSettings, user_folder: &Path) -> Result<Fetc
                 client
                     .query(
                         &format!(
-                            "SELECT {columns} FROM {} WHERE {visible} AND (folder, name, id) > ($1, $2, $3::uuid) \
+                            "SELECT {columns} FROM {} WHERE {visible} AND (folder, name, id) > ($1, $2, $3::text::uuid) \
                              ORDER BY folder, name, id LIMIT $4",
                             settings.table()
                         ),
@@ -511,5 +513,257 @@ mod tests {
         let text = synced_at(time);
         assert!(text.starts_with("2026-11-01T21:09:40.4452974"), "{text}");
         assert!(text.len() == "2026-11-01T21:09:40.4452974-06:00".len(), "{text}");
+    }
+}
+
+/// One session's values for a write: the columns SuperXPuTTY writes (as its AddSessionParameters)
+pub struct Row {
+    pub folder: String,
+    pub name: String,
+    pub protocol: String,
+    pub host: String,
+    pub port: i32,
+    pub username: String,
+    pub putty_profile: String,
+    pub extra_args: String,
+    pub icon: String,
+    pub notes: String,
+    pub spsl_script: String,
+    pub rdp_options: String,
+    pub local_path: String,
+    pub remote_path: String,
+    pub color: String,
+    pub jump_host: String,
+    pub highlight_rules: String,
+}
+
+impl Row {
+    /// A stored session's values, in `folder` (for moves)
+    pub fn of(session: &StoredSession, folder: &str) -> Row {
+        let name = match session.get("SessionName") {
+            "" => session.id().rsplit('/').next().unwrap_or("").to_string(),
+            n => n.to_string(),
+        };
+        Row {
+            folder: folder.trim_matches('/').to_string(),
+            name,
+            protocol: session.get("Proto").to_string(),
+            host: session.get("Host").to_string(),
+            port: session.port() as i32,
+            username: session.get("Username").to_string(),
+            putty_profile: session.get("PuttySession").to_string(),
+            extra_args: session.get("ExtraArgs").to_string(),
+            icon: session.get("ImageKey").to_string(),
+            notes: session.get("Note").to_string(),
+            spsl_script: session.get("SPSLFileName").to_string(),
+            rdp_options: session.get("RdpOptions").to_string(),
+            local_path: session.get("LocalPath").to_string(),
+            remote_path: session.get("RemotePath").to_string(),
+            color: session.get("Color").to_string(),
+            jump_host: session.get("JumpHost").to_string(),
+            highlight_rules: session.get("HighlightRules").to_string(),
+        }
+    }
+}
+
+/// A row's value for a lockable column name (`locked_fields` uses the table's column names), for lock checks
+pub fn column_of(row: &Row, column: &str) -> String {
+    match column {
+        "folder" => row.folder.clone(),
+        "name" => row.name.clone(),
+        "protocol" => row.protocol.to_ascii_uppercase(),
+        "host" => row.host.clone(),
+        "port" => row.port.to_string(),
+        "username" => row.username.clone(),
+        "putty_profile" => row.putty_profile.clone(),
+        "extra_args" => row.extra_args.clone(),
+        "icon" => row.icon.clone(),
+        "notes" => row.notes.clone(),
+        "spsl_script" => row.spsl_script.clone(),
+        "rdp_options" => row.rdp_options.clone(),
+        "local_path" => row.local_path.clone(),
+        "remote_path" => row.remote_path.clone(),
+        "color" => row.color.clone(),
+        "jump_host" => row.jump_host.clone(),
+        "highlight_rules" => row.highlight_rules.clone(),
+        _ => String::new(),
+    }
+}
+
+/// The columns written, and the optional ones the table has
+fn write_columns(optional: &[String]) -> Vec<&'static str> {
+    let mut columns = vec![
+        "folder", "name", "protocol", "host", "port", "username", "putty_profile", "extra_args", "icon", "notes",
+        "spsl_script", "rdp_options", "local_path", "remote_path",
+    ];
+    for c in ["color", "jump_host", "highlight_rules"] {
+        if optional.iter().any(|o| o == c) {
+            columns.push(c);
+        }
+    }
+    columns
+}
+
+/// A row's values for the given columns; empty optional text is NULL, as SuperXPuTTY's NullIfEmpty
+fn values(row: &Row, columns: &[&str]) -> Vec<Box<dyn tokio_postgres::types::ToSql + Sync + Send>> {
+    let null_if_empty = |t: &str| -> Option<String> { (!t.is_empty()).then(|| t.to_string()) };
+    columns
+        .iter()
+        .map(|c| -> Box<dyn tokio_postgres::types::ToSql + Sync + Send> {
+            match *c {
+                "folder" => Box::new(row.folder.clone()),
+                "name" => Box::new(row.name.clone()),
+                "protocol" => Box::new(if row.protocol.is_empty() { "SSH".to_string() } else { row.protocol.clone() }),
+                "host" => Box::new(row.host.clone()),
+                "port" => Box::new(row.port),
+                "username" => Box::new(row.username.clone()),
+                "putty_profile" => Box::new(row.putty_profile.clone()),
+                "extra_args" => Box::new(row.extra_args.clone()),
+                "icon" => Box::new(null_if_empty(&row.icon)),
+                "notes" => Box::new(null_if_empty(&row.notes)),
+                "spsl_script" => Box::new(null_if_empty(&row.spsl_script)),
+                "rdp_options" => Box::new(null_if_empty(&row.rdp_options)),
+                "local_path" => Box::new(null_if_empty(&row.local_path)),
+                "remote_path" => Box::new(null_if_empty(&row.remote_path)),
+                "color" => Box::new(null_if_empty(&row.color)),
+                "jump_host" => Box::new(null_if_empty(&row.jump_host)),
+                _ => Box::new(null_if_empty(&row.highlight_rules)),
+            }
+        })
+        .collect()
+}
+
+/// Connect for a write, refusing when the settings are read-only
+async fn connect_to_write(settings: &DbSettings, user_folder: &Path) -> Result<Client, String> {
+    if settings.read_only {
+        return Err("The database connection is read-only, so nothing is created or changed.".into());
+    }
+    connect(settings, user_folder, None).await
+}
+
+/// A write's error as SuperXPuTTY words it: the lock trigger's refusal, a name clash, a refused name
+fn write_error(error: tokio_postgres::Error) -> String {
+    if let Some(db) = error.as_db_error() {
+        let code = db.code().code();
+        if code == "P0001" {
+            if let Some(reason) = db.message().strip_prefix("locked: ") {
+                let mut chars = reason.chars();
+                return chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default() + ".";
+            }
+        }
+        if code == "23505" {
+            return "A session with that name is already in that folder in the database (perhaps hidden there by its deleted_at).".into();
+        }
+        if code == "23514" {
+            return "The database refused the name or folder: names can't be empty or contain /.".into();
+        }
+    }
+    describe(error)
+}
+
+/// Add a session; returns its id
+pub async fn insert(settings: &DbSettings, user_folder: &Path, optional: &[String], row: &Row) -> Result<String, String> {
+    let client = connect_to_write(settings, user_folder).await?;
+    let columns = write_columns(optional);
+    let params: Vec<String> = (1..=columns.len()).map(|i| format!("${i}")).collect();
+    let values = values(row, &columns);
+    let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = values.iter().map(|v| v.as_ref() as _).collect();
+    let sql = format!("INSERT INTO {} ({}) VALUES ({}) RETURNING id::text", settings.table(), columns.join(", "), params.join(", "));
+    client.query_one(&sql, &refs).await.map(|r| r.get(0)).map_err(write_error)
+}
+
+/// Change a session, but only if nobody changed it since it was read (`version` is its updated_at as .NET ticks)
+pub async fn update(settings: &DbSettings, user_folder: &Path, optional: &[String], id: &str, version: &str, row: &Row) -> Result<(), String> {
+    let ticks: i64 = version.parse().map_err(|_| "This session was read by an older version; Refresh, then make your change again.")?;
+    let micros = (ticks - TICKS_AT_UNIX_EPOCH) / 10;
+    let client = connect_to_write(settings, user_folder).await?;
+    let columns = write_columns(optional);
+    let n = columns.len();
+    let params: Vec<String> = (1..=n).map(|i| format!("${i}")).collect();
+    let mut values = values(row, &columns);
+    values.push(Box::new(id.to_string()));
+    values.push(Box::new(micros));
+    let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = values.iter().map(|v| v.as_ref() as _).collect();
+    let sql = format!(
+        "UPDATE {} SET ({}) = ({}) WHERE id = ${}::text::uuid AND (extract(epoch FROM updated_at) * 1000000)::bigint = ${}",
+        settings.table(),
+        columns.join(", "),
+        params.join(", "),
+        n + 1,
+        n + 2
+    );
+    let rows = client.execute(&sql, &refs).await.map_err(write_error)?;
+    if rows == 0 {
+        return Err("Someone else changed or deleted this session since it was read. Refresh, then make your change again.".into());
+    }
+    Ok(())
+}
+
+/// Delete a session
+pub async fn delete(settings: &DbSettings, user_folder: &Path, id: &str) -> Result<(), String> {
+    let client = connect_to_write(settings, user_folder).await?;
+    client.execute(&format!("DELETE FROM {} WHERE id = $1::text::uuid", settings.table()), &[&id]).await.map_err(write_error)?;
+    Ok(())
+}
+
+/// The rows in a folder and below it, as SuperXPuTTY's InFolder
+const IN_FOLDER: &str = "(folder = $1 OR left(folder, length($1) + 1) = $1 || '/')";
+
+/// Rename or move a folder: every row below it, hidden ones too, and the folders' own settings
+pub async fn rename_folder(settings: &DbSettings, user_folder: &Path, from: &str, to: &str) -> Result<(), String> {
+    let client = connect_to_write(settings, user_folder).await?;
+    let (from, to) = (from.trim_matches('/'), to.trim_matches('/'));
+    client
+        .execute(&format!("UPDATE {} SET folder = $2 || substr(folder, length($1) + 1) WHERE {IN_FOLDER}", settings.table()), &[&from, &to])
+        .await
+        .map_err(write_error)?;
+    let _ = client
+        .execute(&format!("UPDATE {} SET folder = $2 || substr(folder, length($1) + 1) WHERE {IN_FOLDER}", settings.folders_table()), &[&from, &to])
+        .await;
+    Ok(())
+}
+
+/// Delete a folder: the sessions it showed (rows hidden by deleted_at stay) and the folders' own settings
+pub async fn delete_folder(settings: &DbSettings, user_folder: &Path, folder: &str) -> Result<u64, String> {
+    let client = connect_to_write(settings, user_folder).await?;
+    let folder = folder.trim_matches('/');
+    let removed = client
+        .execute(&format!("DELETE FROM {} t WHERE {IN_FOLDER} AND (to_jsonb(t) ->> 'deleted_at') IS NULL", settings.table()), &[&folder])
+        .await
+        .map_err(write_error)?;
+    let _ = client.execute(&format!("DELETE FROM {} WHERE {IN_FOLDER}", settings.folders_table()), &[&folder]).await;
+    Ok(removed)
+}
+
+/// Save a folder's settings in the folders table (all empty removes them), as SuperXPuTTY's SetFolder
+pub async fn set_folder(settings: &DbSettings, user_folder: &Path, f: &FolderSetting) -> Result<(), String> {
+    let client = connect_to_write(settings, user_folder).await?;
+    let path = f.path.trim_matches('/').to_string();
+    let empty = f.color.is_empty() && f.username.is_empty() && f.putty_profile.is_empty() && f.port == 0
+        && f.jump_host.is_empty() && f.highlight_rules.is_empty();
+    let none = |t: &str| -> Option<String> { (!t.is_empty()).then(|| t.to_string()) };
+    let result = if empty {
+        client.execute(&format!("DELETE FROM {} WHERE folder = $1", settings.folders_table()), &[&path]).await
+    } else {
+        let port: Option<i32> = (f.port > 0).then_some(f.port as i32);
+        client
+            .execute(
+                &format!(
+                    "INSERT INTO {} (folder, color, username, putty_profile, port, jump_host, highlight_rules) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (folder) DO UPDATE SET color = EXCLUDED.color, \
+                     username = EXCLUDED.username, putty_profile = EXCLUDED.putty_profile, port = EXCLUDED.port, \
+                     jump_host = EXCLUDED.jump_host, highlight_rules = EXCLUDED.highlight_rules",
+                    settings.folders_table()
+                ),
+                &[&path, &none(&f.color), &none(&f.username), &none(&f.putty_profile), &port, &none(&f.jump_host), &none(&f.highlight_rules)],
+            )
+            .await
+    };
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) if e.code().is_some_and(|c| c.code() == "42P01") => {
+            Err("The database has no folder settings table yet. Run Create / upgrade schema in Tools > Database sessions.".into())
+        }
+        Err(e) => Err(write_error(e)),
     }
 }

@@ -76,7 +76,7 @@
 </script>
 
 <div class="row folder" class:root={isRoot} class:selected={selected === `${node.store}:folder:${node.path}`} class:over
-  draggable={!isRoot && node.store !== "database"} ondragstart={(e) => drag(e, { kind: "folder", store: node.store, path: node.path })}
+  draggable={!isRoot} ondragstart={(e) => drag(e, { kind: "folder", store: node.store, path: node.path })}
   ondragover={dragOver} ondragleave={() => (over = false)} ondrop={drop}
   oncontextmenu={(e) => { e.preventDefault(); onSelect(`${node.store}:folder:${node.path}`); onMenu(e, { folder: node }); }} style:padding-left="{depth * 18 + 2}px" style:height="{Math.round(iconSize * 1.36) + 4}px"
   role="treeitem" aria-expanded={open} aria-selected="false" tabindex="-1"
@@ -95,7 +95,7 @@
     {@const reason = unavailableReason(session.protocol)}
     {@const key = `${session.store}:${session.id}`}
     <div class="row session" class:dimmed={reason !== null} class:selected={selected === key}
-      onclick={() => onSelect(key)} draggable={session.store !== "database"}
+      onclick={() => onSelect(key)} draggable={!session.locked}
       ondragstart={(e) => drag(e, { kind: "session", store: session.store, id: session.id })}
       oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
       style:height="{Math.round(iconSize * 1.36) + 4}px"

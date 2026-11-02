@@ -25,6 +25,8 @@ export interface SessionView {
   updatedBy: string;
   /** Database sessions: locked against changes in the table */
   locked: boolean;
+  /** Database sessions: the columns locked in the table, comma-separated ("host,port") */
+  lockedFields: string;
 }
 
 /** One folder's own settings: its colour and the defaults its sessions inherit */
@@ -107,13 +109,15 @@ export function getSession(store: Store, id: string): Promise<SessionFields> {
   return invoke<SessionFields>("session_get", { store, id });
 }
 
-/** Save a session (`originalId` null for a new one) to its file; returns its id */
+/** Save a session (`originalId` null for a new one) to its file or the Database table; returns its id */
 export function saveSession(store: Store, originalId: string | null, fields: SessionFields): Promise<string> {
+  if (store === "database") return invoke<string>("db_session_save", { originalId, fields });
   return invoke<string>("session_save", { store, originalId, fields });
 }
 
-/** Delete a session from its file */
+/** Delete a session from its file or the Database table */
 export function deleteSession(store: Store, id: string): Promise<void> {
+  if (store === "database") return invoke("db_session_delete", { id });
   return invoke("session_delete", { store, id });
 }
 
@@ -122,21 +126,25 @@ export const PROTOCOLS = ["SSH", "Telnet", "Rlogin", "Raw", "Serial", "VNC", "RD
 
 /** Rename or move a folder: every session below goes with it, and its settings */
 export function moveFolder(store: Store, from: string, to: string): Promise<void> {
+  if (store === "database") return invoke("db_folder_move", { from, to });
   return invoke("folder_move", { store, from, to });
 }
 
 /** Delete a folder and every session in it */
 export function deleteFolder(store: Store, path: string): Promise<void> {
+  if (store === "database") return invoke("db_folder_delete", { path });
   return invoke("folder_delete", { store, path });
 }
 
 /** Save a folder's settings; all empty removes them */
 export function saveFolderSettings(store: Store, fields: FolderSetting): Promise<void> {
+  if (store === "database") return invoke("db_folder_settings_save", { fields });
   return invoke("folder_settings_save", { store, fields });
 }
 
 /** Move a session into another folder of its store; returns its new id */
 export function moveSession(store: Store, id: string, folder: string): Promise<string> {
+  if (store === "database") return invoke<string>("db_session_move", { id, folder });
   return invoke<string>("session_move", { store, id, folder });
 }
 

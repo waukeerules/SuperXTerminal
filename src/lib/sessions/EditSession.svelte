@@ -27,9 +27,15 @@
     onSaved: (id: string) => void;
     onCancel: () => void;
     onOpenProfiles: () => void;
+    /** Database sessions: the columns locked in the table ("host,port"), shown greyed */
+    lockedFields?: string;
   }
 
-  let { store, id, fields, folders, iconSize, customs, onSaved, onCancel, onOpenProfiles }: Props = $props();
+  let { store, id, fields, folders, iconSize, customs, onSaved, onCancel, onOpenProfiles, lockedFields = "" }: Props = $props();
+
+  /** Whether a column is locked in the table (Database sessions only) */
+  const locked = (column: string) => lockedFields.split(",").map((f) => f.trim()).includes(column);
+  const lockTip = "Locked in the database";
 
   // the window edits a copy, saved only on Save
   let draft = $state<SessionFields>(untrack(() => ({ ...fields })));
@@ -39,7 +45,10 @@
   let choosingColour = $state(false);
   let error = $state("");
 
-  const where = $derived(store === "saved" ? "Saved sessions (Sessions.xml)" : "Private sessions (PrivateSessions.xml)");
+  const where = $derived(
+    store === "saved" ? "Saved sessions (Sessions.xml)" : store === "private" ? "Private sessions (PrivateSessions.xml)" : "Database sessions",
+  );
+  const sharedPassword = $derived(store === "database" && /(^|\s)-pw\s/.test(draft.extraArgs) && !/-pw\s+\{\w+\}/.test(draft.extraArgs));
   const title = $derived(id === null ? `New session — ${where}` : `Edit session: ${fields.name} — ${where}`);
   const reason = $derived(unavailableReason(draft.protocol));
   const profileMissing = $derived(
@@ -93,10 +102,10 @@
     <fieldset>
       <legend>Connection details</legend>
       <div class="row">
-        <label class="grow">Session name: <input bind:value={draft.name} /></label>
+        <label class="grow">Session name: <input bind:value={draft.name} disabled={locked("name")} title={locked("name") ? lockTip : ""} /></label>
         <span class="colour">Colour:
-          <button class="swatch" style:background={draft.color || "transparent"} title={draft.color || "None"}
-            aria-label="Colour" onclick={() => (choosingColour = !choosingColour)}></button>
+          <button class="swatch" style:background={draft.color || "transparent"} title={locked("color") ? lockTip : draft.color || "None"}
+            aria-label="Colour" disabled={locked("color")} onclick={() => (choosingColour = !choosingColour)}></button>
           {#if choosingColour}
             <div class="popover">
               <button onclick={() => { draft.color = ""; choosingColour = false; }}>None</button>
@@ -111,7 +120,8 @@
           {/if}
         </span>
         <span>Icon:
-          <button class="icon" title="Choose Icon" aria-label="Choose Icon" onclick={() => (choosingIcon = true)}>
+          <button class="icon" title={locked("icon") ? lockTip : "Choose Icon"} aria-label="Choose Icon" disabled={locked("icon")}
+            onclick={() => (choosingIcon = true)}>
             <Icon key={draft.icon} size={iconSize} {customs} />
           </button>
         </span>
@@ -119,29 +129,32 @@
 
       <div class="row">
         <label>Connection type:
-          <select bind:value={draft.protocol}>
+          <select bind:value={draft.protocol} disabled={locked("protocol")} title={locked("protocol") ? lockTip : ""}>
             {#each PROTOCOLS as p}<option value={p}>{p}</option>{/each}
           </select>
         </label>
         <label class="grow">Profile:
-          <input list="profile-names" bind:value={draft.profile} placeholder={inherited("puttyProfile") || DEFAULT_PROFILE} />
+          <input list="profile-names" bind:value={draft.profile} placeholder={inherited("puttyProfile") || DEFAULT_PROFILE}
+            disabled={locked("putty_profile")} title={locked("putty_profile") ? lockTip : ""} />
           <datalist id="profile-names">{#each profileNames as n}<option value={n}></option>{/each}</datalist>
         </label>
         <button onclick={onOpenProfiles} title="Settings > Profiles">Profiles…</button>
       </div>
       {#if reason}<p class="note">{reason}</p>{/if}
+      {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}
       {#if profileMissing}<p class="note">Profile "{draft.profile.trim()}" isn't set up on this Mac, so Default Settings is used. Add it in Profiles….</p>{/if}
 
       <div class="row">
-        <label class="grow">Host address: <input bind:value={draft.host} /></label>
+        <label class="grow">Host address: <input bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""} /></label>
         <label>TCP port: <input class="port" type="number" min="0" max="65535" bind:value={draft.port}
-          placeholder={inherited("port")} /></label>
+          placeholder={inherited("port")} disabled={locked("port")} title={locked("port") ? lockTip : ""} /></label>
       </div>
 
       <div class="row">
-        <label class="grow">Login username: <input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"} /></label>
+        <label class="grow">Login username: <input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"}
+          disabled={locked("username")} title={locked("username") ? lockTip : ""} /></label>
         <label>Highlight:
-          <select bind:value={draft.highlightRules}>
+          <select bind:value={draft.highlightRules} disabled={locked("highlight_rules")} title={locked("highlight_rules") ? lockTip : ""}>
             <option value="">{inherited("highlightRules") ? `From the folder (${inherited("highlightRules")})` : "Default (Settings)"}</option>
             <option value="auto">Auto (picked from the prompt)</option>
             {#each ruleSets as r}<option value={r.id}>{r.name}</option>{/each}
@@ -154,23 +167,24 @@
       </div>
 
       <div class="row">
-        <label class="grow">Extra arguments: <input bind:value={draft.extraArgs} placeholder="PuTTY-style, e.g. -pw secret -L 8080:localhost:80" /></label>
+        <label class="grow">Extra arguments: <input bind:value={draft.extraArgs} placeholder="PuTTY-style, e.g. -pw secret -L 8080:localhost:80"
+          disabled={locked("extra_args")} title={locked("extra_args") ? lockTip : ""} /></label>
         <button disabled title="RDP sessions open in Windows App: comes in M5">RDP options…</button>
       </div>
 
       <div class="row">
-        <label class="grow">Jump host: <input bind:value={draft.jumpHost}
+        <label class="grow">Jump host: <input bind:value={draft.jumpHost} disabled={locked("jump_host")} title={locked("jump_host") ? lockTip : ""}
           placeholder={inherited("jumpHost") || "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22"} /></label>
       </div>
 
       <div class="row">
-        <label class="grow">SPSL script: <input bind:value={draft.script} /></label>
+        <label class="grow">SPSL script: <input bind:value={draft.script} disabled={locked("spsl_script")} title={locked("spsl_script") ? lockTip : ""} /></label>
         <button onclick={() => (draft.script = "")}>Clear</button>
         <button onclick={browseScript}>Browse…</button>
       </div>
 
       <label class="notes">Notes:
-        <textarea bind:value={draft.note} rows="5"></textarea>
+        <textarea bind:value={draft.note} rows="5" disabled={locked("notes")} title={locked("notes") ? lockTip : ""}></textarea>
       </label>
     </fieldset>
 
@@ -336,6 +350,14 @@
   .note {
     margin: 0;
     color: var(--text-muted);
+  }
+
+  .note.warn {
+    color: #e5534b;
+  }
+
+  :disabled {
+    opacity: 0.55;
   }
 
   footer {

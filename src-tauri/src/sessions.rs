@@ -90,6 +90,8 @@ pub struct SessionView {
     pub note: String,
     pub updated_by: String,
     pub locked: bool,
+    /// Database sessions: the columns locked in the table, comma-separated ("host,port")
+    pub locked_fields: String,
 }
 
 /// Every session and folder setting, as last read
@@ -179,6 +181,7 @@ fn view(session: &StoredSession, store: Store) -> SessionView {
         note: session.get("Note").to_string(),
         updated_by: session.get("DatabaseUpdatedBy").to_string(),
         locked: session.get("DatabaseLocked") == "true",
+        locked_fields: session.get("DatabaseLockedFields").to_string(),
         id,
     }
 }

@@ -36,6 +36,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Builds made locally; the GitHub Actions workflow (macOS, Windows, Linux) runs only when started by hand, so pushes cost nothing
 - ⬜ Known issue: development builds ask for the Keychain password again after each rebuild (a new unsigned app each time, to macOS); signed builds (M6) stop it
 - ⬜ Known issue: a small round macOS badge sits beside the terminal cursor, over the end of the prompt (seen in the user's own screenshots too). Not in the page, not a separate window; not fixed by `writingsuggestions`, a transparent caret, or `TSMLanguageIndicatorEnabled`. Next: find it with Web Inspector
+- ⬜ To check: after renaming a Database folder, it showed closed once (it had been open)
 - ⬜ To check: a command typed once showed twice, with empty prompts between, on the lab switch (and a column of empty prompts in an early local shell). Not caused by clicks; not yet reproduced in a controlled test
 
 ## M1 MVP
@@ -88,11 +89,11 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Connect as `SuperPuTTY`, with the nickname (checked against the team's PostgreSQL 17.5)
 - ✅ Read in pages in the background; `@db/` ids (the team's 4 sessions, folders, icons and colours as in SuperXPuTTY)
 - 🚧 Cache (`DatabaseSessions.cache.xml`) and retry while offline: written in SuperXPuTTY's format and shown when the database can't be reached; not yet tried offline
-- ⬜ Writes (insert, update, delete, read back) and the outbox
-- ⬜ Locks (`locked`, `locked_fields`) checked in the UI
+- 🚧 Writes (insert, update, delete, read back) and the outbox: writes done (Edit Session, New session, Delete, Colour; folder New, Rename, Delete, Colour, Folder settings; dragging), each read back, with conflicts refused (checked on test rows in the team's table); the offline outbox next
+- 🚧 Locks (`locked`, `locked_fields`) checked in the UI: locked rows can't be edited, deleted or moved, and locked fields are greyed in Edit Session; not yet tried on a locked row (the table has none)
 - ✅ Changes noticed every 30 s (`<table>_version`): a session added in SuperXPuTTY on Windows appeared on the Mac within the check
 - ✅ `deleted_at` rows hidden (in the query; columns a table lacks read as defaults)
-- 🚧 Folders table (colours, defaults): read and applied; writing comes with the next part
+- ✅ Folders table (colours, defaults): read, applied and written (Colour, Folder settings…; moved and removed with renamed and deleted folders)
 - ⬜ Move to / Copy to between Database and Saved/Private
 - 🚧 Database settings dialog, Create / upgrade schema, read-only: Tools > Database Sessions… with Test connection and Read only; Create / upgrade schema next
 - ✅ Database settings export/import (SuperXPuTTY's JSON), Clear; password in the Keychain

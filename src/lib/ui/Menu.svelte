@@ -28,9 +28,16 @@
   let left = $state(0);
   let top = $state(0);
 
+  /** A submenu's shift upwards, so one near the bottom of the window stays inside it */
+  let lift = $state(0);
+
   // keep the menu inside the window
   $effect(() => {
-    if (nested) return;
+    if (nested) {
+      const rect = element.getBoundingClientRect();
+      lift = Math.max(0, rect.bottom - window.innerHeight + 4);
+      return;
+    }
     const rect = element.getBoundingClientRect();
     left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4));
     top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4));
@@ -47,7 +54,7 @@
 <svelte:window onkeydown={(e) => e.key === "Escape" && onClose()} />
 
 <div class="menu" class:nested role="menu" tabindex="-1" bind:this={element} onclick={(e) => e.stopPropagation()}
-  onkeydown={() => {}} style:left={nested ? null : `${left}px`} style:top={nested ? null : `${top}px`}>
+  onkeydown={() => {}} style:margin-top={nested && lift ? `-${lift}px` : null} style:left={nested ? null : `${left}px`} style:top={nested ? null : `${top}px`}>
   {#each items as item, index}
     {#if "separator" in item}
       <div class="separator" role="separator"></div>

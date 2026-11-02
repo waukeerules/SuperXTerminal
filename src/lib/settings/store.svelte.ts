@@ -25,6 +25,10 @@ export interface AppSettings {
   sendToVisibleOnly: boolean;
   /** The Script Editor stays above the tabs */
   scriptEditorOnTop: boolean;
+  /** A dropped session reconnects by itself: how many times, how many seconds apart */
+  autoReconnect: boolean;
+  autoReconnectAttempts: number;
+  autoReconnectDelaySeconds: number;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -40,6 +44,9 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   showSendCommands: true,
   sendToVisibleOnly: false,
   scriptEditorOnTop: false,
+  autoReconnect: true,
+  autoReconnectAttempts: 6,
+  autoReconnectDelaySeconds: 10,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

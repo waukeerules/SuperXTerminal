@@ -109,6 +109,7 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
     },
     { separator: true },
     { label: "Copy all to clipboard", action: () => tab.host.action("copyAll") },
+    ...(tab.host.isReconnecting ? [{ label: "Stop Reconnecting", action: () => tab.host.stopReconnecting() }] : []),
     tab.host.isEnded
       ? { label: "Reconnect", action: () => void tab.host.reconnect() }
       : { label: "Restart session", disabled: params.local && "A local shell starts again with New Local Shell", action: () => void tab.host.reconnect() },

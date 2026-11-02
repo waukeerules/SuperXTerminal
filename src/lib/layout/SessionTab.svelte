@@ -6,6 +6,7 @@
   import Icon from "../icons/Icon.svelte";
   import type { CustomIcon } from "../icons/custom";
   import { running } from "../commands/sending.svelte";
+  import { tabStates } from "./tabStates.svelte";
 
   interface Props {
     title: string;
@@ -20,6 +21,8 @@
 
   let { title, icon, environment, iconSize, customs, tabId, onClose }: Props = $props();
   const scripting = $derived(running.runs.some((r) => r.tabId === tabId));
+  /** The session is down: SuperXPuTTY's disconnected badge on the icon */
+  const disconnected = $derived(tabStates[tabId]?.ended ?? false);
 </script>
 
 <span class="tab" class:coloured={!!environment} style:--env={environment ?? "transparent"}>
@@ -29,7 +32,10 @@
       <span class="spinner" title="A script is running" style:width="{Math.round(iconSize * 0.75)}px" style:height="{Math.round(iconSize * 0.75)}px"></span>
     </span>
   {:else}
-    <Icon key={icon} size={Math.round(iconSize * 0.75)} {customs} />
+    <span class="icon" class:down={disconnected} title={disconnected ? "Disconnected" : undefined}>
+      <Icon key={icon} size={Math.round(iconSize * 0.75)} {customs} />
+      {#if disconnected}<span class="badge" aria-label="Disconnected">✕</span>{/if}
+    </span>
   {/if}
   <span class="title">{title}</span>
   <button class="close" title="Close" aria-label="Close {title}"
@@ -50,6 +56,31 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .icon {
+    position: relative;
+    display: flex;
+  }
+
+  .icon.down :global(svg),
+  .icon.down :global(img) {
+    opacity: 0.55;
+  }
+
+  /* SuperXPuTTY's disconnected badge: a small red cross over the icon's corner */
+  .badge {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #d32f2f;
+    color: #fff;
+    font-size: 7px;
+    line-height: 11px;
+    text-align: center;
   }
 
   .cell {

@@ -19,6 +19,7 @@ import type { CustomIcon } from "../icons/custom";
 import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
 import SessionTab from "./SessionTab.svelte";
 import { isDark } from "../settings/store.svelte";
+import { tabStates } from "./tabStates.svelte";
 
 /** What a terminal tab is given when it's added: what to run, whether it's a local shell, and how its tab looks */
 export interface TerminalParams {
@@ -119,7 +120,10 @@ class TerminalPanel implements IContentRenderer {
       environment,
       () => parameters.api.close(),
       (command) => this.tabs.command(id, command),
-      () => this.tabs.notify(),
+      () => {
+        tabStates[id] = { ended: this.host?.isEnded ?? false };
+        this.tabs.notify();
+      },
     );
     this.tabs.hosts.set(id, this.host);
     frame.src = `/web/terminal/index.html?tab=${encodeURIComponent(id)}`;

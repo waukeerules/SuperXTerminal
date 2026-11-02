@@ -10,7 +10,7 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { highlighting } from "./highlighting";
-import { isDark } from "../settings/store.svelte";
+import { isDark, settings } from "../settings/store.svelte";
 import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
 import { askOne } from "../scripting/asking.svelte";
@@ -67,6 +67,9 @@ const MENU_KEYS = [
  */
 const STAND_IN_THEMES = [{ name: "PuTTY", base: "vs-dark", colors: { background: "#000000", foreground: "#FFFFFF" } }];
 
+/** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
+const STABLE_AFTER_MS = 60_000;
+
 /** How much finished output is kept for WAITFOR; half is dropped when it's exceeded, as TerminalControl */
 const RECENT_OUTPUT_LIMIT = 256 * 1024;
 
@@ -82,6 +85,11 @@ export class PageHost implements ScriptTarget {
   private mark = 0;
   /** The program ended: nothing more can be typed */
   private ended = false;
+  /** When the session last started, and how many reconnects have run since it last stayed up (TerminalControl) */
+  private startedAt = 0;
+  private reconnectAttempts = 0;
+  /** The automatic reconnect waiting to run */
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private markStarted: () => void = () => {};
   /** Settles once the tab's program has started (a session's own script waits for it) */
   readonly started = new Promise<void>((resolve) => (this.markStarted = resolve));
@@ -123,6 +131,7 @@ export class PageHost implements ScriptTarget {
 
   /** Close the pseudo terminal and stop listening; called when the tab closes */
   dispose(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     window.removeEventListener("message", this.onWindowMessage);
     if (this.ptyId !== null) {
       void invoke("pty_close", { id: this.ptyId });
@@ -244,8 +253,44 @@ export class PageHost implements ScriptTarget {
     return this.ended;
   }
 
+  /**
+   * The session ended some other way than a logout: keep the tab and its output, and reconnect by itself when the
+   * settings say so, as TerminalControl.OnExited. A session that stayed up a minute starts its attempts again.
+   */
+  private dropped(): void {
+    if (Date.now() - this.startedAt > STABLE_AFTER_MS) this.reconnectAttempts = 0;
+    const max = Math.max(1, settings.autoReconnectAttempts);
+    const delay = Math.max(1, settings.autoReconnectDelaySeconds);
+    if (settings.autoReconnect && this.reconnectAttempts < max) {
+      this.post({
+        type: "notice",
+        text: `Session ended. Reconnecting in ${delay} s (${this.reconnectAttempts + 1} of ${max}); press Enter to reconnect now.`,
+        kind: "info",
+      });
+      this.reconnectTimer = setTimeout(() => void this.reconnect(), delay * 1000);
+    } else {
+      this.post({ type: "notice", text: "Session ended. Press Enter to reconnect.", kind: "info" });
+    }
+  }
+
+  /** Whether an automatic reconnect is waiting (the tab menu offers Stop Reconnecting) */
+  get isReconnecting(): boolean {
+    return this.reconnectTimer !== null;
+  }
+
+  /** Cancel the waiting automatic reconnect; Enter still reconnects */
+  stopReconnecting(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.post({ type: "notice", text: "Stopped reconnecting. Press Enter to reconnect.", kind: "info" });
+    this.onState();
+  }
+
   /** Connect again in the same tab, keeping the scrollback (Reconnect, Restart session) */
   async reconnect(): Promise<void> {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.reconnectAttempts++;
     if (this.ptyId !== null) {
       const old = this.ptyId;
       this.ptyId = null;
@@ -314,12 +359,13 @@ export class PageHost implements ScriptTarget {
         this.ended = true;
         // a clean end (a logout) or a local shell closes the tab, as PuTTY's window would
         if (this.local || event.code === 0) this.onExit();
-        else this.post({ type: "notice", text: "Session ended. Press Enter to reconnect.", kind: "info" });
+        else this.dropped();
         this.onState();
       }
     };
     try {
       this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel });
+      this.startedAt = Date.now();
       this.markStarted();
     } catch (error) {
       // nothing started, so the page has had no settings yet

@@ -55,6 +55,22 @@
   </fieldset>
 
   <fieldset>
+    <legend>Dropped sessions</legend>
+    <p class="hint">A session that ends without logging out (the network dropped, the device restarted) keeps its tab;
+      Enter reconnects it. It can also reconnect by itself, as SuperXPuTTY's Options > Advanced.</p>
+    <label class="check"><input type="checkbox" checked={settings.autoReconnect}
+      onchange={(e) => void saveSettings({ autoReconnect: e.currentTarget.checked })} /> Reconnect automatically</label>
+    <label>Attempts
+      <input type="number" min="1" max="100" value={settings.autoReconnectAttempts} disabled={!settings.autoReconnect}
+        onchange={(e) => void saveSettings({ autoReconnectAttempts: Math.max(1, Number(e.currentTarget.value) || 6) })} />
+    </label>
+    <label>Seconds between attempts
+      <input type="number" min="1" max="3600" value={settings.autoReconnectDelaySeconds} disabled={!settings.autoReconnect}
+        onchange={(e) => void saveSettings({ autoReconnectDelaySeconds: Math.max(1, Number(e.currentTarget.value) || 10) })} />
+    </label>
+  </fieldset>
+
+  <fieldset>
     <legend>Environment colours</legend>
     <p class="hint">A session with no colour of its own, and no folder colour, takes the first rule matching its name
       or a folder's name: * and ? are wildcards, e.g. <code>Prod*=#C62828;Staging=#EF6C00</code>.</p>
@@ -103,9 +119,13 @@
 
   label {
     display: grid;
-    grid-template-columns: 130px 220px;
+    grid-template-columns: 170px 220px;
     align-items: center;
     gap: 8px;
+  }
+
+  label.check {
+    display: flex;
   }
 
   input,

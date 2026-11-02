@@ -33,6 +33,11 @@ pub struct AppSettings {
     pub send_to_visible_only: bool,
     /// The Script Editor stays on top, as ScriptEditorTopMost
     pub script_editor_on_top: bool,
+    /// A dropped session reconnects by itself, as SuperXPuTTY's AutoReconnect, AutoReconnectAttempts and
+    /// AutoReconnectDelaySeconds (Options > Advanced)
+    pub auto_reconnect: bool,
+    pub auto_reconnect_attempts: u32,
+    pub auto_reconnect_delay_seconds: u32,
 }
 
 impl Default for AppSettings {
@@ -49,6 +54,9 @@ impl Default for AppSettings {
             show_send_commands: true,
             send_to_visible_only: false,
             script_editor_on_top: false,
+            auto_reconnect: true,
+            auto_reconnect_attempts: 6,
+            auto_reconnect_delay_seconds: 10,
         }
     }
 }

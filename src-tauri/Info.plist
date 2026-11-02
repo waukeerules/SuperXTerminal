@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the app's Info.plist by Tauri: the links SuperXTerminal opens (src-tauri/src/cli.rs). ssh:// and
+     telnet:// go to Terminal until the user makes SuperXTerminal their app for them (Settings > General). -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>com.waukeerules.superxterminal.links</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>superxterminal</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>com.waukeerules.superxterminal.ssh</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>ssh</string>
+        <string>telnet</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

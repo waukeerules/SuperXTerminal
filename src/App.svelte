@@ -367,13 +367,51 @@
       newShell();
       return;
     }
-    // the first window opens the default layout, as SuperXPuTTY does at start; others (New Window) a Local Shell
+    // the first window opens what it was started with (the command line, a link), as SuperXPuTTY skips the default
+    // layout for a session from its command line; else the default layout; others (New Window) a Local Shell
     if (getCurrentWebviewWindow().label === "main") {
+      if (await openRequests()) return;
       for (let tries = 0; tries < 100 && !settings.loaded; tries++) await new Promise((resolve) => setTimeout(resolve, 50));
       if (settings.defaultLayoutName && (await openLayout(settings.defaultLayoutName, false))) return;
     }
     newShell();
   }
+
+  /**
+   * Open what was asked from outside (SuperXPuTTY's command line, a second start, a link): a session, a layout, or a
+   * host as Quick connect opens it. False when there was nothing.
+   */
+  async function openRequests(): Promise<boolean> {
+    type Request =
+      | { kind: "session"; id: string }
+      | { kind: "layout"; name: string }
+      | { kind: "connect"; protocol: string; host: string; username: string; password: string; profile: string };
+    const requests = await invoke<Request[]>("requests_take").catch(() => []);
+    for (const request of requests) {
+      if (request.kind === "layout") {
+        await openLayout(request.name, true);
+      } else if (request.kind === "session") {
+        // the id as SuperXPuTTY's (Saved, then Private), or a Database session's ("@db/..." or "Database/...")
+        for (let tries = 0; tries < 100 && (tree?.allSessions().length ?? 0) === 0; tries++) await new Promise((resolve) => setTimeout(resolve, 100));
+        const want = request.id.replace(/^Database\//i, "@db/").toLowerCase();
+        const sessions = tree?.allSessions() ?? [];
+        const session = ["saved", "private", "database"].map((store) => sessions.find((s) => s.store === store && s.id.toLowerCase() === want)).find(Boolean)
+          ?? sessions.find((s) => s.store === "database" && s.id.toLowerCase() === `@db/${want}`);
+        if (session) tree?.openSession(session);
+        else status = `There's no session ${request.id}`;
+      } else {
+        const scheme = request.host.includes("://") ? request.host.slice(0, request.host.indexOf("://")).toUpperCase() : request.protocol.toUpperCase();
+        const local = opensAsLocalShell(scheme);
+        const title = request.host.replace(/^\w+:\/\//, "").replace(/^[^@]*@/, "") || "Local Shell";
+        tabs?.openQuickConnect({ protocol: request.protocol, host: request.host, username: request.username, password: request.password, profile: request.profile || "Default Settings" }, title, local);
+        status = `Opened session: ${title} [${scheme}]`;
+      }
+    }
+    return requests.length > 0;
+  }
+
+  // asked to open something while running (a second start, a link): this window, in front, takes it
+  void getCurrentWebviewWindow().listen("open-request", () => void openRequests());
 
   /** The window as a layout: the tabs and how they're split, and the panes */
   function layoutNow(): Layout | null {

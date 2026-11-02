@@ -6,6 +6,7 @@
 <script lang="ts">
   import { chooseSettingsFolder, saveSettings, settings } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { invoke } from "@tauri-apps/api/core";
 
   /** Choose where kept session logs go */
   async function chooseLogFolder(): Promise<void> {
@@ -16,6 +17,17 @@
   import EnvironmentColours from "./EnvironmentColours.svelte";
 
   let editingColours = $state(false);
+  let linksMessage = $state("");
+
+  /** Make SuperXTerminal the app for ssh:// and telnet:// links (macOS asks the user to confirm) */
+  async function makeDefault(): Promise<void> {
+    try {
+      await invoke("links_make_default");
+      linksMessage = "Done: ssh:// and telnet:// links open here.";
+    } catch (e) {
+      linksMessage = String(e);
+    }
+  }
   const colourRules = $derived(parseRules(settings.environmentColorRules));
 </script>
 
@@ -31,6 +43,16 @@
     <label class="check" title="Untick to use only Private and Database sessions: Sessions.xml and Folders.xml are then neither read nor written (they're left as they are), and imports go to Private sessions">
       <input type="checkbox" checked={settings.useSessionsXml}
         onchange={(e) => void saveSettings({ useSessionsXml: e.currentTarget.checked })} /> Use Sessions.xml (Saved sessions)</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Links</legend>
+    <p class="hint">superxterminal:// links open sessions and layouts (superxterminal://session/Lab/sw1,
+      superxterminal://layout/Core). ssh:// and telnet:// links open in Terminal until SuperXTerminal is made their app.</p>
+    <div class="row">
+      <button onclick={makeDefault}>Open ssh:// and telnet:// links in SuperXTerminal</button>
+      <span class="hint">{linksMessage}</span>
+    </div>
   </fieldset>
 
   <fieldset>

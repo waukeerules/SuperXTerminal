@@ -1,6 +1,7 @@
 //! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
 
 mod buttonbars;
+mod cli;
 mod db;
 mod editing;
 mod external;
@@ -1715,6 +1716,60 @@ fn layout_rename(state: State<'_, AppState>, from: String, to: String) -> Result
     layouts::rename(&shared_folder(&state), &from, &to)
 }
 
+/// What's been asked to open from outside (the command line, a second start, a link), waiting for the window in
+/// front to take it (`requests_take`)
+static PENDING: Mutex<Vec<cli::Request>> = Mutex::new(Vec::new());
+
+/// Something to open from outside: kept for the window in front, which is told and brought forward
+fn deliver<R: Runtime>(app: &AppHandle<R>, request: Option<cli::Request>) {
+    let front = FRONT_WINDOW.lock().unwrap().clone().filter(|label| app.get_webview_window(label).is_some()).unwrap_or_else(|| "main".into());
+    if let Some(request) = request {
+        PENDING.lock().unwrap().push(request);
+        let _ = app.emit_to(front.as_str(), "open-request", ());
+    }
+    if let Some(window) = app.get_webview_window(&front) {
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+/// What's waiting to open, taken once
+#[tauri::command]
+fn requests_take() -> Vec<cli::Request> {
+    std::mem::take(&mut *PENDING.lock().unwrap())
+}
+
+/// Settings > General: SuperXTerminal opens ssh:// and telnet:// links (Terminal does until then), as LaunchServices
+/// records it for the user
+#[tauri::command]
+fn links_make_default(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::NSString;
+        #[link(name = "CoreServices", kind = "framework")]
+        unsafe extern "C" {
+            fn LSSetDefaultHandlerForURLScheme(scheme: *const std::ffi::c_void, bundle: *const std::ffi::c_void) -> i32;
+        }
+        let bundle = NSString::from_str(&app.config().identifier);
+        for scheme in ["ssh", "telnet"] {
+            let scheme = NSString::from_str(scheme);
+            // NSString is toll-free bridged to the CFString LaunchServices takes
+            let status = unsafe {
+                LSSetDefaultHandlerForURLScheme(&*scheme as *const NSString as *const _, &*bundle as *const NSString as *const _)
+            };
+            if status != 0 {
+                return Err(format!("macOS refused (error {status}). The app may need to be in Applications first."));
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err("Only on the Mac.".into())
+    }
+}
+
 /// What each new window starts with, by its label; taken once by `window_start`
 static WINDOW_OPENS: Mutex<Option<std::collections::HashMap<String, WindowStart>>> = Mutex::new(None);
 /// The window last brought to the front, which the menu bar's commands go to
@@ -1826,7 +1881,14 @@ pub fn run() {
     let user_folder = sessions::user_folder();
     let settings = AppSettings::load(&user_folder);
     let profiles = Profiles::load(&user_folder);
+    // started with something to open (SuperXPuTTY's command line)
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(request) = cli::from_args(&args) {
+        PENDING.lock().unwrap().push(request);
+    }
     tauri::Builder::default()
+        // one SuperXTerminal: started again (from a script, a terminal), the first one opens what it was given
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| deliver(app, cli::from_args(argv.get(1..).unwrap_or(&[])))))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .menu({
@@ -1906,6 +1968,8 @@ pub fn run() {
             sessions_export_csv,
             window_new,
             layouts_list,
+            requests_take,
+            links_make_default,
             shortcuts_keys,
             layout_read,
             layout_save,
@@ -1954,6 +2018,16 @@ pub fn run() {
             pty::pty_close,
             pty::pty_attach
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // a link macOS hands over (superxterminal://, ssh://, telnet://)
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                for url in urls {
+                    deliver(app, cli::from_url(url.as_str()));
+                }
+            }
+            let _ = (app, event);
+        });
 }

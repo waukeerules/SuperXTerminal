@@ -44,7 +44,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 **Data**
 - ✅ Read and write `Sessions.xml`, keeping unknown attributes: written as SuperXPuTTY's XmlSerializer does (the reference files write back byte for byte), re-read before each save so others' changes are kept, with SuperXPuTTY's 20 timestamped backups
 - ✅ Read and write `PrivateSessions.xml`
-- 🚧 Read and write `Folders.xml` / `PrivateFolders.xml` (colours, defaults): reading done; colours and username, port and jump host defaults applied
+- ✅ Read and write `Folders.xml` / `PrivateFolders.xml` (colours, defaults): Folder settings… and the folder menu's Colour; settings move with renamed folders
 - 🚧 Settings folder choice (local, SMB share, synced cloud folder): Choose Settings Folder... when none is set; a way to change it comes with Settings
 - ✅ Per-user files in `~/Library/Application Support/SuperXTerminal/` (`settings.json`, `PrivateSessions.xml`)
 
@@ -53,7 +53,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Folder session counts, folders first, sort
 - ✅ Search box (filter while typing: name, host, username, folder, note)
 - ✅ Open sessions marked (green dot); tooltips (protocol, address, note, why it can't open)
-- 🚧 New, rename, delete, drag to move (sessions and folders): sessions can be made (folder's New session…), renamed (Edit Session) and deleted (with a question); folders and dragging next
+- ✅ New, rename, delete, drag to move (sessions and folders): New session… / New folder… (tree-only until a session goes in, as in SuperXPuTTY), Rename…, Delete folder (with its sessions, after asking), dragging sessions and folders within Saved or Private; plus Connect all, Expand all, Collapse all
 - ✅ Sessions the Mac can't open shown dimmed with the reason
 
 **Icons and colours**

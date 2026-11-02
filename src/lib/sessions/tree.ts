@@ -17,27 +17,47 @@ export interface FolderNode {
   count: number;
 }
 
-/** Build one store's tree from its sessions; `query` keeps only sessions matching it (and the folders holding them) */
-export function buildTree(store: Store, title: string, sessions: SessionView[], query: string): FolderNode {
+/**
+ * Build one store's tree from its sessions; `query` keeps only sessions matching it (and the folders holding them).
+ * `extraFolders` are folders made in the tree that have no sessions yet, which exist only there until one is
+ * added, as in SuperXPuTTY.
+ */
+export function buildTree(store: Store, title: string, sessions: SessionView[], query: string, extraFolders: string[] = []): FolderNode {
   const root = folder(store, title, "");
   const needle = query.trim().toLowerCase();
+  if (!needle) for (const path of extraFolders) place(root, store, path);
   for (const session of sessions) {
     if (session.store !== store || (needle && !matches(session, needle))) continue;
-    let node = root;
-    let path = "";
-    for (const part of session.folder.split("/").filter(Boolean)) {
-      path = path ? `${path}/${part}` : part;
-      let child = node.folders.find((f) => f.name === part);
-      if (!child) {
-        child = folder(store, part, path);
-        node.folders.push(child);
-      }
-      node = child;
-    }
-    node.sessions.push(session);
+    place(root, store, session.folder).sessions.push(session);
   }
   finish(root);
   return root;
+}
+
+/** The node for a folder path, made (with the folders above it) if it isn't there yet */
+function place(root: FolderNode, store: Store, folderPath: string): FolderNode {
+  let node = root;
+  let path = "";
+  for (const part of folderPath.split("/").filter(Boolean)) {
+    path = path ? `${path}/${part}` : part;
+    let child = node.folders.find((f) => f.name === part);
+    if (!child) {
+      child = folder(store, part, path);
+      node.folders.push(child);
+    }
+    node = child;
+  }
+  return node;
+}
+
+/** Every session in a folder and the folders below it */
+export function sessionsIn(node: FolderNode): SessionView[] {
+  return [...node.sessions, ...node.folders.flatMap(sessionsIn)];
+}
+
+/** Every folder key below a node, for Expand all */
+export function folderKeys(node: FolderNode): string[] {
+  return [node.key, ...node.folders.flatMap(folderKeys)];
 }
 
 /** A new, empty folder node */
@@ -61,3 +81,9 @@ function matches(session: SessionView, needle: string): boolean {
     field.toLowerCase().includes(needle),
   );
 }
+
+/** The drag data type for sessions and folders dragged within the tree */
+export const DRAG_TYPE = "application/x-superxterminal-tree";
+
+/** What's being dragged in the tree */
+export type Dragged = { kind: "session"; store: Store; id: string } | { kind: "folder"; store: Store; path: string };

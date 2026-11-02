@@ -213,7 +213,7 @@ fn read_folders(path: &Path, problems: &mut Vec<String>) -> HashMap<String, Fold
 /// Every element of the given name in an XML file, as its attributes in order
 ///
 /// Returns no elements when the file doesn't exist, and `Err` with a message when it can't be read or parsed.
-fn read_elements(path: &Path, element: &str) -> Result<Vec<Vec<(String, String)>>, Option<String>> {
+pub(crate) fn read_elements(path: &Path, element: &str) -> Result<Vec<Vec<(String, String)>>, Option<String>> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -415,7 +415,7 @@ pub fn write_sessions(sessions: &[StoredSession]) -> String {
 }
 
 /// An attribute value escaped as .NET's XmlWriter escapes it
-fn escape(value: &str) -> String {
+pub(crate) fn escape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for c in value.chars() {
         match c {
@@ -434,7 +434,7 @@ fn escape(value: &str) -> String {
 
 /// Keep a copy of the file before it's written, as SuperXPuTTY does: "Sessions.yyyyMMdd_hhmmss.xml" beside it (with
 /// .NET's 12-hour "hh"), keeping the newest 20. A failed backup doesn't stop the save.
-fn back_up(path: &Path) {
+pub(crate) fn back_up(path: &Path) {
     let (Some(folder), Some(base)) = (path.parent(), path.file_stem().and_then(|s| s.to_str())) else { return };
     if !path.exists() {
         return;

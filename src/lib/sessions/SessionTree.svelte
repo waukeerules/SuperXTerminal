@@ -5,22 +5,29 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import TreeFolder from "./TreeFolder.svelte";
-  import { buildTree } from "./tree";
   import {
     chooseSettingsFolder,
     deleteSession,
     getSession,
     loadSessions,
     saveSession,
+    moveFolder,
+    deleteFolder,
+    moveSession,
+    saveFolderSettings,
+    unavailableReason,
+    type FolderSetting,
     type SessionFields,
     type SessionsLoaded,
     type SessionView,
     type Store,
   } from "./api";
   import EditSession from "./EditSession.svelte";
+  import FolderSettings from "./FolderSettings.svelte";
+  import Prompt from "../ui/Prompt.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { PALETTE } from "../icons/palette";
-  import type { FolderNode } from "./tree";
+  import { buildTree, folderKeys, sessionsIn, type Dragged, type FolderNode } from "./tree";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { loadCustomIcons, type CustomIcon } from "../icons/custom";
   import { EnvironmentColors, parseRules } from "../icons/environment";
@@ -43,6 +50,12 @@
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   /** The session being edited: its store, its id (null for new) and its fields */
   let editing = $state<{ store: Store; id: string | null; fields: SessionFields } | null>(null);
+  /** A folder whose settings are being edited */
+  let folderSettings = $state<{ store: Store; setting: FolderSetting } | null>(null);
+  /** A name being asked for (New folder, Rename) */
+  let prompt = $state<{ title: string; value: string; validate: (name: string) => string; onOk: (name: string) => void } | null>(null);
+  /** Folders made in the tree with no sessions yet, by store: they exist only here until a session goes in */
+  let newFolders = $state<Record<Store, string[]>>({ saved: [], private: [] });
 
   let iconSize = $state(24);
   let rules = $state("");
@@ -55,8 +68,8 @@
   let expanded = $state(new Set<string>(["saved:", "private:"]));
 
   const colors = $derived(new EnvironmentColors(loaded?.folders ?? [], parseRules(rules)));
-  const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query) : null);
-  const privateRoot = $derived(loaded ? buildTree("private", "Private sessions", loaded.sessions, query) : null);
+  const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query, newFolders.saved) : null);
+  const privateRoot = $derived(loaded ? buildTree("private", "Private sessions", loaded.sessions, query, newFolders.private) : null);
 
   onMount(() => void reload());
 
@@ -165,14 +178,154 @@
       ];
     } else {
       const folder = target.folder;
+      const isRoot = folder.path === "";
+      const runnable = sessionsIn(folder).filter((s) => unavailableReason(s.protocol) === null);
       items = [
         { label: "New session…", action: () => (editing = { store: folder.store, id: null, fields: blank(folder.path) }) },
-        { label: "New folder…", disabled: "Comes with the next M1 slice" },
+        { label: "New folder…", action: () => newFolder(folder) },
+        ...(isRoot
+          ? []
+          : ([
+              { label: "Rename…", action: () => rename(folder) },
+              {
+                label: "Colour",
+                items: [
+                  { label: "None", swatch: "", action: () => void setFolderColour(folder, "") },
+                  ...PALETTE.map((p) => ({ label: p.name, swatch: p.color, action: () => void setFolderColour(folder, p.color) })),
+                ],
+              },
+              { label: "Folder settings…", action: () => (folderSettings = { store: folder.store, setting: settingOf(folder) }) },
+              { label: "Delete folder", action: () => void removeFolder(folder) },
+            ] as MenuItem[])),
         { separator: true },
-        { label: "Folder settings…", disabled: "Comes with the next M1 slice" },
+        { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
+        { label: "Expand all", action: () => (expanded = new Set([...expanded, ...folderKeys(folder)])) },
+        { label: "Collapse all", action: () => (expanded = new Set([...expanded].filter((k) => !folderKeys(folder).slice(1).includes(k)))) },
       ];
     }
     menu = { x: event.clientX, y: event.clientY, items };
+  }
+
+  /** A folder's stored settings, or empty ones */
+  function settingOf(folder: FolderNode): FolderSetting {
+    const found = (loaded?.folders ?? []).find(([store, f]) => store === folder.store && f.path === folder.path)?.[1];
+    return found
+      ? { ...found }
+      : { path: folder.path, color: "", username: "", puttyProfile: "", port: 0, jumpHost: "", highlightRules: "" };
+  }
+
+  /** Why a new folder name can't be used in a folder, or "" */
+  function folderNameProblem(parent: FolderNode, name: string, except = ""): string {
+    if (!name) return "Empty folder name";
+    if (name.includes("/")) return 'A name can\'t contain "/"';
+    if (name !== except && parent.folders.some((f) => f.name.toLowerCase() === name.toLowerCase())) return "A folder with that name is already here";
+    return "";
+  }
+
+  /** The folder node a path is in (its parent), searching from a root */
+  function parentOf(folder: FolderNode): FolderNode | null {
+    const root = folder.store === "saved" ? saved : privateRoot;
+    const parentPath = folder.path.includes("/") ? folder.path.slice(0, folder.path.lastIndexOf("/")) : "";
+    const find = (node: FolderNode | null): FolderNode | null =>
+      !node ? null : node.path === parentPath ? node : node.folders.map(find).find(Boolean) ?? null;
+    return find(root);
+  }
+
+  /** Ask for a new folder's name and show it in the tree (it's stored once a session goes in it) */
+  function newFolder(parent: FolderNode): void {
+    prompt = {
+      title: "New Folder",
+      value: "New Folder",
+      validate: (name) => folderNameProblem(parent, name),
+      onOk: (name) => {
+        const path = parent.path ? `${parent.path}/${name}` : name;
+        newFolders = { ...newFolders, [parent.store]: [...newFolders[parent.store], path] };
+        expanded = new Set([...expanded, parent.key]);
+        selected = `${parent.store}:folder:${path}`;
+        prompt = null;
+      },
+    };
+  }
+
+  /** Ask for a folder's new name and rename it, with every session below */
+  function rename(folder: FolderNode): void {
+    const parent = parentOf(folder);
+    prompt = {
+      title: "Rename Folder",
+      value: folder.name,
+      validate: (name) => (parent ? folderNameProblem(parent, name, folder.name) : ""),
+      onOk: async (name) => {
+        prompt = null;
+        const to = folder.path.includes("/") ? `${folder.path.slice(0, folder.path.lastIndexOf("/"))}/${name}` : name;
+        await moveFolderTo(folder.store, folder.path, to);
+      },
+    };
+  }
+
+  /** Move or rename a folder, keeping tree-only folders and open folders in step */
+  async function moveFolderTo(store: Store, from: string, to: string): Promise<void> {
+    if (from === to) return;
+    try {
+      await moveFolder(store, from, to);
+      const shift = (p: string) => (p === from || p.startsWith(from + "/") ? to + p.slice(from.length) : p);
+      newFolders = { ...newFolders, [store]: newFolders[store].map(shift) };
+      expanded = new Set([...expanded].map((k) => (k.startsWith(`${store}:`) ? `${store}:${shift(k.slice(store.length + 1))}` : k)));
+      await reload();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  /** Set a folder's colour straight from the menu */
+  async function setFolderColour(folder: FolderNode, color: string): Promise<void> {
+    try {
+      await saveFolderSettings(folder.store, { ...settingOf(folder), color });
+      await reload();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  /** Delete a folder and its sessions, after asking */
+  async function removeFolder(folder: FolderNode): Promise<void> {
+    const count = sessionsIn(folder).length;
+    const sure = count === 0 || (await ask(`Are you sure you want to remove folder "${folder.name}" and its ${count} session${count === 1 ? "" : "s"}?`,
+      { title: "Remove folder", kind: "warning", okLabel: "Remove" }));
+    if (!sure) return;
+    try {
+      if (count > 0) await deleteFolder(folder.store, folder.path);
+      newFolders = { ...newFolders, [folder.store]: newFolders[folder.store].filter((p) => p !== folder.path && !p.startsWith(folder.path + "/")) };
+      await reload();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  /** Something dragged in the tree was dropped on a folder: move it there (within its own store) */
+  async function dropped(target: FolderNode, dragged: Dragged): Promise<void> {
+    if (dragged.store !== target.store) {
+      error = "Moving between Saved and Private sessions comes with Move to / Copy to (M2).";
+      return;
+    }
+    try {
+      if (dragged.kind === "session") {
+        const folder = dragged.id.includes("/") ? dragged.id.slice(0, dragged.id.lastIndexOf("/")) : "";
+        if (folder === target.path) return;
+        const id = await moveSession(target.store, dragged.id, target.path);
+        newFolders = { ...newFolders, [target.store]: newFolders[target.store].filter((p) => p !== target.path) };
+        await reload();
+        selected = `${target.store}:${id}`;
+      } else {
+        const name = dragged.path.slice(dragged.path.lastIndexOf("/") + 1);
+        const to = target.path ? `${target.path}/${name}` : name;
+        if (to === dragged.path || target.path === dragged.path || target.path.startsWith(dragged.path + "/")) return;
+        await moveFolderTo(target.store, dragged.path, to);
+      }
+      expanded = new Set([...expanded, target.key]);
+      error = "";
+    } catch (e) {
+      error = String(e);
+    }
   }
 
   /** Open a session, passing on its environment colour for its tab */
@@ -205,11 +358,11 @@
       <button onclick={choose}>Choose Settings Folder...</button>
     {:else if saved}
       <TreeFolder node={saved} depth={0} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
-        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} />
+        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if privateRoot}
       <TreeFolder node={privateRoot} depth={0} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
-        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} />
+        onToggle={toggle} onOpen={open} onSelect={(key) => (selected = key)} onMenu={showMenu} onDrop={dropped} />
     {/if}
   {/if}
 </div>
@@ -222,6 +375,15 @@
   <EditSession store={editing.store} id={editing.id} fields={editing.fields} folders={foldersAlong(editing.store, editing.fields.folder)}
     {iconSize} {customs} {onOpenProfiles} onCancel={() => (editing = null)}
     onSaved={async (id) => { const store = editing?.store; editing = null; await reload(); selected = `${store}:${id}`; }} />
+{/if}
+
+{#if folderSettings}
+  <FolderSettings store={folderSettings.store} setting={folderSettings.setting} onCancel={() => (folderSettings = null)}
+    onSaved={async () => { folderSettings = null; await reload(); }} />
+{/if}
+
+{#if prompt}
+  <Prompt title={prompt.title} value={prompt.value} validate={prompt.validate} onOk={prompt.onOk} onCancel={() => (prompt = null)} />
 {/if}
 
 <svelte:window onclick={() => (menu = null)} />

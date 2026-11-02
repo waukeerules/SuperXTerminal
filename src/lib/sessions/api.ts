@@ -124,3 +124,23 @@ export function deleteSession(store: Store, id: string): Promise<void> {
 
 /** SuperXPuTTY's protocols, as Edit Session's Connection type lists them */
 export const PROTOCOLS = ["SSH", "Telnet", "Rlogin", "Raw", "Serial", "VNC", "RDP", "Mintty", "Cygterm", "WSL", "WINCMD", "PS"];
+
+/** Rename or move a folder: every session below goes with it, and its settings */
+export function moveFolder(store: Store, from: string, to: string): Promise<void> {
+  return invoke("folder_move", { store, from, to });
+}
+
+/** Delete a folder and every session in it */
+export function deleteFolder(store: Store, path: string): Promise<void> {
+  return invoke("folder_delete", { store, path });
+}
+
+/** Save a folder's settings; all empty removes them */
+export function saveFolderSettings(store: Store, fields: FolderSetting): Promise<void> {
+  return invoke("folder_settings_save", { store, fields });
+}
+
+/** Move a session into another folder of its store; returns its new id */
+export function moveSession(store: Store, id: string, folder: string): Promise<string> {
+  return invoke<string>("session_move", { store, id, folder });
+}

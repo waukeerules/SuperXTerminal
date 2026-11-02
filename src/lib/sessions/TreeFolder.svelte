@@ -7,7 +7,7 @@
   import Icon from "../icons/Icon.svelte";
   import type { CustomIcon } from "../icons/custom";
   import type { EnvironmentColors } from "../icons/environment";
-  import type { FolderNode } from "./tree";
+  import { DRAG_TYPE, type Dragged, type FolderNode } from "./tree";
   import { unavailableReason, type SessionView } from "./api";
 
   interface Props {
@@ -26,9 +26,35 @@
     onSelect: (key: string) => void;
     /** A right-click on a session or folder */
     onMenu: (event: MouseEvent, target: { session: SessionView } | { folder: FolderNode }) => void;
+    /** Something dragged in the tree was dropped on a folder */
+    onDrop: (folder: FolderNode, dragged: Dragged) => void;
   }
 
-  let { node, depth, expanded, colors, iconSize, customs, openSessions, selected, onToggle, onOpen, onSelect, onMenu }: Props = $props();
+  let { node, depth, expanded, colors, iconSize, customs, openSessions, selected, onToggle, onOpen, onSelect, onMenu, onDrop }: Props = $props();
+
+  let over = $state(false);
+
+  /** Start dragging a session or folder */
+  function drag(event: DragEvent, dragged: Dragged): void {
+    event.dataTransfer?.setData(DRAG_TYPE, JSON.stringify(dragged));
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  }
+
+  /** Let tree items be dropped on this folder */
+  function dragOver(event: DragEvent): void {
+    if (!event.dataTransfer?.types.includes(DRAG_TYPE)) return;
+    event.preventDefault();
+    over = true;
+  }
+
+  /** Something was dropped on this folder */
+  function drop(event: DragEvent): void {
+    over = false;
+    const data = event.dataTransfer?.getData(DRAG_TYPE);
+    if (!data) return;
+    event.preventDefault();
+    onDrop(node, JSON.parse(data) as Dragged);
+  }
 
   /** The roots' icons, as SuperXPuTTY's tree: a folder for Saved sessions, a padlock for Private ones */
   const ROOT_ICONS: Record<string, string> = { saved: "folder", private: "lock" };
@@ -47,7 +73,9 @@
   }
 </script>
 
-<div class="row folder" class:root={isRoot} class:selected={selected === `${node.store}:folder:${node.path}`}
+<div class="row folder" class:root={isRoot} class:selected={selected === `${node.store}:folder:${node.path}`} class:over
+  draggable={!isRoot} ondragstart={(e) => drag(e, { kind: "folder", store: node.store, path: node.path })}
+  ondragover={dragOver} ondragleave={() => (over = false)} ondrop={drop}
   oncontextmenu={(e) => { e.preventDefault(); onSelect(`${node.store}:folder:${node.path}`); onMenu(e, { folder: node }); }} style:padding-left="{depth * 18 + 2}px" style:height="{Math.round(iconSize * 1.36) + 4}px"
   role="treeitem" aria-expanded={open} aria-selected="false" tabindex="-1"
   onclick={() => onToggle(node.key)} onkeydown={(e) => e.key === "Enter" && onToggle(node.key)}>
@@ -59,13 +87,14 @@
 {#if open}
   {#each node.folders as child (child.key)}
     <TreeFolder node={child} depth={depth + 1} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
-      {onToggle} {onOpen} {onSelect} {onMenu} />
+      {onToggle} {onOpen} {onSelect} {onMenu} {onDrop} />
   {/each}
   {#each node.sessions as session (session.store + ":" + session.id)}
     {@const reason = unavailableReason(session.protocol)}
     {@const key = `${session.store}:${session.id}`}
     <div class="row session" class:dimmed={reason !== null} class:selected={selected === key}
-      onclick={() => onSelect(key)}
+      onclick={() => onSelect(key)} draggable="true"
+      ondragstart={(e) => drag(e, { kind: "session", store: session.store, id: session.id })}
       oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
       style:height="{Math.round(iconSize * 1.36) + 4}px"
       title={tooltip(session)} role="treeitem" aria-selected="false" aria-disabled={reason !== null} tabindex="-1"
@@ -90,6 +119,11 @@
 
   .row:hover {
     background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .row.over {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   .row.selected {

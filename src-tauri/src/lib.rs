@@ -1,6 +1,7 @@
 //! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
 
 mod editing;
+mod folders;
 mod highlighting;
 mod launch;
 mod profiles;
@@ -170,12 +171,7 @@ fn session_save(
 ) -> Result<String, String> {
     let path = store_file(&state, store)?;
     // ids must be unique across Saved and Private sessions, as in SuperXPuTTY
-    let others: Vec<String> = {
-        let sessions = state.sessions.lock().unwrap();
-        let other = if store == sessions::Store::Saved { &sessions.private } else { &sessions.saved };
-        other.iter().map(|s| s.id().to_string()).collect()
-    };
-    editing::save(&path, original_id.as_deref(), &fields, &others)
+    editing::save(&path, original_id.as_deref(), &fields, &other_ids(&state, store))
 }
 
 /// Delete a session from its file
@@ -183,6 +179,42 @@ fn session_save(
 fn session_delete(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<(), String> {
     let path = store_file(&state, store)?;
     editing::delete(&path, &id)
+}
+
+/// The session ids in the store other than `store`, which a change in `store` must not clash with
+fn other_ids(state: &AppState, store: sessions::Store) -> Vec<String> {
+    let sessions = state.sessions.lock().unwrap();
+    let other = if store == sessions::Store::Saved { &sessions.private } else { &sessions.saved };
+    other.iter().map(|s| s.id().to_string()).collect()
+}
+
+/// Rename or move a folder (every session below goes with it, and its settings)
+#[tauri::command]
+fn folder_move(state: State<'_, AppState>, store: sessions::Store, from: String, to: String) -> Result<(), String> {
+    folders::check_name(to.rsplit('/').next().unwrap_or(&to))?;
+    let path = store_file(&state, store)?;
+    folders::move_folder(&path, &from, &to, &other_ids(&state, store))
+}
+
+/// Delete a folder and every session in it
+#[tauri::command]
+fn folder_delete(state: State<'_, AppState>, store: sessions::Store, path: String) -> Result<(), String> {
+    let file = store_file(&state, store)?;
+    folders::delete_folder(&file, &path)
+}
+
+/// Save a folder's settings (colour and defaults)
+#[tauri::command]
+fn folder_settings_save(state: State<'_, AppState>, store: sessions::Store, fields: folders::FolderFields) -> Result<(), String> {
+    let file = store_file(&state, store)?;
+    folders::save_settings(&file, &fields)
+}
+
+/// Move a session into another folder of its store; returns its new id
+#[tauri::command]
+fn session_move(state: State<'_, AppState>, store: sessions::Store, id: String, folder: String) -> Result<String, String> {
+    let file = store_file(&state, store)?;
+    folders::move_session(&file, &id, &folder, &other_ids(&state, store))
 }
 
 /// Use another settings folder (chosen in the UI), and remember it
@@ -272,6 +304,10 @@ pub fn run() {
             session_get,
             session_save,
             session_delete,
+            session_move,
+            folder_move,
+            folder_delete,
+            folder_settings_save,
             profiles_list,
             profiles_save,
             profiles_delete,

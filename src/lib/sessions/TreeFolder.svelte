@@ -4,6 +4,9 @@
 -->
 <script lang="ts">
   import TreeFolder from "./TreeFolder.svelte";
+  import Icon from "../icons/Icon.svelte";
+  import type { CustomIcon } from "../icons/custom";
+  import type { EnvironmentColors } from "../icons/environment";
   import type { FolderNode } from "./tree";
   import { unavailableReason, type SessionView } from "./api";
 
@@ -11,12 +14,19 @@
     node: FolderNode;
     depth: number;
     expanded: Set<string>;
-    colorOf: (session: SessionView) => string;
+    colors: EnvironmentColors;
+    iconSize: number;
+    customs: ReadonlyMap<string, CustomIcon>;
+    /** Sessions with an open tab, as "store:id" */
+    openSessions: ReadonlySet<string>;
     onToggle: (key: string) => void;
     onOpen: (session: SessionView) => void;
   }
 
-  let { node, depth, expanded, colorOf, onToggle, onOpen }: Props = $props();
+  let { node, depth, expanded, colors, iconSize, customs, openSessions, onToggle, onOpen }: Props = $props();
+
+  /** The roots' icons, as SuperXPuTTY's tree: a folder for Saved sessions, a padlock for Private ones */
+  const ROOT_ICONS: Record<string, string> = { saved: "folder", private: "lock" };
 
   const open = $derived(expanded.has(node.key));
   const isRoot = $derived(node.path === "");
@@ -32,25 +42,27 @@
   }
 </script>
 
-<div class="row folder" class:root={isRoot} style:padding-left="{depth * 16 + 4}px"
+<div class="row folder" class:root={isRoot} style:padding-left="{depth * 18 + 2}px" style:height="{Math.round(iconSize * 1.36) + 4}px"
   role="treeitem" aria-expanded={open} aria-selected="false" tabindex="-1"
   onclick={() => onToggle(node.key)} onkeydown={(e) => e.key === "Enter" && onToggle(node.key)}>
   <span class="twisty">{open ? "▾" : "▸"}</span>
-  <span class="folder-icon" aria-hidden="true">{isRoot ? (node.store === "private" ? "🔒" : "🗂") : "📁"}</span>
+  <Icon key={isRoot ? ROOT_ICONS[node.store] : "folder"} size={iconSize} environment={isRoot ? null : colors.forFolder(node.store, node.path)} {customs} />
   <span class="label">{node.name} ({node.count})</span>
 </div>
 
 {#if open}
   {#each node.folders as child (child.key)}
-    <TreeFolder node={child} depth={depth + 1} {expanded} {colorOf} {onToggle} {onOpen} />
+    <TreeFolder node={child} depth={depth + 1} {expanded} {colors} {iconSize} {customs} {openSessions} {onToggle} {onOpen} />
   {/each}
   {#each node.sessions as session (session.store + ":" + session.id)}
     {@const reason = unavailableReason(session.protocol)}
-    <div class="row session" class:dimmed={reason !== null} style:padding-left="{(depth + 1) * 16 + 20}px"
+    <div class="row session" class:dimmed={reason !== null} style:padding-left="{(depth + 1) * 18 + 14}px"
+      style:height="{Math.round(iconSize * 1.36) + 4}px"
       title={tooltip(session)} role="treeitem" aria-selected="false" aria-disabled={reason !== null} tabindex="-1"
       ondblclick={() => reason === null && onOpen(session)}
       onkeydown={(e) => e.key === "Enter" && reason === null && onOpen(session)}>
-      <span class="dot" style:background={colorOf(session) || "var(--text-muted)"}></span>
+      <Icon key={session.icon} size={iconSize} environment={colors.forSession(session)} {customs}
+        open={openSessions.has(session.store + ":" + session.id)} />
       <span class="label">{session.name}</span>
     </div>
   {/each}
@@ -61,7 +73,6 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    height: 26px;
     white-space: nowrap;
     border-radius: 3px;
     font-size: 14px;
@@ -79,17 +90,6 @@
     width: 10px;
     color: var(--text-muted);
     font-size: 11px;
-  }
-
-  .folder-icon {
-    font-size: 14px;
-  }
-
-  .dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    flex: none;
   }
 
   .dimmed {

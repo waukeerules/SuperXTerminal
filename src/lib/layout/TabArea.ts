@@ -4,13 +4,59 @@
  * It stands in for SuperXPuTTY's DockPanelSuite `DockPanel`. App.svelte creates it; each terminal tab is a
  * `TerminalPanel`, an iframe of `web/terminal` with a `PageHost` behind it.
  */
-import { createDockview, themeDark, themeLight, type DockviewApi, type IContentRenderer, type GroupPanelPartInitParameters } from "dockview-core";
+import {
+  createDockview,
+  themeDark,
+  themeLight,
+  type DockviewApi,
+  type GroupPanelPartInitParameters,
+  type IContentRenderer,
+  type ITabRenderer,
+  type TabPartInitParameters,
+} from "dockview-core";
+import { mount, unmount } from "svelte";
+import type { CustomIcon } from "../icons/custom";
 import { PageHost, type Target } from "../terminal/PageHost";
+import SessionTab from "./SessionTab.svelte";
 
-/** What a terminal tab is given when it's added: what to run, and whether it's a local shell */
+/** What a terminal tab is given when it's added: what to run, whether it's a local shell, and how its tab looks */
 interface TerminalParams {
   target: Target;
   local: boolean;
+  icon: string;
+  /** The environment colour: the tab's colour and the frame around the terminal; null for none */
+  environment: string | null;
+}
+
+/** A tab's label: SessionTab, with the session's icon and colour */
+class TabLabel implements ITabRenderer {
+  readonly element = document.createElement("div");
+  private label: ReturnType<typeof mount> | null = null;
+
+  constructor(private readonly tabs: TabArea) {
+    this.element.className = "session-tab";
+  }
+
+  /** Draw the label for its panel */
+  init(parameters: TabPartInitParameters): void {
+    const { icon, environment } = parameters.params as TerminalParams;
+    this.label = mount(SessionTab, {
+      target: this.element,
+      props: {
+        title: parameters.title,
+        icon,
+        environment,
+        iconSize: this.tabs.iconSize,
+        customs: this.tabs.customs,
+        onClose: () => parameters.api.close(),
+      },
+    });
+  }
+
+  /** Free the label */
+  dispose(): void {
+    if (this.label) void unmount(this.label);
+  }
 }
 
 /** One terminal tab's content: the page in an iframe, and its host */
@@ -26,7 +72,12 @@ class TerminalPanel implements IContentRenderer {
   /** Load the page for this tab and connect it to a new shell */
   init(parameters: GroupPanelPartInitParameters): void {
     const id = parameters.api.id;
-    const { target, local } = parameters.params as TerminalParams;
+    const { target, local, environment } = parameters.params as TerminalParams;
+    // SuperXPuTTY's frame: the environment colour shows as a 3 px border around the terminal
+    if (environment) {
+      this.element.style.padding = "3px";
+      this.element.style.background = environment;
+    }
     const frame = document.createElement("iframe");
     frame.className = "terminal-frame";
     // a label for screen readers; not "title", which WebKit shows as a tooltip over the whole terminal
@@ -54,12 +105,27 @@ class TerminalPanel implements IContentRenderer {
 export class TabArea {
   readonly api: DockviewApi;
   private count = 0;
+  /** Session icons' size, from the settings; tab icons are drawn at three quarters of it */
+  iconSize = 24;
+  /** Custom icons, for tabs whose session uses one */
+  customs: ReadonlyMap<string, CustomIcon> = new Map();
+  /** The session ("store:id") each open tab runs, by panel id, for marking open sessions in the tree */
+  private readonly sessions = new Map<string, string>();
 
-  /** Create the tab area inside `element` */
-  constructor(element: HTMLElement) {
+  /**
+   * Create the tab area inside `element`
+   * @param onOpenChanged told the open sessions ("store:id") whenever a session's tab opens or closes
+   */
+  constructor(element: HTMLElement, private readonly onOpenChanged: (open: Set<string>) => void) {
     this.api = createDockview(element, {
       theme: matchMedia("(prefers-color-scheme: dark)").matches ? themeDark : themeLight,
       createComponent: () => new TerminalPanel(this),
+      // dockview only uses createTabComponent for a named tab component, so make ours the default
+      defaultTabComponent: "session",
+      createTabComponent: () => new TabLabel(this),
+    });
+    this.api.onDidRemovePanel((panel) => {
+      if (this.sessions.delete(panel.id)) this.onOpenChanged(new Set(this.sessions.values()));
     });
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => {
       this.api.updateOptions({ theme: event.matches ? themeDark : themeLight });
@@ -69,24 +135,33 @@ export class TabArea {
   /** Open a new Local Shell tab */
   openLocalShell(): void {
     this.count += 1;
-    this.add(this.count === 1 ? "Local Shell" : `Local Shell (${this.count})`, { target: { kind: "localShell" }, local: true });
+    this.add(this.count === 1 ? "Local Shell" : `Local Shell (${this.count})`, {
+      target: { kind: "localShell" },
+      local: true,
+      icon: "terminal",
+      environment: null,
+    });
   }
 
-  /** Open a tab for a stored session */
-  openSession(store: "saved" | "private", id: string, title: string, local: boolean): void {
-    this.add(title, { target: { kind: "session", store, id }, local });
+  /** Open a tab for a stored session, with its icon and environment colour */
+  openSession(store: "saved" | "private", id: string, title: string, local: boolean, icon: string, environment: string | null): void {
+    const panelId = this.add(title, { target: { kind: "session", store, id }, local, icon, environment });
+    this.sessions.set(panelId, `${store}:${id}`);
+    this.onOpenChanged(new Set(this.sessions.values()));
   }
 
-  /** Add a terminal tab and show it */
-  private add(title: string, params: TerminalParams): void {
+  /** Add a terminal tab and show it; returns its panel id */
+  private add(title: string, params: TerminalParams): string {
+    const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.api.addPanel({
-      id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id,
       component: "terminal",
       title,
       params,
       // keep hidden tabs' pages alive: an iframe that's taken out of the page reloads and loses its terminal
       renderer: "always",
     });
+    return id;
   }
 
   /** The tab menu's commands, from a tab's page: close it, the others, those to its right, or all */

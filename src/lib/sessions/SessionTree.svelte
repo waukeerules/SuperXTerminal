@@ -7,12 +7,24 @@
   import TreeFolder from "./TreeFolder.svelte";
   import { buildTree } from "./tree";
   import { chooseSettingsFolder, loadSessions, type SessionsLoaded, type SessionView } from "./api";
+  import { loadCustomIcons, type CustomIcon } from "../icons/custom";
+  import { EnvironmentColors, parseRules } from "../icons/environment";
+  import { invoke } from "@tauri-apps/api/core";
 
   interface Props {
-    onOpen: (session: SessionView) => void;
+    /** Sessions with an open tab, as "store:id" */
+    openSessions: ReadonlySet<string>;
+    /** Open a session; given its icon key and environment colour for its tab */
+    onOpen: (session: SessionView, environment: string | null) => void;
+    /** The icon size and custom icons, once read, so tabs can draw icons the same way */
+    onLook: (iconSize: number, customs: ReadonlyMap<string, CustomIcon>) => void;
   }
 
-  let { onOpen }: Props = $props();
+  let { openSessions, onOpen, onLook }: Props = $props();
+
+  let iconSize = $state(24);
+  let rules = $state("");
+  let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
 
   let loaded = $state<SessionsLoaded | null>(null);
   let error = $state("");
@@ -20,14 +32,20 @@
   // roots start open, as with SuperXPuTTY's "Expand tree on startup"
   let expanded = $state(new Set<string>(["saved:", "private:"]));
 
+  const colors = $derived(new EnvironmentColors(loaded?.folders ?? [], parseRules(rules)));
   const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query) : null);
   const privateRoot = $derived(loaded ? buildTree("private", "Private sessions", loaded.sessions, query) : null);
 
   onMount(() => void reload());
 
-  /** Read the session files again */
+  /** Read the settings, custom icons and session files again */
   async function reload(): Promise<void> {
     try {
+      const settings = await invoke<{ iconSize: number; environmentColorRules: string }>("settings_get");
+      iconSize = settings.iconSize;
+      rules = settings.environmentColorRules;
+      customs = await loadCustomIcons();
+      onLook(iconSize, customs);
       loaded = await loadSessions();
       error = "";
     } catch (e) {
@@ -40,6 +58,11 @@
     if (await chooseSettingsFolder()) await reload();
   }
 
+  /** Open a session, passing on its environment colour for its tab */
+  function open(session: SessionView): void {
+    onOpen(session, colors.forSession(session));
+  }
+
   /** Open or close a folder */
   function toggle(key: string): void {
     const next = new Set(expanded);
@@ -48,18 +71,6 @@
     expanded = next;
   }
 
-  /** A session's environment colour: its own, else its nearest folder's (name rules come with the icons) */
-  function colorOf(session: SessionView): string {
-    if (session.color) return session.color;
-    const folders = (loaded?.folders ?? []).filter(([store]) => store === session.store).map(([, f]) => f);
-    let path = session.folder;
-    while (path) {
-      const setting = folders.find((f) => f.path === path);
-      if (setting?.color) return setting.color;
-      path = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    }
-    return "";
-  }
 </script>
 
 <input class="search" placeholder="Type to search..." bind:value={query} />
@@ -76,10 +87,10 @@
       <p class="message">Choose the settings folder: the folder that holds the team's Sessions.xml.</p>
       <button onclick={choose}>Choose Settings Folder...</button>
     {:else if saved}
-      <TreeFolder node={saved} depth={0} {expanded} {colorOf} onToggle={toggle} {onOpen} />
+      <TreeFolder node={saved} depth={0} {expanded} {colors} {iconSize} {customs} {openSessions} onToggle={toggle} onOpen={open} />
     {/if}
     {#if privateRoot}
-      <TreeFolder node={privateRoot} depth={0} {expanded} {colorOf} onToggle={toggle} {onOpen} />
+      <TreeFolder node={privateRoot} depth={0} {expanded} {colors} {iconSize} {customs} {openSessions} onToggle={toggle} onOpen={open} />
     {/if}
   {/if}
 </div>

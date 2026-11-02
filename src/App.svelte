@@ -12,17 +12,18 @@
   let tabElement: HTMLDivElement;
   let tabs: TabArea | null = null;
   let status = $state("Ready");
+  let openSessions = $state<ReadonlySet<string>>(new Set());
 
   onMount(() => {
-    tabs = new TabArea(tabElement);
+    tabs = new TabArea(tabElement, (open) => (openSessions = open));
     tabs.openLocalShell();
     status = "Opened session: Local Shell";
     return () => tabs?.dispose();
   });
 
   /** Open a session from the tree in a new tab */
-  function openSession(session: SessionView): void {
-    tabs?.openSession(session.store, session.id, session.name, opensAsLocalShell(session.protocol));
+  function openSession(session: SessionView, environment: string | null): void {
+    tabs?.openSession(session.store, session.id, session.name, opensAsLocalShell(session.protocol), session.icon, environment);
     status = `Opened session: ${session.name} [${session.protocol || "SSH"}]`;
   }
 
@@ -49,7 +50,12 @@
   <div class="main">
     <aside class="sessions">
       <div class="pane-title">Sessions</div>
-      <SessionTree onOpen={openSession} />
+      <SessionTree {openSessions} onOpen={openSession} onLook={(size, customs) => {
+        if (tabs) {
+          tabs.iconSize = size;
+          tabs.customs = customs;
+        }
+      }} />
     </aside>
     <div class="tabs" bind:this={tabElement}></div>
   </div>

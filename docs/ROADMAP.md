@@ -51,17 +51,17 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Saved and Private roots, folders and sessions; closed folders draw nothing
 - ✅ Folder session counts, folders first, sort
 - ✅ Search box (filter while typing: name, host, username, folder, note)
-- 🚧 Open sessions marked; tooltips: tooltips done (protocol, address, note, why it can't open)
+- ✅ Open sessions marked (green dot); tooltips (protocol, address, note, why it can't open)
 - ⬜ New, rename, delete, drag to move (sessions and folders)
 - ✅ Sessions the Mac can't open shown dimmed with the reason
 
 **Icons and colours**
-- ⬜ Icon templates redrawn as SVG, with colourable keys
-- ⬜ Brand logos
-- ⬜ Custom icons from `<SettingsFolder>/icons`
-- ⬜ Old PNG keys mapped onto templates
-- ⬜ Environment colours: tree circle, tab, frame around the terminal
-- ⬜ Colour resolution: session, else folder, else name rule
+- ✅ Icon templates redrawn as SVG, with colourable keys (all 62 templates and glyphs; checked against SuperXPuTTY's Choose Icon window)
+- ✅ Brand logos (26, from SuperXPuTTY's BrandLogos)
+- 🚧 Custom icons from `<SettingsFolder>/icons`: read and drawn as masks in any colour; not yet tried with a real one (the reference data has none)
+- ✅ Old PNG keys mapped onto templates
+- ✅ Environment colours: tree circle, tab (selected filled, others tinted with a top stripe), frame around the terminal
+- ✅ Colour resolution: session, else folder, else name rule (rules in `settings.json` until the Settings window)
 
 **Connecting**
 - ✅ SSH tab: `ssh -tt` in a PTY, host, port, username; checked against the lab switch (log in, `sh ip int bri`)

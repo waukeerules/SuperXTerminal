@@ -1,18 +1,29 @@
 //! The app's own settings (per user), kept as JSON in the user's folder (`sessions::user_folder`).
 //!
-//! For now only the settings folder: where `Sessions.xml`, `Folders.xml` and the team's other shared files are, as
-//! SuperXPuTTY's `SettingsFolder`. More settings join it with the Settings window later in M1.
+//! The settings folder (where `Sessions.xml`, `Folders.xml` and the team's other shared files are, as SuperXPuTTY's
+//! `SettingsFolder`), the icon size, and the environment colour name rules. More join them with the Settings window
+//! later in M1.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 /// The settings file's contents
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppSettings {
     /// The settings folder; none until the user chooses one
     pub settings_folder: Option<PathBuf>,
+    /// Session icons' size in pixels, as SuperXPuTTY's Options > Icon size (16, 20, 24 or 32)
+    pub icon_size: u32,
+    /// Environment colour name rules, as SuperXPuTTY's EnvironmentColorRules: "Prod=#C62828;Staging=#EF6C00"
+    pub environment_color_rules: String,
+}
+
+impl Default for AppSettings {
+    fn default() -> AppSettings {
+        AppSettings { settings_folder: None, icon_size: 24, environment_color_rules: String::new() }
+    }
 }
 
 impl AppSettings {

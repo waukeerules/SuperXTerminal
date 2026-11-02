@@ -34,7 +34,8 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ `web/terminal`, `web/output`, `web/shared` and `web/lib` copied from SuperXPuTTY with their licences (default rules and themes still missing: not in SuperXPuTTY's repository)
 - ✅ Licence checks (`cargo deny check` in `src-tauri/`, `npm run licenses`), including security advisories
 - ✅ Builds made locally; the GitHub Actions workflow (macOS, Windows, Linux) runs only when started by hand, so pushes cost nothing
-- Note: a small macOS badge can show beside the terminal cursor for a moment after the window gets focus (seen in quick screenshots; not seen in normal use). Cosmetic; looked into only if it lingers
+- ⬜ Known issue: a small round macOS badge sits beside the terminal cursor, over the end of the prompt (seen in the user's own screenshots too). Not in the page, not a separate window; not fixed by `writingsuggestions`, a transparent caret, or `TSMLanguageIndicatorEnabled`. Next: find it with Web Inspector
+- ⬜ To check: a command typed once showed twice, with empty prompts between, on the lab switch (and a column of empty prompts in an early local shell). Not caused by clicks; not yet reproduced in a controlled test
 
 ## M1 MVP
 
@@ -108,7 +109,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 ## M4 Terminal extras
 
-- 🚧 Highlighting rules (cisco, junos, generic, auto, user rules), per session and folder, per tab: the team's and the user's `highlighting` folders are read and Auto picks a set (checked with `my-cisco`); colours wait for SuperXPuTTY's default themes and rules, missing from its Git repository
+- ✅ Highlighting rules (cisco, junos, generic, auto, user rules), per tab: SuperXPuTTY's defaults bundled, then the team's and the user's `highlighting` folders; checked against SuperXPuTTY's colours on the lab switch (`sh ip int bri`). Per session and folder (`HighlightRules`) comes with Edit Session
 - ⬜ Terminal preferences in Settings (theme, font, cursor, bell, copy on select, mark matches)
 - ⬜ Highlighted Output (Monaco) beside the tab, from the menu's Open as Document
 - ⬜ Terminal right-click menu complete, with Mac shortcuts (Cmd+C/V/F/K/W)

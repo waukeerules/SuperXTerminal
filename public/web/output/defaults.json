@@ -1,5 +1,13 @@
 {
-  "comment": "The default rule sets and themes in rules/ and themes/, which the app loads first; the team's and the user's highlighting folders can replace them. SuperXPuTTY's defaults (generic, cisco, junos; PuTTY, Dark, Light) go here once copied from a Windows install: they're missing from SuperXPuTTY's Git repository.",
-  "rules": [],
-  "themes": []
+  "comment": "The default rule sets and themes in rules/ and themes/, which the app loads first; the team's and the user's highlighting folders can replace them. They're SuperXPuTTY's own defaults (MIT), copied from a Windows install because they're missing from SuperXPuTTY's Git repository.",
+  "rules": [
+    "cisco.rules.json",
+    "generic.rules.json",
+    "junos.rules.json"
+  ],
+  "themes": [
+    "dark.theme.json",
+    "light.theme.json",
+    "putty.theme.json"
+  ]
 }

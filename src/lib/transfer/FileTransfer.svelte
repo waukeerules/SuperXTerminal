@@ -180,6 +180,10 @@
   async function remove(entries: Entry[]): Promise<void> {
     const listing = sides.remote.listing;
     if (!listing || !entries.length) return;
+    if (conn?.scp && entries.some((e) => e.dir)) {
+      sides.remote.error = "Over SCP only files can be deleted, not folders.";
+      return;
+    }
     const folders = entries.some((e) => e.dir);
     const what = entries.length === 1 ? `"${entries[0].name}"` : `these ${entries.length} items`;
     const sure = await confirm(`Delete ${what} from ${conn?.address}?${folders ? " Folders are deleted with everything in them." : ""} This can't be undone.`,
@@ -225,7 +229,7 @@
           onDrop={(paths, folder) => void queue(true, paths, folder)}
           onMkdir={conn.scp ? undefined : () => void mkdir("remote")}
           onRename={conn.scp ? undefined : (e) => void rename("remote", e)}
-          onDelete={conn.scp ? undefined : (entries) => void remove(entries)} />
+          onDelete={(entries) => void remove(entries)} />
       </div>
     </div>
 

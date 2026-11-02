@@ -240,7 +240,11 @@ pub async fn sftp_open(
         let _ = tokio::time::timeout(Duration::from_secs(3), child.wait()).await;
         tokio::time::sleep(Duration::from_millis(200)).await;
         let said = said.lock().unwrap().trim().to_string();
-        let reason = if !said.is_empty() && !said.to_lowercase().starts_with("connection closed") {
+        // a Cisco device that refused dir: logged in, but not at privilege 15
+        let refused = probe.as_ref().err().filter(|why| why.contains("invalid autocommand")).cloned();
+        let reason = if let Some(why) = refused {
+            why
+        } else if !said.is_empty() && !said.to_lowercase().starts_with("connection closed") {
             said
         } else if matches!(e, SftpError::UnexpectedBehavior(_) | SftpError::IO(_)) || said.to_lowercase().starts_with("connection closed") {
             // logged in, then dropped: no SFTP there (network devices often have only SCP), or the login was refused
@@ -392,7 +396,10 @@ pub async fn sftp_rename(sftps: State<'_, Sftps>, id: u32, from: String, to: Str
 #[tauri::command]
 pub async fn sftp_delete(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<(), String> {
     let conn = conn(&sftps, id)?;
-    delete(conn.raw()?, &path).await
+    match &conn.scp {
+        Some(base) => scp_delete(base, &conn.token, &path).await,
+        None => delete(conn.raw()?, &path).await,
+    }
 }
 
 async fn delete(raw: &RawSftpSession, path: &str) -> Result<(), String> {
@@ -692,7 +699,43 @@ async fn scp_list(base: &[String], token: &str, path: &str) -> Result<Listing, S
         }
         said = format!("{}{}", String::from_utf8_lossy(&output.stderr).trim(), text.trim());
     }
-    Err(if said.is_empty() { format!("{path}: no listing") } else { said })
+    Err(if said.is_empty() { format!("{path}: no listing") } else { privilege_hint(&said) })
+}
+
+/// A file on the device deleted with its own command, over the session's ssh: `delete /force` asks nothing (IOS's
+/// plain delete asks to confirm, which a command run this way can't answer). SCP itself can't delete.
+async fn scp_delete(base: &[String], token: &str, path: &str) -> Result<(), String> {
+    if path.chars().any(|c| c.is_whitespace() || c == '"') {
+        return Err(format!("{path}: a name with spaces can't be deleted this way."));
+    }
+    let mut command = with_login("ssh", token)?;
+    command.args(["-T", "-o", "ServerAliveInterval=30"]).args(base).arg(format!("delete /force {path}"));
+    let output = tokio::time::timeout(Duration::from_secs(120), command.output())
+        .await
+        .map_err(|_| "The device didn't answer.".to_string())?
+        .map_err(|e| format!("Couldn't start ssh: {e}"))?;
+    let said = format!("{}\n{}", String::from_utf8_lossy(&output.stdout).trim(), String::from_utf8_lossy(&output.stderr).trim());
+    let said = said.trim();
+    // IOS reports a failure as "%Error deleting …" or "% Invalid input …", and the command still ends cleanly
+    let failed = said.lines().any(|l| l.trim_start().starts_with('%') || l.contains("invalid autocommand"));
+    if failed || (!output.status.success() && !said.to_lowercase().contains("closed by remote host")) {
+        let reason = said.lines().filter(|l| !l.to_lowercase().contains("closed by remote host")).collect::<Vec<_>>().join(" ");
+        return Err(format!("{path}: {}", privilege_hint(if reason.trim().is_empty() { "the delete failed" } else { reason.trim() })));
+    }
+    Ok(())
+}
+
+/// A device's refusal, with what usually fixes it: SCP and commands like delete need a privilege 15 login on IOS
+fn privilege_hint(said: &str) -> String {
+    let lower = said.to_lowercase();
+    let likely = ["invalid autocommand", "administratively", "authorization failed", "privilege", "permission denied", "connection closed", "lost connection"];
+    if likely.iter().any(|w| lower.contains(w)) {
+        format!(
+            "{said}. On Cisco IOS this usually means the login isn't privilege 15: give the user privilege 15 (username <name> privilege 15) or allow it through AAA (aaa authorization exec), and check ip scp server enable."
+        )
+    } else {
+        said.to_string()
+    }
 }
 
 /// A Cisco-style `dir`: the folder from "Directory of …", then "index perms size date… name" lines
@@ -804,7 +847,7 @@ async fn scp_transfer(
                 let _ = stderr.read_to_string(&mut said).await;
             }
             let said = said.trim();
-            return Err(format!("{name}: {}", if said.is_empty() { "scp failed" } else { said }));
+            return Err(format!("{name}: {}", privilege_hint(if said.is_empty() { "scp failed" } else { said })));
         }
         done += if upload { size } else { std::fs::metadata(&to).map(|m| m.len()).unwrap_or(0) };
         let _ = on_progress.send(Progress::Done { bytes: done, file: name });
@@ -916,6 +959,12 @@ mod tests {
         let (args, host) = scp_args(&["-p".into(), "2222".into(), "-l".into(), "admin".into(), "-o".into(), "X=1".into(), "10.0.0.1".into()]);
         assert_eq!(args, ["-P", "2222", "-o", "User=admin", "-o", "X=1"]);
         assert_eq!(host, "10.0.0.1");
+    }
+
+    #[test]
+    fn explains_privilege_refusals() {
+        assert!(privilege_hint("Line has invalid autocommand \"delete /force flash:x\"").contains("privilege 15"));
+        assert_eq!(privilege_hint("%Error deleting flash:/x (No such file or directory)"), "%Error deleting flash:/x (No such file or directory)");
     }
 
     #[test]

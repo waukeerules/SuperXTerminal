@@ -16,6 +16,15 @@ export interface AppSettings {
   treeFontSize: number;
   /** Database sessions' connection, as the core keeps it (the password is in the Keychain) */
   database?: { checkSeconds: number; enabled: boolean };
+  /** The button bar chosen by hand ("" for the first) */
+  activeButtonBar: string;
+  /** View > Button Bar and View > Send Commands */
+  showButtonBar: boolean;
+  showSendCommands: boolean;
+  /** Send Commands goes to every visible tab rather than the ticked ones */
+  sendToVisibleOnly: boolean;
+  /** The Script Editor stays above the tabs */
+  scriptEditorOnTop: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -26,6 +35,11 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   theme: "system",
   treeFontSize: 14,
   database: { checkSeconds: 30, enabled: false },
+  activeButtonBar: "",
+  showButtonBar: true,
+  showSendCommands: true,
+  sendToVisibleOnly: false,
+  scriptEditorOnTop: false,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

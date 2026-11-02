@@ -590,6 +590,16 @@
     void changeShortcuts(recordOpened(session.id));
   }
 
+  /** Open a session by its id (SPSL's OPENSESSION), looking in Saved, Private then Database sessions; false if none */
+  export function openById(id: string): boolean {
+    const session = ["saved", "private", "database"]
+      .map((store) => loaded?.sessions.find((s) => s.store === store && s.id.toLowerCase() === id.toLowerCase()))
+      .find(Boolean);
+    if (!session) return false;
+    open(session);
+    return true;
+  }
+
   /** Open or close a folder */
   function toggle(key: string): void {
     if (searching) {

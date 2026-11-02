@@ -1,7 +1,6 @@
 <!--
   The main window, laid out as SuperXPuTTY's: the Quick connect and Send Commands toolbars, the Sessions pane on the
-  left, the document tabs, then the button bar and the status bar. M0 has the frame only; the tree, toolbars and
-  button bar are filled in M1 and M3.
+  left, the document tabs, then the button bar and the status bar (with running scripts and their Stop).
 -->
 <script lang="ts">
   import Icon from "./lib/icons/Icon.svelte";
@@ -16,6 +15,15 @@
   import QuickConnect from "./lib/layout/QuickConnect.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { opensAsLocalShell, type SessionView } from "./lib/sessions/api";
+  import { invoke } from "@tauri-apps/api/core";
+  import SendCommands from "./lib/commands/SendCommands.svelte";
+  import ButtonBar from "./lib/commands/ButtonBar.svelte";
+  import ScriptEditor from "./lib/commands/ScriptEditor.svelte";
+  import ScriptStatus from "./lib/commands/ScriptStatus.svelte";
+  import Ask from "./lib/scripting/Ask.svelte";
+  import { context, runScriptIn } from "./lib/commands/sending.svelte";
+  import { saveSettings } from "./lib/settings/store.svelte";
+  import type { CustomIcon } from "./lib/icons/custom";
 
   let tabElement: HTMLDivElement;
   let tabs = $state<TabArea | null>(null);
@@ -25,6 +33,9 @@
   let settingsTab = $state<string | null>(null);
   let variablesOpen = $state(false);
   let databaseOpen = $state(false);
+  let editorOpen = $state(false);
+  let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
+  let tree: SessionTree | undefined = $state();
 
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
   void listen<string>("menu", (event) => {
@@ -32,6 +43,9 @@
     else if (event.payload === "newLocalShell") newShell();
     else if (event.payload === "environmentVariables") variablesOpen = true;
     else if (event.payload === "databaseSessions") databaseOpen = true;
+    else if (event.payload === "scriptEditor") editorOpen = true;
+    else if (event.payload === "toggleSendCommands") void saveSettings({ showSendCommands: !settings.showSendCommands });
+    else if (event.payload === "toggleButtonBar") void saveSettings({ showButtonBar: !settings.showButtonBar });
   });
 
   void loadSettings();
@@ -47,6 +61,10 @@
 
   onMount(() => {
     tabs = new TabArea(tabElement, (open) => (openSessions = open));
+    context.tabs = tabs;
+    context.status = (text) => (status = text);
+    context.openSession = (id) => tree?.openById(id) ?? false;
+    context.editVariables = () => (variablesOpen = true);
     tabs.openLocalShell();
     status = "Opened session: Local Shell";
     return () => tabs?.dispose();
@@ -54,8 +72,25 @@
 
   /** Open a session from the tree in a new tab */
   function openSession(session: SessionView, environment: string | null): void {
-    tabs?.openSession(session.store, session.id, session.name, opensAsLocalShell(session.protocol), session.icon, environment);
+    const id = tabs?.openSession(session.store, session.id, session.name, opensAsLocalShell(session.protocol), session.icon, environment);
     status = `Opened session: ${session.name} [${session.protocol || "SSH"}]`;
+    if (id) void runOwnScript(session, id);
+  }
+
+  /**
+   * The session's own script (Edit Session's SPSL script), as SuperXPuTTY runs it when the session opens: only a
+   * script starting #!/bin/spsl, and its first WAITFOR sees everything since the session started
+   */
+  async function runOwnScript(session: SessionView, tabId: string): Promise<void> {
+    const found = await invoke<{ kind: string; text?: string; url?: string; path?: string }>("session_script", { store: session.store, id: session.id });
+    let script = found.text ?? "";
+    if (found.kind === "url" && found.url) script = await fetch(found.url).then((r) => (r.ok ? r.text() : "")).catch(() => "");
+    if (found.kind === "missing") status = `${session.name}'s script ${found.path} isn't on this Mac`;
+    if (!script.startsWith("#!/bin/spsl")) return;
+    const tab = tabs?.tabList().find((t) => t.id === tabId);
+    if (!tab) return;
+    await tab.host.started;
+    runScriptIn(tab, script.replace(/\r\n/g, "\n"), "Login script", true);
   }
 
   /** Open another Local Shell tab (File > New Local Shell, Cmd+T) */
@@ -86,68 +121,42 @@
     tabs?.openQuickConnect(quick, title, local);
     status = `Opened session: ${title} [${quick.protocol}]`;
   }} />
-  <div class="toolbar" aria-label="Send Commands" title="Send Commands comes in M3">
-    <label class="grow"><Icon key="terminal" size={Math.round(settings.iconSize * 0.85)} />Command <input disabled class="grow" /></label>
-  </div>
+  {#if settings.showSendCommands}
+    <SendCommands onOpenEditor={() => (editorOpen = true)} />
+  {/if}
 
   <div class="main">
     <aside class="sessions">
       <div class="pane-title">Sessions</div>
-      <SessionTree {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsTab = "Profiles")} onLook={(_, customs) => {
-        if (tabs) tabs.customs = customs;
+      <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsTab = "Profiles")} onLook={(_, icons) => {
+        customs = icons;
+        if (tabs) tabs.customs = icons;
       }} />
     </aside>
     <div class="tabs" bind:this={tabElement}></div>
   </div>
 
-  <div class="buttonbar" aria-label="Button bar" title="The button bar comes in M3">
-    <select disabled><option>Default</option></select>
-  </div>
+  {#if settings.showButtonBar}
+    <ButtonBar {customs} />
+  {/if}
   <div class="statusbar">
-    <span>{status}</span>
+    <span class="status">{status}</span>
+    <ScriptStatus />
     <span class="version">0.1.0</span>
   </div>
 </div>
+
+{#if editorOpen}
+  <ScriptEditor onClose={() => (editorOpen = false)} />
+{/if}
+
+<Ask />
 
 <style>
   .window {
     display: flex;
     flex-direction: column;
     height: 100%;
-  }
-
-  .toolbar,
-  .buttonbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 4px 8px;
-    background: var(--bg-bar);
-    border-bottom: 1px solid var(--border);
-  }
-
-  label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  input:disabled,
-  select:disabled {
-    opacity: 0.6;
-  }
-
-  input,
-  select {
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    padding: 2px 4px;
-    min-width: 0;
-  }
-
-  .grow {
-    flex: 1;
   }
 
   .main {
@@ -183,16 +192,15 @@
     display: block;
   }
 
-  .buttonbar {
-    border-top: 1px solid var(--border);
-  }
-
   .statusbar {
     display: flex;
-    justify-content: space-between;
+    gap: 8px;
     padding: 3px 8px;
     background: var(--bg-bar);
     color: var(--text-muted);
     font-size: 12px;
+  }
+  .statusbar .status {
+    flex: 1;
   }
 </style>

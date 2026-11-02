@@ -11,6 +11,9 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { highlighting } from "./highlighting";
 import { isDark } from "../settings/store.svelte";
+import { keySequence, parseSendKey } from "../scripting/keys";
+import type { ScriptTarget } from "../scripting/spsl";
+import { askOne } from "../scripting/asking.svelte";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
 type PtyEvent =
@@ -64,12 +67,24 @@ const MENU_KEYS = [
  */
 const STAND_IN_THEMES = [{ name: "PuTTY", base: "vs-dark", colors: { background: "#000000", foreground: "#FFFFFF" } }];
 
-/** What each Send Key entry types */
-const KEY_TEXT: Record<string, string> = {
-  "^C": "\x03", "^Z": "\x1a", "^6": "\x1e", "^]": "\x1d", "^D": "\x04", "^\\": "\x1c", ESC: "\x1b",
-};
+/** How much finished output is kept for WAITFOR; half is dropped when it's exceeded, as TerminalControl */
+const RECENT_OUTPUT_LIMIT = 256 * 1024;
 
-export class PageHost {
+export class PageHost implements ScriptTarget {
+  /** Finished lines kept for WAITFOR, "\n" after each; `recentStart` counts what's been dropped from the front */
+  private recent = "";
+  private recentStart = 0;
+  /** Characters of finished lines ever logged */
+  private committedTotal = 0;
+  /** The cursor's line as the page last showed it */
+  private currentLine = "";
+  /** Where WAITFOR starts looking, counted like committedTotal */
+  private mark = 0;
+  /** The program ended: nothing more can be typed */
+  private ended = false;
+  private markStarted: () => void = () => {};
+  /** Settles once the tab's program has started (a session's own script waits for it) */
+  readonly started = new Promise<void>((resolve) => (this.markStarted = resolve));
   /** The pseudo terminal's id, once it's open */
   private ptyId: number | null = null;
   /** Output waiting for the page to acknowledge the chunk before it */
@@ -153,17 +168,69 @@ export class PageHost {
         await this.paste(typeof message.text === "string" ? message.text : null);
         break;
       case "sendKey":
-        // "Other Key..." (no key) needs the Send Key dialog, which comes in M3
-        if (typeof message.key === "string" && this.ptyId !== null) {
-          const text = KEY_TEXT[message.key];
-          if (text) await invoke("pty_write", { id: this.ptyId, data: text });
-        }
+        await this.sendKey(typeof message.key === "string" ? message.key : null);
+        break;
+      case "log":
+        this.onLog(Array.isArray(message.lines) ? message.lines.map(String) : [], typeof message.current === "string" ? message.current : "");
         break;
       case "tab":
         this.onTabCommand(String(message.command));
         break;
       // log, document, bell, openInPutty, openLink, pref, cleared: later milestones
     }
+  }
+
+  /** Send Key: a menu key ("^C"), or for "Other Key..." one asked for as SENDKEY writes it, as SuperXPuTTY's */
+  private async sendKey(key: string | null): Promise<void> {
+    const written = key ?? (await askOne("Send Key: a key as SENDKEY writes it, e.g. ^C, ESC, F5, ^HOME or {TAB 3}", false));
+    if (!written) return;
+    try {
+      const parsed = parseSendKey(written);
+      if (parsed) await this.type(keySequence(parsed.key).repeat(parsed.repeat));
+    } catch (error) {
+      this.post({ type: "notice", text: String(error instanceof Error ? error.message : error), kind: "error" });
+    }
+  }
+
+  /** Lines the page has finished showing, and the cursor's line: kept for WAITFOR (the session log comes in M4) */
+  private onLog(lines: string[], current: string): void {
+    if (lines.length) {
+      const text = lines.map((l) => l + "\n").join("");
+      this.recent += text;
+      this.committedTotal += text.length;
+      if (this.recent.length > RECENT_OUTPUT_LIMIT) {
+        const drop = this.recent.length - RECENT_OUTPUT_LIMIT / 2;
+        this.recent = this.recent.slice(drop);
+        this.recentStart += drop;
+      }
+    }
+    this.currentLine = current;
+  }
+
+  /** Type text and key sequences into the session (Send Commands, the button bar, SPSL) */
+  async type(text: string): Promise<void> {
+    if (this.canReceiveCommands && text) await invoke("pty_write", { id: this.ptyId, data: text });
+  }
+
+  /** Whether the tab's program is running, so commands can be typed into it */
+  get canReceiveCommands(): boolean {
+    return this.ptyId !== null && !this.ended;
+  }
+
+  markOutput(atLineStart: boolean): void {
+    this.mark = this.committedTotal + (atLineStart ? 0 : this.currentLine.length);
+  }
+
+  outputSinceMark(): string {
+    if (this.mark >= this.committedTotal) {
+      return this.currentLine.slice(Math.min(this.currentLine.length, this.mark - this.committedTotal));
+    }
+    const from = Math.max(0, this.mark - this.recentStart);
+    return this.recent.slice(from) + this.currentLine;
+  }
+
+  advanceMark(characters: number): void {
+    this.mark = Math.max(this.mark, this.recentStart) + characters;
   }
 
   /** Paste the given text, or the clipboard's, into the terminal */
@@ -208,12 +275,14 @@ export class PageHost {
       } else if (event.type === "notice") {
         this.post({ type: "notice", text: event.text, kind: event.kind });
       } else if (event.type === "exit") {
+        this.ended = true;
         if (this.local) this.onExit();
         else this.post({ type: "notice", text: "Session ended.", kind: "info" });
       }
     };
     try {
       this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel });
+      this.markStarted();
     } catch (error) {
       // nothing started, so the page has had no settings yet
       await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });

@@ -1,5 +1,6 @@
 //! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
 
+mod buttonbars;
 mod db;
 mod editing;
 mod folders;
@@ -7,6 +8,7 @@ mod highlighting;
 mod launch;
 mod profiles;
 mod pty;
+mod scripts;
 mod secrets;
 mod outbox;
 mod sessions;
@@ -293,6 +295,116 @@ fn forget_folder(state: &AppState, path: &str) {
     shortcuts::forget(&state.user_folder, |id| id.starts_with(&below));
 }
 
+/// The settings folder, or the user's folder when none is chosen, for shared files (ButtonBars.xml, scripts)
+fn shared_folder(state: &AppState) -> PathBuf {
+    state.settings.lock().unwrap().settings_folder.clone().unwrap_or_else(|| state.user_folder.clone())
+}
+
+/// The button bars, re-read from ButtonBars.xml each time (SuperXPuTTY reloads it whenever its menu opens)
+#[tauri::command]
+fn buttonbars_load(state: State<'_, AppState>) -> Vec<buttonbars::Bar> {
+    let folder = state.settings.lock().unwrap().settings_folder.clone();
+    buttonbars::load(&buttonbars::file(folder.as_deref(), &state.user_folder))
+}
+
+/// Save the button bars
+#[tauri::command]
+fn buttonbars_save(state: State<'_, AppState>, bars: Vec<buttonbars::Bar>) -> Result<(), String> {
+    let folder = state.settings.lock().unwrap().settings_folder.clone();
+    buttonbars::save(&buttonbars::file(folder.as_deref(), &state.user_folder), &bars)
+}
+
+/// Export one bar as SuperXPuTTY's JSON
+#[tauri::command]
+fn buttonbars_export(bar: buttonbars::Bar, path: PathBuf) -> Result<(), String> {
+    std::fs::write(path, buttonbars::export(&bar)).map_err(|e| e.to_string())
+}
+
+/// Add the bars from an export file and save; returns the bars and the last one imported
+#[tauri::command]
+fn buttonbars_import(state: State<'_, AppState>, path: PathBuf) -> Result<(Vec<buttonbars::Bar>, String), String> {
+    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let folder = state.settings.lock().unwrap().settings_folder.clone();
+    let file = buttonbars::file(folder.as_deref(), &state.user_folder);
+    let mut bars = buttonbars::load(&file);
+    let last = buttonbars::import(&mut bars, &json)?;
+    buttonbars::save(&file, &bars)?;
+    Ok((bars, last))
+}
+
+/// A session's own script (Edit Session's SPSL script), found as SuperXPuTTY finds it
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum SessionScript {
+    /// The session has none
+    None,
+    /// An http(s) address, which the window fetches
+    Url { url: String },
+    Text { text: String },
+    /// A file that isn't there, e.g. a Windows path (C:\...)
+    Missing { path: String },
+}
+
+/// The script a session runs when it opens: a file (absolute, file://, or relative to the settings folder), or a URL
+#[tauri::command]
+fn session_script(state: State<'_, AppState>, store: sessions::Store, id: String) -> SessionScript {
+    let spec = {
+        let sessions = state.sessions.lock().unwrap();
+        sessions.find(store, &id).map(|s| s.get("SPSLFileName").trim().to_string()).unwrap_or_default()
+    };
+    if spec.is_empty() {
+        return SessionScript::None;
+    }
+    let lower = spec.to_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        return SessionScript::Url { url: spec };
+    }
+    let path = PathBuf::from(spec.strip_prefix("file://").unwrap_or(&spec));
+    let path = if path.is_absolute() { path } else { shared_folder(&state).join(path) };
+    match std::fs::read_to_string(&path) {
+        Ok(text) => SessionScript::Text { text },
+        Err(_) => SessionScript::Missing { path: spec },
+    }
+}
+
+/// The saved scripts
+#[tauri::command]
+fn scripts_list(state: State<'_, AppState>) -> Vec<scripts::Entry> {
+    scripts::list(&shared_folder(&state))
+}
+
+/// A saved script's text
+#[tauri::command]
+fn script_load(state: State<'_, AppState>, name: String, kind: String) -> Result<String, String> {
+    scripts::load(&shared_folder(&state), &name, &kind)
+}
+
+/// Save a script in the library
+#[tauri::command]
+fn script_save(state: State<'_, AppState>, name: String, kind: String, text: String) -> Result<Vec<scripts::Entry>, String> {
+    scripts::save(&shared_folder(&state), &name, &kind, &text)?;
+    Ok(scripts::list(&shared_folder(&state)))
+}
+
+/// Delete a saved script
+#[tauri::command]
+fn script_delete(state: State<'_, AppState>, name: String, kind: String) -> Result<Vec<scripts::Entry>, String> {
+    scripts::delete(&shared_folder(&state), &name, &kind)?;
+    Ok(scripts::list(&shared_folder(&state)))
+}
+
+/// A text file the user chose (Script Editor's Open file...), with LF line breaks
+#[tauri::command]
+fn text_file_read(path: PathBuf) -> Result<String, String> {
+    std::fs::read_to_string(path).map(|t| t.replace("\r\n", "\n")).map_err(|e| e.to_string())
+}
+
+/// Write a text file the user chose (Script Editor's Save to file...), with CRLF as SuperXPuTTY does
+#[tauri::command]
+fn text_file_write(path: PathBuf, text: String) -> Result<(), String> {
+    std::fs::write(path, text.replace("\r\n", "\n").replace('\n', "\r\n")).map_err(|e| e.to_string())
+}
+
 /// The Favorites and Recent lists
 #[tauri::command]
 fn shortcuts_get(state: State<'_, AppState>) -> shortcuts::Shortcuts {
@@ -348,6 +460,20 @@ fn variables_list(state: State<'_, AppState>) -> Vec<variables::Variable> {
 fn variables_save(state: State<'_, AppState>, variables: Vec<variables::Variable>) -> Result<Vec<variables::Variable>, String> {
     variables::save(&state.user_folder, &variables)?;
     Ok(variables::list(&state.user_folder))
+}
+
+/// Text with its {key} placeholders filled from Environment Variables, and the keys that have no value (left as
+/// written), for Send Commands, the button bar and scripts, as SuperXPuTTY's SessionVariables
+#[derive(serde::Serialize)]
+struct Filled {
+    text: String,
+    missing: Vec<String>,
+}
+
+#[tauri::command]
+fn variables_fill(state: State<'_, AppState>, text: String) -> Filled {
+    let values = variables::values(&state.user_folder);
+    Filled { missing: variables::missing(&text, &values), text: variables::substitute(&text, &values) }
 }
 
 /// Save the Settings window's General tab; the settings folder is changed with `settings_set_folder`
@@ -1046,11 +1172,23 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "Tools",
         true,
         &[
+            &MenuItem::with_id(app, "scriptEditor", "Script Editor…", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "databaseSessions", "Database Sessions…", true, None::<&str>)?,
             &MenuItem::with_id(app, "environmentVariables", "Environment Variables…", true, None::<&str>)?,
         ],
     )?;
-    Menu::with_items(app, &[&app_menu, &file, &edit, &tools, &window])
+    // shown or hidden, as SuperXPuTTY's View > Send Commands and View > Button Bar
+    let view = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[
+            &MenuItem::with_id(app, "toggleSendCommands", "Send Commands", true, None::<&str>)?,
+            &MenuItem::with_id(app, "toggleButtonBar", "Button Bar", true, None::<&str>)?,
+        ],
+    )?;
+    Menu::with_items(app, &[&app_menu, &file, &edit, &view, &tools, &window])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1108,6 +1246,17 @@ pub fn run() {
             db_create_schema,
             db_pending_list,
             shortcuts_get,
+            buttonbars_load,
+            buttonbars_save,
+            buttonbars_export,
+            buttonbars_import,
+            scripts_list,
+            session_script,
+            script_load,
+            script_save,
+            script_delete,
+            text_file_read,
+            text_file_write,
             shortcuts_favorite,
             shortcuts_opened,
             shortcuts_forget_recent,
@@ -1116,6 +1265,7 @@ pub fn run() {
             db_pending_retry,
             db_pending_discard,
             variables_save,
+            variables_fill,
             profiles_list,
             profiles_save,
             profiles_delete,

@@ -60,6 +60,21 @@ class TabLabel implements ITabRenderer {
   }
 }
 
+/** An open terminal tab, for Send Commands, the button bar and scripts */
+export interface TabInfo {
+  id: string;
+  title: string;
+  /** The session it runs, "store:id"; "" for a Local Shell or Quick connect */
+  session: string;
+  icon: string;
+  host: PageHost;
+  /** The tab's "Accept commands" (on by default), which Select sessions to send to sets */
+  acceptCommands: boolean;
+  /** Showing in its group (not behind another tab) */
+  visible: boolean;
+  active: boolean;
+}
+
 /** One terminal tab's content: the page in an iframe, and its host */
 class TerminalPanel implements IContentRenderer {
   readonly element: HTMLElement;
@@ -93,6 +108,7 @@ class TerminalPanel implements IContentRenderer {
       () => parameters.api.close(),
       (command) => this.tabs.command(id, command),
     );
+    this.tabs.hosts.set(id, this.host);
     frame.src = `/web/terminal/index.html?tab=${encodeURIComponent(id)}`;
     this.element.append(frame);
   }
@@ -113,6 +129,12 @@ export class TabArea {
   customs: ReadonlyMap<string, CustomIcon> = new Map();
   /** The session ("store:id") each open tab runs, by panel id, for marking open sessions in the tree */
   private readonly sessions = new Map<string, string>();
+  /** Each tab's page host, by panel id */
+  readonly hosts = new Map<string, PageHost>();
+  /** Tabs whose "Accept commands" is off */
+  private readonly refusing = new Set<string>();
+  /** Told when the active tab changes, or tabs open or close */
+  private readonly listeners = new Set<() => void>();
 
   /**
    * Create the tab area inside `element`
@@ -127,8 +149,13 @@ export class TabArea {
       createTabComponent: () => new TabLabel(this),
     });
     this.api.onDidRemovePanel((panel) => {
+      this.hosts.delete(panel.id);
+      this.refusing.delete(panel.id);
       if (this.sessions.delete(panel.id)) this.onOpenChanged(new Set(this.sessions.values()));
+      this.changed();
     });
+    this.api.onDidActivePanelChange(() => this.changed());
+    this.api.onDidAddPanel(() => this.changed());
   }
 
   /** Open a new Local Shell tab */
@@ -143,10 +170,12 @@ export class TabArea {
   }
 
   /** Open a tab for a stored session, with its icon and environment colour */
-  openSession(store: "saved" | "private" | "database", id: string, title: string, local: boolean, icon: string, environment: string | null): void {
+  openSession(store: "saved" | "private" | "database", id: string, title: string, local: boolean, icon: string, environment: string | null): string {
     const panelId = this.add(title, { target: { kind: "session", store, id }, local, icon, environment });
     this.sessions.set(panelId, `${store}:${id}`);
     this.onOpenChanged(new Set(this.sessions.values()));
+    this.changed();
+    return panelId;
   }
 
   /** Open a tab for Quick connect's one-off session */
@@ -166,6 +195,53 @@ export class TabArea {
       renderer: "always",
     });
     return id;
+  }
+
+  /** Be told when the active tab changes or tabs open or close; returns how to stop */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) listener();
+  }
+
+  /** The open terminal tabs in the order they show, group by group */
+  tabList(): TabInfo[] {
+    const active = this.api.activePanel?.id;
+    return this.api.groups.flatMap((group) =>
+      group.panels.flatMap((panel) => {
+        const host = this.hosts.get(panel.id);
+        if (!host) return [];
+        const params = panel.params as unknown as TerminalParams;
+        return [{
+          id: panel.id,
+          title: panel.title ?? "",
+          session: this.sessions.get(panel.id) ?? "",
+          icon: params.icon,
+          host,
+          acceptCommands: !this.refusing.has(panel.id),
+          visible: group.activePanel === panel,
+          active: panel.id === active,
+        }];
+      }),
+    );
+  }
+
+  /** Set the tabs that accept commands (Select sessions to send to) */
+  setAccepting(ids: Set<string>): void {
+    this.refusing.clear();
+    for (const id of this.hosts.keys()) if (!ids.has(id)) this.refusing.add(id);
+    this.changed();
+  }
+
+  /** Put the keyboard back in the active tab, after a button or Send Commands */
+  focusActive(): void {
+    const panel = this.api.activePanel;
+    const frame = panel?.view.content.element.querySelector("iframe");
+    frame?.contentWindow?.focus();
+    frame?.contentWindow?.postMessage({ channel: "sxt-host", tab: panel?.id, message: { type: "focus" } }, window.location.origin);
   }
 
   /** Follow the app's light or dark look (App calls this when it changes) */

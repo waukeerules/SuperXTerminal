@@ -24,6 +24,15 @@ pub struct AppSettings {
     pub tree_font_size: u32,
     /// Database sessions' connection (the password is in the Keychain)
     pub database: crate::db::DbSettings,
+    /// The button bar chosen by hand, as SuperXPuTTY's ActiveButtonBar; "" for the first
+    pub active_button_bar: String,
+    /// View > Button Bar and View > Send Commands, as ShowButtonBar and ShowToolBarCommands
+    pub show_button_bar: bool,
+    pub show_send_commands: bool,
+    /// Send Commands goes to every visible tab rather than the ticked ones, as SendCommandsToVisibleOnly
+    pub send_to_visible_only: bool,
+    /// The Script Editor stays on top, as ScriptEditorTopMost
+    pub script_editor_on_top: bool,
 }
 
 impl Default for AppSettings {
@@ -35,6 +44,11 @@ impl Default for AppSettings {
             theme: "system".into(),
             tree_font_size: 14,
             database: crate::db::DbSettings::default(),
+            active_button_bar: String::new(),
+            show_button_bar: true,
+            show_send_commands: true,
+            send_to_visible_only: false,
+            script_editor_on_top: false,
         }
     }
 }

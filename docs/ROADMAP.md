@@ -14,7 +14,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 | [M0 Skeleton](#m0-skeleton) | ✅ |
 | [M1 MVP](#m1-mvp) | ✅ |
 | [M2 Database sessions](#m2-database-sessions) | ✅ |
-| [M3 Scripting and commands](#m3-scripting-and-commands) | ⬜ |
+| [M3 Scripting and commands](#m3-scripting-and-commands) | 🚧 |
 | [M4 Terminal extras](#m4-terminal-extras) | ⬜ |
 | [M5 The rest](#m5-the-rest) | ⬜ |
 | [M6 Distribution](#m6-distribution) | ⬜ |
@@ -104,13 +104,13 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Done when:** the existing button bars and scripts run unchanged.
 
-- ⬜ Button bar (`ButtonBars.xml`, bars per icon, JSON export/import)
-- ⬜ Send Commands toolbar (active/selected tabs, mask, history)
-- ⬜ `{prompt:...}` and `{secret:...}` snippet prompts
-- ⬜ SPSL parser and runner: SENDLINE, SENDCHAR, SENDKEY, WAITFOR, SLEEP, PROMPT, PWDPROMPT, OPENSESSION
-- ⬜ Script Editor (Run as, library, reference, Check script, Always on top)
-- ⬜ Session's own script on open
-- ⬜ Send Key (`TerminalKeys`)
+- ✅ Button bar (`ButtonBars.xml` in the settings folder, written as XmlSerializer writes it; the Windows file reads and writes back byte for byte): bar picker, bars per tab icon (Show for Tab Icons), buttons with a colour circle or session icon; click sends to the active tab, Shift+click to the Send Commands selection; Send string escapes (\r \n \t \b \e \p \v \\) and SPSL scripts; New, Edit, Delete, Move Left/Right; New, Rename, Delete bar; JSON export/import; Reload. Checked: the Windows buttons in a Local Shell, and a test button added and removed (file back to identical)
+- ✅ Send Commands toolbar: Command box (Enter sends with Enter; Up/Down history; Ctrl+key sent at once), Send, mask, Script Editor, Select sessions to send to (Accept commands per tab, Send to visible tabs only), icon group. History lasts until the app closes (SuperXPuTTY's default; saving it comes with Options)
+- ✅ `{prompt:...}` and `{secret:...}` snippet prompts (one window, each name once, last value offered); `{key}` placeholders filled first for buttons and scripts, offering Environment Variables when one has no value
+- ✅ SPSL parser and runner: SENDLINE, SENDCHAR, SENDKEY (modifiers, names, {KEY n}; xterm sequences as TerminalKeys, US layout for characters), WAITFOR (/t:, reads the page's output as TerminalControl), SLEEP, PROMPT, PWDPROMPT, OPENSESSION; stops on a WAITFOR timeout, an error or a cancelled password; status-bar progress with Stop. Checked on the lab switch (enable, password, show clock, Ctrl+Z, disable)
+- ✅ Script Editor: saved scripts (`<SettingsFolder>/scripts`, .spsl and .txt, CRLF), Insert, Save as, Delete, Open file, Save to file, Run as (Send lines / SPSL script), the SPSL panel (commands, saved scripts, Check script). It floats over the window without blocking it, so Always on top isn't needed
+- 🚧 Session's own script on open: a file (absolute, file://, or relative to the settings folder) or a URL, run when it starts #!/bin/spsl, its first WAITFOR seeing everything since the session started; a Windows path is reported as not on this Mac. Not yet tried with a session that has one
+- ✅ Send Key (`TerminalKeys`): the tab menu's keys and Other Key… (any key as SENDKEY writes it)
 
 ## M4 Terminal extras
 

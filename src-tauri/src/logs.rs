@@ -60,13 +60,12 @@ impl Logs {
 
     /// Close a log; a temporary one is deleted a few seconds later, so a reader can finish with it
     pub fn close(&self, id: u32, temporary: bool) {
-        if let Some((_, path)) = self.files.lock().unwrap().remove(&id) {
-            if temporary {
-                std::thread::spawn(move || {
-                    std::thread::sleep(Duration::from_secs(5));
-                    let _ = std::fs::remove_file(path);
-                });
-            }
+        let closed = self.files.lock().unwrap().remove(&id);
+        if let (Some((_, path)), true) = (closed, temporary) {
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(5));
+                let _ = std::fs::remove_file(path);
+            });
         }
     }
 }

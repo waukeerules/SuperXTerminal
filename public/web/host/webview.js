@@ -20,6 +20,26 @@
         listeners.forEach(function (listener) { listener({ data: envelope.message }); });
     });
 
+    // keystrokes go to the session as typed: no capitalisation, autocorrect, spell checking or Writing Tools ("Write
+    // with Siri", whose badge sat by the cursor) on xterm's hidden input or Monaco's. Set as each field is created:
+    // WebKit decides what to offer as the field gains focus, before a focus handler could change it.
+    function plain(field) {
+        field.setAttribute('autocapitalize', 'off');
+        field.setAttribute('autocorrect', 'off');
+        field.setAttribute('autocomplete', 'off');
+        field.setAttribute('spellcheck', 'false');
+        field.setAttribute('writingsuggestions', 'false');
+    }
+    new MutationObserver(function (changes) {
+        changes.forEach(function (change) {
+            change.addedNodes.forEach(function (node) {
+                if (node.nodeType !== 1) { return; }
+                if (node.tagName === 'TEXTAREA' || node.tagName === 'INPUT') { plain(node); }
+                node.querySelectorAll && node.querySelectorAll('textarea, input').forEach(plain);
+            });
+        });
+    }).observe(document, { childList: true, subtree: true });
+
     window.chrome = window.chrome || {};
     window.chrome.webview = {
         /** WebView2's postMessage: the page's message to the host */

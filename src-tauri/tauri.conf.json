@@ -10,16 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "SuperXTerminal",
-        "width": 1400,
-        "height": 900,
-        "minWidth": 800,
-        "minHeight": 500,
-        "dragDropEnabled": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

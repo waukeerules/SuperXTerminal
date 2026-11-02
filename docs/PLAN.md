@@ -432,6 +432,12 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 - **The Mac-only parts are checked all along**, not at the end: the Keychain, the menu bar and app menu, WKWebView (fonts, IME, clipboard), `/dev/cu.*` serial devices, Windows App and Screen Sharing launching.
 - **Other platforms:** keep platform-specific code behind small interfaces. Windows (WebView2, ConPTY, Windows' own `ssh.exe`, Credential Manager) and Linux (WebKitGTK, Secret Service) are built and tried on a VM now and then; they're polished after the Mac.
 - **Builds and releases are local**, as for SuperXPuTTY: `npm run tauri build` on the Mac, then the release is pushed to GitHub (`waukeerules/SuperXTerminal`, private). Pushes start no GitHub Actions run, since those cost money. The workflow in `.github/workflows/build.yml` (macOS, Windows, Linux) runs only when started by hand, for an occasional check of the other platforms.
+- **The development signature.** A fresh debug build is a new app to macOS, so the Keychain asks for every saved password again after each rebuild. Development builds are therefore signed with a self-signed certificate before they run (`scripts/dev-sign-run.sh`, Cargo's runner in `src-tauri/.cargo/config.toml`), and "Always Allow" then lasts. To make the certificate, once per Mac:
+  1. Keychain Access → Keychain Access menu → Certificate Assistant → Create a Certificate…
+  2. Name: `SuperXTerminal Dev`; Identity Type: Self-Signed Root; Certificate Type: Code Signing; Create.
+  3. The next time the app asks for a password from the Keychain, choose Always Allow.
+
+  Without the certificate, builds just run unsigned, as before.
 - **Running an unsigned Mac build.** Right-click → Open, or `xattr -dr com.apple.quarantine SuperXTerminal.app`. Local builds aren't quarantined.
 - **Signing and notarisation (M6)** need an Apple Developer Program membership (USD 99/year) for a Developer ID certificate, or the company's own. `notarytool` runs locally with an app-specific password or API key kept in the Keychain. Windows signing needs a code-signing certificate.
 - **Copying from SuperXPuTTY:**

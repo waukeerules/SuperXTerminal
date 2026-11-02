@@ -1191,6 +1191,65 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &tools, &window])
 }
 
+/// The main window, made here rather than in tauri.conf.json so its web view can have Writing Tools off: macOS put
+/// its "Write with Siri" badge by the terminal's cursor, and offered to rewrite what's typed into a session
+fn main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
+        .title("SuperXTerminal")
+        .inner_size(1400.0, 900.0)
+        .min_inner_size(800.0, 500.0)
+        .disable_drag_drop_handler();
+    #[cfg(target_os = "macos")]
+    let builder = builder.with_webview_configuration(writing_tools_off());
+    builder.build()?;
+    Ok(())
+}
+
+/// A WebKit configuration with Writing Tools off (writingToolsBehavior = none, macOS 15 and later; older macOS has
+/// none to turn off). Set by key, as objc2-web-kit has no binding for it yet.
+#[cfg(target_os = "macos")]
+fn writing_tools_off() -> objc2::rc::Retained<objc2_web_kit::WKWebViewConfiguration> {
+    use objc2::{sel, MainThreadMarker};
+    use objc2_foundation::{ns_string, NSNumber, NSObjectNSKeyValueCoding, NSObjectProtocol};
+    let mtm = MainThreadMarker::new().expect("the window is made on the main thread");
+    let config = unsafe { objc2_web_kit::WKWebViewConfiguration::new(mtm) };
+    if config.respondsToSelector(sel!(setWritingToolsBehavior:)) {
+        // NSWritingToolsBehaviorNone
+        unsafe { config.setValue_forKey(Some(&NSNumber::new_isize(-1)), ns_string!("writingToolsBehavior")) };
+    }
+    config
+}
+
+/// Keep macOS 27's "Write with Siri" badge (AppKit's "Campo" lightweight UI) away from the terminal. AppKit shows it by
+/// the cursor of any text field it finds eligible, and the terminal's hidden input (xterm.js types through it, under
+/// its own drawn cursor) is one; what's typed there goes to a session, so it isn't writing to help with. There's no
+/// public switch and WebKit passes no field setting for it, so in this app NSTextInputContext finds no field eligible
+/// and shows no affordance (the eligibility check alone wasn't enough). Nothing changes where these private methods
+/// don't exist (older macOS, or a later one that renames them).
+#[cfg(target_os = "macos")]
+fn no_siri_badge() {
+    use objc2::ffi::{class_getInstanceMethod, method_setImplementation};
+    use objc2::runtime::{AnyClass, AnyObject, Bool, Imp, Sel};
+    use objc2::sel;
+    extern "C-unwind" fn not_eligible(_this: *mut AnyObject, _cmd: Sel) -> Bool {
+        Bool::NO
+    }
+    extern "C-unwind" fn show_nothing(_this: *mut AnyObject, _cmd: Sel, _mode: isize) {}
+    let Some(class) = AnyClass::get(c"NSTextInputContext") else { return };
+    unsafe {
+        let eligible = class_getInstanceMethod(class, sel!(_isCampoLightweightUIEligible));
+        if !eligible.is_null() {
+            let imp: Imp = std::mem::transmute(not_eligible as extern "C-unwind" fn(*mut AnyObject, Sel) -> Bool);
+            method_setImplementation(eligible as *mut _, imp);
+        }
+        let show = class_getInstanceMethod(class, sel!(_showLightweightAffordanceWithMode:));
+        if !show.is_null() {
+            let imp: Imp = std::mem::transmute(show_nothing as extern "C-unwind" fn(*mut AnyObject, Sel, isize));
+            method_setImplementation(show as *mut _, imp);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let user_folder = sessions::user_folder();
@@ -1203,6 +1262,12 @@ pub fn run() {
         // menu items the UI handles arrive there as a "menu" event with the item's id
         .on_menu_event(|app, event| {
             let _ = app.emit("menu", event.id().0.as_str());
+        })
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            no_siri_badge();
+            main_window(app.handle())?;
+            Ok(())
         })
         .manage(pty::Ptys::default())
         .manage(AppState {

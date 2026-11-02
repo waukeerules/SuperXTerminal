@@ -1,0 +1,7 @@
+# Development builds on macOS are signed with the "SuperXTerminal Dev" certificate before they run, so the
+# Keychain's "Always Allow" lasts across rebuilds (see scripts/dev-sign-run.sh)
+[target.aarch64-apple-darwin]
+runner = "../scripts/dev-sign-run.sh"
+
+[target.x86_64-apple-darwin]
+runner = "../scripts/dev-sign-run.sh"

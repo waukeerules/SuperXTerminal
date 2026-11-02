@@ -66,12 +66,14 @@ function place(root: FolderNode, store: Store, folderPath: string): FolderNode {
   let path = "";
   for (const part of folderPath.split("/").filter(Boolean)) {
     path = path ? `${path}/${part}` : part;
-    let child = node.folders.find((f) => f.name === part);
+    // "test" and "Test" are one folder, as SuperXPuTTY's tree (the first spelling is shown)
+    let child = node.folders.find((f) => f.name.toLowerCase() === part.toLowerCase());
     if (!child) {
       child = folder(store, part, path);
       node.folders.push(child);
     }
     node = child;
+    path = child.path;
   }
   return node;
 }

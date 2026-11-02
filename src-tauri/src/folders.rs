@@ -37,9 +37,17 @@ pub fn folders_file(sessions_file: &Path) -> PathBuf {
     sessions_file.with_file_name(name)
 }
 
-/// Whether `path` is `folder` or inside it
+/// The part of `path` after `folder` ("" for the folder itself, "/Core" below it), ignoring case as the tree does
+/// ("test" and "Test" are one folder, as SuperXPuTTY's); None when it isn't in it
+pub fn under<'a>(path: &'a str, folder: &str) -> Option<&'a str> {
+    let head = path.get(..folder.len())?;
+    let rest = &path[folder.len()..];
+    (head.eq_ignore_ascii_case(folder) && (rest.is_empty() || rest.starts_with('/'))).then_some(rest)
+}
+
+/// Whether `path` is `folder` or inside it, ignoring case
 fn within(path: &str, folder: &str) -> bool {
-    path == folder || path.starts_with(&format!("{folder}/"))
+    under(path, folder).is_some()
 }
 
 /// `path` with its leading `from` replaced by `to`
@@ -93,11 +101,12 @@ pub fn move_folder(sessions_file: &Path, from: &str, to: &str, others: &[String]
     })
 }
 
-/// Move a session into another folder of the same store
-pub fn move_session(sessions_file: &Path, id: &str, folder: &str, others: &[String]) -> Result<String, String> {
-    let name = id.rsplit('/').next().unwrap_or(id).to_string();
+/// Move a session into another folder of the same store, as `name` when given (its name is taken there)
+pub fn move_session(sessions_file: &Path, id: &str, folder: &str, others: &[String], name: Option<&str>) -> Result<String, String> {
+    let name = name.map(str::to_string).unwrap_or_else(|| id.rsplit('/').next().unwrap_or(id).to_string());
+    check_name(&name)?;
     let folder = folder.trim_matches('/');
-    let new_id = if folder.is_empty() { name } else { format!("{folder}/{name}") };
+    let new_id = if folder.is_empty() { name.clone() } else { format!("{folder}/{name}") };
     sessions::update_file(sessions_file, |list| {
         let taken = |o: &str| o.eq_ignore_ascii_case(&new_id) && o != id;
         if list.iter().any(|s| taken(s.id())) || others.iter().any(|o| taken(o)) {
@@ -106,6 +115,7 @@ pub fn move_session(sessions_file: &Path, id: &str, folder: &str, others: &[Stri
         let index = list.iter().position(|s| s.id() == id).ok_or("The session is no longer in its file.")?;
         let mut session = list.remove(index);
         session.set("SessionId", &new_id);
+        session.set("SessionName", &name);
         insert_sorted(list, session);
         Ok(())
     })?;
@@ -230,11 +240,35 @@ mod tests {
         assert!(folders.contains("<FolderSetting Path=\"Site A/Lab/Core\" Color=\"#C62828\" />"), "{folders}");
 
         assert!(move_folder(&file, "Site A", "Site A/Lab/x", &[]).is_err());
-        assert_eq!(move_session(&file, "Other/rtr", "Site A", &[]).unwrap(), "Site A/rtr");
+        assert_eq!(move_session(&file, "Other/rtr", "Site A", &[], None).unwrap(), "Site A/rtr");
         delete_folder(&file, "Site A").unwrap();
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(!text.contains("SessionId="), "{text}");
         assert!(!std::fs::read_to_string(dir.join("Folders.xml")).unwrap().contains("FolderSetting "));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn folders_differing_in_case_are_one_and_a_moved_session_can_be_renamed() {
+        let dir = std::env::temp_dir().join(format!("sxt-folders-case-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Sessions.xml");
+        for (name, folder) in [("a", "test"), ("b", "Test"), ("c", "TEST/sub"), ("a", "Lab")] {
+            let fields = SessionFields { name: name.into(), folder: folder.into(), host: "h".into(), ..Default::default() };
+            save(&file, None, &fields, &[]).unwrap();
+        }
+        // renaming the folder the tree shows as one takes every spelling
+        move_folder(&file, "Test", "Tests", &[]).unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        for id in ["Tests/a", "Tests/b", "Tests/sub/c"] {
+            assert!(text.contains(&format!("SessionId=\"{id}\"")), "{text}");
+        }
+        // "a" is taken in Tests: moved as "a-1"
+        assert!(move_session(&file, "Lab/a", "Tests", &[], None).is_err());
+        assert_eq!(move_session(&file, "Lab/a", "Tests", &[], Some("a-1")).unwrap(), "Tests/a-1");
+        assert!(std::fs::read_to_string(&file).unwrap().contains("SessionId=\"Tests/a-1\" SessionName=\"a-1\""));
+        assert_eq!(under("Tests/sub/c", "tests"), Some("/sub/c"));
+        assert_eq!(under("Testsx", "tests"), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

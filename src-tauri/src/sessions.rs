@@ -103,6 +103,7 @@ pub struct Sessions {
     pub saved: Vec<StoredSession>,
     pub private: Vec<StoredSession>,
     pub database: Vec<StoredSession>,
+    /// Each store's folder settings, by folder path in lower case
     pub folders: HashMap<Store, HashMap<String, FolderSetting>>,
 }
 
@@ -148,7 +149,7 @@ impl Sessions {
         let Some(settings) = self.folders.get(&store) else { return found };
         let mut current = folder.trim_matches('/');
         while !current.is_empty() {
-            if let Some(setting) = settings.get(current) {
+            if let Some(setting) = settings.get(&current.to_lowercase()) {
                 found.push(setting);
             }
             current = current.rsplit_once('/').map(|(parent, _)| parent).unwrap_or("");
@@ -236,7 +237,8 @@ fn read_folders(path: &Path, problems: &mut Vec<String>) -> HashMap<String, Fold
             highlight_rules: get("HighlightRules"),
         };
         if !setting.path.is_empty() {
-            folders.insert(setting.path.clone(), setting);
+            // keyed in lower case: "test" and "Test" are one folder, as SuperXPuTTY's FolderSettings
+            folders.insert(setting.path.to_lowercase(), setting);
         }
     }
     folders

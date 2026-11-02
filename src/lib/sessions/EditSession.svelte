@@ -7,7 +7,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { ask, open } from "@tauri-apps/plugin-dialog";
   import Icon from "../icons/Icon.svelte";
   import IconPicker from "../icons/IconPicker.svelte";
   import type { CustomIcon } from "../icons/custom";
@@ -33,9 +33,11 @@
     onOpenProfiles: () => void;
     /** Database sessions: the columns locked in the table ("host,port"), shown greyed */
     lockedFields?: string;
+    /** A free name in a folder: the name, else with -1, -2… added (`except` the session itself), as SuperXPuTTY's */
+    freeName?: (store: Store, folder: string, name: string, except: string) => string;
   }
 
-  let { store, id, fields, folders, iconSize, customs, onSaved, onCancel, onOpenProfiles, lockedFields = "" }: Props = $props();
+  let { store, id, fields, folders, iconSize, customs, onSaved, onCancel, onOpenProfiles, lockedFields = "", freeName }: Props = $props();
 
   /** Whether a column is locked in the table (Database sessions only) */
   const locked = (column: string) => lockedFields.split(",").map((f) => f.trim()).includes(column);
@@ -91,6 +93,15 @@
 
   /** Save and close, or show why it can't be saved */
   async function save(): Promise<void> {
+    // a name already taken there is offered with -1, -2… added, as SuperXPuTTY's Edit Session
+    const name = draft.name.trim();
+    const free = name && !name.includes("/") && freeName ? freeName(store, draft.folder, name, id ?? "") : name;
+    if (free !== name) {
+      const sure = await ask(`A session named "${name}" already exists here.\n\nSave this one as "${free}"?`,
+        { title: "Session name", kind: "info", okLabel: "Save", cancelLabel: "Cancel" });
+      if (!sure) return;
+      draft.name = free;
+    }
     try {
       const saved = await saveSession(store, id, { ...draft, port: Number(draft.port) || 0 });
       onSaved(saved);

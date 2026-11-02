@@ -290,9 +290,9 @@ fn folder_settings_save(state: State<'_, AppState>, store: sessions::Store, fiel
 
 /// Move a session into another folder of its store; returns its new id
 #[tauri::command]
-fn session_move(state: State<'_, AppState>, store: sessions::Store, id: String, folder: String) -> Result<String, String> {
+fn session_move(state: State<'_, AppState>, store: sessions::Store, id: String, folder: String, name: Option<String>) -> Result<String, String> {
     let file = store_file(&state, store)?;
-    let new = folders::move_session(&file, &id, &folder, &other_ids(&state, store))?;
+    let new = folders::move_session(&file, &id, &folder, &other_ids(&state, store), name.as_deref())?;
     follow_id(&state, &id, &new);
     Ok(new)
 }
@@ -311,18 +311,18 @@ fn forget_id(state: &AppState, gone: &str) {
     overrides::forget(&state.user_folder, |s| s == gone);
 }
 
-/// Favorites and Recent follow the sessions below a renamed or moved folder ("Lab" or "@db/Lab")
+/// Favorites and Recent follow the sessions below a renamed or moved folder ("Lab" or "@db/Lab"), any spelling of it
 fn follow_folder(state: &AppState, from: &str, to: &str) {
-    let below = format!("{from}/");
-    shortcuts::follow(&state.user_folder, |id| id.strip_prefix(&below).map(|rest| format!("{to}/{rest}")));
-    overrides::follow(&state.user_folder, |id| id.strip_prefix(&below).map(|rest| format!("{to}/{rest}")));
+    let rename = |id: &str| folders::under(id, from).filter(|rest| !rest.is_empty()).map(|rest| format!("{to}{rest}"));
+    shortcuts::follow(&state.user_folder, rename);
+    overrides::follow(&state.user_folder, rename);
 }
 
 /// Favorites and Recent forget the sessions below a deleted folder
 fn forget_folder(state: &AppState, path: &str) {
-    let below = format!("{path}/");
-    shortcuts::forget(&state.user_folder, |id| id.starts_with(&below));
-    overrides::forget(&state.user_folder, |id| id.starts_with(&below));
+    let gone = |id: &str| folders::under(id, path).is_some_and(|rest| !rest.is_empty());
+    shortcuts::forget(&state.user_folder, gone);
+    overrides::forget(&state.user_folder, gone);
 }
 
 /// The settings folder, or the user's folder when none is chosen, for shared files (ButtonBars.xml, scripts)
@@ -732,7 +732,7 @@ async fn refresh_database(state: &AppState) -> Result<DbState, String> {
             db_state.synced_at = chrono::Local::now().format("%H:%M").to_string();
             *state.db_server.lock().unwrap() = fetched.sessions;
             let mut sessions = state.sessions.lock().unwrap();
-            sessions.folders.insert(sessions::Store::Database, fetched.folders.into_iter().map(|f| (f.path.clone(), f)).collect());
+            sessions.folders.insert(sessions::Store::Database, fetched.folders.into_iter().map(|f| (f.path.to_lowercase(), f)).collect());
         }
         Err(error) => {
             // keep showing what was last read, from the cache if nothing is loaded yet
@@ -768,7 +768,7 @@ fn show_cache(state: &AppState, settings: &db::DbSettings, db_state: &mut DbStat
             db_state.count = cached.sessions.len();
             db_state.synced_at = cached.synced_at.get(11..16).unwrap_or_default().to_string();
             *server = cached.sessions;
-            sessions.folders.insert(sessions::Store::Database, cached.folders.into_iter().map(|f| (f.path.clone(), f)).collect());
+            sessions.folders.insert(sessions::Store::Database, cached.folders.into_iter().map(|f| (f.path.to_lowercase(), f)).collect());
         }
         None => {
             *db_state = DbState { enabled: true, source: db_state.source.clone(), ..DbState::default() };
@@ -973,12 +973,16 @@ async fn db_session_delete(state: State<'_, AppState>, id: String) -> Result<(),
 
 /// Move a Database session to another folder of the table, then read it back; returns its new id
 #[tauri::command]
-async fn db_session_move(state: State<'_, AppState>, id: String, folder: String) -> Result<String, String> {
+async fn db_session_move(state: State<'_, AppState>, id: String, folder: String, name: Option<String>) -> Result<String, String> {
     let stored = db_session(&state, &id)?;
     if stored.get("DatabaseLockedFields").split(',').any(|f| f.trim() == "folder") {
         return Err(format!("The folder of \"{}\" is locked in the database.", stored.get("SessionName")));
     }
-    let row = db::Row::of(&stored, &folder);
+    let mut row = db::Row::of(&stored, &folder);
+    if let Some(name) = name {
+        folders::check_name(&name)?;
+        row.name = name;
+    }
     let mut change = outbox::PendingChange::new(outbox::Kind::Update);
     change.row_id = stored.get("DatabaseId").to_string();
     change.version = stored.get("DatabaseVersion").to_string();
@@ -1071,53 +1075,85 @@ async fn sessions_transfer(
     ids: Vec<String>,
     to: sessions::Store,
     delete_source: bool,
+    folders: Option<Vec<String>>,
+    rename_taken: bool,
 ) -> Result<TransferReport, String> {
     use sessions::Store;
     if from == to {
         return Err("Choose another place to copy to.".into());
     }
-    let picked: Vec<sessions::StoredSession> = {
+    // each session with the folder it goes to: the one given (a drop on a folder), else the same path there
+    let picked: Vec<(sessions::StoredSession, String)> = {
         let all = state.sessions.lock().unwrap();
-        ids.iter().filter_map(|id| all.find(from, id).cloned()).collect()
+        ids.iter()
+            .enumerate()
+            .filter_map(|(i, id)| {
+                let session = all.find(from, id)?.clone();
+                let folder = folders.as_ref().and_then(|f| f.get(i)).map(|f| f.trim_matches('/').to_string()).unwrap_or_else(|| session.folder().to_string());
+                Some((session, folder))
+            })
+            .collect()
+    };
+    let name_of = |session: &sessions::StoredSession| match session.get("SessionName") {
+        "" => session.id().rsplit('/').next().unwrap_or("").to_string(),
+        n => n.to_string(),
+    };
+    let join = |folder: &str, name: &str| if folder.is_empty() { name.to_string() } else { format!("{folder}/{name}") };
+    // a name taken there (Saved and Private sessions share ids) goes with -1, -2... added when the user agreed, as
+    // SuperXPuTTY's MakeUniqueSessionId; otherwise it's left out
+    let free = |taken: &dyn Fn(&str) -> bool, folder: &str, name: &str| -> Option<String> {
+        if !taken(&join(folder, name)) {
+            return Some(name.to_string());
+        }
+        if !rename_taken {
+            return None;
+        }
+        (1..1000).map(|i| format!("{name}-{i}")).find(|n| !taken(&join(folder, n)))
     };
     let mut problems = Vec::new();
-    
-    let arrived: Vec<sessions::StoredSession> = if to == Store::Database {
-        let changes = picked
-            .iter()
-            .map(|session| {
-                let mut change = outbox::PendingChange::new(outbox::Kind::Insert);
-                change.row = Some(db::Row::of(session, session.folder()));
-                change
-            })
-            .collect();
+
+    // what arrived: each session and its path there (folder/name)
+    let arrived: Vec<(sessions::StoredSession, String)> = if to == Store::Database {
+        let mut ids_there: Vec<String> = state.sessions.lock().unwrap().database.iter().map(|s| s.id().trim_start_matches("@db/").to_lowercase()).collect();
+        let mut sent = Vec::new();
+        let mut changes = Vec::new();
+        for (session, folder) in &picked {
+            let taken = |id: &str| ids_there.contains(&id.to_lowercase());
+            let Some(name) = free(&taken, folder, &name_of(session)) else {
+                problems.push(format!("{}: there's already a session with that name there.", join(folder, &name_of(session))));
+                continue;
+            };
+            ids_there.push(join(folder, &name).to_lowercase());
+            let mut row = db::Row::of(session, folder);
+            row.name = name.clone();
+            let mut change = outbox::PendingChange::new(outbox::Kind::Insert);
+            change.row = Some(row);
+            changes.push(change);
+            sent.push((session.clone(), join(folder, &name)));
+        }
         let submitted = submit(&state, changes).await?;
         problems.extend(submitted.problems);
-        picked.iter().enumerate().filter(|(i, _)| !submitted.refused.contains(i)).map(|(_, s)| s.clone()).collect()
+        sent.into_iter().enumerate().filter(|(i, _)| !submitted.refused.contains(i)).map(|(_, s)| s).collect()
     } else {
         let path = store_file(&state, to)?;
         let others = other_ids(&state, to);
         let mut added = Vec::new();
         sessions::update_file(&path, |list| {
-            for session in &picked {
-                // as a file session: no database fields, and an id without the @db prefix
-                let folder = session.folder();
-                let name = match session.get("SessionName") {
-                    "" => session.id().rsplit('/').next().unwrap_or("").to_string(),
-                    n => n.to_string(),
-                };
-                let id = if folder.is_empty() { name.clone() } else { format!("{folder}/{name}") };
-                if list.iter().any(|s| s.id().eq_ignore_ascii_case(&id)) || others.iter().any(|o| o.eq_ignore_ascii_case(&id) && !(from != Store::Database && o == session.id())) {
-                    problems.push(format!("{id}: there's already a session with that name there."));
+            for (session, folder) in &picked {
+                let mine: Vec<String> = list.iter().map(|s| s.id().to_string()).collect();
+                let taken = |id: &str| mine.iter().chain(&others).any(|o| o.eq_ignore_ascii_case(id));
+                let Some(name) = free(&taken, folder, &name_of(session)) else {
+                    problems.push(format!("{}: there's already a session with that name there.", join(folder, &name_of(session))));
                     continue;
-                }
+                };
+                // as a file session: no database fields, and an id without the @db prefix
                 let mut copy = sessions::StoredSession {
                     attributes: session.attributes.iter().filter(|(n, _)| !n.starts_with("Database")).cloned().collect(),
                 };
-                copy.set("SessionId", &id);
+                copy.set("SessionId", &join(folder, &name));
                 copy.set("SessionName", &name);
                 sessions::insert_sorted(list, copy);
-                added.push(session.clone());
+                added.push((session.clone(), join(folder, &name)));
             }
             Ok(())
         })?;
@@ -1125,7 +1161,7 @@ async fn sessions_transfer(
     };
     if delete_source && from == Store::Database {
         let mut deletes = Vec::new();
-        for session in &arrived {
+        for (session, _) in &arrived {
             if session.get("DatabaseLocked") == "true" {
                 problems.push(format!("{}: locked in the database, so it stays there.", session.id()));
                 continue;
@@ -1137,7 +1173,7 @@ async fn sessions_transfer(
         }
         problems.extend(submit(&state, deletes).await?.problems);
     } else if delete_source {
-        for session in &arrived {
+        for (session, _) in &arrived {
             if let Err(e) = store_file(&state, from).and_then(|path| editing::delete(&path, session.id())) {
                 problems.push(e);
             }
@@ -1145,9 +1181,8 @@ async fn sessions_transfer(
     }
     if delete_source {
         // Favorites and Recent follow sessions moved to the other root
-        for session in arrived.iter().filter(|s| s.get("DatabaseLocked") != "true") {
-            let path = session.id().trim_start_matches("@db/");
-            let new = if to == Store::Database { format!("@db/{path}") } else { path.to_string() };
+        for (session, path) in arrived.iter().filter(|(s, _)| s.get("DatabaseLocked") != "true") {
+            let new = if to == Store::Database { format!("@db/{path}") } else { path.clone() };
             follow_id(&state, session.id(), &new);
         }
     }

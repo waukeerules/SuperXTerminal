@@ -43,7 +43,7 @@
   /** Start dragging a session or folder */
   function drag(event: DragEvent, dragged: Dragged): void {
     event.dataTransfer?.setData(DRAG_TYPE, JSON.stringify(dragged));
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "copyMove";
   }
 
   /** Let tree items be dropped on this folder */
@@ -53,7 +53,8 @@
     over = true;
   }
 
-  /** Something was dropped on this folder */
+  /** Something was dropped on this folder, or on a session in it (it goes in the session's folder, as SuperXPuTTY's
+   * DropTarget: no scrolling up to the folder among many sessions or in a search) */
   function drop(event: DragEvent): void {
     over = false;
     const data = event.dataTransfer?.getData(DRAG_TYPE);
@@ -106,6 +107,7 @@
     <div class="row session" class:dimmed={reason !== null} class:pending={session.pending} class:selected={selected === key || multi.has(key)}
       onclick={(e) => onSelect(key, e)} draggable={!session.locked && !node.group}
       ondragstart={(e) => drag(e, { kind: "session", store: session.store, id: session.id })}
+      ondragover={dragOver} ondragleave={() => (over = false)} ondrop={drop}
       oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session, group: node.group }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
       style:height="{Math.round(iconSize * 1.36) + 4}px"
       title={tooltip(session)} role="treeitem" aria-selected="false" aria-disabled={reason !== null} tabindex="-1"

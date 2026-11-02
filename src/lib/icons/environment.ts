@@ -39,7 +39,8 @@ export class EnvironmentColors {
   private readonly folders = new Map<string, FolderSetting>();
 
   constructor(folders: [Store, FolderSetting][], private readonly rules: ColorRule[]) {
-    for (const [store, setting] of folders) this.folders.set(`${store}:${setting.path}`, setting);
+    // by path ignoring case: "test" and "Test" are one folder
+    for (const [store, setting] of folders) this.folders.set(`${store}:${setting.path.toLowerCase()}`, setting);
   }
 
   /** A session's colour, or null for none */
@@ -47,7 +48,7 @@ export class EnvironmentColors {
     const own = normalizeColor(session.color);
     if (own) return own;
     for (const path of ancestors(session.folder)) {
-      const color = normalizeColor(this.folders.get(`${session.store}:${path}`)?.color);
+      const color = normalizeColor(this.folders.get(`${session.store}:${path.toLowerCase()}`)?.color);
       if (color) return color;
     }
     const names = [session.name, ...ancestors(session.folder).map((p) => p.slice(p.lastIndexOf("/") + 1))];
@@ -56,7 +57,7 @@ export class EnvironmentColors {
 
   /** A folder's colour (its own, else a rule matching its name), or null; for the circle behind folder icons */
   forFolder(store: Store, path: string): string | null {
-    const own = normalizeColor(this.folders.get(`${store}:${path}`)?.color);
+    const own = normalizeColor(this.folders.get(`${store}:${path.toLowerCase()}`)?.color);
     if (own) return own;
     return path ? this.firstRule([path.slice(path.lastIndexOf("/") + 1)]) : null;
   }

@@ -986,8 +986,9 @@ pub async fn delete(settings: &DbSettings, user_folder: &Path, id: &str) -> Resu
     Ok(())
 }
 
-/// The rows in a folder and below it, as SuperXPuTTY's InFolder
-const IN_FOLDER: &str = "(folder = $1 OR left(folder, length($1) + 1) = $1 || '/')";
+/// The rows in a folder and below it, as SuperXPuTTY's InFolder: ignoring case, as the tree shows "test" and "Test" as
+/// one folder, so renaming or removing it takes both
+const IN_FOLDER: &str = "(lower(folder) = lower($1) OR lower(left(folder, length($1) + 1)) = lower($1) || '/')";
 
 /// Rename or move a folder: every row below it, hidden ones too, and the folders' own settings; returns the rows' ids
 pub async fn rename_folder(settings: &DbSettings, user_folder: &Path, from: &str, to: &str) -> Result<Vec<String>, WriteError> {

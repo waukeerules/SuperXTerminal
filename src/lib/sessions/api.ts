@@ -156,10 +156,10 @@ export function saveFolderSettings(store: Store, fields: FolderSetting): Promise
   return invoke("folder_settings_save", { store, fields });
 }
 
-/** Move a session into another folder of its store; returns its new id */
-export function moveSession(store: Store, id: string, folder: string): Promise<string> {
-  if (store === "database") return invoke<string>("db_session_move", { id, folder });
-  return invoke<string>("session_move", { store, id, folder });
+/** Move a session into another folder of its store, as `name` when given (its own is taken there); returns its new id */
+export function moveSession(store: Store, id: string, folder: string, name: string | null = null): Promise<string> {
+  if (store === "database") return invoke<string>("db_session_move", { id, folder, name });
+  return invoke<string>("session_move", { store, id, folder, name });
 }
 
 /** How Database sessions stand: on or off, whether the user may change them, and why the last read failed */
@@ -263,11 +263,14 @@ export function databaseChanged(): Promise<boolean> {
 export const DATABASE_SAVED = "superxterminal:database-saved";
 
 /**
- * Copy (or move) sessions to another root, each to the same folder path there, as SuperXPuTTY's Move to / Copy to.
- * Returns how many arrived and what went wrong with the others.
+ * Copy (or move) sessions to another root, as SuperXPuTTY's Move to / Copy to and drags: each to the folder given in
+ * `folders` (same order as `ids`), else the same folder path there. A name taken there gets -1, -2... added when
+ * `renameTaken`, else that session is left out. Returns how many arrived and what went wrong with the others.
  */
-export function transferSessions(from: Store, ids: string[], to: Store, move: boolean): Promise<{ done: number; problems: string[] }> {
-  return invoke("sessions_transfer", { from, ids, to, deleteSource: move });
+export function transferSessions(
+  from: Store, ids: string[], to: Store, move: boolean, folders: string[] | null = null, renameTaken = false,
+): Promise<{ done: number; problems: string[] }> {
+  return invoke("sessions_transfer", { from, ids, to, deleteSource: move, folders, renameTaken });
 }
 
 /** The new values for Edit sessions…: a field left out stays as each session has it */

@@ -558,7 +558,7 @@ mod tests {
     fn the_profile_fills_what_the_session_and_folder_leave_empty() {
         let mut sessions = Sessions::default();
         let folder = FolderSetting { path: "Lab".into(), port: 2200, ..FolderSetting::default() };
-        sessions.folders.entry(Store::Saved).or_default().insert("Lab".into(), folder);
+        sessions.folders.entry(Store::Saved).or_default().insert("lab".into(), folder);
         let (args, notices) = args_of(&sessions, &profiles(), &session(&[("PuttySession", "root")]));
         // the folder's port beats the profile's; the profile gives the username; Default Settings the keep-alive
         assert_eq!(args, ["-tt", "-p", "2200", "-l", "root", "-o", "ServerAliveInterval=30", "10.0.0.1"]);
@@ -634,7 +634,7 @@ mod tests {
         let folder = FolderSetting { path: "Bastions".into(), username: "ops".into(), port: 2222, ..FolderSetting::default() };
         let sessions = Sessions {
             saved: vec![bastion.clone()],
-            folders: [(Store::Saved, [("Bastions".to_string(), folder)].into())].into(),
+            folders: [(Store::Saved, [("bastions".to_string(), folder)].into())].into(),
             ..Sessions::default()
         };
         let values: HashMap<String, String> = [("dc".to_string(), "lon".to_string())].into();

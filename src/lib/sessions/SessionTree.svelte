@@ -270,7 +270,7 @@
     const found = [];
     let path = folder;
     while (path) {
-      const setting = settings.find((f) => f.path === path);
+      const setting = settings.find((f) => f.path.toLowerCase() === path.toLowerCase());
       if (setting) found.push(setting);
       path = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     }
@@ -590,36 +590,87 @@
     const item = (move: boolean): MenuItem => ({
       label: move ? "Move to" : "Copy to",
       disabled: sessions.length === 0 ? "No sessions here" : move && from === "database" && locked ? "Locked in the database" : false,
-      items: targets.map((to) => ({
-        label: ROOT_NAMES[to],
-        disabled: to === "database" && !db?.writable ? "Database sessions can't be written now" : false,
-        action: () => void transfer(sessions, from, to, move),
-      })),
+      items: targets.map((to) =>
+        // into Private sessions is only ever a copy: moving would take a shared session away from everyone else
+        move && to === "private"
+          ? { label: `${ROOT_NAMES[to]} (use Copy to)`, disabled: "Sessions only go into Private sessions as copies" }
+          : {
+              label: ROOT_NAMES[to],
+              disabled: to === "database" && !db?.writable ? "Database sessions can't be written now" : false,
+              action: () => void transfer(sessions, from, to, move),
+            },
+      ),
     });
     return [item(true), item(false)];
   }
 
-  /** Copy or move sessions to another root, asking first when moving them out of the shared table */
-  async function transfer(sessions: SessionView[], from: Store, to: Store, move: boolean): Promise<void> {
+  /**
+   * Copy or move sessions to another root: each to the folder `folders` gives (a drop), else the same path there.
+   * Asks first when moving them out of the shared table, and once for all whose names are taken there whether to
+   * add -1, -2... to them, as SuperXPuTTY's Transfer.
+   */
+  async function transfer(sessions: SessionView[], from: Store, to: Store, move: boolean, folders: string[] | null = null): Promise<void> {
     const n = sessions.length;
+    const verb = move ? "Move" : "Copy";
     if (move && from === "database") {
       const sure = await ask(`Move ${n} session${n === 1 ? "" : "s"} out of Database sessions into ${ROOT_NAMES[to]}?\n\nThey're deleted from the table, for everyone who uses it.`,
         { title: "Move", kind: "warning", okLabel: "Move" });
       if (!sure) return;
     }
+    const folderOf = (i: number) => folders?.[i] ?? sessions[i].folder;
+    const taken = sessions.filter((s, i) => takenId(to, folderOf(i), s.name));
+    let renameTaken = false;
+    if (taken.length) {
+      const names = taken.slice(0, 10).map((s) => s.name).join("\n") + (taken.length > 10 ? "\n…" : "");
+      renameTaken = await ask(
+        `${taken.length === 1 ? "A session with this name is already" : `${taken.length} sessions with these names are already`} there` +
+          `${to === "database" ? " in Database sessions" : " (Saved and Private sessions can't share a folder and name)"}:\n\n${names}\n\n` +
+          `${verb} ${taken.length === 1 ? "it" : "them"} anyway, with -1, -2… added to the name? No leaves ${taken.length === 1 ? "it" : "them"} out.`,
+        { title: verb, kind: "info", okLabel: `${verb} as -1`, cancelLabel: "Leave out" },
+      );
+      if (!renameTaken && taken.length === n) return;
+    }
     try {
-      const report = await transferSessions(from, sessions.map((s) => s.id), to, move);
+      const report = await transferSessions(from, sessions.map((s) => s.id), to, move, folders, renameTaken);
       await reload();
-      error = report.problems.length ? `${report.done} of ${n} ${move ? "moved" : "copied"}. ${report.problems.join(" ")}` : "";
-      expanded = new Set([...expanded, `${to}:`]);
+      const left = renameTaken ? report.problems : report.problems.filter((p) => !p.includes("already a session with that name"));
+      error = left.length ? `${report.done} of ${n} ${move ? "moved" : "copied"}. ${left.join(" ")}` : "";
+      context.status(`${move ? "Moved" : "Copied"} ${report.done} session${report.done === 1 ? "" : "s"} to ${ROOT_NAMES[to]}`);
+      expanded = new Set([...expanded, `${to}:`, ...(folders ?? []).map((f) => `${to}:${f}`)]);
     } catch (e) {
       error = String(e);
     }
   }
 
+  /**
+   * Whether a session name is taken in a folder of a store: Saved and Private sessions share ids, Database sessions
+   * have their own; ignoring case, as the files and table do. `except` is the session being renamed or moved.
+   */
+  function takenId(store: Store, folder: string, name: string, except = ""): boolean {
+    const path = folder.replace(/^\/+|\/+$/g, "");
+    const id = (path ? `${path}/${name}` : name).toLowerCase();
+    return (loaded?.sessions ?? []).some((s) =>
+      (store === "database") === (s.store === "database") && s.id !== except && s.id.replace(/^@db\//, "").toLowerCase() === id,
+    );
+  }
+
+  /** The part of a folder path after `folder` ("" for the folder itself), ignoring case; null when it isn't in it */
+  function folderUnder(path: string, folder: string): string | null {
+    const head = path.slice(0, folder.length);
+    const rest = path.slice(folder.length);
+    return head.toLowerCase() === folder.toLowerCase() && (rest === "" || rest.startsWith("/")) ? rest : null;
+  }
+
+  /** A free name in a folder: the name itself, else with -1, -2… added, as SuperXPuTTY's UniqueName */
+  function freeName(store: Store, folder: string, name: string, except = ""): string {
+    let candidate = name;
+    for (let i = 1; takenId(store, folder, candidate, except); i++) candidate = `${name}-${i}`;
+    return candidate;
+  }
+
   /** A folder's stored settings, or empty ones */
   function settingOf(folder: FolderNode): FolderSetting {
-    const found = (loaded?.folders ?? []).find(([store, f]) => store === folder.store && f.path === folder.path)?.[1];
+    const found = (loaded?.folders ?? []).find(([store, f]) => store === folder.store && f.path.toLowerCase() === folder.path.toLowerCase())?.[1];
     return found
       ? { ...found }
       : { path: folder.path, color: "", username: "", puttyProfile: "", port: 0, jumpHost: "", highlightRules: "" };
@@ -715,14 +766,44 @@
   /** Something dragged in the tree was dropped on a folder: move it there (within its own store) */
   async function dropped(target: FolderNode, dragged: Dragged): Promise<void> {
     if (dragged.store !== target.store) {
-      error = "Moving between Saved and Private sessions comes with Move to / Copy to (M2).";
+      // into another root (Saved, Private or Database sessions): always a copy, so the one it came from (perhaps
+      // shared) keeps it; moving is on the menu
+      if (target.store === "database" && !db?.writable) {
+        error = "Database sessions can't be written now.";
+        return;
+      }
+      const all = loaded?.sessions ?? [];
+      let list: SessionView[];
+      let folders: string[];
+      const join = (a: string, b: string) => (a && b ? `${a}/${b}` : a || b);
+      if (dragged.kind === "session") {
+        list = all.filter((s) => s.store === dragged.store && s.id === dragged.id);
+        folders = list.map(() => target.path);
+      } else {
+        // the folder and everything in it, under the folder dropped on
+        const name = dragged.path.slice(dragged.path.lastIndexOf("/") + 1);
+        list = all.filter((s) => s.store === dragged.store && folderUnder(s.folder, dragged.path) !== null);
+        folders = list.map((s) => join(join(target.path, name), (folderUnder(s.folder, dragged.path) ?? "").replace(/^\//, "")));
+      }
+      if (list.length === 0) return;
+      await transfer(list, dragged.store, target.store, false, folders);
       return;
     }
     try {
       if (dragged.kind === "session") {
-        const folder = dragged.id.includes("/") ? dragged.id.slice(0, dragged.id.lastIndexOf("/")) : "";
-        if (folder === target.path) return;
-        const id = await moveSession(target.store, dragged.id, target.path);
+        const folder = dragged.id.replace(/^@db\//, "").includes("/") ? dragged.id.replace(/^@db\//, "").replace(/\/[^/]*$/, "") : "";
+        if (folder.toLowerCase() === target.path.toLowerCase()) return;
+        const session = loaded?.sessions.find((s) => s.store === dragged.store && s.id === dragged.id);
+        const name = session?.name ?? dragged.id.slice(dragged.id.lastIndexOf("/") + 1);
+        let newName: string | null = null;
+        if (takenId(target.store, target.path, name, dragged.id)) {
+          // a session there has its name: offer it a free one, as SuperXPuTTY's MoveNode
+          newName = freeName(target.store, target.path, name, dragged.id);
+          const sure = await ask(`There is already a session ${target.path ? `${target.path}/` : ""}${name}.\n\nMove this one there anyway, as "${newName}"?`,
+            { title: "Move", kind: "info", okLabel: "Move", cancelLabel: "Cancel" });
+          if (!sure) return;
+        }
+        const id = await moveSession(target.store, dragged.id, target.path, newName);
         newFolders = { ...newFolders, [target.store]: newFolders[target.store].filter((p) => p !== target.path) };
         await reload();
         selected = `${target.store}:${id}`;
@@ -950,6 +1031,7 @@
 
 {#if editing}
   <EditSession store={editing.store} id={editing.id} fields={editing.fields} folders={foldersAlong(editing.store, editing.fields.folder)}
+    freeName={(store, folder, name, except) => freeName(store, folder, name, except)}
     {iconSize} {customs} {onOpenProfiles} lockedFields={editing.lockedFields ?? ""} onCancel={() => (editing = null)}
     onSaved={async (id) => { const store = editing?.store; editing = null; await reload(); selected = `${store}:${id}`; }} />
 {/if}

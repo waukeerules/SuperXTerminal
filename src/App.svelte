@@ -6,6 +6,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { TabArea } from "./lib/layout/TabArea";
+  import SessionTree from "./lib/sessions/SessionTree.svelte";
+  import { opensAsLocalShell, type SessionView } from "./lib/sessions/api";
 
   let tabElement: HTMLDivElement;
   let tabs: TabArea | null = null;
@@ -17,6 +19,12 @@
     status = "Opened session: Local Shell";
     return () => tabs?.dispose();
   });
+
+  /** Open a session from the tree in a new tab */
+  function openSession(session: SessionView): void {
+    tabs?.openSession(session.store, session.id, session.name, opensAsLocalShell(session.protocol));
+    status = `Opened session: ${session.name} [${session.protocol || "SSH"}]`;
+  }
 
   /** Open another Local Shell tab (toolbar button, for now) */
   function newShell(): void {
@@ -41,10 +49,7 @@
   <div class="main">
     <aside class="sessions">
       <div class="pane-title">Sessions</div>
-      <input class="search" disabled placeholder="Type to search..." title="Search comes in M1" />
-      <div class="tree">
-        <p class="empty">No sessions yet. The sessions tree comes in M1.</p>
-      </div>
+      <SessionTree onOpen={openSession} />
     </aside>
     <div class="tabs" bind:this={tabElement}></div>
   </div>
@@ -117,20 +122,6 @@
     padding: 6px 8px;
     color: var(--text-muted);
     font-size: 14px;
-  }
-
-  .search {
-    margin: 0 8px 6px;
-  }
-
-  .tree {
-    flex: 1;
-    overflow: auto;
-    padding: 4px 8px;
-  }
-
-  .empty {
-    color: var(--text-muted);
   }
 
   .tabs {

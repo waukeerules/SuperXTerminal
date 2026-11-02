@@ -11,7 +11,14 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
-type PtyEvent = { type: "data"; data: string } | { type: "exit"; code: number | null };
+type PtyEvent =
+  | { type: "data"; data: string }
+  | { type: "exit"; code: number | null }
+  | { type: "notice"; text: string; kind: string }
+  | { type: "started"; local: boolean };
+
+/** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
+export type Target = { kind: "localShell" } | { kind: "session"; store: "saved" | "private"; id: string };
 
 /** A message from the page; every message has a type, and the rest depends on it */
 type PageMessage = { type: string; [key: string]: unknown };
@@ -46,12 +53,17 @@ export class PageHost {
   /**
    * @param tab the tab's id, also in the iframe's URL, so messages reach the right page
    * @param frame the iframe holding the page
-   * @param onExit called when the shell ends, so the tab can close
+   * @param target what the tab runs
+   * @param local whether it's a local shell (the page treats Ctrl+C and Open in PuTTY differently)
+   * @param onExit called when a local shell ends, so its tab closes; a session's tab stays open instead, so its last
+   *   output (e.g. why ssh couldn't connect) can be read. SuperXPuTTY's reconnect comes in M4
    * @param onTabCommand the page's tab menu items: "close", "closeOthers", "closeRight" or "closeAll"
    */
   constructor(
     private readonly tab: string,
     private readonly frame: HTMLIFrameElement,
+    private readonly target: Target,
+    private readonly local: boolean,
     private readonly onExit: () => void,
     private readonly onTabCommand: (command: string) => void,
   ) {
@@ -135,7 +147,7 @@ export class PageHost {
       dark,
       bell: "visual",
       cursor: { style: "block", blink: true },
-      local: true,
+      local: this.local,
       serial: false,
       prefs: {},
       fonts: [],
@@ -145,7 +157,7 @@ export class PageHost {
     });
   }
 
-  /** Start the login shell at the page's size and pass its output on */
+  /** Start the tab's program at the page's size and pass its output on */
   private async open(): Promise<void> {
     if (this.ptyId !== null) return;
     const channel = new Channel<PtyEvent>();
@@ -153,14 +165,17 @@ export class PageHost {
       if (event.type === "data") {
         this.queue.push(event.data);
         this.flush();
-      } else {
-        this.onExit();
+      } else if (event.type === "notice") {
+        this.post({ type: "notice", text: event.text, kind: event.kind });
+      } else if (event.type === "exit") {
+        if (this.local) this.onExit();
+        else this.post({ type: "notice", text: "Session ended.", kind: "info" });
       }
     };
     try {
-      this.ptyId = await invoke<number>("pty_open", { ...this.size, onEvent: channel });
+      this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel });
     } catch (error) {
-      this.post({ type: "notice", text: `Couldn't start the shell: ${error}`, kind: "error" });
+      this.post({ type: "notice", text: String(error), kind: "error" });
     }
   }
 

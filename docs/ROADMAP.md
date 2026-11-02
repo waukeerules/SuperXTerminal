@@ -12,7 +12,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 | Milestone | Status |
 |---|---|
 | [M0 Skeleton](#m0-skeleton) | ✅ |
-| [M1 MVP](#m1-mvp) | ⬜ |
+| [M1 MVP](#m1-mvp) | 🚧 |
 | [M2 Database sessions](#m2-database-sessions) | ⬜ |
 | [M3 Scripting and commands](#m3-scripting-and-commands) | ⬜ |
 | [M4 Terminal extras](#m4-terminal-extras) | ⬜ |
@@ -41,19 +41,19 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 **Done when:** a Mac user opens the team's Sessions.xml and connects to switches with the right icons and colours.
 
 **Data**
-- ⬜ Read and write `Sessions.xml`, keeping unknown attributes
-- ⬜ Read and write `PrivateSessions.xml`
-- ⬜ Read and write `Folders.xml` / `PrivateFolders.xml` (colours, defaults)
-- ⬜ Settings folder choice (local, SMB share, synced cloud folder)
-- ⬜ Per-user files in `~/Library/Application Support/SuperXTerminal/`
+- 🚧 Read and write `Sessions.xml`, keeping unknown attributes: reading done (attributes kept in order, unknown ones too); writing next
+- 🚧 Read and write `PrivateSessions.xml`: reading done
+- 🚧 Read and write `Folders.xml` / `PrivateFolders.xml` (colours, defaults): reading done; colours and username, port and jump host defaults applied
+- 🚧 Settings folder choice (local, SMB share, synced cloud folder): Choose Settings Folder... when none is set; a way to change it comes with Settings
+- ✅ Per-user files in `~/Library/Application Support/SuperXTerminal/` (`settings.json`, `PrivateSessions.xml`)
 
 **Sessions tree**
-- ⬜ Saved and Private roots, folders and sessions, filled on demand
-- ⬜ Folder session counts, folders first, sort
-- ⬜ Search box (filter while typing)
-- ⬜ Open sessions marked; tooltips
+- ✅ Saved and Private roots, folders and sessions; closed folders draw nothing
+- ✅ Folder session counts, folders first, sort
+- ✅ Search box (filter while typing: name, host, username, folder, note)
+- 🚧 Open sessions marked; tooltips: tooltips done (protocol, address, note, why it can't open)
 - ⬜ New, rename, delete, drag to move (sessions and folders)
-- ⬜ Sessions the Mac can't open shown dimmed with the reason
+- ✅ Sessions the Mac can't open shown dimmed with the reason
 
 **Icons and colours**
 - ⬜ Icon templates redrawn as SVG, with colourable keys
@@ -64,12 +64,12 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ⬜ Colour resolution: session, else folder, else name rule
 
 **Connecting**
-- ⬜ SSH tab: `ssh -tt` in a PTY, host, port, username
+- ✅ SSH tab: `ssh -tt` in a PTY, host, port, username; checked against the lab switch (log in, `sh ip int bri`)
 - ⬜ Profiles: Settings → Profiles, "Default Settings", matched by name
-- ⬜ Profile and session passwords in the Keychain, through the askpass helper
+- 🚧 Passwords: a session's `-pw` is typed at the first prompt (checked on the lab switch); Keychain storage for profiles comes with Profiles
 - ⬜ Key files and agent
-- ⬜ Allow older algorithms (profile option, on by default): SHA-1 key exchange, `ssh-rsa`, CBC ciphers
-- ⬜ Launch order: override, session, folder default, profile, defaults
+- 🚧 Allow older algorithms (profile option, on by default): SHA-1 key exchange, `ssh-rsa`, CBC ciphers: always on until profiles exist
+- 🚧 Launch order: override, session, folder default, profile, defaults: session and folder defaults done
 - ⬜ `{key}` placeholders; Environment Variables with Keychain secrets
 - ⬜ Quick connect toolbar
 - ⬜ Edit Session (SSH fields, profile list, greyed fields explained)

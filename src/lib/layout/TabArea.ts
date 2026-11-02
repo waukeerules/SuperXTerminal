@@ -5,7 +5,13 @@
  * `TerminalPanel`, an iframe of `web/terminal` with a `PageHost` behind it.
  */
 import { createDockview, themeDark, themeLight, type DockviewApi, type IContentRenderer, type GroupPanelPartInitParameters } from "dockview-core";
-import { PageHost } from "../terminal/PageHost";
+import { PageHost, type Target } from "../terminal/PageHost";
+
+/** What a terminal tab is given when it's added: what to run, and whether it's a local shell */
+interface TerminalParams {
+  target: Target;
+  local: boolean;
+}
 
 /** One terminal tab's content: the page in an iframe, and its host */
 class TerminalPanel implements IContentRenderer {
@@ -20,6 +26,7 @@ class TerminalPanel implements IContentRenderer {
   /** Load the page for this tab and connect it to a new shell */
   init(parameters: GroupPanelPartInitParameters): void {
     const id = parameters.api.id;
+    const { target, local } = parameters.params as TerminalParams;
     const frame = document.createElement("iframe");
     frame.className = "terminal-frame";
     // a label for screen readers; not "title", which WebKit shows as a tooltip over the whole terminal
@@ -28,6 +35,8 @@ class TerminalPanel implements IContentRenderer {
     this.host = new PageHost(
       id,
       frame,
+      target,
+      local,
       () => parameters.api.close(),
       (command) => this.tabs.command(id, command),
     );
@@ -35,7 +44,7 @@ class TerminalPanel implements IContentRenderer {
     this.element.append(frame);
   }
 
-  /** The tab closed: end its shell */
+  /** The tab closed: end its program */
   dispose(): void {
     this.host?.dispose();
     this.host = null;
@@ -60,10 +69,21 @@ export class TabArea {
   /** Open a new Local Shell tab */
   openLocalShell(): void {
     this.count += 1;
+    this.add(this.count === 1 ? "Local Shell" : `Local Shell (${this.count})`, { target: { kind: "localShell" }, local: true });
+  }
+
+  /** Open a tab for a stored session */
+  openSession(store: "saved" | "private", id: string, title: string, local: boolean): void {
+    this.add(title, { target: { kind: "session", store, id }, local });
+  }
+
+  /** Add a terminal tab and show it */
+  private add(title: string, params: TerminalParams): void {
     this.api.addPanel({
-      id: `local-${Date.now()}-${this.count}`,
+      id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       component: "terminal",
-      title: this.count === 1 ? "Local Shell" : `Local Shell (${this.count})`,
+      title,
+      params,
       // keep hidden tabs' pages alive: an iframe that's taken out of the page reloads and loses its terminal
       renderer: "always",
     });

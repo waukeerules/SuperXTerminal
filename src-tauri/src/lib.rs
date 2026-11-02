@@ -558,6 +558,8 @@ fn session_external(state: State<'_, AppState>, store: sessions::Store, id: Stri
                 Some(l) => (l.host.clone(), l.port, l.username.clone(), l.key_file.clone()),
                 None => (host, port, username, String::new()),
             };
+            // no username anywhere: the one ssh would use, as a tab connects with it
+            let username = if username.is_empty() { external::ssh_username(&host, port).unwrap_or_default() } else { username };
             let password = if state.settings.lock().unwrap().filezilla_passwords { launch.and_then(|l| l.password) } else { None };
             let local = variables::substitute(session.get("LocalPath"), &values);
             let remote = variables::substitute(session.get("RemotePath"), &values);

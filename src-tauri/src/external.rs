@@ -94,17 +94,35 @@ pub fn open_filezilla(host: &str, port: u16, username: &str, password: Option<&s
         .find(|name| std::path::Path::new(&format!("/Applications/{name}.app")).exists())
         .ok_or("FileZilla isn't installed in Applications.")?;
     let url = filezilla_url(host, port, username, None, remote);
-    let address = match password {
-        Some(pw) if !pw.is_empty() && !username.is_empty() => filezilla_url(host, port, username, Some(pw), remote),
-        _ => url.clone(),
-    };
+    let with_password = matches!(password, Some(pw) if !pw.is_empty()) && !username.is_empty();
+    let address = if with_password { filezilla_url(host, port, username, password, remote) } else { url.clone() };
     // -n: a new FileZilla each time, as SuperXPuTTY starts one (a running one would drop the address)
     let mut args = vec!["-n".to_string(), "-a".to_string(), app.to_string(), "--args".to_string(), address];
+    if !with_password {
+        // log in with a key (ssh-agent, FileZilla's own) and ask for a password only if the server wants one;
+        // otherwise FileZilla asks before trying, which a key login doesn't need
+        args.push("--logontype=interactive".into());
+    }
     if !local.trim().is_empty() {
         args.push(format!("--local={}", local.trim()));
     }
     let status = std::process::Command::new("open").args(&args).status().map_err(|e| e.to_string())?;
     if status.success() { Ok(format!("Opened {url} in {app}")) } else { Err(format!("{app} didn't start")) }
+}
+
+/// The username ssh itself would log in with (`ssh -G`: ~/.ssh/config's User for the host, else this Mac's account),
+/// for a session that names none; FileZilla otherwise asks for one
+pub fn ssh_username(host: &str, port: u16) -> Option<String> {
+    let mut command = std::process::Command::new("ssh");
+    command.arg("-G");
+    if port != 0 {
+        command.args(["-p", &port.to_string()]);
+    }
+    let output = command.arg(host).output().ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("user ").map(|u| u.trim().to_string()))
+        .filter(|u| !u.is_empty())
 }
 
 /// The sftp:// address: the user and password (URL-escaped), host, port (22 when the session has none) and remote

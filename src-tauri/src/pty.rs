@@ -48,10 +48,18 @@ pub enum PtyEvent {
 
 /// One open pseudo terminal: the master side (for resizing), its writer (for typing) and the program in it
 struct Session {
-    master: Box<dyn MasterPty + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    /// Shared with the reader thread, which waits for its exit code once the output ends
-    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    kind: SessionKind,
+}
+
+/// A program in a pseudo terminal (ssh, a shell), or a Telnet, Raw or Serial stream in the core
+enum SessionKind {
+    Pty {
+        master: Box<dyn MasterPty + Send>,
+        /// Shared with the reader thread, which waits for its exit code once the output ends
+        child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    },
+    Stream(crate::streams::Stream),
 }
 
 /// Every open pseudo terminal, by the id given to its tab
@@ -75,22 +83,26 @@ pub fn pty_open(
 ) -> Result<u32, String> {
     let profiles = state.profiles.lock().unwrap().clone();
     let values = crate::variables::values(&state.user_folder);
+    let serial_devices = state.settings.lock().unwrap().serial_devices.clone();
     let launch = match target {
         Target::LocalShell => launch::local_shell(&profiles),
         Target::Session { store, id } => {
             let sessions = state.sessions.lock().unwrap();
             let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
-            launch::launch(&sessions, &profiles, &values, store, session)?
+            launch::launch(&sessions, &profiles, &values, &serial_devices, store, session)?
         }
         Target::QuickConnect(quick) => {
             let sessions = state.sessions.lock().unwrap();
-            launch::launch(&sessions, &profiles, &values, Store::Saved, &quick.session()?)?
+            launch::launch(&sessions, &profiles, &values, &serial_devices, Store::Saved, &quick.session()?)?
         }
     };
-    let Launch { mut command, password, local, notices, look } = launch;
+    let Launch { mut command, password, local, notices, look, stream } = launch;
     let _ = on_event.send(PtyEvent::Started { local, look });
     for text in notices {
         let _ = on_event.send(PtyEvent::Notice { text, kind: "info".into() });
+    }
+    if let Some(target) = stream {
+        return open_stream(&ptys, &target, cols, rows, on_event);
     }
 
     let pair = native_pty_system()
@@ -157,8 +169,50 @@ pub fn pty_open(
         })
         .map_err(|e| e.to_string())?;
 
-    ptys.sessions.lock().unwrap().insert(id, Session { master: pair.master, writer, child });
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Pty { master: pair.master, child } });
     Ok(id)
+}
+
+/// Start a Telnet, Raw or Serial stream and pass its output on, as a pseudo terminal's. The other end closing is a
+/// clean end (the tab closes, as plink's would); a broken connection isn't (the tab stays and can reconnect).
+fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u16, on_event: Channel<PtyEvent>) -> Result<u32, String> {
+    let (stream, mut reader) = crate::streams::open(target, cols, rows)?;
+    let id = ptys.next.fetch_add(1, Ordering::Relaxed) + 1;
+    std::thread::Builder::new()
+        .name(format!("stream-{id}"))
+        .spawn(move || {
+            let mut buffer = [0u8; 64 * 1024];
+            let code = loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) => break 0,
+                    Ok(n) => {
+                        let data = base64::engine::general_purpose::STANDARD.encode(&buffer[..n]);
+                        if on_event.send(PtyEvent::Data { data }).is_err() {
+                            break 0;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = on_event.send(PtyEvent::Notice { text: format!("Connection lost: {e}"), kind: "error".into() });
+                        break 1;
+                    }
+                }
+            };
+            let _ = on_event.send(PtyEvent::Exit { code: Some(code) });
+        })
+        .map_err(|e| e.to_string())?;
+    let writer = stream.writer.clone();
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Stream(stream) });
+    Ok(id)
+}
+
+/// A Special Command for a tab (Telnet's Break, Are You There...; a serial Break)
+#[tauri::command]
+pub fn pty_special(ptys: State<'_, Ptys>, id: u32, command: String) -> Result<(), String> {
+    let sessions = ptys.sessions.lock().unwrap();
+    match &sessions.get(&id).ok_or("no such terminal")?.kind {
+        SessionKind::Stream(stream) => stream.special(&command),
+        SessionKind::Pty { .. } => Err("ssh can't send special commands".into()),
+    }
 }
 
 /// Watches a session's first output for a password prompt, to type the session's password there once
@@ -203,20 +257,26 @@ pub fn pty_write(ptys: State<'_, Ptys>, id: u32, data: String) -> Result<(), Str
 #[tauri::command]
 pub fn pty_resize(ptys: State<'_, Ptys>, id: u32, cols: u16, rows: u16) -> Result<(), String> {
     let sessions = ptys.sessions.lock().unwrap();
-    let session = sessions.get(&id).ok_or("no such terminal")?;
-    session
-        .master
-        .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
-        .map_err(|e| e.to_string())
+    match &sessions.get(&id).ok_or("no such terminal")?.kind {
+        SessionKind::Pty { master, .. } => master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }).map_err(|e| e.to_string()),
+        SessionKind::Stream(stream) => {
+            stream.resize(cols, rows);
+            Ok(())
+        }
+    }
 }
 
 /// Close a tab's pseudo terminal: end its program if it's still running and forget it
 #[tauri::command]
 pub fn pty_close(ptys: State<'_, Ptys>, id: u32) -> Result<(), String> {
-    if let Some(session) = ptys.sessions.lock().unwrap().remove(&id) {
-        let mut child = session.child.lock().unwrap();
-        let _ = child.kill();
-        let _ = child.wait();
+    match ptys.sessions.lock().unwrap().remove(&id).map(|s| s.kind) {
+        Some(SessionKind::Pty { child, .. }) => {
+            let mut child = child.lock().unwrap();
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        Some(SessionKind::Stream(stream)) => stream.close(),
+        None => {}
     }
     Ok(())
 }

@@ -14,6 +14,7 @@ mod secrets;
 mod outbox;
 mod sessions;
 mod shortcuts;
+mod streams;
 mod variables;
 mod settings;
 
@@ -464,6 +465,20 @@ fn highlighting_user_folder(state: State<'_, AppState>) -> Result<PathBuf, Strin
 #[tauri::command]
 fn open_path(path: PathBuf) -> Result<(), String> {
     std::process::Command::new("open").arg(path).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// The serial devices on this Mac, for choosing which one a COM name is
+#[tauri::command]
+fn serial_devices_list() -> Vec<String> {
+    streams::serial_devices()
+}
+
+/// Remember which device a serial session's COM name is
+#[tauri::command]
+fn serial_device_set(state: State<'_, AppState>, name: String, device: String) -> Result<(), String> {
+    let mut settings = state.settings.lock().unwrap();
+    settings.serial_devices.insert(name, device);
+    settings.save(&state.user_folder)
 }
 
 /// The Favorites and Recent lists
@@ -1381,6 +1396,9 @@ pub fn run() {
             db_create_schema,
             db_pending_list,
             shortcuts_get,
+            serial_devices_list,
+            serial_device_set,
+            pty::pty_special,
             log_open,
             log_write,
             log_close,

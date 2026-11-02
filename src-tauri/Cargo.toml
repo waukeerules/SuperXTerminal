@@ -23,6 +23,8 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 portable-pty = "0.9"
 base64 = "0.23"
+# serial ports driven directly (termios), rather than the MPL-licensed serialport crate
+libc = "0.2"
 quick-xml = "0.42"
 tauri-plugin-dialog = "2"
 dirs = "7"

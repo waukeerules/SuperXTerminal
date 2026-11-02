@@ -11,7 +11,7 @@
 //! pseudo terminal types it once, at the first password prompt (`pty.rs`). That also leaves host-key questions in the
 //! terminal for the user to answer.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use portable_pty::CommandBuilder;
 use serde::Serialize;
@@ -43,6 +43,8 @@ pub struct Launch {
     pub notices: Vec<String>,
     /// The cursor and bell for the page
     pub look: Look,
+    /// Telnet, Raw and Serial run in the core instead of a program (`command` is then unused)
+    pub stream: Option<crate::streams::Target>,
 }
 
 /// Algorithms older devices offer and OpenSSH 10 no longer accepts by default; added for each connection only.
@@ -110,11 +112,13 @@ pub fn launch(
     sessions: &Sessions,
     profiles: &Profiles,
     values: &HashMap<String, String>,
+    serial_devices: &BTreeMap<String, String>,
     store: Store,
     session: &StoredSession,
 ) -> Result<Launch, String> {
     match session.get("Proto").to_ascii_uppercase().as_str() {
         "SSH" | "" => ssh(sessions, profiles, values, store, session),
+        proto @ ("TELNET" | "RAW" | "SERIAL") => stream(sessions, profiles, values, serial_devices, store, session, proto),
         "WINCMD" | "WSL" => {
             let mut launch = local_shell(profiles);
             launch.notices.push(format!("{} session opened as a Local Shell on this Mac.", session.get("Proto")));
@@ -122,6 +126,94 @@ pub fn launch(
         }
         other => Err(format!("{other} sessions can't be opened yet.")),
     }
+}
+
+/// What an error from `launch` starts with when a serial session's COM name has no device yet: the window then asks
+/// which `/dev/cu.*` it is, remembers it, and tries again (SERIAL_DEVICE:COM6)
+pub const SERIAL_DEVICE_NEEDED: &str = "SERIAL_DEVICE:";
+
+/// A Telnet, Raw or Serial session, as plink's -telnet, -raw and -serial: folder defaults, the profile's look, the
+/// port (Telnet's default 23), and for serial the device (a COM name asked once) and -sercfg's line settings
+fn stream(
+    sessions: &Sessions,
+    profiles: &Profiles,
+    values: &HashMap<String, String>,
+    serial_devices: &BTreeMap<String, String>,
+    store: Store,
+    session: &StoredSession,
+    proto: &str,
+) -> Result<Launch, String> {
+    let mut port = session.port();
+    let mut profile_name = session.get("PuttySession").to_string();
+    let mut rules = session.get("HighlightRules").to_string();
+    let mut jump_host = session.get("JumpHost").to_string();
+    for folder in sessions.along(store, session.folder()) {
+        if port == 0 {
+            port = folder.port;
+        }
+        if jump_host.is_empty() {
+            jump_host = folder.jump_host.clone();
+        }
+        if rules.is_empty() {
+            rules = folder.highlight_rules.clone();
+        }
+        if profiles::is_default(&profile_name) && !folder.putty_profile.is_empty() {
+            profile_name = folder.putty_profile.clone();
+        }
+    }
+    let default = profiles.default_profile();
+    let profile = if profiles::is_default(&profile_name) { default } else { profiles.get(&profile_name).unwrap_or(default) };
+    let host = variables::substitute(session.get("Host").trim(), values);
+    if host.is_empty() {
+        return Err(format!("The session has no {}.", if proto == "SERIAL" { "serial line" } else { "host" }));
+    }
+    let mut notices = Vec::new();
+    // Telnet and Raw can go through an SSH jump host (ssh -W), as SuperXPuTTY's proxy command does; the bastion must
+    // take a key, as there's nowhere to type its password
+    let jump_host = variables::substitute(jump_host.trim(), values);
+    let via = if jump_host.is_empty() || proto == "SERIAL" {
+        None
+    } else {
+        Some(jump_address(sessions, values, store, session, &jump_host)?)
+    };
+    let target = match proto {
+        "TELNET" => crate::streams::Target::Telnet { host, port: if port == 0 { 23 } else { port }, via },
+        "RAW" => {
+            if port == 0 {
+                return Err("A Raw session needs a port.".into());
+            }
+            crate::streams::Target::Raw { host, port, via }
+        }
+        _ => {
+            // a Windows COM name is asked once which device it is on this Mac; a /dev path is used as it is
+            let device = if host.starts_with("/dev/") {
+                host.clone()
+            } else {
+                serial_devices
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case(&host))
+                    .map(|(_, device)| device.clone())
+                    .ok_or_else(|| format!("{SERIAL_DEVICE_NEEDED}{host}"))?
+            };
+            let mut line = crate::streams::SerialLine::default();
+            let words = split_words(&variables::substitute(session.get("ExtraArgs"), values));
+            if let Some(i) = words.iter().position(|w| w == "-sercfg") {
+                line.apply(words.get(i + 1).map(String::as_str).unwrap_or(""))?;
+            }
+            if host != device {
+                notices.push(format!("{host} is {device} on this Mac."));
+            }
+            crate::streams::Target::Serial { device, line }
+        }
+    };
+    Ok(Launch {
+        command: CommandBuilder::new("true"),
+        password: None,
+        local: false,
+        notices,
+        look: Look { rules, ..look(profile, default) },
+        stream: Some(target),
+    })
 }
 
 /// The user's login shell, as for the New Local Shell button; it takes "Default Settings"' cursor and bell
@@ -133,6 +225,7 @@ pub fn local_shell(profiles: &Profiles) -> Launch {
         local: true,
         notices: Vec::new(),
         look: look(default, default),
+        stream: None,
     }
 }
 
@@ -269,7 +362,7 @@ fn ssh(
         args.extend(["-o".into(), "PreferredAuthentications=keyboard-interactive,password,publickey".into()]);
     }
     if !jump_host.is_empty() {
-        args.extend(["-J".into(), jump_address(sessions, store, &jump_host)?]);
+        args.extend(["-J".into(), jump_address(sessions, values, store, session, &jump_host)?]);
     }
     args.extend(split_words(first(&profile.ssh_options, &default.ssh_options)));
     args.extend(extra.args);
@@ -283,7 +376,7 @@ fn ssh(
 
     let mut command = CommandBuilder::new("ssh");
     command.args(&args);
-    Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) } })
+    Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) }, stream: None })
 }
 
 /// A path with a leading "~/" turned into the home folder
@@ -294,17 +387,46 @@ fn expand_home(path: &str) -> String {
     }
 }
 
-/// A jump host as `ssh -J` takes it: "user@host:port" as it is, or a saved session's id turned into its address
-fn jump_address(sessions: &Sessions, store: Store, jump: &str) -> Result<String, String> {
-    let Some(session) = sessions.find(store, jump).or_else(|| sessions.find(Store::Saved, jump)) else {
-        return Ok(jump.to_string());
+/// A jump host as `ssh -J` takes it, as SuperXPuTTY's JumpHosts.Resolve: a saved session (by its id, in the same
+/// store, Saved sessions, or Database sessions' path), with its folders' username and port and its placeholders, or
+/// "user@host:port" as it is. Chains aren't followed, and a session can't jump through itself.
+fn jump_address(
+    sessions: &Sessions,
+    values: &HashMap<String, String>,
+    store: Store,
+    from: &StoredSession,
+    jump: &str,
+) -> Result<String, String> {
+    let jump = jump.trim();
+    let database_id = format!("@db/{}", jump.trim_start_matches('/'));
+    let found = [(store, jump), (Store::Saved, jump), (Store::Private, jump), (Store::Database, database_id.as_str())]
+        .into_iter()
+        .find_map(|(s, id)| sessions.find(s, id).map(|session| (s, session)));
+    let Some((jump_store, session)) = found else {
+        let valid = jump.split_once('@').map(|(user, rest)| !user.is_empty() && !rest.is_empty()).unwrap_or(true)
+            && !jump.chars().any(char::is_whitespace);
+        return if valid { Ok(jump.to_string()) } else { Err(format!("The jump host \"{jump}\" isn't a session or user@host:port.")) };
     };
-    let mut address = session.get("Host").to_string();
-    if !session.get("Username").is_empty() {
-        address = format!("{}@{address}", session.get("Username"));
+    if jump_store == store && session.id() == from.id() {
+        return Err("A session can't be its own jump host.".into());
     }
-    if session.port() != 0 && session.port() != 22 {
-        address = format!("{address}:{}", session.port());
+    let mut username = session.get("Username").to_string();
+    let mut port = session.port();
+    for folder in sessions.along(jump_store, session.folder()) {
+        if username.is_empty() {
+            username = folder.username.clone();
+        }
+        if port == 0 {
+            port = folder.port;
+        }
+    }
+    let mut address = variables::substitute(session.get("Host").trim(), values);
+    let username = variables::substitute(&username, values);
+    if !username.is_empty() {
+        address = format!("{username}@{address}");
+    }
+    if port != 0 && port != 22 {
+        address = format!("{address}:{port}");
     }
     Ok(address)
 }
@@ -403,7 +525,7 @@ mod tests {
 
     /// The arguments ssh would be started with
     fn args_of(sessions: &Sessions, profiles: &Profiles, session: &StoredSession) -> (Vec<String>, Vec<String>) {
-        let launch = launch(sessions, profiles, &HashMap::new(), Store::Saved, session).unwrap();
+        let launch = launch(sessions, profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, session).unwrap();
         let args = launch.command.get_argv().iter().skip(1).map(|a| a.to_string_lossy().to_string()).collect();
         (args, launch.notices)
     }
@@ -463,6 +585,52 @@ mod tests {
         );
         let telnet = QuickConnect { host: "telnet://10.0.0.1".into(), ..quick };
         assert_eq!(telnet.session().unwrap().get("Proto"), "TELNET");
+    }
+
+    #[test]
+    fn telnet_raw_and_serial_are_streams() {
+        use crate::streams::{SerialLine, Target};
+        let devices: BTreeMap<String, String> = [("COM6".to_string(), "/dev/cu.usbserial-1".to_string())].into();
+        // the attributes given win over the helper's host
+        let run = |attributes: &[(&str, &str)]| {
+            let mut s = session(attributes);
+            for (name, value) in attributes {
+                s.set(name, value);
+            }
+            launch(&Sessions::default(), &profiles(), &HashMap::new(), &devices, Store::Saved, &s)
+        };
+        assert_eq!(run(&[("Proto", "Telnet")]).unwrap().stream, Some(Target::Telnet { host: "10.0.0.1".into(), port: 23, via: None }));
+        assert_eq!(
+            run(&[("Proto", "Raw"), ("Port", "2001"), ("JumpHost", "me@bastion:2222")]).unwrap().stream,
+            Some(Target::Raw { host: "10.0.0.1".into(), port: 2001, via: Some("me@bastion:2222".into()) })
+        );
+        assert!(run(&[("Proto", "Raw")]).is_err(), "Raw needs a port");
+        let serial = run(&[("Proto", "Serial"), ("Host", "com6"), ("ExtraArgs", "-sercfg 115200,8,n,1,N")]).unwrap();
+        let line = SerialLine { speed: 115200, flow: 'N', ..SerialLine::default() };
+        assert_eq!(serial.stream, Some(Target::Serial { device: "/dev/cu.usbserial-1".into(), line }));
+        // a COM name not yet matched to a device is asked
+        assert_eq!(run(&[("Proto", "Serial"), ("Host", "COM7")]).err().unwrap(), format!("{SERIAL_DEVICE_NEEDED}COM7"));
+    }
+
+    #[test]
+    fn jump_hosts_resolve_as_superxputty() {
+        let bastion = StoredSession {
+            attributes: vec![("SessionId".into(), "Bastions/b1".into()), ("Host".into(), "{dc}-bastion".into()), ("Port".into(), "0".into())],
+        };
+        let folder = FolderSetting { path: "Bastions".into(), username: "ops".into(), port: 2222, ..FolderSetting::default() };
+        let sessions = Sessions {
+            saved: vec![bastion.clone()],
+            folders: [(Store::Saved, [("Bastions".to_string(), folder)].into())].into(),
+            ..Sessions::default()
+        };
+        let values: HashMap<String, String> = [("dc".to_string(), "lon".to_string())].into();
+        let from = session(&[]);
+        // a saved session: its folder's username and port, its placeholders filled
+        assert_eq!(jump_address(&sessions, &values, Store::Saved, &from, "Bastions/b1").unwrap(), "ops@lon-bastion:2222");
+        // user@host:port as it is
+        assert_eq!(jump_address(&sessions, &values, Store::Saved, &from, "me@jump:22").unwrap(), "me@jump:22");
+        assert!(jump_address(&sessions, &values, Store::Saved, &from, "not a host").is_err());
+        assert!(jump_address(&sessions, &values, Store::Saved, &bastion, "Bastions/b1").is_err(), "not through itself");
     }
 
     #[test]

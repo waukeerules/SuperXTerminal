@@ -7,7 +7,8 @@ import { fillFields, findFields, remember, startValue } from "./snippets";
 interface Question {
   title: string;
   okLabel: string;
-  fields: { label: string; value: string; secret: boolean }[];
+  /** A field with choices is a list to pick from */
+  fields: { label: string; value: string; secret: boolean; choices?: string[] }[];
   resolve: (values: string[] | null) => void;
 }
 
@@ -44,6 +45,12 @@ export async function resolveSnippet(text: string, title: string): Promise<strin
   const values = new Map(fields.map((f, i) => [f.name.toLowerCase(), answers[i]]));
   remember(fields, values);
   return fillFields(text, values);
+}
+
+/** One of a list, e.g. which serial device a COM name is; null if cancelled */
+export async function askChoice(title: string, label: string, choices: string[]): Promise<string | null> {
+  const answers = await ask({ title, okLabel: "OK", fields: [{ label, value: choices[0] ?? "", secret: false, choices }] });
+  return answers ? answers[0] : null;
 }
 
 /** One answer, for SPSL's PROMPT (shown) and PWDPROMPT (masked); null if cancelled */

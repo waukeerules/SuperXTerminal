@@ -31,8 +31,14 @@
       {#each current.fields as field, i}
         <label>
           <span>{field.label}</span>
-          <input bind:this={boxes[i]} bind:value={field.value} type={field.secret ? "password" : "text"}
-            autocomplete="off" />
+          {#if field.choices}
+            <select bind:value={field.value}>
+              {#each field.choices as choice}<option value={choice}>{choice}</option>{/each}
+            </select>
+          {:else}
+            <input bind:this={boxes[i]} bind:value={field.value} type={field.secret ? "password" : "text"}
+              autocomplete="off" />
+          {/if}
         </label>
       {/each}
       <footer>
@@ -77,6 +83,7 @@
   }
 
   input,
+  select,
   button {
     background: var(--bg-input);
     border: 1px solid var(--border);

@@ -13,7 +13,7 @@ import { highlighting } from "./highlighting";
 import { isDark, settings } from "../settings/store.svelte";
 import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
-import { askOne } from "../scripting/asking.svelte";
+import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
 import { checkPaste } from "./pasting.svelte";
 
@@ -85,6 +85,9 @@ function beep(): void {
   tone.stop(audio.currentTime + 0.15);
   tone.onended = () => void audio.close();
 }
+
+/** What the core's error starts with when a serial session's COM name needs a device (launch::SERIAL_DEVICE_NEEDED) */
+const SERIAL_DEVICE_NEEDED = "SERIAL_DEVICE:";
 
 /** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
 const STABLE_AFTER_MS = 60_000;
@@ -464,10 +467,42 @@ export class PageHost implements ScriptTarget {
       if (!this.log) this.log = await invoke<{ id: number; path: string; temporary: boolean }>("log_open", { name: this.title }).catch(() => null);
       this.markStarted();
     } catch (error) {
+      let text = String(error);
+      // a serial session's COM name with no device yet: asked once, remembered, and tried again
+      if (text.startsWith(SERIAL_DEVICE_NEEDED)) {
+        const name = text.slice(SERIAL_DEVICE_NEEDED.length);
+        if (await this.chooseSerialDevice(name)) {
+          await this.open();
+          return;
+        }
+        text = `${name} isn't matched to a serial device on this Mac yet. Press Enter to choose one.`;
+      }
       // nothing started, so the page has had no settings yet
-      await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
-      this.post({ type: "notice", text: String(error), kind: "error" });
+      if (!this.configured) await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
+      this.post({ type: "notice", text, kind: "error" });
+      // the tab stays; Enter tries again
+      this.ended = true;
+      this.onState();
     }
+  }
+
+  /** Ask which /dev/cu.* device a COM name is on this Mac, and remember it; false if there's none or it's cancelled */
+  private async chooseSerialDevice(name: string): Promise<boolean> {
+    const devices = await invoke<string[]>("serial_devices_list");
+    if (devices.length === 0) {
+      this.post({ type: "notice", text: `${name}: no serial device is plugged in (none in /dev/cu.*).`, kind: "error" });
+      return false;
+    }
+    const device = await askChoice(`Which serial device is ${name} on this Mac?`, `${name}:`, devices);
+    if (!device) return false;
+    await invoke("serial_device_set", { name, device });
+    return true;
+  }
+
+  /** A Special Command (Telnet's Break, Are You There...; a serial Break) */
+  async special(command: string): Promise<void> {
+    if (this.ptyId === null) return;
+    await invoke("pty_special", { id: this.ptyId, command }).catch((e) => this.post({ type: "notice", text: String(e), kind: "error" }));
   }
 
   /** Send the next chunk of output if the page has drawn the last one and has its settings */

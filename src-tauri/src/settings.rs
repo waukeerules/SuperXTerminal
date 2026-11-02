@@ -45,6 +45,8 @@ pub struct AppSettings {
     pub session_log_enabled: bool,
     /// Where kept logs go ("" for Documents/SuperXTerminal/logs), as SessionLogFolder
     pub session_log_folder: String,
+    /// Which /dev/cu.* device each serial session's COM name is on this Mac, asked once (docs/PLAN.md)
+    pub serial_devices: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for AppSettings {
@@ -67,6 +69,7 @@ impl Default for AppSettings {
             terminal_prefs: std::collections::BTreeMap::new(),
             session_log_enabled: false,
             session_log_folder: String::new(),
+            serial_devices: std::collections::BTreeMap::new(),
         }
     }
 }

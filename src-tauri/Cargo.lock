@@ -3714,6 +3714,7 @@ dependencies = [
  "chrono",
  "dirs",
  "keyring",
+ "libc",
  "native-tls",
  "objc2",
  "objc2-foundation",

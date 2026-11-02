@@ -69,7 +69,7 @@ export function unavailableReason(protocol: string): string | null {
     case "TELNET":
     case "RAW":
     case "SERIAL":
-      return "Not available yet: comes in M5";
+      return null;
     case "RDP":
       return "Opens in Windows App: comes in M5";
     case "VNC":

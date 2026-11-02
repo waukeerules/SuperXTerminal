@@ -54,6 +54,19 @@ function sessionsMenu(sessions: SessionView[], open: (s: SessionView) => void): 
   return build(root);
 }
 
+/** Special Command's items, as PuTTY's: Telnet's commands, a serial Break; ssh can't send any */
+function specialItems(protocol: string, send: (command: string) => void): MenuItem[] {
+  if (protocol === "TELNET") {
+    return [
+      ["Break", "break"], ["Are You There", "ayt"], ["Synch", "synch"], ["Erase Character", "ec"], ["Erase Line", "el"],
+      ["Go Ahead", "ga"], ["No Operation", "nop"], ["Abort Process", "abort"], ["Abort Output", "ao"],
+      ["Interrupt Process", "interrupt"], ["Suspend Process", "susp"], ["End Of Record", "eor"], ["End Of File", "eof"],
+    ].map(([label, command]) => ({ label, action: () => send(command) }));
+  }
+  if (protocol === "SERIAL") return [{ label: "Break", action: () => send("break") }];
+  return [{ label: "Not in the built-in terminal: ssh can't send them", disabled: true }];
+}
+
 /** The menu for the tab `id` */
 export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
   const { tabs } = host;
@@ -69,6 +82,7 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
   const group = tabs.api.getPanel(id)?.group.panels ?? [];
   const index = group.findIndex((p) => p.id === id);
   const watch = tabs.watchOf(id);
+  const protocol = (target.kind === "quickConnect" ? target.protocol : session?.protocol ?? "").toUpperCase();
   const noLog = "The session hasn't started yet";
   const roots: [string, SessionView["store"]][] = [["Saved sessions", "saved"], ["Private sessions", "private"], ["Database sessions", "database"]];
   return [
@@ -118,10 +132,7 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
         { label: "Other Key...", action: () => void tab.host.sendKey(null) },
       ],
     },
-    {
-      label: "Special Command",
-      items: [{ label: "Not in the built-in terminal: ssh can't send them", disabled: true }],
-    },
+    { label: "Special Command", items: specialItems(protocol, (command) => void tab.host.special(command)) },
     { separator: true },
     { label: "Copy all to clipboard", action: () => tab.host.action("copyAll") },
     ...(tab.host.isReconnecting ? [{ label: "Stop Reconnecting", action: () => tab.host.stopReconnecting() }] : []),

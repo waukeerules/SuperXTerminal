@@ -11,10 +11,13 @@
 //! pseudo terminal types it once, at the first password prompt (`pty.rs`). That also leaves host-key questions in the
 //! terminal for the user to answer.
 
+use std::collections::HashMap;
+
 use portable_pty::CommandBuilder;
 use serde::Serialize;
 
 use crate::profiles::{self, Profile, Profiles};
+use crate::variables;
 use crate::sessions::{Sessions, Store, StoredSession};
 
 /// How the terminal page draws this tab, from the session's profile (SuperXPuTTY took these from the PuTTY profile)
@@ -103,9 +106,15 @@ impl QuickConnect {
 }
 
 /// Build the start of a stored session, or say why it can't start on this Mac yet
-pub fn launch(sessions: &Sessions, profiles: &Profiles, store: Store, session: &StoredSession) -> Result<Launch, String> {
+pub fn launch(
+    sessions: &Sessions,
+    profiles: &Profiles,
+    values: &HashMap<String, String>,
+    store: Store,
+    session: &StoredSession,
+) -> Result<Launch, String> {
     match session.get("Proto").to_ascii_uppercase().as_str() {
-        "SSH" | "" => ssh(sessions, profiles, store, session),
+        "SSH" | "" => ssh(sessions, profiles, values, store, session),
         "WINCMD" | "WSL" => {
             let mut launch = local_shell(profiles);
             launch.notices.push(format!("{} session opened as a Local Shell on this Mac.", session.get("Proto")));
@@ -146,7 +155,13 @@ fn first<'a>(profile: &'a str, default: &'a str) -> &'a str {
 }
 
 /// `ssh -tt` for an SSH session, with its folder defaults and profile applied
-fn ssh(sessions: &Sessions, profiles: &Profiles, store: Store, session: &StoredSession) -> Result<Launch, String> {
+fn ssh(
+    sessions: &Sessions,
+    profiles: &Profiles,
+    values: &HashMap<String, String>,
+    store: Store,
+    session: &StoredSession,
+) -> Result<Launch, String> {
     let mut username = session.get("Username").to_string();
     let mut port = session.port();
     let mut jump_host = session.get("JumpHost").to_string();
@@ -192,21 +207,34 @@ fn ssh(sessions: &Sessions, profiles: &Profiles, store: Store, session: &StoredS
         jump_host = first(&profile.jump_host, &default.jump_host).to_string();
     }
 
-    let host = session.get("Host").trim().to_string();
+    // {key} placeholders, after the folder and profile defaults (a folder's "{user}" counts), as SessionVariables
+    let raw_extra = session.get("ExtraArgs");
+    let mut missing = Vec::new();
+    for text in [session.get("Host"), username.as_str(), raw_extra, jump_host.as_str()] {
+        for key in variables::missing(text, values) {
+            if !missing.contains(&key) {
+                missing.push(key);
+            }
+        }
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "This session uses placeholders that have no value yet: {}. Define them in Tools > Environment Variables.",
+            missing.join(", ")
+        ));
+    }
+    let host = variables::substitute(session.get("Host").trim(), values);
+    let username = variables::substitute(&username, values);
+    let jump_host = variables::substitute(&jump_host, values);
     if host.is_empty() {
         return Err("This session has no host.".into());
-    }
-    for (field, value) in [("Host", host.as_str()), ("Username", username.as_str())] {
-        if value.contains('{') {
-            return Err(format!("The {field} uses a {{placeholder}}; placeholders come later in M1."));
-        }
     }
 
     let mut args: Vec<String> = vec!["-tt".into()];
     if profile.older_algorithms.or(default.older_algorithms).unwrap_or(true) {
         args.extend(OLDER_ALGORITHMS.iter().map(|s| s.to_string()));
     }
-    let extra = translate_extra_args(session.get("ExtraArgs"));
+    let extra = translate_extra_args(&variables::substitute(raw_extra, values));
     notices.extend(extra.notices);
     // Quick connect's password (never stored), else the session's own -pw, else its profile's, else Default Settings'
     let password = Some(session.get(QUICK_PASSWORD).to_string())
@@ -375,7 +403,7 @@ mod tests {
 
     /// The arguments ssh would be started with
     fn args_of(sessions: &Sessions, profiles: &Profiles, session: &StoredSession) -> (Vec<String>, Vec<String>) {
-        let launch = launch(sessions, profiles, Store::Saved, session).unwrap();
+        let launch = launch(sessions, profiles, &HashMap::new(), Store::Saved, session).unwrap();
         let args = launch.command.get_argv().iter().skip(1).map(|a| a.to_string_lossy().to_string()).collect();
         (args, launch.notices)
     }

@@ -7,6 +7,7 @@ mod launch;
 mod profiles;
 mod pty;
 mod sessions;
+mod variables;
 mod settings;
 
 use std::path::PathBuf;
@@ -217,6 +218,19 @@ fn session_move(state: State<'_, AppState>, store: sessions::Store, id: String, 
     folders::move_session(&file, &id, &folder, &other_ids(&state, store))
 }
 
+/// The user's Environment Variables for the window; secrets' values stay in the Keychain
+#[tauri::command]
+fn variables_list(state: State<'_, AppState>) -> Vec<variables::Variable> {
+    variables::list(&state.user_folder)
+}
+
+/// Save the Environment Variables window; a secret left empty keeps its stored value
+#[tauri::command]
+fn variables_save(state: State<'_, AppState>, variables: Vec<variables::Variable>) -> Result<Vec<variables::Variable>, String> {
+    variables::save(&state.user_folder, &variables)?;
+    Ok(variables::list(&state.user_folder))
+}
+
 /// Use another settings folder (chosen in the UI), and remember it
 #[tauri::command]
 fn settings_set_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -226,7 +240,7 @@ fn settings_set_folder(state: State<'_, AppState>, path: String) -> Result<(), S
 }
 
 /// The menu bar: the app menu (with Settings..., Cmd+,), File (New Local Shell, Cmd+T), Edit (which WebKit needs for
-/// Cmd+C/V) and Window.
+/// Cmd+C/V), Tools (Environment Variables...) and Window.
 /// SuperXPuTTY's File, View and Tools menus join it as their features arrive.
 fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
@@ -279,7 +293,13 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::close_window(app, None)?,
         ],
     )?;
-    Menu::with_items(app, &[&app_menu, &file, &edit, &window])
+    let tools = Submenu::with_items(
+        app,
+        "Tools",
+        true,
+        &[&MenuItem::with_id(app, "environmentVariables", "Environment Variables…", true, None::<&str>)?],
+    )?;
+    Menu::with_items(app, &[&app_menu, &file, &edit, &tools, &window])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -315,6 +335,8 @@ pub fn run() {
             folder_move,
             folder_delete,
             folder_settings_save,
+            variables_list,
+            variables_save,
             profiles_list,
             profiles_save,
             profiles_delete,

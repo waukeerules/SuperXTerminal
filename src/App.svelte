@@ -8,6 +8,7 @@
   import { TabArea } from "./lib/layout/TabArea";
   import SessionTree from "./lib/sessions/SessionTree.svelte";
   import Settings from "./lib/settings/Settings.svelte";
+  import EnvironmentVariables from "./lib/settings/EnvironmentVariables.svelte";
   import QuickConnect from "./lib/layout/QuickConnect.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { opensAsLocalShell, type SessionView } from "./lib/sessions/api";
@@ -17,11 +18,13 @@
   let status = $state("Ready");
   let openSessions = $state<ReadonlySet<string>>(new Set());
   let settingsOpen = $state(false);
+  let variablesOpen = $state(false);
 
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
   void listen<string>("menu", (event) => {
     if (event.payload === "settings") settingsOpen = true;
     else if (event.payload === "newLocalShell") newShell();
+    else if (event.payload === "environmentVariables") variablesOpen = true;
   });
 
   onMount(() => {
@@ -43,6 +46,10 @@
     status = "Opened session: Local Shell";
   }
 </script>
+
+{#if variablesOpen}
+  <EnvironmentVariables onClose={() => (variablesOpen = false)} />
+{/if}
 
 {#if settingsOpen}
   <Settings onClose={() => (settingsOpen = false)} />

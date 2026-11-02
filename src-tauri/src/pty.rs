@@ -73,16 +73,17 @@ pub fn pty_open(
     on_event: Channel<PtyEvent>,
 ) -> Result<u32, String> {
     let profiles = state.profiles.lock().unwrap().clone();
+    let values = crate::variables::values(&state.user_folder);
     let launch = match target {
         Target::LocalShell => launch::local_shell(&profiles),
         Target::Session { store, id } => {
             let sessions = state.sessions.lock().unwrap();
             let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
-            launch::launch(&sessions, &profiles, store, session)?
+            launch::launch(&sessions, &profiles, &values, store, session)?
         }
         Target::QuickConnect(quick) => {
             let sessions = state.sessions.lock().unwrap();
-            launch::launch(&sessions, &profiles, Store::Saved, &quick.session()?)?
+            launch::launch(&sessions, &profiles, &values, Store::Saved, &quick.session()?)?
         }
     };
     let Launch { mut command, password, local, notices, look } = launch;

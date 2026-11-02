@@ -72,7 +72,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Key files and agent: a profile's key file (`-i`, `IdentitiesOnly`), else ssh's own keys and agent (checked with the 1Password agent)
 - ✅ Allow older algorithms (profile option, on in Default Settings): SHA-1 key exchange, `ssh-rsa`, CBC ciphers
 - ✅ Launch order: session, folder default, profile, Default Settings (local overrides join it in M5); tested
-- ⬜ `{key}` placeholders; Environment Variables with Keychain secrets
+- ✅ `{key}` placeholders; Environment Variables with Keychain secrets (Tools > Environment Variables; SuperXPuTTY's file, copied over as is: plain values come across, Windows-encrypted secrets ask to be typed again and stay in the file for Windows). Checked: Lab Switch - environment logs in
 - ✅ Quick connect toolbar: Protocol, Host (`host`, `host:port`, `user@host`, `ssh://host:port`), Login, Password (used once, never saved) and Profile; Enter connects, Clear empties it. Checked on the lab switch. File > New Local Shell (Cmd+T) replaces M0's button
 - ✅ Edit Session (all of SuperXPuTTY's fields, profile list, inherited folder values as hints, greyed fields explained, `-pw` shown masked and kept), from the session's right-click menu, which matches SuperXPuTTY's (Connect, Colour, Copy host address, Edit, Delete; the rest greyed with the milestone)
 

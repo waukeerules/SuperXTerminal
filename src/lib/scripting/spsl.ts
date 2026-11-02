@@ -13,7 +13,8 @@ export type Step =
   | { kind: "sleep"; ms: number }
   | { kind: "prompt"; message: string }
   | { kind: "pwdprompt" }
-  | { kind: "open"; id: string };
+  | { kind: "open"; id: string }
+  | { kind: "break" };
 
 /** How long WAITFOR waits when no /t: is given */
 const DEFAULT_WAITFOR_MS = 30_000;
@@ -71,6 +72,8 @@ export function parseLine(raw: string): Step | null {
       return { kind: "pwdprompt" };
     case "OPENSESSION":
       return { kind: "open", id: args.trim() };
+    case "SENDBREAK":
+      return { kind: "break" };
     case "CLOSESESSION":
       throw new Error("CLOSESESSION isn't implemented");
     default:
@@ -88,6 +91,8 @@ export interface ScriptTarget {
   outputSinceMark(): string;
   /** Move the mark past a match */
   advanceMark(characters: number): void;
+  /** A Break (serial or Telnet); throws when the tab can't send one */
+  sendBreak(): Promise<void>;
 }
 
 /** What a script needs from the window */
@@ -188,6 +193,10 @@ export async function runScript(target: ScriptTarget, host: ScriptHost, run: Scr
         case "open":
           host.openSession(step.id);
           break;
+        case "break":
+          target.markOutput(false);
+          await target.sendBreak();
+          break;
       }
     } catch (error) {
       host.status(`Script ${where} stopped at line ${i + 1}: ${error instanceof Error ? error.message : String(error)}`);
@@ -226,9 +235,9 @@ export interface Issue {
   message: string;
 }
 
-/** The commands, for the checker's suggestions; SENDBREAK and CLOSESESSION are listed but can't run */
-export const COMMANDS = ["SENDLINE", "SENDCHAR", "SENDKEY", "SLEEP", "WAITFOR", "PROMPT", "PWDPROMPT", "OPENSESSION"];
-const UNAVAILABLE = ["SENDBREAK", "CLOSESESSION"];
+/** The commands, for the checker's suggestions; CLOSESESSION is listed but can't run */
+export const COMMANDS = ["SENDLINE", "SENDCHAR", "SENDKEY", "SLEEP", "WAITFOR", "PROMPT", "PWDPROMPT", "OPENSESSION", "SENDBREAK"];
+const UNAVAILABLE = ["CLOSESESSION"];
 
 /**
  * Check a script without running it, as SpslChecker: unknown commands (with a suggestion for a near miss), missing
@@ -286,7 +295,9 @@ function checkArguments(command: string, args: string, sessionExists: (id: strin
       if (!args) return "OPENSESSION needs a session ID, e.g. OPENSESSION Lab/core-sw1";
       return sessionExists(args) ? null : `!There's no saved session with the ID "${args}"; the line will do nothing.`;
     case "SENDBREAK":
-      return "SENDBREAK isn't available: a Break isn't a key, so a script can't send one; this line would do nothing.";
+      if (args) return "SENDBREAK takes no argument";
+      // SuperXPuTTY lists SENDBREAK as unavailable: plink can't send a Break
+      return "!SENDBREAK works in Serial and Telnet tabs on the Mac; SuperXPuTTY on Windows skips it, and an SSH tab stops the script here.";
     case "CLOSESESSION":
       return "CLOSESESSION isn't available: SPSL lists it but doesn't implement it, so the script would stop here.";
     default:

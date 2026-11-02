@@ -32,6 +32,7 @@
     ["PROMPT question", "Ask for a value and type it, then Enter"],
     ["PWDPROMPT", "Ask for a password (hidden) and type it, then Enter; Cancel stops the script"],
     ["OPENSESSION Folder/name", "Open a saved session"],
+    ["SENDBREAK", "Send a Break in a Serial or Telnet tab, e.g. to stop a Cisco switch's boot at ROMMON (SuperXPuTTY skips it)"],
     ["# comment", "A comment; so is #!/bin/spsl on the first line"],
   ];
 

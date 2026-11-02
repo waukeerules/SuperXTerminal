@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
   import Icon from "../icons/Icon.svelte";
   import IconPicker from "../icons/IconPicker.svelte";
@@ -13,6 +14,8 @@
   import { PALETTE } from "../icons/palette";
   import { highlighting } from "../terminal/highlighting";
   import { listProfiles, DEFAULT_PROFILE } from "../settings/profiles";
+  import SerialLineFields from "./SerialLineFields.svelte";
+  import { lineOf, withLine } from "./serial";
   import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
   interface Props {
@@ -44,6 +47,11 @@
   let choosingIcon = $state(false);
   let choosingColour = $state(false);
   let error = $state("");
+  /** The serial devices plugged in (/dev/cu.*), for the Serial line list */
+  let serialDevices = $state<string[]>([]);
+
+  const serial = $derived(draft.protocol.toUpperCase() === "SERIAL");
+  const line = $derived(lineOf(draft.extraArgs));
 
   const where = $derived(
     store === "saved" ? "Saved sessions (Sessions.xml)" : store === "private" ? "Private sessions (PrivateSessions.xml)" : "Database sessions",
@@ -69,6 +77,14 @@
     }
     return "";
   }
+
+  async function listSerialDevices(): Promise<void> {
+    serialDevices = await invoke<string[]>("serial_devices_list");
+  }
+
+  $effect(() => {
+    if (serial) void untrack(listSerialDevices);
+  });
 
   /** Save and close, or show why it can't be saved */
   async function save(): Promise<void> {
@@ -144,11 +160,27 @@
       {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}
       {#if profileMissing}<p class="note">Profile "{draft.profile.trim()}" isn't set up on this Mac, so Default Settings is used. Add it in Profiles….</p>{/if}
 
-      <div class="row">
-        <label class="grow">Host address: <input bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""} /></label>
-        <label>TCP port: <input class="port" type="number" min="0" max="65535" bind:value={draft.port}
-          placeholder={inherited("port")} disabled={locked("port")} title={locked("port") ? lockTip : ""} /></label>
-      </div>
+      {#if serial}
+        <div class="row">
+          <label class="grow">Serial line:
+            <input list="serial-devices" bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""}
+              placeholder={serialDevices[0] ?? "e.g. /dev/cu.usbserial-1, or COM1"} />
+            <datalist id="serial-devices">{#each serialDevices as d}<option value={d}></option>{/each}</datalist>
+          </label>
+          <button onclick={listSerialDevices} title="List the serial devices plugged in now">Refresh</button>
+        </div>
+        <p class="note">Pick a device from the list, or type a COM name (e.g. COM1) to share the session with Windows: the Mac asks once which device it is.
+          {#if serialDevices.length === 0}No serial device is plugged in now.{/if}</p>
+        <div class="row">
+          <SerialLineFields {line} disabled={locked("extra_args")} onChange={(l) => (draft.extraArgs = withLine(draft.extraArgs, l))} />
+        </div>
+      {:else}
+        <div class="row">
+          <label class="grow">Host address: <input bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""} /></label>
+          <label>TCP port: <input class="port" type="number" min="0" max="65535" bind:value={draft.port}
+            placeholder={inherited("port")} disabled={locked("port")} title={locked("port") ? lockTip : ""} /></label>
+        </div>
+      {/if}
 
       <div class="row">
         <label class="grow">Login username: <input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"}

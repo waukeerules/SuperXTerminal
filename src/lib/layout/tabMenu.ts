@@ -17,6 +17,8 @@ export interface TabMenuHost {
   open: (session: SessionView) => void;
   saveAs: (store: SessionView["store"], id: string, title: string) => void;
   rename: (id: string, title: string) => void;
+  /** Open a serial tab's Serial Settings */
+  serialSettings: (id: string) => void;
   status: (text: string) => void;
 }
 
@@ -129,10 +131,16 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
       items: [
         ...MENU_KEYS.map(([key, label, hint]) => ({ label: hint ? `${label}  (${hint})` : label, action: () => void tab.host.sendKey(key) })),
         { separator: true } as MenuItem,
+        ...(protocol === "SERIAL" || protocol === "TELNET"
+          ? [{ label: "Break  (stop a Cisco boot at ROMMON)", action: () => void tab.host.special("break") }, { separator: true } as MenuItem]
+          : []),
         { label: "Other Key...", action: () => void tab.host.sendKey(null) },
       ],
     },
     { label: "Special Command", items: specialItems(protocol, (command) => void tab.host.special(command)) },
+    ...(protocol === "SERIAL"
+      ? [{ label: "Serial Settings...", disabled: (tab.host.isEnded || !tab.host.canReceiveCommands) && "The session isn't connected", action: () => host.serialSettings(id) }]
+      : []),
     { separator: true },
     { label: "Copy all to clipboard", action: () => tab.host.action("copyAll") },
     ...(tab.host.isReconnecting ? [{ label: "Stop Reconnecting", action: () => tab.host.stopReconnecting() }] : []),

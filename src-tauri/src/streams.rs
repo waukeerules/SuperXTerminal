@@ -60,6 +60,11 @@ impl SerialLine {
         }
         Ok(())
     }
+
+    /// As PuTTY's `-sercfg` value, e.g. "9600,8,n,1,X"
+    pub fn to_sercfg(&self) -> String {
+        format!("{},{},{},{},{}", self.speed, self.data_bits, self.parity, self.stop_bits, self.flow)
+    }
 }
 
 /// The writing half of an open stream, and what it needs to close, resize and send special commands
@@ -71,7 +76,7 @@ pub struct Stream {
 enum Kind {
     Telnet { link: Link, size: Arc<Mutex<(u16, u16)>>, naws: Arc<Mutex<bool>> },
     Raw { link: Link },
-    Serial { fd: Arc<OwnedFd>, closed: Arc<AtomicBool> },
+    Serial { fd: Arc<OwnedFd>, closed: Arc<AtomicBool>, line: Mutex<SerialLine> },
 }
 
 /// A TCP connection: direct, or through an SSH jump host (`ssh -W host:port`, its pipes standing in for the socket)
@@ -173,7 +178,8 @@ pub fn open(target: &Target, cols: u16, rows: u16) -> Result<(Stream, Box<dyn Re
             let fd = Arc::new(open_serial(device, line)?);
             let closed = Arc::new(AtomicBool::new(false));
             let writer = Arc::new(Mutex::new(Box::new(FdIo { fd: fd.clone(), closed: closed.clone() }) as Box<dyn Write + Send>));
-            Ok((Stream { writer, kind: Kind::Serial { fd: fd.clone(), closed: closed.clone() } }, Box::new(FdIo { fd, closed })))
+            let kind = Kind::Serial { fd: fd.clone(), closed: closed.clone(), line: Mutex::new(line.clone()) };
+            Ok((Stream { writer, kind }, Box::new(FdIo { fd, closed })))
         }
     }
 }
@@ -239,6 +245,26 @@ impl Stream {
                 if unsafe { libc::tcsendbreak(fd.as_raw_fd(), 0) } == 0 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
             }
             _ => Err("This connection has no special commands".into()),
+        }
+    }
+
+    /// A serial tab's line settings now
+    pub fn serial_line(&self) -> Option<SerialLine> {
+        match &self.kind {
+            Kind::Serial { line, .. } => Some(line.lock().unwrap().clone()),
+            _ => None,
+        }
+    }
+
+    /// Change a serial tab's line settings while it's open (the speed, parity...), as PuTTY's Change Settings
+    pub fn set_serial_line(&self, new: SerialLine) -> Result<(), String> {
+        match &self.kind {
+            Kind::Serial { fd, line, .. } => {
+                configure(fd.as_raw_fd(), &new).map_err(|e| format!("Couldn't change the line to {}: {e}", new.to_sercfg()))?;
+                *line.lock().unwrap() = new;
+                Ok(())
+            }
+            _ => Err("Only a serial tab has line settings".into()),
         }
     }
 }
@@ -434,10 +460,20 @@ fn open_serial(device: &str, line: &SerialLine) -> Result<OwnedFd, String> {
         return Err(format!("Couldn't open {device}: {}", std::io::Error::last_os_error()));
     }
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+    configure(raw, line).map_err(|e| format!("Couldn't set {device} to {}: {e}", line.to_sercfg()))?;
+    unsafe {
+        let flags = libc::fcntl(raw, libc::F_GETFL);
+        libc::fcntl(raw, libc::F_SETFL, flags & !libc::O_NONBLOCK);
+    }
+    Ok(fd)
+}
+
+/// Set a serial device's line: raw, with the speed, data bits, parity, stop bits and flow control
+fn configure(raw: std::os::fd::RawFd, line: &SerialLine) -> Result<(), std::io::Error> {
     unsafe {
         let mut tio: libc::termios = std::mem::zeroed();
         if libc::tcgetattr(raw, &mut tio) != 0 {
-            return Err(format!("{device} isn't a serial port: {}", std::io::Error::last_os_error()));
+            return Err(std::io::Error::last_os_error());
         }
         libc::cfmakeraw(&mut tio);
         tio.c_cflag |= libc::CREAD | libc::CLOCAL;
@@ -470,12 +506,10 @@ fn open_serial(device: &str, line: &SerialLine) -> Result<OwnedFd, String> {
         tio.c_cc[libc::VMIN] = 1;
         tio.c_cc[libc::VTIME] = 0;
         if libc::cfsetspeed(&mut tio, line.speed as libc::speed_t) != 0 || libc::tcsetattr(raw, libc::TCSANOW, &tio) != 0 {
-            return Err(format!("Couldn't set {device} to {} baud: {}", line.speed, std::io::Error::last_os_error()));
+            return Err(std::io::Error::last_os_error());
         }
-        let flags = libc::fcntl(raw, libc::F_GETFL);
-        libc::fcntl(raw, libc::F_SETFL, flags & !libc::O_NONBLOCK);
     }
-    Ok(fd)
+    Ok(())
 }
 
 /// The serial devices on this Mac (`/dev/cu.*`), for choosing which one a COM name is
@@ -504,6 +538,10 @@ mod tests {
         let mut line = SerialLine::default();
         line.apply("115200,7,e,2,N").unwrap();
         assert_eq!(line, SerialLine { speed: 115200, data_bits: 7, parity: 'e', stop_bits: 2, flow: 'N' });
+        assert_eq!(line.to_sercfg(), "115200,7,e,2,N");
+        let mut again = SerialLine::default();
+        again.apply(&line.to_sercfg()).unwrap();
+        assert_eq!(again, line);
         assert!(line.apply("fast").is_err());
     }
 

@@ -14,7 +14,7 @@
   import { isDark, loadSettings, settings } from "./lib/settings/store.svelte";
   import QuickConnect from "./lib/layout/QuickConnect.svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { opensAsLocalShell, opensExternally, openExternally, type SessionView } from "./lib/sessions/api";
+  import { opensAsLocalShell, opensExternally, openExternally, type SessionView, type Store } from "./lib/sessions/api";
   import { invoke } from "@tauri-apps/api/core";
   import SendCommands from "./lib/commands/SendCommands.svelte";
   import ButtonBar from "./lib/commands/ButtonBar.svelte";
@@ -29,6 +29,8 @@
   import Prompt from "./lib/ui/Prompt.svelte";
   import { tabMenu } from "./lib/layout/tabMenu";
   import SearchOutput from "./lib/terminal/SearchOutput.svelte";
+  import SerialSettings from "./lib/terminal/SerialSettings.svelte";
+  import type { PageHost } from "./lib/terminal/PageHost";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 
   let tabElement: HTMLDivElement;
@@ -44,6 +46,8 @@
   let tree: SessionTree | undefined = $state();
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let renaming = $state<{ id: string; title: string } | null>(null);
+  /** The serial tab whose Serial Settings are open */
+  let serialTab = $state<{ title: string; host: PageHost; session: { store: Store; id: string } | null } | null>(null);
   /** Search Output windows, one per tab */
   let searches = $state<{ id: string; title: string; logPath: string | null }[]>([]);
 
@@ -101,6 +105,16 @@
             open: (session) => t.openById(session.id),
             saveAs: (store, sessionId, title) => void t.saveSessionAs(store, sessionId, title),
             rename: (tabId, title) => (renaming = { id: tabId, title }),
+            serialSettings: (tabId) => {
+              const host = tabs?.hosts.get(tabId);
+              const target = tabs?.paramsOf(tabId)?.target;
+              if (!host) return;
+              serialTab = {
+                title: tabs?.api.getPanel(tabId)?.title ?? "",
+                host,
+                session: target?.kind === "session" ? { store: target.store, id: target.id } : null,
+              };
+            },
             search: (tabId) => {
               if (searches.some((s) => s.id === tabId)) return;
               const host = tabs?.hosts.get(tabId);
@@ -211,6 +225,10 @@
 
 {#if menu}
   <Menu items={menu.items} x={menu.x} y={menu.y} onClose={() => (menu = null)} />
+{/if}
+
+{#if serialTab}
+  <SerialSettings title={serialTab.title} host={serialTab.host} session={serialTab.session} onClose={() => (serialTab = null)} />
 {/if}
 
 {#if renaming}

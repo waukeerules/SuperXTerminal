@@ -215,6 +215,30 @@ pub fn pty_special(ptys: State<'_, Ptys>, id: u32, command: String) -> Result<()
     }
 }
 
+/// A serial tab's line settings, as `-sercfg` ("9600,8,n,1,X")
+#[tauri::command]
+pub fn pty_serial_get(ptys: State<'_, Ptys>, id: u32) -> Result<String, String> {
+    let sessions = ptys.sessions.lock().unwrap();
+    match &sessions.get(&id).ok_or("no such terminal")?.kind {
+        SessionKind::Stream(stream) => stream.serial_line().map(|l| l.to_sercfg()).ok_or_else(|| "Only a serial tab has line settings".into()),
+        SessionKind::Pty { .. } => Err("Only a serial tab has line settings".into()),
+    }
+}
+
+/// Change a serial tab's line settings while it's open; `sercfg` as PuTTY's -sercfg
+#[tauri::command]
+pub fn pty_serial_set(ptys: State<'_, Ptys>, id: u32, sercfg: String) -> Result<(), String> {
+    let sessions = ptys.sessions.lock().unwrap();
+    match &sessions.get(&id).ok_or("no such terminal")?.kind {
+        SessionKind::Stream(stream) => {
+            let mut line = stream.serial_line().ok_or("Only a serial tab has line settings")?;
+            line.apply(&sercfg)?;
+            stream.set_serial_line(line)
+        }
+        SessionKind::Pty { .. } => Err("Only a serial tab has line settings".into()),
+    }
+}
+
 /// Watches a session's first output for a password prompt, to type the session's password there once
 ///
 /// Only the first prompt is answered, so a later "Password:" (e.g. Cisco's `enable`) is never sent the login

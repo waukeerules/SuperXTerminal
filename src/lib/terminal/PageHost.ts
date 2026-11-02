@@ -499,6 +499,27 @@ export class PageHost implements ScriptTarget {
     return true;
   }
 
+  /** SPSL's SENDBREAK: a serial or Telnet Break; throws when this tab can't send one */
+  async sendBreak(): Promise<void> {
+    if (this.ptyId === null || this.ended) throw new Error("the session isn't connected");
+    await invoke("pty_special", { id: this.ptyId, command: "break" }).catch((e) => {
+      throw new Error(`SENDBREAK: ${String(e)}`);
+    });
+  }
+
+  /** A serial tab's line settings now, as -sercfg ("9600,8,n,1,X"); null if it isn't connected */
+  async serialLine(): Promise<string | null> {
+    if (this.ptyId === null || this.ended) return null;
+    return invoke<string>("pty_serial_get", { id: this.ptyId });
+  }
+
+  /** Change a serial tab's line settings while it's open */
+  async setSerialLine(sercfg: string): Promise<void> {
+    if (this.ptyId === null || this.ended) throw new Error("The session isn't connected");
+    await invoke("pty_serial_set", { id: this.ptyId, sercfg });
+    this.post({ type: "notice", text: `Serial line now ${sercfg}`, kind: "info" });
+  }
+
   /** A Special Command (Telnet's Break, Are You There...; a serial Break) */
   async special(command: string): Promise<void> {
     if (this.ptyId === null) return;

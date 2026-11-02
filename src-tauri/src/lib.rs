@@ -1469,6 +1469,8 @@ pub fn run() {
             session_external,
             serial_device_set,
             pty::pty_special,
+            pty::pty_serial_get,
+            pty::pty_serial_set,
             log_open,
             log_write,
             log_close,

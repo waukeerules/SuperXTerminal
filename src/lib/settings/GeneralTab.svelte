@@ -67,6 +67,15 @@
   </fieldset>
 
   <fieldset>
+    <legend>Other apps</legend>
+    <label class="check"><input type="checkbox" checked={settings.filezillaPasswords}
+      onchange={(e) => void saveSettings({ filezillaPasswords: e.currentTarget.checked })} /> Give FileZilla the session's password</label>
+    <p class="hint">As SuperXPuTTY's "Allow plain-text password arguments". FileZilla (external) can only be given a
+      password on its sftp:// address, which any program on this Mac can read while FileZilla runs; off, FileZilla asks
+      for it. Connect external's Terminal window logs in by itself either way, without showing the password.</p>
+  </fieldset>
+
+  <fieldset>
     <legend>Links</legend>
     <p class="hint">superxterminal:// links open sessions and layouts (superxterminal://session/Lab/sw1,
       superxterminal://layout/Core). ssh:// and telnet:// links open in Terminal until SuperXTerminal is made their app.</p>

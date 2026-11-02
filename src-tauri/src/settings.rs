@@ -83,6 +83,9 @@ pub struct AppSettings {
     /// Settings > Remote Desktop: the user's defaults for RDP sessions, in SuperXPuTTY's RdpOptions format ("" for
     /// SuperXPuTTY's own defaults)
     pub rdp_defaults: String,
+    /// FileZilla (external) gets the session's password on its sftp:// address, as SuperXPuTTY's "Allow plain-text
+    /// password arguments": off, since any process can read a program's arguments
+    pub filezilla_passwords: bool,
 }
 
 impl Default for AppSettings {
@@ -122,6 +125,7 @@ impl Default for AppSettings {
             always_on_top: false,
             rdp_built_in: true,
             rdp_defaults: String::new(),
+            filezilla_passwords: false,
         }
     }
 }

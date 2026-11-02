@@ -86,16 +86,20 @@ pub fn open_in_terminal(command_line: &str) -> Result<(), String> {
 }
 
 /// Open FileZilla (or FileZilla Pro) at an sftp:// address, as SuperXPuTTY's openFileZilla: the session's remote
-/// path on the address, its local path as `--local`. The password isn't passed (it would show in the process list);
-/// FileZilla asks for it, or uses one it saved.
-pub fn open_filezilla(host: &str, port: u16, username: &str, local: &str, remote: &str) -> Result<String, String> {
+/// path on the address, its local path as `--local`. The password goes on the address only when Settings allows it
+/// (it shows in the process list); otherwise FileZilla asks for it, or uses one it saved.
+pub fn open_filezilla(host: &str, port: u16, username: &str, password: Option<&str>, local: &str, remote: &str) -> Result<String, String> {
     let app = ["FileZilla", "FileZilla Pro"]
         .into_iter()
         .find(|name| std::path::Path::new(&format!("/Applications/{name}.app")).exists())
         .ok_or("FileZilla isn't installed in Applications.")?;
-    let url = filezilla_url(host, port, username, remote);
+    let url = filezilla_url(host, port, username, None, remote);
+    let address = match password {
+        Some(pw) if !pw.is_empty() && !username.is_empty() => filezilla_url(host, port, username, Some(pw), remote),
+        _ => url.clone(),
+    };
     // -n: a new FileZilla each time, as SuperXPuTTY starts one (a running one would drop the address)
-    let mut args = vec!["-n".to_string(), "-a".to_string(), app.to_string(), "--args".to_string(), url.clone()];
+    let mut args = vec!["-n".to_string(), "-a".to_string(), app.to_string(), "--args".to_string(), address];
     if !local.trim().is_empty() {
         args.push(format!("--local={}", local.trim()));
     }
@@ -103,14 +107,19 @@ pub fn open_filezilla(host: &str, port: u16, username: &str, local: &str, remote
     if status.success() { Ok(format!("Opened {url} in {app}")) } else { Err(format!("{app} didn't start")) }
 }
 
-/// The sftp:// address: the user (URL-escaped), host, port (22 when the session has none) and remote path
-fn filezilla_url(host: &str, port: u16, username: &str, remote: &str) -> String {
+/// The sftp:// address: the user and password (URL-escaped), host, port (22 when the session has none) and remote
+/// path
+fn filezilla_url(host: &str, port: u16, username: &str, password: Option<&str>, remote: &str) -> String {
     let escape = |text: &str| -> String {
         text.bytes()
             .map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
             .collect()
     };
-    let user = if username.is_empty() { String::new() } else { format!("{}@", escape(username)) };
+    let user = match (username, password) {
+        ("", _) => String::new(),
+        (u, Some(pw)) => format!("{}:{}@", escape(u), escape(pw)),
+        (u, None) => format!("{}@", escape(u)),
+    };
     let port = if port != 0 { port } else { 22 };
     let remote = remote.trim();
     let path = if remote.is_empty() { String::new() } else if remote.starts_with('/') { remote.to_string() } else { format!("/{remote}") };
@@ -152,9 +161,10 @@ mod tests {
 
     #[test]
     fn writes_filezilla_addresses() {
-        assert_eq!(filezilla_url("10.0.0.5", 0, "", ""), "sftp://10.0.0.5:22");
-        assert_eq!(filezilla_url("h", 2222, "me@corp", "/var/log"), "sftp://me%40corp@h:2222/var/log");
-        assert_eq!(filezilla_url("h", 22, "me", "home/me"), "sftp://me@h:22/home/me");
+        assert_eq!(filezilla_url("10.0.0.5", 0, "", None, ""), "sftp://10.0.0.5:22");
+        assert_eq!(filezilla_url("h", 2222, "me@corp", None, "/var/log"), "sftp://me%40corp@h:2222/var/log");
+        assert_eq!(filezilla_url("h", 22, "me", None, "home/me"), "sftp://me@h:22/home/me");
+        assert_eq!(filezilla_url("h", 22, "me", Some("p@ss:w/rd"), ""), "sftp://me:p%40ss%3Aw%2Frd@h:22");
     }
 
     #[test]

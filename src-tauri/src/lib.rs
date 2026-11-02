@@ -1,6 +1,7 @@
 //! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
 
 mod applog;
+mod askpass;
 mod buttonbars;
 mod cli;
 mod command_tap;
@@ -549,20 +550,43 @@ fn session_external(state: State<'_, AppState>, store: sessions::Store, id: Stri
     match (how.as_str(), session.get("Proto").to_ascii_uppercase().as_str()) {
         ("open", "RDP") => external::open_rdp(session, &host, &username, &state.settings.lock().unwrap().rdp_defaults.clone()),
         ("open", "VNC") => external::open_vnc(&host, port, &username),
-        ("filezilla", _) => external::open_filezilla(
-            &host,
-            port,
-            &username,
-            &variables::substitute(session.get("LocalPath"), &values),
-            &variables::substitute(session.get("RemotePath"), &values),
-        ),
+        ("filezilla", _) => {
+            // an SSH session's login as it connects in a tab (session, folders, profile); others as stored
+            let launch = launch::launch(&sessions, &profiles, &values, &serial_devices, store, session).ok();
+            let login = launch.as_ref().and_then(|l| l.login.clone());
+            let (host, port, username, key_file) = match &login {
+                Some(l) => (l.host.clone(), l.port, l.username.clone(), l.key_file.clone()),
+                None => (host, port, username, String::new()),
+            };
+            let password = if state.settings.lock().unwrap().filezilla_passwords { launch.and_then(|l| l.password) } else { None };
+            let local = variables::substitute(session.get("LocalPath"), &values);
+            let remote = variables::substitute(session.get("RemotePath"), &values);
+            let opened = external::open_filezilla(&host, port, &username, password.as_deref(), &local, &remote)?;
+            // FileZilla takes no key on its command line: it uses ssh-agent and its own list
+            Ok(if key_file.is_empty() {
+                opened
+            } else {
+                format!("{opened}. Its key {key_file} isn't passed to FileZilla: add it in FileZilla's Settings > SFTP, or run ssh-add {key_file}")
+            })
+        }
         ("terminal", _) => {
             let launch = launch::launch(&sessions, &profiles, &values, &serial_devices, store, session)?;
             if launch.stream.is_some() || launch.local {
                 return Err("Only SSH sessions open in Terminal.".into());
             }
             let words: Vec<String> = launch.command.get_argv().iter().map(|w| w.to_string_lossy().to_string()).collect();
-            external::open_in_terminal(&external::shell_line(&words))?;
+            let mut line = external::shell_line(&words);
+            // the password, if any, goes to ssh through this app (askpass.rs), never on the command line
+            if let Some(password) = launch.password.as_deref() {
+                let program = std::env::current_exe().map_err(|e| e.to_string())?.to_string_lossy().to_string();
+                let token = askpass::register(password)?;
+                line = format!(
+                    "SSH_ASKPASS={} SSH_ASKPASS_REQUIRE=force {}={token} {line}",
+                    external::shell_line(&[program]),
+                    askpass::TOKEN_VAR
+                );
+            }
+            external::open_in_terminal(&line)?;
             Ok(format!("Opened {} in Terminal", session.get("SessionName")))
         }
         (_, proto) => Err(format!("{proto} sessions don't open in another app.")),
@@ -1976,6 +2000,11 @@ fn no_siri_badge() {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Run as ssh's askpass for Connect external (`askpass.rs`) instead of as the app; true when it did
+pub fn askpass_helper() -> bool {
+    askpass::helper()
+}
+
 pub fn run() {
     let user_folder = sessions::user_folder();
     let settings = AppSettings::load(&user_folder);

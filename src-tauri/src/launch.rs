@@ -45,6 +45,19 @@ pub struct Launch {
     pub look: Look,
     /// Telnet, Raw and Serial run in the core instead of a program (`command` is then unused)
     pub stream: Option<crate::streams::Target>,
+    /// An SSH session's login as worked out (session, folders, profile), for the apps it opens in: FileZilla
+    pub login: Option<Login>,
+}
+
+/// Where and as whom an SSH session logs in
+#[derive(Clone, Debug, Default)]
+pub struct Login {
+    pub host: String,
+    /// 0 for SSH's own (22)
+    pub port: u16,
+    pub username: String,
+    /// The profile's key file (its path, ~ expanded), "" when it has none
+    pub key_file: String,
 }
 
 /// Algorithms older devices offer and OpenSSH 10 no longer accepts by default; added for each connection only.
@@ -225,6 +238,7 @@ fn stream(
         notices,
         look: Look { rules, ..look(profile, default) },
         stream: Some(target),
+        login: None,
     })
 }
 
@@ -238,6 +252,7 @@ pub fn local_shell(profiles: &Profiles) -> Launch {
         notices: Vec::new(),
         look: look(default, default),
         stream: None,
+        login: None,
     }
 }
 
@@ -336,6 +351,7 @@ fn ssh(
     if host.is_empty() {
         return Err("This session has no host.".into());
     }
+    let mut login = Login { host: host.clone(), port, username: username.clone(), key_file: String::new() };
 
     let mut args: Vec<String> = vec!["-tt".into()];
     if profile.older_algorithms.or(default.older_algorithms).unwrap_or(true) {
@@ -363,6 +379,7 @@ fn ssh(
         } else if path.to_ascii_lowercase().ends_with(".ppk") {
             notices.push(format!("{key_file} is a PuTTY key; convert it with: puttygen key.ppk -O private-openssh"));
         } else {
+            login.key_file = path.clone();
             args.extend(["-i".into(), path, "-o".into(), "IdentitiesOnly=yes".into()]);
         }
     }
@@ -390,7 +407,7 @@ fn ssh(
 
     let mut command = CommandBuilder::new("ssh");
     command.args(&args);
-    Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) }, stream: None })
+    Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) }, stream: None, login: Some(login) })
 }
 
 /// A path with a leading "~/" turned into the home folder

@@ -175,7 +175,7 @@ pub fn pty_open(
         }
     };
     let launch = launch.inspect_err(|e| crate::applog::warn(format!("Couldn't open {what}: {e}")));
-    let Launch { mut command, password, local, notices, look, stream } = launch?;
+    let Launch { mut command, password, local, notices, look, stream, .. } = launch?;
     crate::applog::info(format!("Opening {what} in {}", window.label()));
     let link = match &stream {
         Some(crate::streams::Target::Telnet { .. }) => "telnet",

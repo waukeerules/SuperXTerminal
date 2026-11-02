@@ -62,6 +62,8 @@ export interface AppSettings {
   rdpBuiltIn: boolean;
   /** Settings > Remote Desktop: the defaults for RDP sessions, as SuperXPuTTY's RdpOptions */
   rdpDefaults: string;
+  /** FileZilla (external) gets the session's password on its address (off: it shows in the process list) */
+  filezillaPasswords: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -99,6 +101,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   alwaysOnTop: false,
   rdpBuiltIn: true,
   rdpDefaults: "",
+  filezillaPasswords: false,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

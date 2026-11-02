@@ -42,8 +42,8 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 **Done when:** a Mac user opens the team's Sessions.xml and connects to switches with the right icons and colours.
 
 **Data**
-- 🚧 Read and write `Sessions.xml`, keeping unknown attributes: reading done (attributes kept in order, unknown ones too); writing next
-- 🚧 Read and write `PrivateSessions.xml`: reading done
+- ✅ Read and write `Sessions.xml`, keeping unknown attributes: written as SuperXPuTTY's XmlSerializer does (the reference files write back byte for byte), re-read before each save so others' changes are kept, with SuperXPuTTY's 20 timestamped backups
+- ✅ Read and write `PrivateSessions.xml`
 - 🚧 Read and write `Folders.xml` / `PrivateFolders.xml` (colours, defaults): reading done; colours and username, port and jump host defaults applied
 - 🚧 Settings folder choice (local, SMB share, synced cloud folder): Choose Settings Folder... when none is set; a way to change it comes with Settings
 - ✅ Per-user files in `~/Library/Application Support/SuperXTerminal/` (`settings.json`, `PrivateSessions.xml`)
@@ -53,7 +53,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Folder session counts, folders first, sort
 - ✅ Search box (filter while typing: name, host, username, folder, note)
 - ✅ Open sessions marked (green dot); tooltips (protocol, address, note, why it can't open)
-- ⬜ New, rename, delete, drag to move (sessions and folders)
+- 🚧 New, rename, delete, drag to move (sessions and folders): sessions can be made (folder's New session…), renamed (Edit Session) and deleted (with a question); folders and dragging next
 - ✅ Sessions the Mac can't open shown dimmed with the reason
 
 **Icons and colours**
@@ -61,6 +61,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Brand logos (26, from SuperXPuTTY's BrandLogos)
 - 🚧 Custom icons from `<SettingsFolder>/icons`: read and drawn as masks in any colour; not yet tried with a real one (the reference data has none)
 - ✅ Old PNG keys mapped onto templates
+- ✅ Choose Icon window (Devices, General, Logos, Custom; palette colours or any other)
 - ✅ Environment colours: tree circle, tab (selected filled, others tinted with a top stripe), frame around the terminal, cursor
 - ✅ Colour resolution: session, else folder, else name rule (rules in `settings.json` until the Settings window)
 
@@ -73,7 +74,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Launch order: session, folder default, profile, Default Settings (local overrides join it in M5); tested
 - ⬜ `{key}` placeholders; Environment Variables with Keychain secrets
 - ⬜ Quick connect toolbar
-- ⬜ Edit Session (SSH fields, profile list, greyed fields explained)
+- ✅ Edit Session (all of SuperXPuTTY's fields, profile list, inherited folder values as hints, greyed fields explained, `-pw` shown masked and kept), from the session's right-click menu, which matches SuperXPuTTY's (Connect, Colour, Copy host address, Edit, Delete; the rest greyed with the milestone)
 
 **Settings**
 - 🚧 Settings window basics (settings folder, theme, icon size, tree font): the window (Cmd+,) with its Profiles tab; the rest next
@@ -109,7 +110,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 ## M4 Terminal extras
 
-- ✅ Highlighting rules (cisco, junos, generic, auto, user rules), per tab: SuperXPuTTY's defaults bundled, then the team's and the user's `highlighting` folders; checked against SuperXPuTTY's colours on the lab switch (`sh ip int bri`). Per session and folder (`HighlightRules`) comes with Edit Session
+- ✅ Highlighting rules (cisco, junos, generic, auto, user rules), per tab, and per session and folder (`HighlightRules`, set in Edit Session): SuperXPuTTY's defaults bundled, then the team's and the user's `highlighting` folders; checked against SuperXPuTTY's colours on the lab switch (`sh ip int bri`)
 - ⬜ Terminal preferences in Settings (theme, font, cursor, bell, copy on select, mark matches)
 - ⬜ Highlighted Output (Monaco) beside the tab, from the menu's Open as Document
 - ⬜ Terminal right-click menu complete, with Mac shortcuts (Cmd+C/V/F/K/W)

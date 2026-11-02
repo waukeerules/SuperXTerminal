@@ -1,5 +1,6 @@
 //! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
 
+mod editing;
 mod highlighting;
 mod launch;
 mod profiles;
@@ -145,6 +146,45 @@ fn highlighting_load(state: State<'_, AppState>) -> highlighting::Highlighting {
     highlighting::load(&folders)
 }
 
+/// The file a store's sessions are in, or an error when there's no settings folder yet
+fn store_file(state: &AppState, store: sessions::Store) -> Result<PathBuf, String> {
+    let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
+    sessions::file_of(store, settings_folder.as_deref(), &state.user_folder).ok_or_else(|| "Choose the settings folder first.".into())
+}
+
+/// One session's fields for Edit Session (a `-pw` password masked)
+#[tauri::command]
+fn session_get(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<editing::SessionFields, String> {
+    let sessions = state.sessions.lock().unwrap();
+    let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
+    Ok(editing::SessionFields::of(session))
+}
+
+/// Save a session from Edit Session (`original_id` None for a new one); returns its id. The caller reloads the tree.
+#[tauri::command]
+fn session_save(
+    state: State<'_, AppState>,
+    store: sessions::Store,
+    original_id: Option<String>,
+    fields: editing::SessionFields,
+) -> Result<String, String> {
+    let path = store_file(&state, store)?;
+    // ids must be unique across Saved and Private sessions, as in SuperXPuTTY
+    let others: Vec<String> = {
+        let sessions = state.sessions.lock().unwrap();
+        let other = if store == sessions::Store::Saved { &sessions.private } else { &sessions.saved };
+        other.iter().map(|s| s.id().to_string()).collect()
+    };
+    editing::save(&path, original_id.as_deref(), &fields, &others)
+}
+
+/// Delete a session from its file
+#[tauri::command]
+fn session_delete(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<(), String> {
+    let path = store_file(&state, store)?;
+    editing::delete(&path, &id)
+}
+
 /// Use another settings folder (chosen in the UI), and remember it
 #[tauri::command]
 fn settings_set_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -229,6 +269,9 @@ pub fn run() {
             settings_set_folder,
             icons_custom,
             highlighting_load,
+            session_get,
+            session_save,
+            session_delete,
             profiles_list,
             profiles_save,
             profiles_delete,

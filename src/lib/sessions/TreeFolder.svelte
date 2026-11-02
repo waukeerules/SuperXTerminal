@@ -19,11 +19,16 @@
     customs: ReadonlyMap<string, CustomIcon>;
     /** Sessions with an open tab, as "store:id" */
     openSessions: ReadonlySet<string>;
+    /** The selected session or folder, as "store:id" or "store:folder:path" */
+    selected: string;
     onToggle: (key: string) => void;
     onOpen: (session: SessionView) => void;
+    onSelect: (key: string) => void;
+    /** A right-click on a session or folder */
+    onMenu: (event: MouseEvent, target: { session: SessionView } | { folder: FolderNode }) => void;
   }
 
-  let { node, depth, expanded, colors, iconSize, customs, openSessions, onToggle, onOpen }: Props = $props();
+  let { node, depth, expanded, colors, iconSize, customs, openSessions, selected, onToggle, onOpen, onSelect, onMenu }: Props = $props();
 
   /** The roots' icons, as SuperXPuTTY's tree: a folder for Saved sessions, a padlock for Private ones */
   const ROOT_ICONS: Record<string, string> = { saved: "folder", private: "lock" };
@@ -42,7 +47,8 @@
   }
 </script>
 
-<div class="row folder" class:root={isRoot} style:padding-left="{depth * 18 + 2}px" style:height="{Math.round(iconSize * 1.36) + 4}px"
+<div class="row folder" class:root={isRoot} class:selected={selected === `${node.store}:folder:${node.path}`}
+  oncontextmenu={(e) => { e.preventDefault(); onSelect(`${node.store}:folder:${node.path}`); onMenu(e, { folder: node }); }} style:padding-left="{depth * 18 + 2}px" style:height="{Math.round(iconSize * 1.36) + 4}px"
   role="treeitem" aria-expanded={open} aria-selected="false" tabindex="-1"
   onclick={() => onToggle(node.key)} onkeydown={(e) => e.key === "Enter" && onToggle(node.key)}>
   <span class="twisty">{open ? "▾" : "▸"}</span>
@@ -52,11 +58,15 @@
 
 {#if open}
   {#each node.folders as child (child.key)}
-    <TreeFolder node={child} depth={depth + 1} {expanded} {colors} {iconSize} {customs} {openSessions} {onToggle} {onOpen} />
+    <TreeFolder node={child} depth={depth + 1} {expanded} {colors} {iconSize} {customs} {openSessions} {selected}
+      {onToggle} {onOpen} {onSelect} {onMenu} />
   {/each}
   {#each node.sessions as session (session.store + ":" + session.id)}
     {@const reason = unavailableReason(session.protocol)}
-    <div class="row session" class:dimmed={reason !== null} style:padding-left="{(depth + 1) * 18 + 14}px"
+    {@const key = `${session.store}:${session.id}`}
+    <div class="row session" class:dimmed={reason !== null} class:selected={selected === key}
+      onclick={() => onSelect(key)}
+      oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
       style:height="{Math.round(iconSize * 1.36) + 4}px"
       title={tooltip(session)} role="treeitem" aria-selected="false" aria-disabled={reason !== null} tabindex="-1"
       ondblclick={() => reason === null && onOpen(session)}
@@ -80,6 +90,10 @@
 
   .row:hover {
     background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .row.selected {
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
   }
 
   .root .label {

@@ -62,7 +62,7 @@
   <div class="main">
     <aside class="sessions">
       <div class="pane-title">Sessions</div>
-      <SessionTree {openSessions} onOpen={openSession} onLook={(size, customs) => {
+      <SessionTree {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsOpen = true)} onLook={(size, customs) => {
         if (tabs) {
           tabs.iconSize = size;
           tabs.customs = customs;

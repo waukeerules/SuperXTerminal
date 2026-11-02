@@ -1,0 +1,355 @@
+<!--
+  Edit Session, as SuperXPuTTY's: connection details, notes and file transfer paths, saved back to the session's
+  own file (Sessions.xml for Saved sessions, PrivateSessions.xml for Private ones). Also used for a new session.
+  "PuTTY session profile" becomes Profile: the name is looked up in the user's own profiles (Settings > Profiles).
+  Fields the Mac doesn't use yet (RDP options, Local overrides) are greyed with the reason.
+-->
+<script lang="ts">
+  import { onMount, untrack } from "svelte";
+  import { open } from "@tauri-apps/plugin-dialog";
+  import Icon from "../icons/Icon.svelte";
+  import IconPicker from "../icons/IconPicker.svelte";
+  import type { CustomIcon } from "../icons/custom";
+  import { PALETTE } from "../icons/palette";
+  import { highlighting } from "../terminal/highlighting";
+  import { listProfiles, DEFAULT_PROFILE } from "../settings/profiles";
+  import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
+
+  interface Props {
+    store: Store;
+    /** The session's id; null for a new session */
+    id: string | null;
+    fields: SessionFields;
+    /** Its folder's settings, nearest first, for showing what it inherits */
+    folders: FolderSetting[];
+    iconSize: number;
+    customs: ReadonlyMap<string, CustomIcon>;
+    onSaved: (id: string) => void;
+    onCancel: () => void;
+    onOpenProfiles: () => void;
+  }
+
+  let { store, id, fields, folders, iconSize, customs, onSaved, onCancel, onOpenProfiles }: Props = $props();
+
+  // the window edits a copy, saved only on Save
+  let draft = $state<SessionFields>(untrack(() => ({ ...fields })));
+  let profileNames = $state<string[]>([]);
+  let ruleSets = $state<{ id: string; name: string }[]>([]);
+  let choosingIcon = $state(false);
+  let choosingColour = $state(false);
+  let error = $state("");
+
+  const where = $derived(store === "saved" ? "Saved sessions (Sessions.xml)" : "Private sessions (PrivateSessions.xml)");
+  const title = $derived(id === null ? `New session — ${where}` : `Edit session: ${fields.name} — ${where}`);
+  const reason = $derived(unavailableReason(draft.protocol));
+  const profileMissing = $derived(
+    !!draft.profile.trim() && draft.profile.trim().toLowerCase() !== DEFAULT_PROFILE.toLowerCase() &&
+      !profileNames.some((n) => n.toLowerCase() === draft.profile.trim().toLowerCase()),
+  );
+
+  onMount(async () => {
+    profileNames = (await listProfiles()).map((p) => p.name);
+    ruleSets = (await highlighting()).ruleSets.map((r) => ({ id: String(r.id ?? ""), name: String(r.name ?? r.id ?? "") }));
+  });
+
+  /** What a field inherits from the session's folders, as "value (from Folder)", for its placeholder */
+  function inherited(field: "username" | "puttyProfile" | "port" | "jumpHost" | "highlightRules"): string {
+    for (const folder of folders) {
+      const value = folder[field];
+      if (value) return `${value} (from ${folder.path})`;
+    }
+    return "";
+  }
+
+  /** Save and close, or show why it can't be saved */
+  async function save(): Promise<void> {
+    try {
+      const saved = await saveSession(store, id, { ...draft, port: Number(draft.port) || 0 });
+      onSaved(saved);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  /** Choose an SPSL script file */
+  async function browseScript(): Promise<void> {
+    const path = await open({ title: "Choose the session's SPSL script", filters: [{ name: "Scripts", extensions: ["spsl", "txt"] }] });
+    if (typeof path === "string") draft.script = path;
+  }
+
+  /** Choose the local folder for file transfers */
+  async function browseLocal(): Promise<void> {
+    const path = await open({ directory: true, title: "Choose the local folder for file transfers" });
+    if (typeof path === "string") draft.localPath = path;
+  }
+</script>
+
+<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && onCancel()} />
+
+<div class="backdrop" role="presentation">
+  <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
+    <header>{title}</header>
+
+    <fieldset>
+      <legend>Connection details</legend>
+      <div class="row">
+        <label class="grow">Session name: <input bind:value={draft.name} /></label>
+        <span class="colour">Colour:
+          <button class="swatch" style:background={draft.color || "transparent"} title={draft.color || "None"}
+            aria-label="Colour" onclick={() => (choosingColour = !choosingColour)}></button>
+          {#if choosingColour}
+            <div class="popover">
+              <button onclick={() => { draft.color = ""; choosingColour = false; }}>None</button>
+              {#each PALETTE as p}
+                <button class="swatch" style:background={p.color} title={p.name} aria-label={p.name}
+                  onclick={() => { draft.color = p.color; choosingColour = false; }}></button>
+              {/each}
+              <label class="more">More…
+                <input type="color" value={draft.color || "#C62828"} onchange={(e) => { draft.color = e.currentTarget.value.toUpperCase(); choosingColour = false; }} />
+              </label>
+            </div>
+          {/if}
+        </span>
+        <span>Icon:
+          <button class="icon" title="Choose Icon" aria-label="Choose Icon" onclick={() => (choosingIcon = true)}>
+            <Icon key={draft.icon} size={iconSize} {customs} />
+          </button>
+        </span>
+      </div>
+
+      <div class="row">
+        <label>Connection type:
+          <select bind:value={draft.protocol}>
+            {#each PROTOCOLS as p}<option value={p}>{p}</option>{/each}
+          </select>
+        </label>
+        <label class="grow">Profile:
+          <input list="profile-names" bind:value={draft.profile} placeholder={inherited("puttyProfile") || DEFAULT_PROFILE} />
+          <datalist id="profile-names">{#each profileNames as n}<option value={n}></option>{/each}</datalist>
+        </label>
+        <button onclick={onOpenProfiles} title="Settings > Profiles">Profiles…</button>
+      </div>
+      {#if reason}<p class="note">{reason}</p>{/if}
+      {#if profileMissing}<p class="note">Profile "{draft.profile.trim()}" isn't set up on this Mac, so Default Settings is used. Add it in Profiles….</p>{/if}
+
+      <div class="row">
+        <label class="grow">Host address: <input bind:value={draft.host} /></label>
+        <label>TCP port: <input class="port" type="number" min="0" max="65535" bind:value={draft.port}
+          placeholder={inherited("port")} /></label>
+      </div>
+
+      <div class="row">
+        <label class="grow">Login username: <input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"} /></label>
+        <label>Highlight:
+          <select bind:value={draft.highlightRules}>
+            <option value="">{inherited("highlightRules") ? `From the folder (${inherited("highlightRules")})` : "Default (Settings)"}</option>
+            <option value="auto">Auto (picked from the prompt)</option>
+            {#each ruleSets as r}<option value={r.id}>{r.name}</option>{/each}
+            <option value="none">None</option>
+            {#if draft.highlightRules && !["auto", "none"].includes(draft.highlightRules) && !ruleSets.some((r) => r.id === draft.highlightRules)}
+              <option value={draft.highlightRules}>{draft.highlightRules} (not found)</option>
+            {/if}
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <label class="grow">Extra arguments: <input bind:value={draft.extraArgs} placeholder="PuTTY-style, e.g. -pw secret -L 8080:localhost:80" /></label>
+        <button disabled title="RDP sessions open in Windows App: comes in M5">RDP options…</button>
+      </div>
+
+      <div class="row">
+        <label class="grow">Jump host: <input bind:value={draft.jumpHost}
+          placeholder={inherited("jumpHost") || "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22"} /></label>
+      </div>
+
+      <div class="row">
+        <label class="grow">SPSL script: <input bind:value={draft.script} /></label>
+        <button onclick={() => (draft.script = "")}>Clear</button>
+        <button onclick={browseScript}>Browse…</button>
+      </div>
+
+      <label class="notes">Notes:
+        <textarea bind:value={draft.note} rows="5"></textarea>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>File transfer options</legend>
+      <div class="row">
+        <label class="grow">Local path: <input bind:value={draft.localPath} /></label>
+        <button onclick={browseLocal}>Browse…</button>
+      </div>
+      <div class="row">
+        <label class="grow">Remote path: <input bind:value={draft.remotePath} /></label>
+      </div>
+    </fieldset>
+
+    <footer>
+      <button disabled title="Local overrides come in M5">Local overrides…</button>
+      <span class="error">{error}</span>
+      <button class="primary" onclick={save}>Save</button>
+      <button onclick={onCancel}>Cancel</button>
+    </footer>
+  </div>
+</div>
+
+{#if choosingIcon}
+  <IconPicker value={draft.icon} {customs} onCancel={() => (choosingIcon = false)}
+    onChoose={(key) => { draft.icon = key; choosingIcon = false; }} />
+{/if}
+
+<style>
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    background: rgb(0 0 0 / 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dialog {
+    width: min(820px, 94vw);
+    max-height: 94vh;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--bg-window);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
+  }
+
+  header {
+    color: var(--text-muted);
+  }
+
+  fieldset {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    display: grid;
+    gap: 8px;
+    padding: 8px 12px 12px;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .grow {
+    flex: 1;
+  }
+
+  .grow input {
+    flex: 1;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 6px;
+    min-width: 0;
+  }
+
+  .port {
+    width: 80px;
+  }
+
+  .notes {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  textarea {
+    font: inherit;
+    resize: vertical;
+  }
+
+  .colour {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .swatch {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+  }
+
+  .icon {
+    padding: 2px;
+    line-height: 0;
+  }
+
+  .popover {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 5;
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    background: var(--bg-pane);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+  }
+
+  .popover .swatch {
+    width: 24px;
+    height: 24px;
+  }
+
+  .more {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+    overflow: hidden;
+  }
+
+  .more input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+  }
+
+  .note {
+    margin: 0;
+    color: var(--text-muted);
+  }
+
+  footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .error {
+    flex: 1;
+    color: #e5534b;
+  }
+
+  button:disabled {
+    opacity: 0.45;
+  }
+</style>

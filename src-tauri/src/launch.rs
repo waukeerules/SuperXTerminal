@@ -25,6 +25,8 @@ pub struct Look {
     pub blink: bool,
     /// "visual", "sound" or "none"
     pub bell: String,
+    /// The session's highlighting rules (a rule set's id, "auto" or "none"), else its folder's; "" for the default
+    pub rules: String,
 }
 
 /// A session ready to start
@@ -84,6 +86,7 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         cursor: pick(&profile.cursor, &default.cursor, "block"),
         blink: profile.cursor_blink.or(default.cursor_blink).unwrap_or(true),
         bell: pick(&profile.bell, &default.bell, "visual"),
+        rules: String::new(),
     }
 }
 
@@ -98,6 +101,7 @@ fn ssh(sessions: &Sessions, profiles: &Profiles, store: Store, session: &StoredS
     let mut port = session.port();
     let mut jump_host = session.get("JumpHost").to_string();
     let mut profile_name = session.get("PuttySession").to_string();
+    let mut rules = session.get("HighlightRules").to_string();
     for folder in sessions.along(store, session.folder()) {
         if username.is_empty() {
             username = folder.username.clone();
@@ -107,6 +111,9 @@ fn ssh(sessions: &Sessions, profiles: &Profiles, store: Store, session: &StoredS
         }
         if jump_host.is_empty() {
             jump_host = folder.jump_host.clone();
+        }
+        if rules.is_empty() {
+            rules = folder.highlight_rules.clone();
         }
         if profiles::is_default(&profile_name) && !folder.putty_profile.is_empty() {
             profile_name = folder.putty_profile.clone();
@@ -198,7 +205,7 @@ fn ssh(sessions: &Sessions, profiles: &Profiles, store: Store, session: &StoredS
 
     let mut command = CommandBuilder::new("ssh");
     command.args(&args);
-    Ok(Launch { command, password, local: false, notices, look: look(profile, default) })
+    Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) } })
 }
 
 /// A path with a leading "~/" turned into the home folder

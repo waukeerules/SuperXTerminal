@@ -271,6 +271,8 @@ mod tests {
         let mut problems = Vec::new();
         let sessions = Sessions::load(Some(&dir), &dir.join("user"), &mut problems);
         std::fs::remove_dir_all(&dir).unwrap();
+        // writing it back gives the same text, so an unchanged session is left exactly as it was
+        assert_eq!(write_sessions(&sessions.saved), SESSIONS.trim_end());
 
         assert!(problems.is_empty(), "{problems:?}");
         let session = &sessions.saved[0];
@@ -280,5 +282,179 @@ mod tests {
         assert_eq!(session.attributes.last().unwrap(), &("FutureField".to_string(), "kept".to_string()));
         let along: Vec<_> = sessions.along(Store::Saved, "Lab/Core").iter().map(|f| f.username.as_str()).collect();
         assert_eq!(along, ["core", "netops"]);
+    }
+
+    #[test]
+    fn set_keeps_order_and_places_new_attributes_as_superxputty_writes_them() {
+        let mut session = StoredSession::new("Lab/sw1");
+        session.attributes.push(("FutureField".into(), "kept".into()));
+        session.set("Host", "10.0.0.9");
+        session.set("Color", "#C62828");
+        session.set("HighlightRules", "cisco");
+        let names: Vec<_> = session.attributes.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(&names[..5], ["SessionId", "Color", "HighlightRules", "SessionName", "ImageKey"]);
+        assert_eq!(*names.last().unwrap(), "FutureField");
+        session.set("Color", "");
+        assert!(session.attributes.iter().all(|(n, _)| n != "Color"));
+        assert_eq!(session.get("Host"), "10.0.0.9");
+    }
+
+    /// Real files write back unchanged: `SXT_ROUNDTRIP=/path/to/folder cargo test -- --ignored round_trip`
+    #[test]
+    #[ignore]
+    fn round_trip_real_files() {
+        let folder = std::env::var("SXT_ROUNDTRIP").expect("SXT_ROUNDTRIP: a folder holding session files");
+        for name in ["Sessions.xml", "PrivateSessions.xml"] {
+            let path = Path::new(&folder).join(name);
+            let Ok(original) = std::fs::read_to_string(&path) else { continue };
+            let mut problems = Vec::new();
+            let sessions = read_sessions(&path, &mut problems);
+            assert!(problems.is_empty(), "{problems:?}");
+            assert_eq!(write_sessions(&sessions), original.trim_start_matches('\u{feff}'), "{name}");
+        }
+    }
+}
+
+/// SuperXPuTTY's attribute order (SessionData's XmlAttribute order), for placing attributes a session didn't have
+const ATTRIBUTE_ORDER: [&str; 25] = [
+    "SessionId", "DatabaseId", "DatabaseVersion", "DatabaseLocked", "DatabaseLockedFields", "DatabaseManagedBy",
+    "DatabaseUpdatedBy", "Color", "JumpHost", "HighlightRules", "SessionName", "ImageKey", "Host", "Note", "Port",
+    "Proto", "PuttySession", "Username", "ExtraArgs", "SPSLFileName", "RdpOptions", "CollectionID",
+    "CollectionLocation", "RemotePath", "LocalPath",
+];
+
+/// Attributes XmlSerializer only writes when they're set (SessionData's ShouldSerialize methods)
+const WRITTEN_ONLY_WHEN_SET: [&str; 5] = ["DatabaseLocked", "Color", "JumpHost", "HighlightRules", "RdpOptions"];
+
+impl StoredSession {
+    /// A new session with SuperXPuTTY's attributes, as XmlSerializer writes a new SessionData
+    pub fn new(id: &str) -> StoredSession {
+        let name = id.rsplit('/').next().unwrap_or(id);
+        let defaults = [
+            ("SessionId", id), ("SessionName", name), ("ImageKey", "computer"), ("Host", ""), ("Note", ""), ("Port", "22"),
+            ("Proto", "SSH"), ("PuttySession", "Default Settings"), ("Username", ""), ("ExtraArgs", ""), ("SPSLFileName", ""),
+            ("CollectionID", ""), ("CollectionLocation", ""), ("RemotePath", ""), ("LocalPath", ""),
+        ];
+        StoredSession { attributes: defaults.iter().map(|(n, v)| (n.to_string(), v.to_string())).collect() }
+    }
+
+    /// Set an attribute, keeping the others in their order; one it didn't have goes where SuperXPuTTY writes it.
+    /// An empty value removes the attributes XmlSerializer leaves out when they're empty (Color, JumpHost, ...).
+    pub fn set(&mut self, name: &str, value: &str) {
+        let existing = self.attributes.iter().position(|(n, _)| n == name);
+        if value.is_empty() && WRITTEN_ONLY_WHEN_SET.contains(&name) {
+            if let Some(index) = existing {
+                self.attributes.remove(index);
+            }
+            return;
+        }
+        if let Some(index) = existing {
+            self.attributes[index].1 = value.to_string();
+            return;
+        }
+        let rank = |n: &str| ATTRIBUTE_ORDER.iter().position(|o| *o == n);
+        let mine = rank(name).unwrap_or(ATTRIBUTE_ORDER.len());
+        let at = self
+            .attributes
+            .iter()
+            .position(|(n, _)| rank(n).is_some_and(|r| r > mine))
+            .unwrap_or(self.attributes.len());
+        self.attributes.insert(at, (name.to_string(), value.to_string()));
+    }
+}
+
+/// The path of a store's file: Sessions.xml in the settings folder, PrivateSessions.xml in the user's folder
+pub fn file_of(store: Store, settings_folder: Option<&Path>, user_folder: &Path) -> Option<PathBuf> {
+    match store {
+        Store::Saved => settings_folder.map(|f| f.join("Sessions.xml")),
+        Store::Private => Some(user_folder.join("PrivateSessions.xml")),
+    }
+}
+
+/// Read a store's file fresh, change it, and write it back, so changes made meanwhile (by SuperXPuTTY on another
+/// computer, say) are kept. `change` gets the sessions in file order.
+pub fn update_file(path: &Path, change: impl FnOnce(&mut Vec<StoredSession>) -> Result<(), String>) -> Result<(), String> {
+    let mut problems = Vec::new();
+    let mut sessions = read_sessions(path, &mut problems);
+    if let Some(problem) = problems.into_iter().next() {
+        return Err(format!("Couldn't read it to save: {problem}"));
+    }
+    change(&mut sessions)?;
+    back_up(path);
+    let text = write_sessions(&sessions);
+    let temp = path.with_extension("xml.saving");
+    std::fs::write(&temp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&temp, path).map_err(|e| e.to_string())
+}
+
+/// Put a session where SuperXPuTTY's sort would (by id, ignoring case), leaving the others in file order
+pub fn insert_sorted(sessions: &mut Vec<StoredSession>, session: StoredSession) {
+    let key = session.id().to_lowercase();
+    let at = sessions.iter().position(|s| s.id().to_lowercase() > key).unwrap_or(sessions.len());
+    sessions.insert(at, session);
+}
+
+/// The file text, as .NET's XmlSerializer writes `List<SessionData>`: CRLF, two-space indent, one element per line
+pub fn write_sessions(sessions: &[StoredSession]) -> String {
+    let mut out = String::from("<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n");
+    let root = "ArrayOfSessionData xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"";
+    if sessions.is_empty() {
+        out.push_str(&format!("<{root} />"));
+        return out;
+    }
+    out.push_str(&format!("<{root}>\r\n"));
+    for session in sessions {
+        out.push_str("  <SessionData");
+        for (name, value) in &session.attributes {
+            out.push_str(&format!(" {name}=\"{}\"", escape(value)));
+        }
+        out.push_str(" />\r\n");
+    }
+    out.push_str("</ArrayOfSessionData>");
+    out
+}
+
+/// An attribute value escaped as .NET's XmlWriter escapes it
+fn escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\n' => out.push_str("&#xA;"),
+            '\r' => out.push_str("&#xD;"),
+            '\t' => out.push_str("&#x9;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Keep a copy of the file before it's written, as SuperXPuTTY does: "Sessions.yyyyMMdd_hhmmss.xml" beside it (with
+/// .NET's 12-hour "hh"), keeping the newest 20. A failed backup doesn't stop the save.
+fn back_up(path: &Path) {
+    let (Some(folder), Some(base)) = (path.parent(), path.file_stem().and_then(|s| s.to_str())) else { return };
+    if !path.exists() {
+        return;
+    }
+    let stamp = chrono::Local::now().format("%Y%m%d_%I%M%S");
+    if std::fs::copy(path, folder.join(format!("{base}.{stamp}.xml"))).is_err() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(folder) else { return };
+    let prefix = format!("{base}.");
+    let mut old: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&prefix) && n.ends_with(".xml") && n.len() == prefix.len() + 19)
+        })
+        .collect();
+    old.sort();
+    old.reverse();
+    for extra in old.iter().skip(20) {
+        let _ = std::fs::remove_file(extra);
     }
 }

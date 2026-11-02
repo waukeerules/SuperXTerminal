@@ -86,3 +86,41 @@ export function unavailableReason(protocol: string): string | null {
 export function opensAsLocalShell(protocol: string): boolean {
   return ["WINCMD", "WSL"].includes(protocol.toUpperCase());
 }
+
+/** One session's fields, as Edit Session shows them; a `-pw` password in `extraArgs` comes masked */
+export interface SessionFields {
+  name: string;
+  folder: string;
+  protocol: string;
+  host: string;
+  port: number;
+  username: string;
+  profile: string;
+  color: string;
+  icon: string;
+  highlightRules: string;
+  extraArgs: string;
+  jumpHost: string;
+  script: string;
+  note: string;
+  localPath: string;
+  remotePath: string;
+}
+
+/** A session's fields for editing */
+export function getSession(store: Store, id: string): Promise<SessionFields> {
+  return invoke<SessionFields>("session_get", { store, id });
+}
+
+/** Save a session (`originalId` null for a new one) to its file; returns its id */
+export function saveSession(store: Store, originalId: string | null, fields: SessionFields): Promise<string> {
+  return invoke<string>("session_save", { store, originalId, fields });
+}
+
+/** Delete a session from its file */
+export function deleteSession(store: Store, id: string): Promise<void> {
+  return invoke("session_delete", { store, id });
+}
+
+/** SuperXPuTTY's protocols, as Edit Session's Connection type lists them */
+export const PROTOCOLS = ["SSH", "Telnet", "Rlogin", "Raw", "Serial", "VNC", "RDP", "Mintty", "Cygterm", "WSL", "WINCMD", "PS"];

@@ -23,6 +23,8 @@ interface Look {
   cursor: string;
   blink: boolean;
   bell: string;
+  /** The session's or its folder's highlighting rules; "" for the default */
+  rules: string;
 }
 
 /** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
@@ -173,7 +175,7 @@ export class PageHost {
       prefs: {},
       fonts: [],
       menuKeys: MENU_KEYS,
-      sessionRules: "",
+      sessionRules: look.rules,
       unlimitedScrollback: 1000000,
       cursorColor: this.cursorColor,
     });
@@ -201,7 +203,7 @@ export class PageHost {
       this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel });
     } catch (error) {
       // nothing started, so the page has had no settings yet
-      await this.sendConfig({ cursor: "block", blink: true, bell: "visual" });
+      await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
       this.post({ type: "notice", text: String(error), kind: "error" });
     }
   }

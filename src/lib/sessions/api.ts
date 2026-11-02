@@ -168,3 +168,11 @@ export function databaseChanged(): Promise<boolean> {
 
 /** The window event sent when Database sessions' settings are saved, so the tree reads the table again */
 export const DATABASE_SAVED = "superxterminal:database-saved";
+
+/**
+ * Copy (or move) sessions to another root, each to the same folder path there, as SuperXPuTTY's Move to / Copy to.
+ * Returns how many arrived and what went wrong with the others.
+ */
+export function transferSessions(from: Store, ids: string[], to: Store, move: boolean): Promise<{ done: number; problems: string[] }> {
+  return invoke("sessions_transfer", { from, ids, to, deleteSource: move });
+}

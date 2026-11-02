@@ -13,6 +13,7 @@
     deleteFolder,
     moveSession,
     saveFolderSettings,
+    transferSessions,
     unavailableReason,
     refreshDatabase,
     databaseChanged,
@@ -130,7 +131,7 @@
       loaded = await loadSessions();
       error = "";
     } catch (e) {
-      error = String(e);
+      error = `Couldn't read the sessions: ${e}`;
     }
   }
 
@@ -225,8 +226,7 @@
         { label: "Edit", disabled: block, action: () => void edit(session) },
         { label: "Local overrides…", disabled: "Local overrides come in M5" },
         { label: "Delete", disabled: block, action: () => void remove(session) },
-        { label: "Move to", disabled: "Comes later in M2" },
-        { label: "Copy to", disabled: "Comes later in M2" },
+        ...transferItems([session], session.store, session.locked),
         { separator: true },
         { label: "File transfer (SFTP)", disabled: "The SFTP file browser comes later" },
         { label: "FileZilla (external)", disabled: "Comes in M5" },
@@ -255,6 +255,7 @@
               },
               { label: "Folder settings…", disabled: canAdd, action: () => (folderSettings = { store: folder.store, setting: settingOf(folder) }) },
               { label: "Delete folder", disabled: block, action: () => void removeFolder(folder) },
+              ...transferItems(sessionsIn(folder), folder.store, sessionsIn(folder).some((s) => s.locked)),
             ] as MenuItem[])),
         { separator: true },
         { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
@@ -263,6 +264,44 @@
       ];
     }
     menu = { x: event.clientX, y: event.clientY, items };
+  }
+
+  /** The roots' names, for Move to / Copy to */
+  const ROOT_NAMES: Record<Store, string> = { saved: "Saved sessions", private: "Private sessions", database: "Database sessions" };
+
+  /** Move to and Copy to, each listing the other roots; the table only when it can be written, and no move of locked rows */
+  function transferItems(sessions: SessionView[], from: Store, locked: boolean): MenuItem[] {
+    const targets: Store[] = (["saved", "private", "database"] as Store[]).filter(
+      (t) => t !== from && (t !== "database" || db?.enabled) && (t !== "saved" || settings.settingsFolder),
+    );
+    const item = (move: boolean): MenuItem => ({
+      label: move ? "Move to" : "Copy to",
+      disabled: sessions.length === 0 ? "No sessions here" : move && from === "database" && locked ? "Locked in the database" : false,
+      items: targets.map((to) => ({
+        label: ROOT_NAMES[to],
+        disabled: to === "database" && (!db?.writable || !!db.error) ? "Database sessions can't be written now" : false,
+        action: () => void transfer(sessions, from, to, move),
+      })),
+    });
+    return [item(true), item(false)];
+  }
+
+  /** Copy or move sessions to another root, asking first when moving them out of the shared table */
+  async function transfer(sessions: SessionView[], from: Store, to: Store, move: boolean): Promise<void> {
+    const n = sessions.length;
+    if (move && from === "database") {
+      const sure = await ask(`Move ${n} session${n === 1 ? "" : "s"} out of Database sessions into ${ROOT_NAMES[to]}?\n\nThey're deleted from the table, for everyone who uses it.`,
+        { title: "Move", kind: "warning", okLabel: "Move" });
+      if (!sure) return;
+    }
+    try {
+      const report = await transferSessions(from, sessions.map((s) => s.id), to, move);
+      await reload();
+      error = report.problems.length ? `${report.done} of ${n} ${move ? "moved" : "copied"}. ${report.problems.join(" ")}` : "";
+      expanded = new Set([...expanded, `${to}:`]);
+    } catch (e) {
+      error = String(e);
+    }
   }
 
   /** A folder's stored settings, or empty ones */
@@ -406,7 +445,7 @@
 
 <div class="tree" role="tree" style:font-size="{settings.treeFontSize}px">
   {#if error}
-    <p class="message">Couldn't read the sessions: {error}</p>
+    <p class="message">{error}</p>
   {/if}
   {#if loaded}
     {#each loaded.problems as problem}

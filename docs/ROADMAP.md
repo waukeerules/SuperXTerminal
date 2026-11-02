@@ -37,6 +37,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ⬜ Known issue: development builds ask for the Keychain password again after each rebuild (a new unsigned app each time, to macOS); signed builds (M6) stop it
 - ⬜ Known issue: a small round macOS badge sits beside the terminal cursor, over the end of the prompt (seen in the user's own screenshots too). Not in the page, not a separate window; not fixed by `writingsuggestions`, a transparent caret, or `TSMLanguageIndicatorEnabled`. Next: find it with Web Inspector
 - ⬜ To check: after renaming a Database folder, it showed closed once (it had been open)
+- ⬜ To check: a click on a menu item sometimes does nothing the first time (seen twice while testing with simulated clicks)
 - ⬜ To check: a command typed once showed twice, with empty prompts between, on the lab switch (and a column of empty prompts in an early local shell). Not caused by clicks; not yet reproduced in a controlled test
 
 ## M1 MVP
@@ -94,7 +95,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Changes noticed every 30 s (`<table>_version`): a session added in SuperXPuTTY on Windows appeared on the Mac within the check
 - ✅ `deleted_at` rows hidden (in the query; columns a table lacks read as defaults)
 - ✅ Folders table (colours, defaults): read, applied and written (Colour, Folder settings…; moved and removed with renamed and deleted folders)
-- ⬜ Move to / Copy to between Database and Saved/Private
+- ✅ Move to / Copy to between Database and Saved/Private (and between Saved and Private): to the same folder path, without database fields; a move out of the table asks first and leaves locked rows; clashing names are refused and stay put. Checked with a test session through all three
 - 🚧 Database settings dialog, Create / upgrade schema, read-only: Tools > Database Sessions… with Test connection and Read only; Create / upgrade schema next
 - ✅ Database settings export/import (SuperXPuTTY's JSON), Clear; password in the Keychain
 

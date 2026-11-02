@@ -478,6 +478,93 @@ async fn db_folder_settings_save(state: State<'_, AppState>, fields: folders::Fo
     Ok(())
 }
 
+/// What a Move to / Copy to did
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferReport {
+    done: usize,
+    problems: Vec<String>,
+}
+
+/// Copy (or move) sessions to another root, each to the same folder path there, as SuperXPuTTY's Move to / Copy to.
+/// A copy out of the table leaves its database fields behind (SuperXPuTTY's PlainCopy); a move deletes only what
+/// arrived, and never a locked row.
+#[tauri::command]
+async fn sessions_transfer(
+    state: State<'_, AppState>,
+    from: sessions::Store,
+    ids: Vec<String>,
+    to: sessions::Store,
+    delete_source: bool,
+) -> Result<TransferReport, String> {
+    use sessions::Store;
+    if from == to {
+        return Err("Choose another place to copy to.".into());
+    }
+    let picked: Vec<sessions::StoredSession> = {
+        let all = state.sessions.lock().unwrap();
+        ids.iter().filter_map(|id| all.find(from, id).cloned()).collect()
+    };
+    let mut problems = Vec::new();
+    let mut arrived: Vec<sessions::StoredSession> = Vec::new();
+    if to == Store::Database {
+        let (settings, user_folder, optional) = db_write_context(&state);
+        for session in &picked {
+            match db::insert(&settings, &user_folder, &optional, &db::Row::of(session, session.folder())).await {
+                Ok(_) => arrived.push(session.clone()),
+                Err(e) => problems.push(format!("{}: {e}", session.id())),
+            }
+        }
+    } else {
+        let path = store_file(&state, to)?;
+        let others = other_ids(&state, to);
+        let mut added = Vec::new();
+        sessions::update_file(&path, |list| {
+            for session in &picked {
+                // as a file session: no database fields, and an id without the @db prefix
+                let folder = session.folder();
+                let name = match session.get("SessionName") {
+                    "" => session.id().rsplit('/').next().unwrap_or("").to_string(),
+                    n => n.to_string(),
+                };
+                let id = if folder.is_empty() { name.clone() } else { format!("{folder}/{name}") };
+                if list.iter().any(|s| s.id().eq_ignore_ascii_case(&id)) || others.iter().any(|o| o.eq_ignore_ascii_case(&id) && !(from != Store::Database && o == session.id())) {
+                    problems.push(format!("{id}: there's already a session with that name there."));
+                    continue;
+                }
+                let mut copy = sessions::StoredSession {
+                    attributes: session.attributes.iter().filter(|(n, _)| !n.starts_with("Database")).cloned().collect(),
+                };
+                copy.set("SessionId", &id);
+                copy.set("SessionName", &name);
+                sessions::insert_sorted(list, copy);
+                added.push(session.clone());
+            }
+            Ok(())
+        })?;
+        arrived = added;
+    }
+    if delete_source {
+        for session in &arrived {
+            let result = match from {
+                Store::Database if session.get("DatabaseLocked") == "true" => Err(format!("{}: locked in the database, so it stays there.", session.id())),
+                Store::Database => {
+                    let (settings, user_folder, _) = db_write_context(&state);
+                    db::delete(&settings, &user_folder, session.get("DatabaseId")).await
+                }
+                _ => store_file(&state, from).and_then(|path| editing::delete(&path, session.id())),
+            };
+            if let Err(e) = result {
+                problems.push(e);
+            }
+        }
+    }
+    if from == Store::Database || to == Store::Database {
+        refresh_database(&state).await?;
+    }
+    Ok(TransferReport { done: arrived.len(), problems })
+}
+
 /// Whether the table changed since the last read (one small query); the UI refreshes when it did
 #[tauri::command]
 async fn db_check(state: State<'_, AppState>) -> Result<bool, String> {
@@ -661,6 +748,7 @@ pub fn run() {
             db_folder_move,
             db_folder_delete,
             db_folder_settings_save,
+            sessions_transfer,
             variables_save,
             profiles_list,
             profiles_save,

@@ -9,6 +9,7 @@
   import SessionTree from "./lib/sessions/SessionTree.svelte";
   import Settings from "./lib/settings/Settings.svelte";
   import EnvironmentVariables from "./lib/settings/EnvironmentVariables.svelte";
+  import EnvironmentColours from "./lib/settings/EnvironmentColours.svelte";
   import DatabaseSettings from "./lib/sessions/DatabaseSettings.svelte";
   import { DATABASE_SAVED } from "./lib/sessions/api";
   import { isDark, loadSettings, settings } from "./lib/settings/store.svelte";
@@ -40,6 +41,7 @@
   /** The Settings window's tab while it's open; null when closed */
   let settingsTab = $state<string | null>(null);
   let variablesOpen = $state(false);
+  let coloursOpen = $state(false);
   let databaseOpen = $state(false);
   let editorOpen = $state(false);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
@@ -56,6 +58,7 @@
     if (event.payload === "settings") settingsTab = "General";
     else if (event.payload === "newLocalShell") newShell();
     else if (event.payload === "environmentVariables") variablesOpen = true;
+    else if (event.payload === "environmentColours") coloursOpen = true;
     else if (event.payload === "databaseSessions") databaseOpen = true;
     else if (event.payload === "scriptEditor") editorOpen = true;
     else if (event.payload === "closeTab") tabs?.closeActive();
@@ -178,6 +181,10 @@
 
 {#if variablesOpen}
   <EnvironmentVariables onClose={() => (variablesOpen = false)} />
+{/if}
+
+{#if coloursOpen}
+  <EnvironmentColours onClose={() => (coloursOpen = false)} />
 {/if}
 
 {#if settingsTab}

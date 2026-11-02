@@ -13,17 +13,10 @@
     if (typeof path === "string") await saveSettings({ sessionLogFolder: path });
   }
   import { parseRules } from "../icons/environment";
+  import EnvironmentColours from "./EnvironmentColours.svelte";
 
-  let rules = $state(settings.environmentColorRules);
-  let message = $state("");
-
-  /** Save the colour rules, if they read correctly */
-  async function saveRules(): Promise<void> {
-    const parsed = parseRules(rules);
-    const parts = rules.split(/[;\n]/).filter((p) => p.trim()).length;
-    await saveSettings({ environmentColorRules: rules });
-    message = parsed.length === parts ? "Saved." : `Saved; ${parts - parsed.length} part(s) weren't "name=#RRGGBB" and are ignored.`;
-  }
+  let editingColours = $state(false);
+  const colourRules = $derived(parseRules(settings.environmentColorRules));
 </script>
 
 <div class="general">
@@ -96,16 +89,42 @@
   <fieldset>
     <legend>Environment colours</legend>
     <p class="hint">A session with no colour of its own, and no folder colour, takes the first rule matching its name
-      or a folder's name: * and ? are wildcards, e.g. <code>Prod*=#C62828;Staging=#EF6C00</code>.</p>
+      or a folder's name: * and ? are wildcards, e.g. Prod* in red. Edit… here or Tools > Environment Colours changes them.</p>
     <div class="row">
-      <input bind:value={rules} placeholder="Prod=#C62828;Staging=#EF6C00" aria-label="Environment colour rules" />
-      <button onclick={saveRules}>Save rules</button>
+      <span class="rules">
+        {#each colourRules as rule}<span class="rule"><i style:background={rule.color}></i>{rule.pattern}</span>{:else}No rules{/each}
+      </span>
+      <button onclick={() => (editingColours = true)}>Edit…</button>
     </div>
-    <p class="hint">{message}</p>
   </fieldset>
 </div>
 
+{#if editingColours}
+  <EnvironmentColours onClose={() => (editingColours = false)} />
+{/if}
+
 <style>
+  .rules {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .rule {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+  }
+
+  .rule i {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+
   .general {
     display: grid;
     gap: 12px;
@@ -125,10 +144,6 @@
   .hint {
     margin: 0;
     color: var(--text-muted);
-  }
-
-  code {
-    white-space: nowrap;
   }
 
   .row {

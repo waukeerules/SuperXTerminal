@@ -80,7 +80,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Edit Session (all of SuperXPuTTY's fields, profile list, inherited folder values as hints, greyed fields explained, `-pw` shown masked and kept), from the session's right-click menu, which matches SuperXPuTTY's (Connect, Colour, Copy host address, Edit, Delete; the rest greyed with the milestone)
 
 **Settings**
-- ✅ Settings window basics (settings folder, theme, icon size, tree font): Settings (Cmd+,) > General and Profiles; the environment colour rules are edited there too until the Environment Colours window (M5)
+- ✅ Settings window basics (settings folder, theme, icon size, tree font): Settings (Cmd+,) > General and Profiles; the environment colour rules are shown there, edited in the Environment Colours window
 - ✅ Light and Dark themes matching SuperXPuTTY, or following macOS (the default); the terminal keeps its own theme (PuTTY's black by default). Dark blue and Classic aren't carried over
 
 ## M2 Database sessions
@@ -139,7 +139,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Sessions.xml, Folders.xml and the private files read again when they change elsewhere (a teammate, SuperXPuTTY, an editor), compared by contents every 3 s, not while a window is open. Checked with an outside change
 - ✅ Use Sessions.xml off (Settings > General), as SuperXPuTTY's UseSessionsXml: Sessions.xml and Folders.xml neither read nor written, only Private and Database sessions; new sessions and imports go to Private sessions; applies at once. Checked: the Saved root went and came back, Sessions.xml untouched
 - ✅ Import from a MobaXterm sessions file (as SuperXPuTTY's MobaDataHelper; serial speed as -sercfg), Remote Desktop `.rdp` files (several at once; UTF-16 read), and `~/.ssh/config` (Host names without wildcards; HostName, Port, User, ProxyJump, IdentityFile and forwards; Include followed): each into its own ImportedFrom… folder of Private (default) or Saved sessions, a taken name numbered. Checked: ~/.ssh/config imported in the app; MobaXterm and .rdp by tests with sample files
-- ⬜ Environment Colours dialog
+- ✅ Environment Colours (Tools menu, and Edit… in Settings > General), as SuperXPuTTY's dlgEnvironmentColors: a row per name rule with its colour (picker, #RRGGBB, or the usual colours), Add, Remove, Move up/down (the first match wins), Defaults; a colour that isn't #RRGGBB is refused; saved in SuperXPuTTY's "pattern=#RRGGBB;…" form. Checked: a Test rule coloured the Test folder, and Defaults put the rules back
 
 **Connections**
 - ✅ Jump hosts, as SuperXPuTTY's JumpHosts: a saved session (Saved, Private, or a Database session's path; its folders' username and port and its placeholders used) or user@host:port; not through itself; chains not followed. SSH uses ssh -J; Telnet and Raw go through ssh -W (the bastion must take a key)

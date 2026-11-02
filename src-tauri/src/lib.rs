@@ -1547,6 +1547,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "databaseSessions", "Database Sessions…", true, None::<&str>)?,
             &MenuItem::with_id(app, "environmentVariables", "Environment Variables…", true, None::<&str>)?,
+            &MenuItem::with_id(app, "environmentColours", "Environment Colours…", true, None::<&str>)?,
         ],
     )?;
     // shown or hidden, as SuperXPuTTY's View > Send Commands and View > Button Bar

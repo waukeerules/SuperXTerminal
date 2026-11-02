@@ -3,10 +3,8 @@
   PrivateSessions.xml), as in SuperXPuTTY. Favorites, Recent and Database sessions join it later (M5, M2).
 -->
 <script lang="ts">
-  import { onMount } from "svelte";
   import TreeFolder from "./TreeFolder.svelte";
   import {
-    chooseSettingsFolder,
     deleteSession,
     getSession,
     loadSessions,
@@ -31,7 +29,7 @@
   import { ask } from "@tauri-apps/plugin-dialog";
   import { loadCustomIcons, type CustomIcon } from "../icons/custom";
   import { EnvironmentColors, parseRules } from "../icons/environment";
-  import { invoke } from "@tauri-apps/api/core";
+  import { chooseSettingsFolder, settings } from "../settings/store.svelte";
 
   interface Props {
     /** Sessions with an open tab, as "store:id" */
@@ -57,8 +55,7 @@
   /** Folders made in the tree with no sessions yet, by store: they exist only here until a session goes in */
   let newFolders = $state<Record<Store, string[]>>({ saved: [], private: [] });
 
-  let iconSize = $state(24);
-  let rules = $state("");
+  const iconSize = $derived(settings.iconSize);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
 
   let loaded = $state<SessionsLoaded | null>(null);
@@ -67,20 +64,22 @@
   // roots start open, as with SuperXPuTTY's "Expand tree on startup"
   let expanded = $state(new Set<string>(["saved:", "private:"]));
 
-  const colors = $derived(new EnvironmentColors(loaded?.folders ?? [], parseRules(rules)));
+  const colors = $derived(new EnvironmentColors(loaded?.folders ?? [], parseRules(settings.environmentColorRules)));
   const saved = $derived(loaded ? buildTree("saved", "Saved sessions", loaded.sessions, query, newFolders.saved) : null);
   const privateRoot = $derived(loaded ? buildTree("private", "Private sessions", loaded.sessions, query, newFolders.private) : null);
 
-  onMount(() => void reload());
+  // read again whenever the settings folder changes (Settings > General); the first run reads them at start
+  $effect(() => {
+    if (!settings.loaded) return;
+    void settings.settingsFolder;
+    void reload();
+  });
 
   /** Read the settings, custom icons and session files again */
   async function reload(): Promise<void> {
     try {
-      const settings = await invoke<{ iconSize: number; environmentColorRules: string }>("settings_get");
-      iconSize = settings.iconSize;
-      rules = settings.environmentColorRules;
       customs = await loadCustomIcons();
-      onLook(iconSize, customs);
+      onLook(settings.iconSize, customs);
       loaded = await loadSessions();
       error = "";
     } catch (e) {
@@ -88,9 +87,9 @@
     }
   }
 
-  /** Choose the settings folder, then read it */
+  /** Choose the settings folder; the tree reads it when the setting changes */
   async function choose(): Promise<void> {
-    if (await chooseSettingsFolder()) await reload();
+    await chooseSettingsFolder();
   }
 
   /** A new session's fields, in a folder */
@@ -345,7 +344,7 @@
 
 <input class="search" placeholder="Type to search..." bind:value={query} />
 
-<div class="tree" role="tree">
+<div class="tree" role="tree" style:font-size="{settings.treeFontSize}px">
   {#if error}
     <p class="message">Couldn't read the sessions: {error}</p>
   {/if}

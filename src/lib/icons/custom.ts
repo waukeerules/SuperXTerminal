@@ -5,8 +5,9 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 
-/** One custom icon: its PNG as a data URL, and its default colour */
+/** One custom icon: its name as the file spells it, its PNG as a data URL, and its default colour */
 export interface CustomIcon {
+  title: string;
   dataUrl: string;
   color: string;
 }
@@ -16,7 +17,7 @@ export async function loadCustomIcons(): Promise<Map<string, CustomIcon>> {
   const found = await invoke<[string, string][]>("icons_custom");
   const icons = new Map<string, CustomIcon>();
   for (const [name, dataUrl] of found) {
-    icons.set(name.toLowerCase(), { dataUrl, color: await averageColor(dataUrl) });
+    icons.set(name.toLowerCase(), { title: name, dataUrl, color: await averageColor(dataUrl) });
   }
   return icons;
 }

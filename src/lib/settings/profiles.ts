@@ -32,6 +32,9 @@ export function emptyProfile(name: string): Profile {
   };
 }
 
+/** The window event sent when profiles change, so lists of them (Quick connect's) update at once */
+export const PROFILES_CHANGED = "superxterminal:profiles-changed";
+
 /** Every profile, Default Settings first */
 export function listProfiles(): Promise<Profile[]> {
   return invoke<Profile[]>("profiles_list");
@@ -42,11 +45,15 @@ export function listProfiles(): Promise<Profile[]> {
  * @param previousName its name before this change; "" for a new one
  * @param password undefined keeps the stored password, "" forgets it, anything else replaces it
  */
-export function saveProfile(profile: Profile, previousName: string, password?: string): Promise<Profile[]> {
-  return invoke<Profile[]>("profiles_save", { profile, previousName, password: password ?? null });
+export async function saveProfile(profile: Profile, previousName: string, password?: string): Promise<Profile[]> {
+  const profiles = await invoke<Profile[]>("profiles_save", { profile, previousName, password: password ?? null });
+  window.dispatchEvent(new Event(PROFILES_CHANGED));
+  return profiles;
 }
 
 /** Remove a profile and its stored password */
-export function deleteProfile(name: string): Promise<Profile[]> {
-  return invoke<Profile[]>("profiles_delete", { name });
+export async function deleteProfile(name: string): Promise<Profile[]> {
+  const profiles = await invoke<Profile[]>("profiles_delete", { name });
+  window.dispatchEvent(new Event(PROFILES_CHANGED));
+  return profiles;
 }

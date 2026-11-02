@@ -18,6 +18,7 @@ import { mount, unmount } from "svelte";
 import type { CustomIcon } from "../icons/custom";
 import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
 import SessionTab from "./SessionTab.svelte";
+import { isDark } from "../settings/store.svelte";
 
 /** What a terminal tab is given when it's added: what to run, whether it's a local shell, and how its tab looks */
 interface TerminalParams {
@@ -119,7 +120,7 @@ export class TabArea {
    */
   constructor(element: HTMLElement, private readonly onOpenChanged: (open: Set<string>) => void) {
     this.api = createDockview(element, {
-      theme: matchMedia("(prefers-color-scheme: dark)").matches ? themeDark : themeLight,
+      theme: isDark() ? themeDark : themeLight,
       createComponent: () => new TerminalPanel(this),
       // dockview only uses createTabComponent for a named tab component, so make ours the default
       defaultTabComponent: "session",
@@ -127,9 +128,6 @@ export class TabArea {
     });
     this.api.onDidRemovePanel((panel) => {
       if (this.sessions.delete(panel.id)) this.onOpenChanged(new Set(this.sessions.values()));
-    });
-    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => {
-      this.api.updateOptions({ theme: event.matches ? themeDark : themeLight });
     });
   }
 
@@ -168,6 +166,11 @@ export class TabArea {
       renderer: "always",
     });
     return id;
+  }
+
+  /** Follow the app's light or dark look (App calls this when it changes) */
+  setDark(dark: boolean): void {
+    this.api.updateOptions({ theme: dark ? themeDark : themeLight });
   }
 
   /** The tab menu's commands, from a tab's page: close it, the others, those to its right, or all */

@@ -3,7 +3,6 @@
  * (a `-pw` in the extra arguments) never come here; the core starts sessions itself.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 
 /** Which file a session is from: Sessions.xml (shared) or PrivateSessions.xml (the user's own) */
 export type Store = "saved" | "private";
@@ -47,14 +46,6 @@ export interface SessionsLoaded {
 /** Read the session files (again) */
 export function loadSessions(): Promise<SessionsLoaded> {
   return invoke<SessionsLoaded>("sessions_load");
-}
-
-/** Ask for the settings folder (where Sessions.xml is) and remember it; false if the user cancelled */
-export async function chooseSettingsFolder(): Promise<boolean> {
-  const path = await open({ directory: true, title: "Choose the settings folder (the folder holding Sessions.xml)" });
-  if (typeof path !== "string") return false;
-  await invoke("settings_set_folder", { path });
-  return true;
 }
 
 /** Protocols this Mac can open now, and why the others can't (shown dimmed, with the reason, in the tree) */

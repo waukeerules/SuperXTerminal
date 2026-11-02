@@ -1,0 +1,63 @@
+/**
+ * The app's settings (`src-tauri/src/settings.rs`), shared by every part of the UI. Reading `settings.x` in a
+ * component or $effect re-runs it when the setting changes, so the tree, tabs and theme follow the Settings window
+ * at once.
+ */
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+
+/** The settings, as the Rust core keeps them */
+export interface AppSettings {
+  settingsFolder: string | null;
+  iconSize: number;
+  environmentColorRules: string;
+  /** "system" (follow macOS), "light" or "dark" */
+  theme: string;
+  treeFontSize: number;
+}
+
+export const settings = $state<AppSettings & { loaded: boolean }>({
+  loaded: false,
+  settingsFolder: null,
+  iconSize: 24,
+  environmentColorRules: "",
+  theme: "system",
+  treeFontSize: 14,
+});
+
+/** Whether macOS is in dark mode, kept up to date */
+const systemDark = $state({ value: matchMedia("(prefers-color-scheme: dark)").matches });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => (systemDark.value = e.matches));
+
+/** Whether the app is drawn dark: the theme chosen, or macOS's when it's "system" */
+export function isDark(): boolean {
+  return settings.theme === "dark" || (settings.theme !== "light" && systemDark.value);
+}
+
+/** Read the settings from the core */
+export async function loadSettings(): Promise<void> {
+  Object.assign(settings, await invoke<AppSettings>("settings_get"), { loaded: true });
+  applyTheme();
+}
+
+/** Save changed settings (not the settings folder: see `chooseSettingsFolder`) */
+export async function saveSettings(changes: Partial<AppSettings>): Promise<void> {
+  const { loaded: _, ...current } = settings;
+  Object.assign(settings, await invoke<AppSettings>("settings_save", { settings: { ...current, ...changes } }));
+  applyTheme();
+}
+
+/** Ask for the settings folder (where Sessions.xml is) and remember it; false if the user cancelled */
+export async function chooseSettingsFolder(): Promise<boolean> {
+  const path = await open({ directory: true, title: "Choose the settings folder (the folder holding Sessions.xml)" });
+  if (typeof path !== "string") return false;
+  await invoke("settings_set_folder", { path });
+  settings.settingsFolder = path;
+  return true;
+}
+
+/** Mark the page with the chosen theme, which app.css's colours follow ("system" leaves it to macOS) */
+function applyTheme(): void {
+  if (settings.theme === "light" || settings.theme === "dark") document.documentElement.dataset.theme = settings.theme;
+  else delete document.documentElement.dataset.theme;
+}

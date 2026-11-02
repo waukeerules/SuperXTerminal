@@ -18,11 +18,21 @@ pub struct AppSettings {
     pub icon_size: u32,
     /// Environment colour name rules, as SuperXPuTTY's EnvironmentColorRules: "Prod=#C62828;Staging=#EF6C00"
     pub environment_color_rules: String,
+    /// The look: "system" (follow macOS), "light" or "dark"
+    pub theme: String,
+    /// The sessions tree's text size in pixels, as SuperXPuTTY's session tree font
+    pub tree_font_size: u32,
 }
 
 impl Default for AppSettings {
     fn default() -> AppSettings {
-        AppSettings { settings_folder: None, icon_size: 24, environment_color_rules: String::new() }
+        AppSettings {
+            settings_folder: None,
+            icon_size: 24,
+            environment_color_rules: String::new(),
+            theme: "system".into(),
+            tree_font_size: 14,
+        }
     }
 }
 

@@ -8,7 +8,7 @@
   import { onMount } from "svelte";
   import Icon from "../icons/Icon.svelte";
   import { PROTOCOLS, unavailableReason, opensAsLocalShell } from "../sessions/api";
-  import { DEFAULT_PROFILE, listProfiles } from "../settings/profiles";
+  import { DEFAULT_PROFILE, PROFILES_CHANGED, listProfiles } from "../settings/profiles";
   import type { QuickConnect } from "../terminal/PageHost";
 
   interface Props {
@@ -26,9 +26,14 @@
   let profile = $state(DEFAULT_PROFILE);
   let profiles = $state<string[]>([DEFAULT_PROFILE]);
 
-  onMount(() => void refreshProfiles());
+  onMount(() => {
+    void refreshProfiles();
+    const changed = () => void refreshProfiles();
+    window.addEventListener(PROFILES_CHANGED, changed);
+    return () => window.removeEventListener(PROFILES_CHANGED, changed);
+  });
 
-  /** The profile list, read again when it's opened so new profiles show */
+  /** The profile list, read again whenever profiles change in Settings */
   async function refreshProfiles(): Promise<void> {
     profiles = (await listProfiles()).map((p) => p.name);
     if (!profiles.includes(profile)) profile = DEFAULT_PROFILE;
@@ -77,7 +82,7 @@
   <label class="grow">Login <input bind:value={username} placeholder="e.g. admin" onkeydown={enter} /></label>
   <label class="grow">Password <input type="password" bind:value={password} onkeydown={enter} /></label>
   <label>Profile
-    <select bind:value={profile} onfocus={refreshProfiles} onkeydown={enter}>
+    <select bind:value={profile} onkeydown={enter}>
       {#each profiles as p}<option value={p}>{p}</option>{/each}
     </select>
   </label>

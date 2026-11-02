@@ -114,7 +114,6 @@
     gap: 6px;
     white-space: nowrap;
     border-radius: 3px;
-    font-size: 14px;
   }
 
   .row:hover {

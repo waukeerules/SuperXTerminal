@@ -33,7 +33,7 @@
     ...templateOrder.filter((k) => !templates[k].general).map((k) => ({ key: k, title: templates[k].title, section: "Devices" })),
     ...templateOrder.filter((k) => templates[k].general).map((k) => ({ key: k, title: templates[k].title, section: "General" })),
     ...Object.keys(logos).map((k) => ({ key: k, title: logos[k].title, section: "Logos" })),
-    ...[...customs.keys()].map((k) => ({ key: CUSTOM_PREFIX + k, title: k, section: "Custom" })),
+    ...[...customs.entries()].map(([k, icon]) => ({ key: CUSTOM_PREFIX + k, title: icon.title, section: "Custom" })),
   ]);
   const sections = ["Devices", "General", "Logos", "Custom"];
   const shown = $derived(all.filter((i) => !search.trim() || i.title.toLowerCase().includes(search.trim().toLowerCase())));

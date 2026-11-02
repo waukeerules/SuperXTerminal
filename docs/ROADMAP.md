@@ -12,7 +12,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 | Milestone | Status |
 |---|---|
 | [M0 Skeleton](#m0-skeleton) | ✅ |
-| [M1 MVP](#m1-mvp) | 🚧 |
+| [M1 MVP](#m1-mvp) | ✅ |
 | [M2 Database sessions](#m2-database-sessions) | ⬜ |
 | [M3 Scripting and commands](#m3-scripting-and-commands) | ⬜ |
 | [M4 Terminal extras](#m4-terminal-extras) | ⬜ |
@@ -34,6 +34,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ `web/terminal`, `web/output`, `web/shared` and `web/lib` copied from SuperXPuTTY with their licences (default rules and themes still missing: not in SuperXPuTTY's repository)
 - ✅ Licence checks (`cargo deny check` in `src-tauri/`, `npm run licenses`), including security advisories
 - ✅ Builds made locally; the GitHub Actions workflow (macOS, Windows, Linux) runs only when started by hand, so pushes cost nothing
+- ⬜ Known issue: development builds ask for the Keychain password again after each rebuild (a new unsigned app each time, to macOS); signed builds (M6) stop it
 - ⬜ Known issue: a small round macOS badge sits beside the terminal cursor, over the end of the prompt (seen in the user's own screenshots too). Not in the page, not a separate window; not fixed by `writingsuggestions`, a transparent caret, or `TSMLanguageIndicatorEnabled`. Next: find it with Web Inspector
 - ⬜ To check: a command typed once showed twice, with empty prompts between, on the lab switch (and a column of empty prompts in an early local shell). Not caused by clicks; not yet reproduced in a controlled test
 
@@ -45,7 +46,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Read and write `Sessions.xml`, keeping unknown attributes: written as SuperXPuTTY's XmlSerializer does (the reference files write back byte for byte), re-read before each save so others' changes are kept, with SuperXPuTTY's 20 timestamped backups
 - ✅ Read and write `PrivateSessions.xml`
 - ✅ Read and write `Folders.xml` / `PrivateFolders.xml` (colours, defaults): Folder settings… and the folder menu's Colour; settings move with renamed folders
-- 🚧 Settings folder choice (local, SMB share, synced cloud folder): Choose Settings Folder... when none is set; a way to change it comes with Settings
+- ✅ Settings folder choice (local, SMB share, synced cloud folder): in Settings > General, and in the tree when none is set; the tree reloads when it changes
 - ✅ Per-user files in `~/Library/Application Support/SuperXTerminal/` (`settings.json`, `PrivateSessions.xml`)
 
 **Sessions tree**
@@ -59,7 +60,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 **Icons and colours**
 - ✅ Icon templates redrawn as SVG, with colourable keys (all 62 templates and glyphs; checked against SuperXPuTTY's Choose Icon window)
 - ✅ Brand logos (26, from SuperXPuTTY's BrandLogos)
-- 🚧 Custom icons from `<SettingsFolder>/icons`: read and drawn as masks in any colour; not yet tried with a real one (the reference data has none)
+- ✅ Custom icons from `<SettingsFolder>/icons`: read and drawn as masks, in the PNG's own colour or any other (checked with a test PNG in Choose Icon). Adding and removing them from the app comes later
 - ✅ Old PNG keys mapped onto templates
 - ✅ Choose Icon window (Devices, General, Logos, Custom; palette colours or any other)
 - ✅ Environment colours: tree circle, tab (selected filled, others tinted with a top stripe), frame around the terminal, cursor
@@ -68,7 +69,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 **Connecting**
 - ✅ SSH tab: `ssh -tt` in a PTY, host, port, username; checked against the lab switch (log in, `sh ip int bri`)
 - ✅ Profiles: Settings → Profiles (Cmd+,), "Default Settings", matched by name; a missing profile falls back to Default Settings with a notice in the terminal. Checked: a `root` profile made Media Server log in as root
-- 🚧 Passwords: a session's `-pw` is typed at the first prompt (checked on the lab switch); a profile's password is kept in the Keychain and typed the same way (written, not yet tried)
+- ✅ Passwords: a session's `-pw`, Quick connect's password, or a profile's (kept in the Keychain) is typed at the first prompt; each checked on the lab switch
 - ✅ Key files and agent: a profile's key file (`-i`, `IdentitiesOnly`), else ssh's own keys and agent (checked with the 1Password agent)
 - ✅ Allow older algorithms (profile option, on in Default Settings): SHA-1 key exchange, `ssh-rsa`, CBC ciphers
 - ✅ Launch order: session, folder default, profile, Default Settings (local overrides join it in M5); tested
@@ -77,8 +78,8 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Edit Session (all of SuperXPuTTY's fields, profile list, inherited folder values as hints, greyed fields explained, `-pw` shown masked and kept), from the session's right-click menu, which matches SuperXPuTTY's (Connect, Colour, Copy host address, Edit, Delete; the rest greyed with the milestone)
 
 **Settings**
-- 🚧 Settings window basics (settings folder, theme, icon size, tree font): the window (Cmd+,) with its Profiles tab; the rest next
-- ⬜ Light and Dark themes matching SuperXPuTTY
+- ✅ Settings window basics (settings folder, theme, icon size, tree font): Settings (Cmd+,) > General and Profiles; the environment colour rules are edited there too until the Environment Colours window (M5)
+- ✅ Light and Dark themes matching SuperXPuTTY, or following macOS (the default); the terminal keeps its own theme (PuTTY's black by default). Dark blue and Classic aren't carried over
 
 ## M2 Database sessions
 

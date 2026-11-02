@@ -1,19 +1,25 @@
 <!--
-  The Settings window (Cmd+,), SuperXPuTTY's Tools > Options for the Mac. Profiles comes first; the other tabs
-  (General, Terminal, ...) come with the Settings slice of M1 and are shown greyed out until then.
+  The Settings window (Cmd+,), SuperXPuTTY's Tools > Options for the Mac: General and Profiles; the other tabs
+  (Terminal, Shortcuts) are shown greyed out until their milestones.
 -->
 <script lang="ts">
+  import { untrack } from "svelte";
   import ProfilesTab from "./ProfilesTab.svelte";
+  import GeneralTab from "./GeneralTab.svelte";
 
   interface Props {
     onClose: () => void;
+    /** The tab to open on */
+    tab?: string;
   }
 
-  let { onClose }: Props = $props();
+  let { onClose, tab = "General" }: Props = $props();
+
+  let current = $state(untrack(() => tab));
 
   /** The tabs, with the milestone that brings each one still to come */
   const TABS: { name: string; later?: string }[] = [
-    { name: "General", later: "comes later in M1" },
+    { name: "General" },
     { name: "Profiles" },
     { name: "Terminal", later: "comes in M4" },
     { name: "Shortcuts", later: "comes in M5" },
@@ -27,7 +33,8 @@
     <header>
       <nav>
         {#each TABS as tab}
-          <button class:active={tab.name === "Profiles"} disabled={!!tab.later} title={tab.later ? `${tab.name} ${tab.later}` : ""}>
+          <button class:active={tab.name === current} disabled={!!tab.later} title={tab.later ? `${tab.name} ${tab.later}` : ""}
+            onclick={() => (current = tab.name)}>
             {tab.name}
           </button>
         {/each}
@@ -35,7 +42,7 @@
       <button class="close" onclick={onClose} aria-label="Close">✕</button>
     </header>
     <main>
-      <ProfilesTab />
+      {#if current === "General"}<GeneralTab />{:else}<ProfilesTab />{/if}
     </main>
   </div>
 </div>

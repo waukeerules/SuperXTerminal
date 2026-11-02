@@ -10,6 +10,7 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { highlighting } from "./highlighting";
+import { isDark } from "../settings/store.svelte";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
 type PtyEvent =
@@ -173,7 +174,7 @@ export class PageHost {
 
   /** The page's settings: the highlighting rules and themes, and the profile's cursor and bell */
   private async sendConfig(look: Look): Promise<void> {
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = isDark();
     const files = await highlighting();
     this.post({
       type: "config",

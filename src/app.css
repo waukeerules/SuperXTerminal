@@ -1,6 +1,7 @@
 /*
  * The main window's look, after SuperXPuTTY's Light and Dark themes (DockPanelSuite VS2015, DarkModeForms).
- * Colours are tokens here, switched by the system's light or dark setting.
+ * Colours are tokens here: light by default, dark when Settings chooses it (data-theme="dark") or when it follows
+ * macOS (no data-theme) and macOS is dark.
  */
 :root {
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -15,8 +16,21 @@
   color-scheme: light;
 }
 
+/* dark: chosen in Settings, or macOS's when the theme follows the system (no data-theme) */
+:root[data-theme="dark"] {
+  --bg-window: #2d2d30;
+  --bg-bar: #2d2d30;
+  --bg-pane: #252526;
+  --bg-input: #333337;
+  --border: #3f3f46;
+  --text: #f1f1f1;
+  --text-muted: #a0a0a0;
+  --accent: #3399ff;
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg-window: #2d2d30;
     --bg-bar: #2d2d30;
     --bg-pane: #252526;

@@ -231,6 +231,21 @@ fn variables_save(state: State<'_, AppState>, variables: Vec<variables::Variable
     Ok(variables::list(&state.user_folder))
 }
 
+/// Save the Settings window's General tab; the settings folder is changed with `settings_set_folder`
+#[tauri::command]
+fn settings_save(state: State<'_, AppState>, settings: AppSettings) -> Result<AppSettings, String> {
+    let mut current = state.settings.lock().unwrap();
+    let folder = current.settings_folder.clone();
+    *current = AppSettings { settings_folder: folder, ..settings };
+    current.icon_size = match current.icon_size {
+        16 | 20 | 24 | 32 => current.icon_size,
+        _ => 24,
+    };
+    current.tree_font_size = current.tree_font_size.clamp(10, 24);
+    current.save(&state.user_folder)?;
+    Ok(current.clone())
+}
+
 /// Use another settings folder (chosen in the UI), and remember it
 #[tauri::command]
 fn settings_set_folder(state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -326,6 +341,7 @@ pub fn run() {
             sessions_load,
             settings_get,
             settings_set_folder,
+            settings_save,
             icons_custom,
             highlighting_load,
             session_get,

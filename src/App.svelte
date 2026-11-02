@@ -9,22 +9,35 @@
   import SessionTree from "./lib/sessions/SessionTree.svelte";
   import Settings from "./lib/settings/Settings.svelte";
   import EnvironmentVariables from "./lib/settings/EnvironmentVariables.svelte";
+  import { isDark, loadSettings, settings } from "./lib/settings/store.svelte";
   import QuickConnect from "./lib/layout/QuickConnect.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { opensAsLocalShell, type SessionView } from "./lib/sessions/api";
 
   let tabElement: HTMLDivElement;
-  let tabs: TabArea | null = null;
+  let tabs = $state<TabArea | null>(null);
   let status = $state("Ready");
   let openSessions = $state<ReadonlySet<string>>(new Set());
-  let settingsOpen = $state(false);
+  /** The Settings window's tab while it's open; null when closed */
+  let settingsTab = $state<string | null>(null);
   let variablesOpen = $state(false);
 
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
   void listen<string>("menu", (event) => {
-    if (event.payload === "settings") settingsOpen = true;
+    if (event.payload === "settings") settingsTab = "General";
     else if (event.payload === "newLocalShell") newShell();
     else if (event.payload === "environmentVariables") variablesOpen = true;
+  });
+
+  void loadSettings();
+
+  // tabs follow the theme and icon size chosen in Settings
+  $effect(() => {
+    const dark = isDark();
+    tabs?.setDark(dark);
+  });
+  $effect(() => {
+    if (tabs) tabs.iconSize = settings.iconSize;
   });
 
   onMount(() => {
@@ -51,8 +64,8 @@
   <EnvironmentVariables onClose={() => (variablesOpen = false)} />
 {/if}
 
-{#if settingsOpen}
-  <Settings onClose={() => (settingsOpen = false)} />
+{#if settingsTab}
+  <Settings tab={settingsTab} onClose={() => (settingsTab = null)} />
 {/if}
 
 <div class="window">
@@ -67,11 +80,8 @@
   <div class="main">
     <aside class="sessions">
       <div class="pane-title">Sessions</div>
-      <SessionTree {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsOpen = true)} onLook={(size, customs) => {
-        if (tabs) {
-          tabs.iconSize = size;
-          tabs.customs = customs;
-        }
+      <SessionTree {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsTab = "Profiles")} onLook={(_, customs) => {
+        if (tabs) tabs.customs = customs;
       }} />
     </aside>
     <div class="tabs" bind:this={tabElement}></div>

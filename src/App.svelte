@@ -14,7 +14,7 @@
   import { isDark, loadSettings, settings } from "./lib/settings/store.svelte";
   import QuickConnect from "./lib/layout/QuickConnect.svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { opensAsLocalShell, type SessionView } from "./lib/sessions/api";
+  import { opensAsLocalShell, opensExternally, openExternally, type SessionView } from "./lib/sessions/api";
   import { invoke } from "@tauri-apps/api/core";
   import SendCommands from "./lib/commands/SendCommands.svelte";
   import ButtonBar from "./lib/commands/ButtonBar.svelte";
@@ -119,6 +119,11 @@
 
   /** Open a session from the tree in a new tab */
   function openSession(session: SessionView, environment: string | null): void {
+    // RDP and VNC open in their own apps, as SuperXPuTTY's launchers
+    if (opensExternally(session.protocol)) {
+      openExternally(session.store, session.id, "open").then((text) => (status = text), (e) => (status = String(e)));
+      return;
+    }
     const id = tabs?.openSession(session.store, session.id, session.name, opensAsLocalShell(session.protocol), session.icon, environment);
     status = `Opened session: ${session.name} [${session.protocol || "SSH"}]`;
     if (id) void runOwnScript(session, id);

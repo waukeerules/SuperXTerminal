@@ -143,14 +143,14 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Connections**
 - ✅ Jump hosts, as SuperXPuTTY's JumpHosts: a saved session (Saved, Private, or a Database session's path; its folders' username and port and its placeholders used) or user@host:port; not through itself; chains not followed. SSH uses ssh -J; Telnet and Raw go through ssh -W (the bastion must take a key)
-- ⬜ Extra arguments translated from PuTTY syntax
+- ✅ Extra arguments translated from PuTTY syntax (-pw, -P, -l, -i (not .ppk), -L/-R/-D, -A, -X, -C, -4, -6, -v; -load and SSH-only switches dropped; the rest named in a notice); -sercfg for serial
 - ✅ Telnet: a client in the core that negotiates as PuTTY does (terminal type XTERM, window size, echo, suppress go-ahead; Return as a Telnet new line). Checked on the lab switch (login banner, Username:, echo)
 - ✅ Raw: a TCP connection in the core (a port is needed, as plink's -raw)
-- 🚧 Serial: the device driven directly (termios; no MPL serialport crate), PuTTY's 9600 8N1 XON/XOFF unless -sercfg says otherwise; a COM name is asked once which /dev/cu.* it is (Esc and Enter asks again). The chooser checked; not yet tried with a console cable
+- 🚧 Serial: the device driven directly (termios; no MPL serialport crate), PuTTY's 9600 8N1 XON/XOFF unless -sercfg says otherwise; a COM name is asked once which /dev/cu.* it is (after Cancel, Enter asks again). The chooser checked; not yet tried with a console cable
 - ✅ Special Commands in the tab menu: Telnet's (Break, Are You There, Synch, Erase Character/Line, Go Ahead, No Operation, Abort Process/Output, Interrupt, Suspend, End Of Record/File) and a serial Break; ssh can't send them, as in SuperXPuTTY's built-in terminal
-- ⬜ Local Shell for cmd/WSL sessions; `pwsh` for PowerShell
-- ⬜ RDP in Windows App; VNC in Screen Sharing; FileZilla
-- ⬜ Open in Terminal.app / iTerm2
+- ✅ cmd and WSL sessions open as a Local Shell; PowerShell sessions run pwsh when it's installed (else they say how to get it)
+- 🚧 RDP opens in Windows App (or Microsoft Remote Desktop) through a .rdp file with the session's RdpOptions; VNC in Screen Sharing; FileZilla (external) at sftp://. Built and unit-tested; not yet opened against a real host
+- 🚧 Connect external opens the session's ssh command in a Terminal window (macOS asks once to let SuperXTerminal control Terminal); not yet tried in the app. iTerm2 later
 
 **App**
 - ⬜ Quick Selector

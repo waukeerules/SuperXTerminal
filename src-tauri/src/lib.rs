@@ -3,6 +3,7 @@
 mod buttonbars;
 mod db;
 mod editing;
+mod external;
 mod folders;
 mod highlighting;
 mod launch;
@@ -465,6 +466,45 @@ fn highlighting_user_folder(state: State<'_, AppState>) -> Result<PathBuf, Strin
 #[tauri::command]
 fn open_path(path: PathBuf) -> Result<(), String> {
     std::process::Command::new("open").arg(path).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Open a session in another app: "open" for RDP (Windows App) and VNC (Screen Sharing), "terminal" for Connect
+/// external (its ssh command in a Terminal window), "filezilla" for FileZilla; returns what to say in the status bar
+#[tauri::command]
+fn session_external(state: State<'_, AppState>, store: sessions::Store, id: String, how: String) -> Result<String, String> {
+    let profiles = state.profiles.lock().unwrap().clone();
+    let values = variables::values(&state.user_folder);
+    let serial_devices = state.settings.lock().unwrap().serial_devices.clone();
+    let sessions = state.sessions.lock().unwrap();
+    let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
+    // the folders' username and port, as for a tab
+    let mut username = session.get("Username").to_string();
+    let mut port = session.port();
+    for folder in sessions.along(store, session.folder()) {
+        if username.is_empty() {
+            username = folder.username.clone();
+        }
+        if port == 0 {
+            port = folder.port;
+        }
+    }
+    let host = variables::substitute(session.get("Host").trim(), &values);
+    let username = variables::substitute(&username, &values);
+    match (how.as_str(), session.get("Proto").to_ascii_uppercase().as_str()) {
+        ("open", "RDP") => external::open_rdp(session, &host, &username),
+        ("open", "VNC") => external::open_vnc(&host, port, &username),
+        ("filezilla", _) => external::open_filezilla(&host, port, &username),
+        ("terminal", _) => {
+            let launch = launch::launch(&sessions, &profiles, &values, &serial_devices, store, session)?;
+            if launch.stream.is_some() || launch.local {
+                return Err("Only SSH sessions open in Terminal.".into());
+            }
+            let words: Vec<String> = launch.command.get_argv().iter().map(|w| w.to_string_lossy().to_string()).collect();
+            external::open_in_terminal(&external::shell_line(&words))?;
+            Ok(format!("Opened {} in Terminal", session.get("SessionName")))
+        }
+        (_, proto) => Err(format!("{proto} sessions don't open in another app.")),
+    }
 }
 
 /// The serial devices on this Mac, for choosing which one a COM name is
@@ -1397,6 +1437,7 @@ pub fn run() {
             db_pending_list,
             shortcuts_get,
             serial_devices_list,
+            session_external,
             serial_device_set,
             pty::pty_special,
             log_open,

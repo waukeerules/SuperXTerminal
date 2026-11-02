@@ -71,16 +71,24 @@ export function unavailableReason(protocol: string): string | null {
     case "SERIAL":
       return null;
     case "RDP":
-      return "Opens in Windows App: comes in M5";
     case "VNC":
-      return "Opens in Screen Sharing: comes in M5";
     case "PS":
-      return "Opens in PowerShell (pwsh) if installed: comes in M5";
+      return null;
     case "RLOGIN":
       return "Not supported on Mac";
     default:
       return "Windows only";
   }
+}
+
+/** Whether a session opens in another app (RDP in Windows App, VNC in Screen Sharing) rather than a tab */
+export function opensExternally(protocol: string): boolean {
+  return ["RDP", "VNC"].includes(protocol.toUpperCase());
+}
+
+/** Open a session in another app: "open" (RDP, VNC), "terminal" (Connect external) or "filezilla"; what to say */
+export function openExternally(store: Store, id: string, how: "open" | "terminal" | "filezilla"): Promise<string> {
+  return invoke<string>("session_external", { store, id, how });
 }
 
 /** Whether a session opens as a local shell here (cmd and WSL sessions do, as docs/PLAN.md §2 says) */

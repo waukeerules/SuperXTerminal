@@ -231,7 +231,7 @@ export class PageHost implements ScriptTarget {
         }
         break;
       case "openInPutty":
-        this.post({ type: "notice", text: "Open in PuTTY isn't available on the Mac.", kind: "info" });
+        this.post({ type: "notice", text: "There's no PuTTY on the Mac: Connect external, in the session's menu in the Sessions tree, opens it in Terminal.", kind: "info" });
         break;
       case "cleared":
         // Windows' pseudo console keeps its own copy of the screen; the Mac's doesn't, so there's nothing to clear

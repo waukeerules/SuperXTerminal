@@ -119,6 +119,16 @@ pub fn launch(
     match session.get("Proto").to_ascii_uppercase().as_str() {
         "SSH" | "" => ssh(sessions, profiles, values, store, session),
         proto @ ("TELNET" | "RAW" | "SERIAL") => stream(sessions, profiles, values, serial_devices, store, session, proto),
+        "PS" => {
+            // PowerShell sessions run pwsh, if it's installed (brew install powershell)
+            let pwsh = ["/opt/homebrew/bin/pwsh", "/usr/local/bin/pwsh", "/usr/local/microsoft/powershell/7/pwsh"]
+                .into_iter()
+                .find(|p| std::path::Path::new(p).exists())
+                .ok_or("PowerShell sessions need pwsh, which isn't installed on this Mac (brew install powershell).")?;
+            let mut launch = local_shell(profiles);
+            launch.command = CommandBuilder::new(pwsh);
+            Ok(launch)
+        }
         "WINCMD" | "WSL" => {
             let mut launch = local_shell(profiles);
             launch.notices.push(format!("{} session opened as a Local Shell on this Mac.", session.get("Proto")));

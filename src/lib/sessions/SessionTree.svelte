@@ -22,6 +22,7 @@
     cachedDatabase,
     databaseStatus,
     databaseChanged,
+    openExternally,
     loadShortcuts,
     setFavorite,
     recordOpened,
@@ -43,6 +44,7 @@
   import { PALETTE } from "../icons/palette";
   import { buildGroup, buildTree, folderKeys, sessionsIn, type Dragged, type FolderNode, type Group } from "./tree";
   import Icon from "../icons/Icon.svelte";
+  import { context } from "../commands/sending.svelte";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { loadCustomIcons, type CustomIcon } from "../icons/custom";
   import { EnvironmentColors, parseRules } from "../icons/environment";
@@ -327,7 +329,11 @@
       const block = dbBlock(session.store, session.locked);
       items = [
         { label: "Connect", bold: true, action: () => open(session) },
-        { label: "Connect external", disabled: "Open in Terminal.app or iTerm2: comes in M5" },
+        {
+          label: "Connect external",
+          disabled: (session.protocol || "SSH").toUpperCase() !== "SSH" && "Only SSH sessions open in Terminal",
+          action: () => void external(session, "terminal"),
+        },
         { label: "Connect in new window", disabled: "Windows and splits come in M5" },
         favoriteItem(session),
         {
@@ -347,7 +353,7 @@
         ...transferItems([session], session.store, session.locked),
         { separator: true },
         { label: "File transfer (SFTP)", disabled: "The SFTP file browser comes later" },
-        { label: "FileZilla (external)", disabled: "Comes in M5" },
+        { label: "FileZilla (external)", action: () => void external(session, "filezilla") },
       ];
     } else {
       const folder = target.folder;
@@ -580,6 +586,15 @@
       error = "";
     } catch (e) {
       error = String(e);
+    }
+  }
+
+  /** Open a session in another app (Connect external, FileZilla), saying how it went in the status bar */
+  async function external(session: SessionView, how: "terminal" | "filezilla"): Promise<void> {
+    try {
+      context.status(await openExternally(session.store, session.id, how));
+    } catch (e) {
+      context.status(String(e));
     }
   }
 

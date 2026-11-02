@@ -43,6 +43,7 @@
   import BulkEdit from "./BulkEdit.svelte";
   import Overrides from "./Overrides.svelte";
   import ImportSessions from "./ImportSessions.svelte";
+  import ConnectSome from "./ConnectSome.svelte";
   import FolderSettings from "./FolderSettings.svelte";
   import PendingChanges from "./PendingChanges.svelte";
   import Prompt from "../ui/Prompt.svelte";
@@ -79,6 +80,8 @@
   let bulk = $state<{ title: string; sessions: SessionView[] } | null>(null);
   /** Local overrides… open, for these sessions */
   let overriding = $state<SessionView[] | null>(null);
+  /** Connect all with more than ten sessions: the picker's title and sessions */
+  let connecting = $state<{ title: string; sessions: SessionView[] } | null>(null);
   /** File > Import Sessions open: which kind of file */
   let importing = $state<ImportKind | null>(null);
   /** The user's local overrides, by session id */
@@ -332,7 +335,7 @@
     if ("folder" in target && target.folder.group) {
       const runnable = target.folder.sessions.filter((s) => unavailableReason(s.protocol) === null);
       items = [
-        { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
+        { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => connectMany(`in ${target.folder.name}`, runnable) },
         ...(target.folder.group === "recent"
           ? [{ separator: true } as MenuItem, { label: "Clear Recent", action: () => void changeShortcuts(forgetRecent(null)) }]
           : []),
@@ -355,7 +358,7 @@
       const stores = new Set(list.map((s) => s.store));
       const [only] = stores;
       items = [
-        { label: `Connect ${runnable.length} sessions`, bold: true, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
+        { label: `Connect ${runnable.length} sessions`, bold: true, disabled: runnable.length === 0, action: () => connectMany("from the selection", runnable) },
         { separator: true },
         { label: `Edit ${list.length} sessions…`, action: () => void editSessions("for the selection", list) },
         { label: `Local overrides for ${list.length} sessions…`, action: () => (overriding = list) },
@@ -444,7 +447,7 @@
           action: () => void exportSessions(sessionsIn(folder), `${folder.name}.csv`),
         },
         { separator: true },
-        { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
+        { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => connectMany(`in ${folder.name}`, runnable) },
         { label: "Expand all", action: () => (expanded = new Set([...expanded, ...folderKeys(folder)])) },
         { label: "Collapse all", action: () => (expanded = new Set([...expanded].filter((k) => !folderKeys(folder).slice(1).includes(k)))) },
       ];
@@ -835,7 +838,7 @@
   $effect(() => {
     if (!settings.loaded) return;
     const timer = setInterval(async () => {
-      if (editing || bulk || overriding || folderSettings || prompt || menu || showPending) return;
+      if (editing || bulk || overriding || folderSettings || prompt || menu || showPending || connecting || importing) return;
       if (await invoke<boolean>("sessions_files_changed")) {
         await reload();
         context.status("The sessions changed on disk; read them again");
@@ -858,6 +861,12 @@
     onOpen(session, colors.forSession(session));
     // only sessions opened from the tree go in Recent, as in SuperXPuTTY
     void changeShortcuts(recordOpened(session.id));
+  }
+
+  /** Connect all: up to ten open at once; more, and the user picks up to ten of them (ConnectSome) */
+  function connectMany(title: string, sessions: SessionView[]): void {
+    if (sessions.length > 10) connecting = { title, sessions };
+    else sessions.forEach(open);
   }
 
   /** Whether Saved sessions are shown: a settings folder is chosen and Use Sessions.xml is on */
@@ -1045,6 +1054,11 @@
       context.status(`Edited ${done} session${done === 1 ? "" : "s"}`);
       error = problems.length ? `Left alone: ${problems.join(" ")}` : "";
     }} />
+{/if}
+
+{#if connecting}
+  <ConnectSome title={connecting.title} sessions={connecting.sessions} {iconSize} {customs} environment={(s) => colors.forSession(s)}
+    onCancel={() => (connecting = null)} onConnect={(list) => { connecting = null; list.forEach(open); }} />
 {/if}
 
 {#if importing}

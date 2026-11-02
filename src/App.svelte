@@ -97,6 +97,16 @@
       const open = new Set(tabs?.tabList().map((t) => t.id));
       if (searches.some((s) => !open.has(s.id))) searches = searches.filter((s) => open.has(s.id));
     });
+    // the tab strip's ▾: the open tabs, the active one ticked; a click switches to it
+    tabs.onTabList = (right, bottom) => {
+      if (!tabs) return;
+      const t = tabs;
+      menu = {
+        x: right - 240,
+        y: bottom + 2,
+        items: t.allTabs().map((tab) => ({ label: tab.title, icon: tab.icon, environment: tab.environment, checked: tab.active, action: () => t.activate(tab.id) })),
+      };
+    };
     tabs.onTabMenu = (id, x, y) => {
       if (!tabs || !tree) return;
       const t = tree;
@@ -268,7 +278,7 @@
 {/each}
 
 {#if menu}
-  <Menu items={menu.items} x={menu.x} y={menu.y} onClose={() => (menu = null)} />
+  <Menu items={menu.items} x={menu.x} y={menu.y} {customs} onClose={() => (menu = null)} />
 {/if}
 
 {#if serialTab}
@@ -344,6 +354,23 @@
     height: 100%;
     border: 0;
     display: block;
+  }
+
+  /* the tab strip's ▾ (TabArea's TabListButton) */
+  .tabs :global(.tab-list-button) {
+    height: 100%;
+    min-width: 30px;
+    padding: 0 8px;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 17px;
+    cursor: pointer;
+  }
+
+  .tabs :global(.tab-list-button:hover) {
+    color: var(--text);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
   }
 
   .statusbar {

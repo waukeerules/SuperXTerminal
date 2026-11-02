@@ -6,6 +6,7 @@
  */
 import {
   createDockview,
+  type IHeaderActionsRenderer,
   themeDark,
   themeLight,
   type DockviewApi,
@@ -72,6 +73,31 @@ class TabLabel implements ITabRenderer {
   dispose(): void {
     if (this.label) void unmount(this.label);
   }
+}
+
+/**
+ * The ▾ at the right of the tab strip, as DockPanelSuite's document list button in SuperXPuTTY: it lists the open
+ * tabs, the active one ticked, and a click switches to one (App draws the list)
+ */
+class TabListButton implements IHeaderActionsRenderer {
+  readonly element = document.createElement("button");
+
+  constructor(private readonly tabs: TabArea) {
+    this.element.className = "tab-list-button";
+    this.element.textContent = "▾";
+    this.element.title = "Open tabs";
+    this.element.setAttribute("aria-label", "Open tabs");
+    this.element.addEventListener("click", (event) => {
+      // not a click elsewhere, which closes menus
+      event.stopPropagation();
+      const rect = this.element.getBoundingClientRect();
+      this.tabs.onTabList?.(rect.right, rect.bottom);
+    });
+  }
+
+  init(): void {}
+
+  dispose(): void {}
 }
 
 /** What a Highlighted Output panel is given: the tab it follows, its log, and how its tab looks */
@@ -197,6 +223,8 @@ export class TabArea {
   private readonly refusing = new Set<string>();
   /** Told when the active tab changes, or tabs open or close */
   private readonly listeners = new Set<() => void>();
+  /** The tab strip's ▾ was clicked at (right, bottom): App shows the open tabs */
+  onTabList: ((right: number, bottom: number) => void) | null = null;
   /** A tab was right-clicked: App shows its menu */
   onTabMenu: ((id: string, x: number, y: number) => void) | null = null;
   /** An output alert to show in the status bar (Watch for Activity and Silence) */
@@ -215,6 +243,7 @@ export class TabArea {
       // dockview only uses createTabComponent for a named tab component, so make ours the default
       defaultTabComponent: "session",
       createTabComponent: () => new TabLabel(this),
+      createRightHeaderActionComponent: () => new TabListButton(this),
     });
     this.api.onDidRemovePanel((panel) => {
       // its Highlighted Output stays, marked closed
@@ -416,6 +445,22 @@ export class TabArea {
     if (on) this.refusing.delete(id);
     else this.refusing.add(id);
     this.changed();
+  }
+
+  /** Every open tab (Highlighted Output too) in the order they show, group by group, for the ▾ list */
+  allTabs(): { id: string; title: string; icon: string; environment: string | null; active: boolean }[] {
+    const active = this.api.activePanel?.id;
+    return this.api.groups.flatMap((group) =>
+      group.panels.map((panel) => {
+        const params = panel.params as unknown as { icon?: string; environment?: string | null };
+        return { id: panel.id, title: panel.title ?? "", icon: params.icon ?? "terminal", environment: params.environment ?? null, active: panel.id === active };
+      }),
+    );
+  }
+
+  /** Switch to a tab */
+  activate(id: string): void {
+    this.api.getPanel(id)?.api.setActive();
   }
 
   /** The open terminal tabs in the order they show, group by group */

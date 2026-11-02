@@ -6,11 +6,24 @@
   /** One menu entry */
   export type MenuItem =
     | { separator: true }
-    | { label: string; action?: () => void; disabled?: string | boolean; bold?: boolean; items?: MenuItem[]; swatch?: string; checked?: boolean };
+    | {
+        label: string;
+        action?: () => void;
+        disabled?: string | boolean;
+        bold?: boolean;
+        items?: MenuItem[];
+        swatch?: string;
+        checked?: boolean;
+        /** A session icon key, drawn before the label */
+        icon?: string;
+        environment?: string | null;
+      };
 </script>
 
 <script lang="ts">
   import Menu from "./Menu.svelte";
+  import Icon from "../icons/Icon.svelte";
+  import type { CustomIcon } from "../icons/custom";
 
   interface Props {
     items: MenuItem[];
@@ -19,9 +32,11 @@
     onClose: () => void;
     /** A submenu: placed beside its item instead of at x, y */
     nested?: boolean;
+    /** Custom icons, for items with a session icon */
+    customs?: ReadonlyMap<string, CustomIcon>;
   }
 
-  let { items, x, y, onClose, nested = false }: Props = $props();
+  let { items, x, y, onClose, nested = false, customs = new Map() }: Props = $props();
 
   let element: HTMLDivElement;
   let open = $state<number | null>(null);
@@ -65,11 +80,12 @@
         onkeydown={(e) => e.key === "Enter" && choose(item)}>
         {#if item.swatch !== undefined}<span class="swatch" style:background={item.swatch || "transparent"}></span>{/if}
         {#if item.checked !== undefined}<span class="check">{item.checked ? "✓" : ""}</span>{/if}
+        {#if item.icon}<Icon key={item.icon} size={18} environment={item.environment ?? null} {customs} />{/if}
         <span class="label">{item.label}</span>
         {#if item.items}<span class="arrow">▸</span>{/if}
         {#if item.items && open === index}
           <div class="sub">
-            <Menu items={item.items} x={0} y={0} {onClose} nested />
+            <Menu items={item.items} x={0} y={0} {onClose} {customs} nested />
           </div>
         {/if}
       </div>

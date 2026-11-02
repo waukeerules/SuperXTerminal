@@ -68,6 +68,8 @@
 
   const open = $derived(expanded.has(node.key));
   const isRoot = $derived(node.path === "");
+  /** The folder's key when it's selected; Favorites and Recent have their own */
+  const folderKey = $derived(node.group ? `${node.group}:folder:` : `${node.store}:folder:${node.path}`);
 
   /** The tooltip for a session: protocol, address and note, then why it can't open, if it can't */
   function tooltip(session: SessionView): string {
@@ -85,13 +87,16 @@
   }
 </script>
 
-<div class="row folder" class:root={isRoot} class:selected={selected === `${node.store}:folder:${node.path}`} class:over
+<!-- as SuperXPuTTY's tree: a click selects a folder, a double-click (or its arrow) opens or closes it -->
+<div class="row folder" class:root={isRoot} class:selected={selected === folderKey} class:over
   draggable={!isRoot} ondragstart={(e) => drag(e, { kind: "folder", store: node.store, path: node.path })}
   ondragover={dragOver} ondragleave={() => (over = false)} ondrop={drop}
-  oncontextmenu={(e) => { e.preventDefault(); onSelect(`${node.store}:folder:${node.path}`); onMenu(e, { folder: node }); }} style:padding-left="{depth * 18 + 2}px" style:height="{Math.round(iconSize * 1.36) + 4}px"
+  oncontextmenu={(e) => { e.preventDefault(); onSelect(folderKey); onMenu(e, { folder: node }); }} style:padding-left="{depth * 18 + 2}px" style:height="{Math.round(iconSize * 1.36) + 4}px"
   role="treeitem" aria-expanded={open} aria-selected="false" tabindex="-1"
-  onclick={() => onToggle(node.key)} onkeydown={(e) => e.key === "Enter" && onToggle(node.key)}>
-  <span class="twisty">{open ? "▾" : "▸"}</span>
+  onclick={() => onSelect(folderKey)} ondblclick={() => onToggle(node.key)}
+  onkeydown={(e) => (e.key === "Enter" || e.key === "ArrowRight" || e.key === "ArrowLeft") && onToggle(node.key)}>
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <span class="twisty" onclick={(e) => { e.stopPropagation(); onToggle(node.key); }} ondblclick={(e) => e.stopPropagation()}>{open ? "▾" : "▸"}</span>
   <Icon key={isRoot ? ROOT_ICONS[node.group ?? node.store] : "folder"} size={iconSize} environment={isRoot ? null : colors.forFolder(node.store, node.path)} {customs} />
   <span class="label">{node.name} ({node.count})</span>
 </div>
@@ -152,7 +157,8 @@
   }
 
   .twisty {
-    width: 10px;
+    width: 14px;
+    text-align: center;
     color: var(--text-muted);
     font-size: 11px;
   }

@@ -35,9 +35,11 @@
     lockedFields?: string;
     /** A free name in a folder: the name, else with -1, -2… added (`except` the session itself), as SuperXPuTTY's */
     freeName?: (store: Store, folder: string, name: string, except: string) => string;
+    /** The session a new one was filled in from (Duplicate as…), whose -pw password it keeps */
+    copyOf?: [Store, string] | null;
   }
 
-  let { store, id, fields, folders, iconSize, customs, onSaved, onCancel, onOpenProfiles, lockedFields = "", freeName }: Props = $props();
+  let { store, id, fields, folders, iconSize, customs, onSaved, onCancel, onOpenProfiles, lockedFields = "", freeName, copyOf = null }: Props = $props();
 
   /** Whether a column is locked in the table (Database sessions only) */
   const locked = (column: string) => lockedFields.split(",").map((f) => f.trim()).includes(column);
@@ -103,7 +105,7 @@
       draft.name = free;
     }
     try {
-      const saved = await saveSession(store, id, { ...draft, port: Number(draft.port) || 0 });
+      const saved = await saveSession(store, id, { ...draft, port: Number(draft.port) || 0 }, id === null ? copyOf : null);
       onSaved(saved);
     } catch (e) {
       error = String(e);

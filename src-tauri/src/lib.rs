@@ -230,20 +230,34 @@ fn session_get(state: State<'_, AppState>, store: sessions::Store, id: String) -
 }
 
 /// Save a session from Edit Session (`original_id` None for a new one); returns its id. The caller reloads the tree.
+/// `copy_of` is the session a new one was filled in from (Duplicate as…, Save session as…), whose -pw it keeps.
 #[tauri::command]
 fn session_save(
     state: State<'_, AppState>,
     store: sessions::Store,
     original_id: Option<String>,
     fields: editing::SessionFields,
+    copy_of: Option<(sessions::Store, String)>,
 ) -> Result<String, String> {
     let path = store_file(&state, store)?;
+    let fields = with_copied_password(&state, fields, copy_of.as_ref());
     // ids must be unique across Saved and Private sessions, as in SuperXPuTTY
     let id = editing::save(&path, original_id.as_deref(), &fields, &other_ids(&state, store))?;
     if let Some(old) = original_id {
         follow_id(&state, &old, &id);
     }
     Ok(id)
+}
+
+/// A new session's fields with the masked -pw of the session it was copied from put back, as SuperXPuTTY's
+/// Duplicate copies the session whole; the window only ever shows the mask
+fn with_copied_password(state: &AppState, mut fields: editing::SessionFields, copy_of: Option<&(sessions::Store, String)>) -> editing::SessionFields {
+    if let Some((store, id)) = copy_of {
+        if let Some(source) = state.sessions.lock().unwrap().find(*store, id) {
+            fields.extra_args = editing::unmask_password(&fields.extra_args, source.get("ExtraArgs"));
+        }
+    }
+    fields
 }
 
 /// Delete a session from its file
@@ -928,8 +942,14 @@ fn db_session(state: &AppState, id: &str) -> Result<sessions::StoredSession, Str
 
 /// Save a Database session from Edit Session (`original_id` None for a new one), then read the table back
 #[tauri::command]
-async fn db_session_save(state: State<'_, AppState>, original_id: Option<String>, fields: editing::SessionFields) -> Result<String, String> {
+async fn db_session_save(
+    state: State<'_, AppState>,
+    original_id: Option<String>,
+    fields: editing::SessionFields,
+    copy_of: Option<(sessions::Store, String)>,
+) -> Result<String, String> {
     folders::check_name(&fields.name)?;
+    let fields = with_copied_password(&state, fields, copy_of.as_ref());
     match &original_id {
         Some(id) => {
             let stored = db_session(&state, id)?;

@@ -165,7 +165,7 @@ fn mask_password(extra: &str) -> String {
 }
 
 /// Extra arguments with the mask replaced by the password from the stored arguments (a typed password is kept)
-fn unmask_password(edited: &str, stored: &str) -> String {
+pub(crate) fn unmask_password(edited: &str, stored: &str) -> String {
     let mut stored_password = None;
     replace_password(stored, |p| {
         stored_password = Some(p.to_string());

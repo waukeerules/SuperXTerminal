@@ -123,10 +123,13 @@ export function getSession(store: Store, id: string): Promise<SessionFields> {
   return invoke<SessionFields>("session_get", { store, id });
 }
 
-/** Save a session (`originalId` null for a new one) to its file or the Database table; returns its id */
-export function saveSession(store: Store, originalId: string | null, fields: SessionFields): Promise<string> {
-  if (store === "database") return invoke<string>("db_session_save", { originalId, fields });
-  return invoke<string>("session_save", { store, originalId, fields });
+/**
+ * Save a session (`originalId` null for a new one) to its file or the Database table; returns its id. `copyOf` is the
+ * session a new one was filled in from (Duplicate as…), whose -pw password it keeps.
+ */
+export function saveSession(store: Store, originalId: string | null, fields: SessionFields, copyOf: [Store, string] | null = null): Promise<string> {
+  if (store === "database") return invoke<string>("db_session_save", { originalId, fields, copyOf });
+  return invoke<string>("session_save", { store, originalId, fields, copyOf });
 }
 
 /** Delete a session from its file or the Database table */

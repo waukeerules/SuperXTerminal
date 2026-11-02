@@ -85,7 +85,8 @@
   let overrides = $state<Record<string, Override>>({});
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   /** The session being edited: its store, its id (null for new) and its fields */
-  let editing = $state<{ store: Store; id: string | null; fields: SessionFields; lockedFields?: string } | null>(null);
+  /** Edit Session open; `copyOf` is the session a new one was filled in from, whose password it keeps */
+  let editing = $state<{ store: Store; id: string | null; fields: SessionFields; lockedFields?: string; copyOf?: [Store, string] } | null>(null);
   /** A folder whose settings are being edited */
   /** Whether Pending changes is open */
   let showPending = $state(false);
@@ -823,7 +824,7 @@
   /** Duplicate as…: Edit Session for a new session in the same folder, filled in from this one, as SuperXPuTTY's */
   async function duplicateAs(session: SessionView): Promise<void> {
     try {
-      editing = { store: session.store, id: null, fields: await getSession(session.store, session.id) };
+      editing = { store: session.store, id: null, fields: await getSession(session.store, session.id), copyOf: [session.store, session.id] };
     } catch (e) {
       error = String(e);
     }
@@ -888,7 +889,7 @@
   export async function saveSessionAs(store: Store, id: string, title: string): Promise<void> {
     try {
       const fields = await getSession(store, id);
-      editing = { store: savedInUse() ? "saved" : "private", id: null, fields: { ...fields, name: title } };
+      editing = { store: savedInUse() ? "saved" : "private", id: null, fields: { ...fields, name: title }, copyOf: [store, id] };
     } catch (e) {
       error = String(e);
     }
@@ -1031,7 +1032,7 @@
 
 {#if editing}
   <EditSession store={editing.store} id={editing.id} fields={editing.fields} folders={foldersAlong(editing.store, editing.fields.folder)}
-    freeName={(store, folder, name, except) => freeName(store, folder, name, except)}
+    freeName={(store, folder, name, except) => freeName(store, folder, name, except)} copyOf={editing.copyOf ?? null}
     {iconSize} {customs} {onOpenProfiles} lockedFields={editing.lockedFields ?? ""} onCancel={() => (editing = null)}
     onSaved={async (id) => { const store = editing?.store; editing = null; await reload(); selected = `${store}:${id}`; }} />
 {/if}

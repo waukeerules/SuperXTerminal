@@ -8,6 +8,7 @@ mod folders;
 mod highlighting;
 mod importing;
 mod launch;
+mod layouts;
 mod logs;
 mod profiles;
 mod pty;
@@ -1574,6 +1575,10 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             )?,
             &MenuItem::with_id(app, "exportCsv", "Export Sessions to CSV…", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
+            // SuperXPuTTY's File > Save layout and Save layout as...
+            &MenuItem::with_id(app, "saveLayout", "Save Layout", true, None::<&str>)?,
+            &MenuItem::with_id(app, "saveLayoutAs", "Save Layout As…", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
             // Cmd+W closes the tab, as in Terminal and iTerm2; the window closes with its red button
             &MenuItem::with_id(app, "closeTab", "Close Tab", true, Some("CmdOrCtrl+W"))?,
         ],
@@ -1634,6 +1639,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &MenuItem::with_id(app, "toggleButtonBar", "Button Bar", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "toggleSessionsAutoHide", "Auto Hide Sessions", true, None::<&str>)?,
+            &MenuItem::with_id(app, "toggleLayouts", "Layouts", true, None::<&str>)?,
+            &MenuItem::with_id(app, "toggleSessionDetail", "Session Detail", true, None::<&str>)?,
         ],
     )?;
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &tools, &window])
@@ -1646,6 +1653,38 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 struct WindowStart {
     open: Option<String>,
     adopt: Option<serde_json::Value>,
+    /// Load in New Window: a layout to open
+    layout: Option<String>,
+}
+
+/// The layouts' names, "<Auto Restore>" first
+#[tauri::command]
+fn layouts_list(state: State<'_, AppState>) -> Vec<String> {
+    layouts::list(&shared_folder(&state))
+}
+
+/// A layout's text; None when it hasn't been saved
+#[tauri::command]
+fn layout_read(state: State<'_, AppState>, name: String) -> Option<String> {
+    layouts::read(&shared_folder(&state), &state.user_folder, &name)
+}
+
+/// Save a layout
+#[tauri::command]
+fn layout_save(state: State<'_, AppState>, name: String, text: String) -> Result<(), String> {
+    layouts::save(&shared_folder(&state), &state.user_folder, &name, &text)
+}
+
+/// Delete a saved layout
+#[tauri::command]
+fn layout_delete(state: State<'_, AppState>, name: String) -> Result<(), String> {
+    layouts::delete(&shared_folder(&state), &name)
+}
+
+/// Rename a saved layout
+#[tauri::command]
+fn layout_rename(state: State<'_, AppState>, from: String, to: String) -> Result<(), String> {
+    layouts::rename(&shared_folder(&state), &from, &to)
 }
 
 /// What each new window starts with, by its label; taken once by `window_start`
@@ -1658,10 +1697,10 @@ static NEXT_WINDOW: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32:
 /// File > New Window, and Connect in new window (`open` the session, "store:id"), as SuperXPuTTY's new instance: another
 /// window with its own Sessions tree and tabs
 #[tauri::command]
-fn window_new(app: AppHandle, open: Option<String>, adopt: Option<serde_json::Value>) -> Result<(), String> {
+fn window_new(app: AppHandle, open: Option<String>, adopt: Option<serde_json::Value>, layout: Option<String>) -> Result<(), String> {
     let label = format!("window-{}", NEXT_WINDOW.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-    if open.is_some() || adopt.is_some() {
-        WINDOW_OPENS.lock().unwrap().get_or_insert_with(Default::default).insert(label.clone(), WindowStart { open, adopt });
+    if open.is_some() || adopt.is_some() || layout.is_some() {
+        WINDOW_OPENS.lock().unwrap().get_or_insert_with(Default::default).insert(label.clone(), WindowStart { open, adopt, layout });
     }
     let handle = app.clone();
     // windows are made on the main thread (the web view's settings need it)
@@ -1835,6 +1874,11 @@ pub fn run() {
             sessions_bulk_edit,
             sessions_export_csv,
             window_new,
+            layouts_list,
+            layout_read,
+            layout_save,
+            layout_delete,
+            layout_rename,
             window_start,
             sessions_import_plan,
             sessions_import_apply,

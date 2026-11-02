@@ -40,6 +40,11 @@ export interface AppSettings {
   sessionsPaneWidth: number;
   /** The Sessions pane is auto-hidden: a tab at the left edge slides it out */
   sessionsAutoHide: boolean;
+  /** The layout opened at start ("" for none, "<Auto Restore>" for the last), as SuperXPuTTY's DefaultLayoutName */
+  defaultLayoutName: string;
+  /** View > Layouts and View > Session Detail */
+  showLayouts: boolean;
+  showSessionDetail: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -64,6 +69,9 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   useSessionsXml: true,
   sessionsPaneWidth: 280,
   sessionsAutoHide: false,
+  defaultLayoutName: "",
+  showLayouts: false,
+  showSessionDetail: false,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

@@ -34,8 +34,12 @@
   import QuickSelector, { type QuickItem } from "./lib/sessions/QuickSelector.svelte";
   import type { PageHost } from "./lib/terminal/PageHost";
   import type { MovingTab } from "./lib/layout/TabArea";
+  import LayoutsList from "./lib/layout/LayoutsList.svelte";
+  import SessionDetail from "./lib/sessions/SessionDetail.svelte";
+  import { AUTO_RESTORE, LAYOUTS_CHANGED, listLayouts, readLayout, renameLayout, saveLayout, type Layout } from "./lib/layout/layouts";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+  import { ask } from "@tauri-apps/plugin-dialog";
 
   let tabElement: HTMLDivElement;
   let tabs = $state<TabArea | null>(null);
@@ -51,6 +55,14 @@
   let editorOpen = $state(false);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
   let tree: SessionTree | undefined = $state();
+  /** The layout open now (the status bar shows it), as SuperXPuTTY's CurrentLayout; null for none */
+  let currentLayout = $state<string | null>(null);
+  /** The session selected in the tree, for Session Detail */
+  let selectedSession = $state<SessionView | null>(null);
+  /** A name asked for (Save Layout As…, Rename layout) */
+  let naming = $state<{ title: string; value: string; onOk: (name: string) => void } | null>(null);
+  /** The window's first tabs are open: the automatic layout may be saved from then on */
+  let begun = false;
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let renaming = $state<{ id: string; title: string } | null>(null);
   /** The serial tab whose Serial Settings are open */
@@ -72,6 +84,12 @@
       const id = tabs?.api.activePanel?.id;
       if (id) tabs?.split(id, event.payload === "splitRight" ? "right" : "below");
     } else if (event.payload === "joinAll") tabs?.joinAll();
+    else if (event.payload === "saveLayout") {
+      if (currentLayout && currentLayout !== AUTO_RESTORE) void saveLayoutAs(currentLayout);
+      else askLayoutName();
+    } else if (event.payload === "saveLayoutAs") askLayoutName();
+    else if (event.payload === "toggleLayouts") void saveSettings({ showLayouts: !settings.showLayouts });
+    else if (event.payload === "toggleSessionDetail") void saveSettings({ showSessionDetail: !settings.showSessionDetail });
     else if (event.payload === "databaseSessions") databaseOpen = true;
     else if (event.payload === "scriptEditor") editorOpen = true;
     else if (event.payload === "closeTab") tabs?.closeActive();
@@ -308,7 +326,20 @@
    * read the sessions)
    */
   async function start(): Promise<void> {
-    const begin = await invoke<{ open: string | null; adopt: MovingTab | null } | null>("window_start").catch(() => null);
+    try {
+      await begin();
+    } finally {
+      begun = true;
+    }
+  }
+
+  async function begin(): Promise<void> {
+    const begin = await invoke<{ open: string | null; adopt: MovingTab | null; layout: string | null } | null>("window_start").catch(() => null);
+    // Load in New Window
+    if (begin?.layout) {
+      await openLayout(begin.layout, false);
+      return;
+    }
     // Move to New Window: the tab another window gave up, its session carrying on here
     if (begin?.adopt && tabs) {
       tabs.adopt(begin.adopt);
@@ -326,9 +357,131 @@
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       status = `The session ${open.slice(open.indexOf(":") + 1)} wasn't found`;
+      newShell();
+      return;
+    }
+    // the first window opens the default layout, as SuperXPuTTY does at start; others (New Window) a Local Shell
+    if (getCurrentWebviewWindow().label === "main") {
+      for (let tries = 0; tries < 100 && !settings.loaded; tries++) await new Promise((resolve) => setTimeout(resolve, 50));
+      if (settings.defaultLayoutName && (await openLayout(settings.defaultLayoutName, false))) return;
     }
     newShell();
   }
+
+  /** The window as a layout: the tabs and how they're split, and the panes */
+  function layoutNow(): Layout | null {
+    if (!tabs) return null;
+    return {
+      version: 1,
+      tabs: tabs.layoutState(),
+      panes: {
+        sessionsPaneWidth: settings.sessionsPaneWidth,
+        sessionsAutoHide: settings.sessionsAutoHide,
+        showLayouts: settings.showLayouts,
+        showSessionDetail: settings.showSessionDetail,
+      },
+    };
+  }
+
+  /**
+   * Open a layout, as SuperXPuTTY's LoadLayout: the tabs here close and the layout's open, each session starting
+   * again; asks first when sessions other than local shells would close. False when it can't be read.
+   */
+  async function openLayout(name: string, confirm = true): Promise<boolean> {
+    const layout = await readLayout(name);
+    if (!layout || !tabs) {
+      status = name === AUTO_RESTORE ? "The automatic layout hasn't been saved yet" : `The layout ${name} can't be read`;
+      return false;
+    }
+    const area = tabs;
+    const open = area.tabList().filter((t) => !area.paramsOf(t.id)?.local);
+    if (confirm && open.length > 0) {
+      const sure = await ask(`Open layout "${name}"? The ${open.length} open session${open.length === 1 ? "" : "s"} here will close.`,
+        { title: "Load layout", kind: "warning", okLabel: "Load" });
+      if (!sure) return false;
+    }
+    const panes = layout.panes ?? {};
+    await saveSettings({
+      sessionsPaneWidth: panes.sessionsPaneWidth || settings.sessionsPaneWidth,
+      sessionsAutoHide: panes.sessionsAutoHide ?? settings.sessionsAutoHide,
+      showLayouts: panes.showLayouts ?? settings.showLayouts,
+      showSessionDetail: panes.showSessionDetail ?? settings.showSessionDetail,
+    });
+    area.loadLayout(layout.tabs);
+    currentLayout = name;
+    status = `Loaded layout: ${name}`;
+    return true;
+  }
+
+  /** Save the window as a layout of this name */
+  async function saveLayoutAs(name: string): Promise<void> {
+    const layout = layoutNow();
+    if (!layout) return;
+    try {
+      await saveLayout(name, layout);
+      currentLayout = name;
+      status = `Saved layout: ${name}`;
+      window.dispatchEvent(new Event(LAYOUTS_CHANGED));
+    } catch (e) {
+      status = `Couldn't save the layout: ${e}`;
+    }
+  }
+
+  /** Save Layout As…: asks for a name, and before replacing a layout of that name */
+  function askLayoutName(): void {
+    naming = {
+      title: "Save layout as",
+      value: currentLayout && currentLayout !== AUTO_RESTORE ? currentLayout : "",
+      onOk: async (name) => {
+        naming = null;
+        const existing = await listLayouts().catch(() => []);
+        if (existing.some((n) => n.toLowerCase() === name.toLowerCase())) {
+          if (!(await ask(`Replace the layout "${name}"?`, { title: "Save layout", kind: "warning", okLabel: "Replace" }))) return;
+        }
+        await saveLayoutAs(name);
+      },
+    };
+  }
+
+  /** Rename a layout from the Layouts pane */
+  function askLayoutRename(from: string): void {
+    naming = {
+      title: "Rename layout",
+      value: from,
+      onOk: async (to) => {
+        naming = null;
+        try {
+          await renameLayout(from, to);
+          if (currentLayout === from) currentLayout = to;
+          if (settings.defaultLayoutName === from) await saveSettings({ defaultLayoutName: to });
+          window.dispatchEvent(new Event(LAYOUTS_CHANGED));
+        } catch (e) {
+          status = String(e);
+        }
+      },
+    };
+  }
+
+  // the automatic layout, when it's the default: saved a moment after the tabs or their arrangement change, so
+  // they're back at the next start (SuperXPuTTY saved it on exit, which Cmd+Q can skip)
+  $effect(() => {
+    if (!tabs || getCurrentWebviewWindow().label !== "main") return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const changed = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const layout = layoutNow();
+        if (begun && settings.defaultLayoutName === AUTO_RESTORE && layout) void saveLayout(AUTO_RESTORE, layout).catch(() => {});
+      }, 1500);
+    };
+    const stopLayout = tabs.onLayoutChange(changed);
+    const stopTabs = tabs.onChange(changed);
+    return () => {
+      clearTimeout(timer);
+      stopLayout();
+      stopTabs();
+    };
+  });
 
   /**
    * Move to New Window: the tab goes to a new window with its session still running; the new window replays what it
@@ -409,7 +562,16 @@
         <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsTab = "Profiles")} onLook={(_, icons) => {
           customs = icons;
           if (tabs) tabs.customs = icons;
-        }} />
+        }} onSelected={(s) => (selectedSession = s)} />
+        {#if settings.showLayouts}
+          <LayoutsList current={currentLayout} onLoad={(name) => void openLayout(name)} onRename={askLayoutRename}
+            onLoadInNewWindow={(name) => void invoke("window_new", { open: null, adopt: null, layout: name })}
+            onClose={() => void saveSettings({ showLayouts: false })} />
+        {/if}
+        {#if settings.showSessionDetail}
+          <SessionDetail session={selectedSession} {customs} onEdit={(s) => tree?.editSession(s)}
+            onClose={() => void saveSettings({ showSessionDetail: false })} />
+        {/if}
       </aside>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="splitter" title="Drag to resize; double-click for the usual width" onpointerdown={startResize}
@@ -424,6 +586,7 @@
   <div class="statusbar">
     <span class="status">{status}</span>
     <ScriptStatus />
+    {#if currentLayout}<span class="layout" title="The layout open now">{currentLayout}</span>{/if}
     <span class="version">0.1.0</span>
   </div>
 </div>
@@ -451,6 +614,12 @@
 
 {#if serialTab}
   <SerialSettings title={serialTab.title} host={serialTab.host} session={serialTab.session} onClose={() => (serialTab = null)} />
+{/if}
+
+{#if naming}
+  <Prompt title={naming.title} value={naming.value}
+    validate={(name) => (!name.trim() ? "Give the layout a name" : /^[A-Za-z0-9 ._()-]{1,60}$/.test(name.trim()) ? "" : "Use 1 to 60 letters, digits, spaces, dots, dashes, underscores or brackets")}
+    onOk={(name) => naming?.onOk(name.trim())} onCancel={() => (naming = null)} />
 {/if}
 
 {#if renaming}
@@ -632,5 +801,11 @@
   }
   .statusbar .status {
     flex: 1;
+  }
+
+  .statusbar .layout {
+    padding: 0 6px;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
   }
 </style>

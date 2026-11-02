@@ -10,6 +10,8 @@ import {
   themeDark,
   themeLight,
   type DockviewApi,
+  type SerializedDockview,
+  type SerializedGridObject,
   type GroupPanelPartInitParameters,
   type IContentRenderer,
   type ITabRenderer,
@@ -33,6 +35,9 @@ export interface TerminalParams {
   /** Move to New Window: the running session (its pty id) this tab takes over from another window */
   adopt?: number;
 }
+
+/** A group in a saved layout: its tabs (panel ids) and the one in front (dockview's GroupPanelViewState) */
+type GroupPanelViewState = { views: string[]; activeView?: string; id: string };
 
 /** A tab on its way to another window (Move to New Window): its running session, titles, settings and session */
 export interface MovingTab {
@@ -478,6 +483,67 @@ export class TabArea {
         };
       }),
     );
+  }
+
+  /**
+   * The tabs as a layout: dockview's own JSON (the groups, their sizes, each tab's title and what it runs), without
+   * Highlighted Output panes (they follow a tab's log, which a new session won't have) or Quick connect passwords
+   */
+  layoutState(): SerializedDockview {
+    const state = this.api.toJSON();
+    const dropped = new Set(Object.entries(state.panels).filter(([, p]) => p.contentComponent === "output").map(([id]) => id));
+    for (const id of dropped) delete state.panels[id];
+    for (const panel of Object.values(state.panels)) {
+      const params = { ...(panel.params as unknown as TerminalParams) };
+      delete params.adopt;
+      if (params.target?.kind === "quickConnect") params.target = { ...params.target, password: "" };
+      panel.params = params as unknown as Record<string, unknown>;
+    }
+    // groups left with no tabs go, and branches left with nothing in them
+    const prune = (node: SerializedGridObject<GroupPanelViewState>): SerializedGridObject<GroupPanelViewState> | null => {
+      if (node.type === "leaf") {
+        const group = node.data as GroupPanelViewState;
+        const views = group.views.filter((v) => !dropped.has(v));
+        if (views.length === 0) return null;
+        return { ...node, data: { ...group, views, activeView: views.includes(group.activeView ?? "") ? group.activeView : views[0] } };
+      }
+      const children = (node.data as SerializedGridObject<GroupPanelViewState>[]).map(prune).filter((n): n is SerializedGridObject<GroupPanelViewState> => !!n);
+      return children.length ? { ...node, data: children } : null;
+    };
+    const root = prune(state.grid.root);
+    state.grid.root = root ?? { type: "branch", data: [] };
+    return state;
+  }
+
+  /**
+   * Open a layout: the tabs here close (their sessions end) and the layout's open, each starting its session again,
+   * as SuperXPuTTY's LoadLayout; with no tabs in it, a Local Shell
+   */
+  loadLayout(state: SerializedDockview | null): void {
+    for (const panel of [...this.api.panels]) panel.api.close();
+    this.sessions.clear();
+    this.titles.clear();
+    this.count = 0;
+    const tabs = state ? Object.keys(state.panels).length : 0;
+    if (state && tabs > 0) {
+      this.api.fromJSON(state);
+      for (const panel of this.api.panels) {
+        const params = panel.params as unknown as TerminalParams;
+        this.titles.set(panel.id, panel.title ?? "");
+        if (params.target?.kind === "session") this.sessions.set(panel.id, `${params.target.store}:${params.target.id}`);
+        if (params.target?.kind === "localShell") this.count += 1;
+      }
+    } else {
+      this.openLocalShell();
+    }
+    this.onOpenChanged(new Set(this.sessions.values()));
+    this.changed();
+  }
+
+  /** Be told when the tabs or their arrangement change (for the automatic layout) */
+  onLayoutChange(listener: () => void): () => void {
+    const subscription = this.api.onDidLayoutChange(listener);
+    return () => subscription.dispose();
   }
 
   /**

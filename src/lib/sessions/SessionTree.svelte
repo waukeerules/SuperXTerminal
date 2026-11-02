@@ -67,11 +67,21 @@
     onLook: (iconSize: number, customs: ReadonlyMap<string, CustomIcon>) => void;
     /** Open Settings at Profiles (from Edit Session) */
     onOpenProfiles: () => void;
+    /** The session selected now (a shortcut in Favorites or Recent counts), or null, for Session Detail */
+    onSelected?: (session: SessionView | null) => void;
   }
 
-  let { openSessions, onOpen, onLook, onOpenProfiles }: Props = $props();
+  let { openSessions, onOpen, onLook, onOpenProfiles, onSelected = () => {} }: Props = $props();
 
   let selected = $state("");
+
+  // Session Detail follows the selection: a session's key is "store:id", or "favorites:store:id" for a shortcut
+  $effect(() => {
+    const parts = selected.split(":");
+    const [store, ...rest] = ["saved", "private", "database"].includes(parts[0]) ? parts : parts.slice(1);
+    const id = rest.join(":");
+    onSelected(rest[0] === "folder" ? null : (loaded?.sessions.find((s) => s.store === store && s.id === id) ?? null));
+  });
   /** Sessions selected together with Cmd+click and Shift+click, as "store:id" (SuperXPuTTY's multiple selection) */
   let multi = $state<ReadonlySet<string>>(new Set());
   /** Where a Shift+click range starts: the session last clicked without Shift */
@@ -1005,6 +1015,11 @@
     } catch (e) {
       error = `Couldn't export the sessions: ${e}`;
     }
+  }
+
+  /** Edit Session for a session (Session Detail's double-click) */
+  export function editSession(session: SessionView): void {
+    void edit(session);
   }
 
   /** Open a session as the tree does (its colour on the tab, Recent), for the Quick Selector */

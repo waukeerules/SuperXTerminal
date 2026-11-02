@@ -55,6 +55,12 @@ pub struct AppSettings {
     /// The Sessions pane is auto-hidden, as DockPanelSuite's unpinned pane in SuperXPuTTY: a tab at the window's left
     /// edge that slides it out
     pub sessions_auto_hide: bool,
+    /// The layout opened at start ("" for none: a Local Shell; "<Auto Restore>" for the last one), as SuperXPuTTY's
+    /// DefaultLayoutName
+    pub default_layout_name: String,
+    /// View > Layouts and View > Session Detail: the panes under the Sessions tree
+    pub show_layouts: bool,
+    pub show_session_detail: bool,
 }
 
 impl Default for AppSettings {
@@ -81,6 +87,9 @@ impl Default for AppSettings {
             use_sessions_xml: true,
             sessions_pane_width: 280,
             sessions_auto_hide: false,
+            default_layout_name: String::new(),
+            show_layouts: false,
+            show_session_detail: false,
         }
     }
 }

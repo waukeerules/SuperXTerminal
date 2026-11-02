@@ -8,6 +8,7 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { askLogin, askOne } from "../scripting/asking.svelte";
 import { settings } from "../settings/store.svelte";
 
@@ -82,7 +83,9 @@ export class RdpHost {
   private pendingMove: { x: number; y: number } | null = null;
   private disposed = false;
   /** The Windows key combinations option: 0 on this computer, 1 on the remote, 2 only in full screen */
-  private keyboard = 2;
+  private keyboard = 1;
+  /** Stops listening for ⌘ tapped on its own */
+  private unlistenTap: (() => void) | null = null;
   /** The window is full screen (kept up to date as the tab resizes) */
   private fullScreen = false;
   /** Caps Lock as last sent */
@@ -309,6 +312,7 @@ export class RdpHost {
     const key = (e: KeyboardEvent, down: boolean) => {
       if (this.id === null) return;
       if (e.metaKey || e.key === "Meta") {
+        // ⌘ tapped on its own comes from the app (command-tap), as the page never sees it
         if (!down || e.key === "Meta" || e.repeat) return;
         // ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z as Windows' Ctrl ones, as Microsoft's Mac client does
         const letter = CTRL_FOR_COMMAND[e.code];
@@ -360,6 +364,15 @@ export class RdpHost {
     });
     c.addEventListener("keyup", (e) => key(e, false));
     c.addEventListener("blur", () => this.releaseKeys());
+    // ⌘ tapped on its own (watched by the app: the page never sees a lone modifier) is the Windows key, Start
+    void getCurrentWebviewWindow()
+      .listen("command-tap", () => {
+        if (document.activeElement === this.canvas && this.windowsKeys()) void this.sendCombo(["MetaLeft"]);
+      })
+      .then((unlisten) => {
+        if (this.disposed) unlisten();
+        else this.unlistenTap = unlisten;
+      });
     // back in the tab: what was copied on the Mac meanwhile is offered to Windows' clipboard
     c.addEventListener("focus", () => {
       if (this.id !== null) void invoke("rdp_clipboard_announce", { id: this.id }).catch(() => {});
@@ -539,6 +552,7 @@ export class RdpHost {
   /** The tab closed: disconnect */
   dispose(): void {
     this.disposed = true;
+    this.unlistenTap?.();
     clearTimeout(this.reconnectTimer);
     clearInterval(this.countdown);
     this.observer.disconnect();

@@ -3,6 +3,7 @@
 mod applog;
 mod buttonbars;
 mod cli;
+mod command_tap;
 mod db;
 mod editing;
 mod external;
@@ -2014,6 +2015,7 @@ pub fn run() {
             no_siri_badge();
             main_window(app.handle())?;
             tray::refresh(app.handle());
+            command_tap::install(app.handle());
             Ok(())
         })
         .manage(pty::Ptys::default())

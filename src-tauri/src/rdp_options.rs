@@ -33,7 +33,8 @@ pub struct RdpOptions {
 }
 
 impl RdpOptions {
-    /// SuperXPuTTY's defaults (its Settings.settings), and Retina off
+    /// SuperXPuTTY's defaults (its Settings.settings), except Windows key combinations on the remote computer (⌘ and
+    /// a key as Windows and it whenever the tab has the keyboard, as asked for on the Mac), and Retina off
     pub fn defaults() -> RdpOptions {
         RdpOptions {
             display: Some("FitTab".into()),
@@ -47,7 +48,7 @@ impl RdpOptions {
             smart_cards: Some(false),
             microphone: Some(false),
             audio: Some(0),
-            keyboard: Some(2),
+            keyboard: Some(1),
             authentication: Some(2),
             gateway: Some(String::new()),
             console: Some(false),

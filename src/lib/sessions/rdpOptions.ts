@@ -51,10 +51,11 @@ const KEYS: [keyof RdpOptions, string, "text" | "number" | "flag"][] = [
   ["retina", "Retina", "flag"],
 ];
 
-/** SuperXPuTTY's defaults (its Settings.settings), and Retina off */
+/** SuperXPuTTY's defaults (its Settings.settings), except Windows key combinations on the remote computer, and
+ *  Retina off */
 export const BUILT_IN_DEFAULTS: Required<RdpOptions> = {
   display: "FitTab", width: 1920, height: 1080, colorDepth: 32, smartSizing: true, clipboard: true, drives: false,
-  printers: false, smartCards: false, microphone: false, audio: 0, keyboard: 2, authentication: 2, gateway: "",
+  printers: false, smartCards: false, microphone: false, audio: 0, keyboard: 1, authentication: 2, gateway: "",
   console: false, retina: false,
 };
 

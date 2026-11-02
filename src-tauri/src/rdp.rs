@@ -305,7 +305,7 @@ pub fn rdp_open(
             }
         }
     });
-    Ok(Opened { id: rdp_id, width, height, fixed, smart_sizing: options.smart_sizing != Some(false), scale, keyboard: options.keyboard.unwrap_or(2) })
+    Ok(Opened { id: rdp_id, width, height, fixed, smart_sizing: options.smart_sizing != Some(false), scale, keyboard: options.keyboard.unwrap_or(1) })
 }
 
 /// The desktop's size and scale: the options' fixed size, else the tab's in points at 100%, or in Retina pixels at

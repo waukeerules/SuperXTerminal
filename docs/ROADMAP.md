@@ -165,6 +165,8 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ⬜ Quick Selector
 - ⬜ Splits, pop-out windows
 - ⬜ Layouts (`layouts-mac/`)
+- ⬜ Session detail pane (View > Session detail), as SuperXPuTTY's: the selected session's fields (name, icon, host, note, port, connection type, profile, username, extra arguments with -pw masked, SPSL file, RDP options, paths) in a property list with a description of the field picked; off by default, shown and placed with the layouts
+- ⬜ The rest of SuperXPuTTY's View menu: Sessions (show/hide the pane), Layouts, Log viewer, Status bar, Always on top, Full screen
 - ⬜ Keyboard shortcuts editor, Cmd+Tab-style switching, global hotkeys
 - ⬜ Single instance, command-line arguments, `ssh://` and `superxterminal://` URLs
 - ⬜ Menu-bar extra

@@ -80,6 +80,11 @@
   let bulk = $state<{ title: string; sessions: SessionView[] } | null>(null);
   /** Local overrides… open, for these sessions */
   let overriding = $state<SessionView[] | null>(null);
+  /**
+   * The tree's own clipboard (Cmd+C, Cmd+V, Copy and Paste in its menus): sessions, or a folder with what's in it.
+   * Kept here, never on the Mac's clipboard, so text copied in a terminal or another app isn't replaced.
+   */
+  let clip = $state<{ store: Store; sessions: SessionView[]; folder: { name: string; path: string } | null } | null>(null);
   /** Connect all with more than ten sessions: the picker's title and sessions */
   let connecting = $state<{ title: string; sessions: SessionView[] } | null>(null);
   /** File > Import Sessions open: which kind of file */
@@ -364,6 +369,7 @@
         { label: `Local overrides for ${list.length} sessions…`, action: () => (overriding = list) },
         { label: `Delete ${list.length} sessions`, action: () => void removeSessions(list) },
         { label: `Export ${list.length} sessions to CSV…`, action: () => void exportSessions(list, "Sessions.csv") },
+        { label: `Copy ${list.length} sessions  ⌘C`, disabled: stores.size > 1 && "The selection is in more than one root", action: () => copySelection() },
         ...(stores.size === 1
           ? transferItems(list, only, list.some((s) => s.locked))
           : [{ label: "Move to / Copy to", disabled: "The selection is in more than one root" } as MenuItem]),
@@ -393,6 +399,7 @@
         },
         { separator: true },
         { label: "Copy host address", action: () => void navigator.clipboard.writeText(session.host) },
+        { label: "Copy  ⌘C", action: () => copySelection() },
         { label: "Duplicate as…", disabled: session.store === "database" && !db?.writable && "Database sessions can't be written now", action: () => void duplicateAs(session) },
         { label: "Edit", disabled: block, action: () => void edit(session) },
         { label: "Local overrides…", action: () => (overriding = [session]) },
@@ -420,6 +427,12 @@
           : []),
         { label: "New session…", disabled: canAdd, action: () => (editing = { store: folder.store, id: null, fields: blank(folder.path) }) },
         { label: "New folder…", disabled: canAdd, action: () => newFolder(folder) },
+        ...(isRoot ? [] : [{ label: "Copy  ⌘C", action: () => copySelection() } as MenuItem]),
+        {
+          label: clip ? `Paste ${clip.folder ? `folder ${clip.folder.name}` : clip.sessions.length === 1 ? clip.sessions[0].name : `${clip.sessions.length} sessions`}  ⌘V` : "Paste  ⌘V",
+          disabled: !clip ? "Copy a session or folder first (⌘C)" : canAdd,
+          action: () => void pasteHere(),
+        },
         ...(isRoot
           ? []
           : ([
@@ -863,6 +876,107 @@
     void changeShortcuts(recordOpened(session.id));
   }
 
+  /** The folder node with this path in a root, or null */
+  function folderNode(store: Store, path: string): FolderNode | null {
+    const root = store === "saved" ? saved : store === "private" ? privateRoot : databaseRoot;
+    const find = (node: FolderNode | null): FolderNode | null =>
+      !node ? null : node.path.toLowerCase() === path.toLowerCase() ? node : node.folders.map(find).find(Boolean) ?? null;
+    return find(root);
+  }
+
+  /** What Cmd+C and Copy act on: the selected sessions, or the selected session or folder */
+  function copyTarget(): { store: Store; sessions: SessionView[]; folder: FolderNode | null } | null {
+    if (multi.size > 1) {
+      const list = selectedSessions();
+      const stores = new Set(list.map((s) => s.store));
+      return stores.size === 1 ? { store: list[0].store, sessions: list, folder: null } : null;
+    }
+    const [store, ...rest] = selected.split(":");
+    if (!["saved", "private", "database"].includes(store)) {
+      // a shortcut in Favorites or Recent: the session it stands for
+      const id = rest.slice(1).join(":");
+      const session = (loaded?.sessions ?? []).find((s) => s.store === rest[0] && s.id === id);
+      return session ? { store: session.store, sessions: [session], folder: null } : null;
+    }
+    if (rest[0] === "folder") {
+      const node = folderNode(store as Store, rest.slice(1).join(":"));
+      return node && node.path ? { store: node.store, sessions: sessionsIn(node), folder: node } : null;
+    }
+    const id = rest.join(":");
+    const session = (loaded?.sessions ?? []).find((s) => s.store === store && s.id === id);
+    return session ? { store: session.store, sessions: [session], folder: null } : null;
+  }
+
+  /** Cmd+C or Copy: the selection onto the tree's own clipboard */
+  function copySelection(): void {
+    const target = copyTarget();
+    if (!target) return;
+    clip = { store: target.store, sessions: target.sessions, folder: target.folder && { name: target.folder.name, path: target.folder.path } };
+    const n = target.sessions.length;
+    context.status(target.folder ? `Copied folder ${target.folder.name} (${n} session${n === 1 ? "" : "s"}); Cmd+V pastes it in a folder` : `Copied ${n === 1 ? target.sessions[0].name : `${n} sessions`}; Cmd+V pastes in a folder`);
+  }
+
+  /**
+   * Cmd+V or Paste: copies of what was copied, in the selected folder (or the selected session's). Taken names get -1,
+   * -2…, as Finder's copies; a folder pasted where one has its name becomes "name-1". Into Database sessions only while
+   * they can be written.
+   */
+  async function pasteHere(): Promise<void> {
+    const target = toolbarFolder();
+    if (!clip || !target || target.group) return;
+    if (target.store === "database" && !db?.writable) {
+      error = "Database sessions can't be written now.";
+      return;
+    }
+    const all = loaded?.sessions ?? [];
+    // the sessions as they are now (one may have been renamed or deleted since)
+    const list = clip.sessions.map((c) => all.find((s) => s.store === c.store && s.id === c.id)).filter((s): s is SessionView => !!s);
+    if (list.length === 0) {
+      error = "What was copied is no longer there.";
+      return;
+    }
+    const join = (a: string, b: string) => (a && b ? `${a}/${b}` : a || b);
+    let folders: string[];
+    if (clip.folder) {
+      const copied = clip.folder;
+      let name = copied.name;
+      for (let i = 1; target.folders.some((f) => f.name.toLowerCase() === name.toLowerCase()); i++) name = `${copied.name}-${i}`;
+      const base = join(target.path, name);
+      folders = list.map((s) => join(base, (folderUnder(s.folder, copied.path) ?? "").replace(/^\//, "")));
+    } else {
+      folders = list.map(() => target.path);
+    }
+    try {
+      const report = await transferSessions(clip.store, list.map((s) => s.id), target.store, false, folders, true);
+      await reload();
+      expanded = new Set([...expanded, target.key, ...folders.map((f) => `${target.store}:${f}`)]);
+      error = report.problems.join(" ");
+      context.status(`Pasted ${report.done} session${report.done === 1 ? "" : "s"} in ${target.path || ROOT_NAMES[target.store]}`);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  /** Cmd+Delete (or Delete): delete the selection, asking first, as SuperXPuTTY's Delete key */
+  function deleteSelection(): void {
+    const target = copyTarget();
+    if (!target || !["saved", "private", "database"].includes(selected.split(":")[0])) return;
+    if (target.folder) void removeFolder(target.folder);
+    else if (target.sessions.length > 1) void removeSessions(target.sessions);
+    else void remove(target.sessions[0]);
+  }
+
+  /** The tree's keys, while it has the focus; the search box keeps its own */
+  function treeKey(event: KeyboardEvent): void {
+    const command = event.metaKey || event.ctrlKey;
+    if (command && event.key.toLowerCase() === "c") copySelection();
+    else if (command && event.key.toLowerCase() === "v") void pasteHere();
+    else if ((command && event.key === "Backspace") || event.key === "Delete") deleteSelection();
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   /** Connect all: up to ten open at once; more, and the user picks up to ten of them (ConnectSome) */
   function connectMany(title: string, sessions: SessionView[]): void {
     if (sessions.length > 10) connecting = { title, sessions };
@@ -997,7 +1111,10 @@
     onclick={() => (descending = !descending)}><Icon key={descending ? "sortza" : "sortaz"} size={toolSize} glyph /></button>
 </div>
 
-<div class="tree" role="tree" style:font-size="{settings.treeFontSize}px">
+<!-- the tree's own copy and paste (Cmd+C, Cmd+V), not the Mac's clipboard; the menu bar's Copy and Paste reach it as
+     copy and paste events, which are stopped here so nothing is written to the clipboard -->
+<div class="tree" role="tree" tabindex="-1" style:font-size="{settings.treeFontSize}px" onkeydown={treeKey}
+  oncopy={(e) => { e.preventDefault(); copySelection(); }} onpaste={(e) => { e.preventDefault(); void pasteHere(); }}>
   {#if error}
     <p class="message">{error}</p>
   {/if}

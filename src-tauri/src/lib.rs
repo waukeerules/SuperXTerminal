@@ -1085,7 +1085,8 @@ struct TransferReport {
     problems: Vec<String>,
 }
 
-/// Copy (or move) sessions to another root, each to the same folder path there, as SuperXPuTTY's Move to / Copy to.
+/// Copy (or move) sessions to another root, each to the same folder path there or to the folder given in `folders`, as
+/// SuperXPuTTY's Move to / Copy to and drags; copies within one root too when `folders` are given (the tree's Paste).
 /// A copy out of the table leaves its database fields behind (SuperXPuTTY's PlainCopy); a move deletes only what
 /// arrived, and never a locked row.
 #[tauri::command]
@@ -1099,7 +1100,8 @@ async fn sessions_transfer(
     rename_taken: bool,
 ) -> Result<TransferReport, String> {
     use sessions::Store;
-    if from == to {
+    // within one root only as copies to folders given (the tree's Paste)
+    if from == to && (delete_source || folders.is_none()) {
         return Err("Choose another place to copy to.".into());
     }
     // each session with the folder it goes to: the one given (a drop on a folder), else the same path there

@@ -34,7 +34,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ `web/terminal`, `web/output`, `web/shared` and `web/lib` copied from SuperXPuTTY with their licences (default rules and themes still missing: not in SuperXPuTTY's repository)
 - ✅ Licence checks (`cargo deny check` in `src-tauri/`, `npm run licenses`), including security advisories
 - ✅ Builds made locally; the GitHub Actions workflow (macOS, Windows, Linux) runs only when started by hand, so pushes cost nothing
-- ✅ Known issue fixed: development builds asked for the Keychain password again after each rebuild. They're now signed with a self-signed "SuperXTerminal Dev" certificate before they run (scripts/dev-sign-run.sh; steps in docs/PLAN.md), so Always Allow lasts
+- ✅ Known issue fixed: development builds asked for the Keychain password again after each rebuild. They're now signed with an Apple Development certificate (free, from Xcode) before they run (scripts/dev-sign-run.sh; steps in docs/PLAN.md): the Keychain admits apps by team ID, so Always Allow lasts. Checked: a rebuild read the saved passwords without asking
 - ✅ Known issue fixed: macOS 27's "Write with Siri" badge (the ⊖ by the terminal's cursor) no longer shows: AppKit's lightweight affordance is turned off in this app, and Writing Tools are off in its web view
 - ⬜ To check: after renaming a Database folder, it showed closed once (it had been open)
 - ⬜ To check: a click on a menu item sometimes does nothing the first time (seen twice while testing with simulated clicks)

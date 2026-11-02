@@ -175,7 +175,7 @@ fn unmask_password(edited: &str, stored: &str) -> String {
 }
 
 /// Rewrite the word after `-pw`, keeping the rest of the text exactly as it was
-fn replace_password(extra: &str, mut with: impl FnMut(&str) -> String) -> String {
+pub(crate) fn replace_password(extra: &str, mut with: impl FnMut(&str) -> String) -> String {
     let mut out = String::new();
     let mut rest = extra;
     while let Some(at) = rest.find("-pw") {

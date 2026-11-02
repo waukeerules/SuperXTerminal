@@ -14,7 +14,7 @@
   import { isDark, loadSettings, settings } from "./lib/settings/store.svelte";
   import QuickConnect from "./lib/layout/QuickConnect.svelte";
   import { listen } from "@tauri-apps/api/event";
-  import { opensAsLocalShell, opensExternally, openExternally, type SessionView, type Store } from "./lib/sessions/api";
+  import { opensAsLocalShell, opensExternally, openExternally, type ImportKind, type SessionView, type Store } from "./lib/sessions/api";
   import { invoke } from "@tauri-apps/api/core";
   import SendCommands from "./lib/commands/SendCommands.svelte";
   import ButtonBar from "./lib/commands/ButtonBar.svelte";
@@ -63,6 +63,8 @@
     else if (event.payload === "clearScrollback") tabs?.activeHost()?.action("clearScrollback");
     else if (event.payload === "toggleSendCommands") void saveSettings({ showSendCommands: !settings.showSendCommands });
     else if (event.payload === "toggleButtonBar") void saveSettings({ showButtonBar: !settings.showButtonBar });
+    else if (event.payload.startsWith("import:")) tree?.importSessions(event.payload.slice(7) as ImportKind);
+    else if (event.payload === "exportCsv") void tree?.exportSessions(null, "Sessions.csv");
   });
 
   void loadSettings();

@@ -34,6 +34,8 @@ export interface AppSettings {
   /** Keep a log of every session (in sessionLogFolder, "" for Documents/SuperXTerminal/logs); otherwise temporary */
   sessionLogEnabled: boolean;
   sessionLogFolder: string;
+  /** Saved sessions (Sessions.xml and Folders.xml in the settings folder) are used, as SuperXPuTTY's UseSessionsXml */
+  useSessionsXml: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -55,6 +57,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   terminalPrefs: {},
   sessionLogEnabled: false,
   sessionLogFolder: "",
+  useSessionsXml: true,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

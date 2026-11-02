@@ -47,6 +47,9 @@ pub struct AppSettings {
     pub session_log_folder: String,
     /// Which /dev/cu.* device each serial session's COM name is on this Mac, asked once (docs/PLAN.md)
     pub serial_devices: std::collections::BTreeMap<String, String>,
+    /// Saved sessions (Sessions.xml and Folders.xml in the settings folder) are read and written, as SuperXPuTTY's
+    /// UseSessionsXml; off, only Private and Database sessions are used and the files are left as they are
+    pub use_sessions_xml: bool,
 }
 
 impl Default for AppSettings {
@@ -70,6 +73,7 @@ impl Default for AppSettings {
             session_log_enabled: false,
             session_log_folder: String::new(),
             serial_devices: std::collections::BTreeMap::new(),
+            use_sessions_xml: true,
         }
     }
 }

@@ -42,6 +42,7 @@
   import EditSession from "./EditSession.svelte";
   import BulkEdit from "./BulkEdit.svelte";
   import Overrides from "./Overrides.svelte";
+  import ImportSessions from "./ImportSessions.svelte";
   import FolderSettings from "./FolderSettings.svelte";
   import PendingChanges from "./PendingChanges.svelte";
   import Prompt from "../ui/Prompt.svelte";
@@ -54,7 +55,7 @@
   import { loadCustomIcons, type CustomIcon } from "../icons/custom";
   import { EnvironmentColors, parseRules } from "../icons/environment";
   import { chooseSettingsFolder, databaseCheckSeconds, settings } from "../settings/store.svelte";
-  import { DATABASE_SAVED } from "./api";
+  import { DATABASE_SAVED, exportCsv, type ImportKind } from "./api";
 
   interface Props {
     /** Sessions with an open tab, as "store:id" */
@@ -78,6 +79,8 @@
   let bulk = $state<{ title: string; sessions: SessionView[] } | null>(null);
   /** Local overrides… open, for these sessions */
   let overriding = $state<SessionView[] | null>(null);
+  /** File > Import Sessions open: which kind of file */
+  let importing = $state<ImportKind | null>(null);
   /** The user's local overrides, by session id */
   let overrides = $state<Record<string, Override>>({});
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -157,6 +160,7 @@
   $effect(() => {
     if (!settings.loaded) return;
     void settings.settingsFolder;
+    void settings.useSessionsXml;
     void reload();
   });
 
@@ -355,6 +359,7 @@
         { label: `Edit ${list.length} sessions…`, action: () => void editSessions("for the selection", list) },
         { label: `Local overrides for ${list.length} sessions…`, action: () => (overriding = list) },
         { label: `Delete ${list.length} sessions`, action: () => void removeSessions(list) },
+        { label: `Export ${list.length} sessions to CSV…`, action: () => void exportSessions(list, "Sessions.csv") },
         ...(stores.size === 1
           ? transferItems(list, only, list.some((s) => s.locked))
           : [{ label: "Move to / Copy to", disabled: "The selection is in more than one root" } as MenuItem]),
@@ -432,6 +437,11 @@
               { label: "Delete folder", disabled: block, action: () => void removeFolder(folder) },
               ...transferItems(sessionsIn(folder), folder.store, sessionsIn(folder).some((s) => s.locked)),
             ] as MenuItem[])),
+        {
+          label: "Export to CSV…",
+          disabled: sessionsIn(folder).length === 0 && "No sessions here",
+          action: () => void exportSessions(sessionsIn(folder), `${folder.name}.csv`),
+        },
         { separator: true },
         { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => runnable.forEach(open) },
         { label: "Expand all", action: () => (expanded = new Set([...expanded, ...folderKeys(folder)])) },
@@ -575,7 +585,7 @@
   /** Move to and Copy to, each listing the other roots; the table only when it can be written, and no move of locked rows */
   function transferItems(sessions: SessionView[], from: Store, locked: boolean): MenuItem[] {
     const targets: Store[] = (["saved", "private", "database"] as Store[]).filter(
-      (t) => t !== from && (t !== "database" || db?.enabled) && (t !== "saved" || settings.settingsFolder),
+      (t) => t !== from && (t !== "database" || db?.enabled) && (t !== "saved" || (settings.settingsFolder && settings.useSessionsXml)),
     );
     const item = (move: boolean): MenuItem => ({
       label: move ? "Move to" : "Copy to",
@@ -768,6 +778,26 @@
     void changeShortcuts(recordOpened(session.id));
   }
 
+  /** Whether Saved sessions are shown: a settings folder is chosen and Use Sessions.xml is on */
+  function savedInUse(): boolean {
+    return !!loaded && loaded.savedFile !== null && !loaded.savedOff;
+  }
+
+  /** File > Import Sessions: the import window for that kind of file */
+  export function importSessions(kind: ImportKind): void {
+    importing = kind;
+  }
+
+  /** Export sessions to CSV (File > Export Sessions to CSV… for all of them, a folder's, or the selection) */
+  export async function exportSessions(list: SessionView[] | null, fileName: string): Promise<void> {
+    try {
+      const text = await exportCsv(list && list.map((s) => [s.store, s.id] as [Store, string]), fileName);
+      if (text) context.status(text);
+    } catch (e) {
+      error = `Couldn't export the sessions: ${e}`;
+    }
+  }
+
   /** Every session, for the tab menu's New session and Copy host address */
   export function allSessions(): SessionView[] {
     return loaded?.sessions ?? [];
@@ -777,7 +807,7 @@
   export async function saveSessionAs(store: Store, id: string, title: string): Promise<void> {
     try {
       const fields = await getSession(store, id);
-      editing = { store: loaded?.savedFile === null ? "private" : "saved", id: null, fields: { ...fields, name: title } };
+      editing = { store: savedInUse() ? "saved" : "private", id: null, fields: { ...fields, name: title } };
     } catch (e) {
       error = String(e);
     }
@@ -818,7 +848,7 @@
       !node ? null : node.path === path ? node : node.folders.map((f) => find(f, path)).find(Boolean) ?? null;
     const rootOf = (store: string) => (store === "saved" ? saved : store === "private" ? privateRoot : store === "database" ? databaseRoot : null);
     const [store, ...rest] = selected.split(":");
-    const fallback = loaded?.savedFile === null ? privateRoot : saved;
+    const fallback = savedInUse() ? saved : privateRoot;
     if (!rootOf(store)) return fallback;
     if (rest[0] === "folder") return find(rootOf(store), rest.slice(1).join(":")) ?? fallback;
     const id = rest.join(":");
@@ -892,7 +922,9 @@
       <TreeFolder node={recent} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
         onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
-    {#if loaded.savedFile === null}
+    {#if loaded.savedOff}
+      <!-- Saved sessions turned off (Settings > General): only Private and Database sessions -->
+    {:else if loaded.savedFile === null}
       <p class="message">Choose the settings folder: the folder that holds the team's Sessions.xml.</p>
       <button onclick={choose}>Choose Settings Folder...</button>
     {:else if saved}
@@ -930,6 +962,11 @@
       context.status(`Edited ${done} session${done === 1 ? "" : "s"}`);
       error = problems.length ? `Left alone: ${problems.join(" ")}` : "";
     }} />
+{/if}
+
+{#if importing}
+  <ImportSessions kind={importing} savedAvailable={savedInUse()} onCancel={() => (importing = null)}
+    onDone={async (text) => { importing = null; await reload(); context.status(text); }} />
 {/if}
 
 {#if overriding}

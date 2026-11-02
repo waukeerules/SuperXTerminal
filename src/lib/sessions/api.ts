@@ -51,6 +51,8 @@ export interface SessionsLoaded {
   problems: string[];
   savedFile: string | null;
   privateFile: string;
+  /** Saved sessions are turned off (Settings > General > Use Sessions.xml) */
+  savedOff: boolean;
 }
 
 /** Read the session files (again) */
@@ -322,4 +324,49 @@ export function overriddenFields(o: Override | undefined): string[] {
   const out = names.filter(([k]) => o[k] !== undefined && o[k] !== null).map(([, n]) => n);
   if (o.Port > 0) out.splice(1, 0, "Port");
   return out;
+}
+
+/** Where sessions come from: "csv" (a spreadsheet), "mobaxterm", "rdp" (Remote Desktop files) or "ssh" (~/.ssh/config) */
+export type ImportKind = "csv" | "mobaxterm" | "rdp" | "ssh";
+
+/** What an import will do, before anything changes */
+export interface ImportSummary {
+  adds: number;
+  updates: number;
+  skips: number;
+  /** "Line 4: no name", the first eight */
+  skipped: string[];
+  /** Columns in the file that aren't used */
+  ignored: string[];
+  error: string | null;
+  /** The first sessions it adds, then changes, "New Private: ImportedFromMobaXterm/sw1" */
+  examples: string[];
+}
+
+/** What importing would do; `store` is where sessions from another app go (CSV rows say their own) */
+export function planImport(kind: ImportKind, paths: string[], store: Store): Promise<ImportSummary> {
+  return invoke("sessions_import_plan", { kind, paths, store });
+}
+
+/** Import them: returns how many were added and how many updated */
+export function applyImport(kind: ImportKind, paths: string[], store: Store): Promise<[number, number]> {
+  return invoke("sessions_import_apply", { kind, paths, store });
+}
+
+/** ~/.ssh/config */
+export function sshConfigPath(): Promise<string> {
+  return invoke("ssh_config_path");
+}
+
+/**
+ * Export sessions to a CSV file, as SuperXPuTTY's Export sessions to CSV: asks where, then says how it went (for the
+ * status bar); null when cancelled. `items` null exports every session.
+ */
+export async function exportCsv(items: [Store, string][] | null, fileName: string): Promise<string | null> {
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ title: "Export sessions to CSV", defaultPath: fileName.replace(/[/:\\]/g, "_"), filters: [{ name: "CSV files", extensions: ["csv"] }] });
+  if (!path) return null;
+  const [count, masked] = await invoke<[number, number]>("sessions_export_csv", { items, path });
+  const file = path.split("/").pop();
+  return `Exported ${count} session${count === 1 ? "" : "s"} to ${file}${masked ? ` (${masked} -pw password${masked === 1 ? "" : "s"} written as ********)` : ""}`;
 }

@@ -35,6 +35,9 @@
       <input readonly value={settings.settingsFolder ?? "Not chosen yet"} aria-label="Settings folder" />
       <button onclick={chooseSettingsFolder}>Choose…</button>
     </div>
+    <label class="check" title="Untick to use only Private and Database sessions: Sessions.xml and Folders.xml are then neither read nor written (they're left as they are), and imports go to Private sessions">
+      <input type="checkbox" checked={settings.useSessionsXml}
+        onchange={(e) => void saveSettings({ useSessionsXml: e.currentTarget.checked })} /> Use Sessions.xml (Saved sessions)</label>
   </fieldset>
 
   <fieldset>

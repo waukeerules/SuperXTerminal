@@ -6,6 +6,7 @@ mod editing;
 mod external;
 mod folders;
 mod highlighting;
+mod importing;
 mod launch;
 mod logs;
 mod profiles;
@@ -135,9 +136,10 @@ fn profiles_delete(state: State<'_, AppState>, name: String) -> Result<Vec<Profi
 #[tauri::command]
 fn sessions_load(state: State<'_, AppState>) -> SessionsLoaded {
     let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
+    let saved_off = !state.settings.lock().unwrap().use_sessions_xml;
     *state.files_seen.lock().unwrap() = files_fingerprint(&state);
     let mut problems = Vec::new();
-    let mut loaded = Sessions::load(settings_folder.as_deref(), &state.user_folder, &mut problems);
+    let mut loaded = Sessions::load(saved_folder(&state).as_deref(), &state.user_folder, &mut problems);
     // Database sessions come from the table (or its cache), not the files: keep them
     {
         let mut current = state.sessions.lock().unwrap();
@@ -156,6 +158,7 @@ fn sessions_load(state: State<'_, AppState>) -> SessionsLoaded {
         problems,
         saved_file: settings_folder.map(|f| f.join("Sessions.xml").display().to_string()),
         private_file: state.user_folder.join("PrivateSessions.xml").display().to_string(),
+        saved_off,
     };
     *state.sessions.lock().unwrap() = loaded;
     result
@@ -204,8 +207,18 @@ fn store_file(state: &AppState, store: sessions::Store) -> Result<PathBuf, Strin
     if store == sessions::Store::Database {
         return Err("Changing Database sessions comes with the next part of M2.".into());
     }
+    if store == sessions::Store::Saved && !state.settings.lock().unwrap().use_sessions_xml {
+        return Err("Saved sessions are turned off (Settings > General > Use Sessions.xml).".into());
+    }
     let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
     sessions::file_of(store, settings_folder.as_deref(), &state.user_folder).ok_or_else(|| "Choose the settings folder first.".into())
+}
+
+/// The settings folder when Saved sessions are in use (Sessions.xml and Folders.xml are read from it); None when
+/// there's none yet or they're turned off, as SuperXPuTTY's UseSessionsXml
+fn saved_folder(state: &AppState) -> Option<PathBuf> {
+    let settings = state.settings.lock().unwrap();
+    settings.settings_folder.clone().filter(|_| settings.use_sessions_xml)
 }
 
 /// One session's fields for Edit Session (a `-pw` password masked)
@@ -525,10 +538,9 @@ fn session_external(state: State<'_, AppState>, store: sessions::Store, id: Stri
 /// user's folder, as SuperXPuTTY's SessionsFileWatcher compares (a file rewritten unchanged doesn't count)
 fn files_fingerprint(state: &AppState) -> u64 {
     use std::hash::{Hash, Hasher};
-    let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     let mut files = vec![state.user_folder.join("PrivateSessions.xml"), state.user_folder.join("PrivateFolders.xml")];
-    if let Some(folder) = settings_folder {
+    if let Some(folder) = saved_folder(state) {
         files.push(folder.join("Sessions.xml"));
         files.push(folder.join("Folders.xml"));
     }
@@ -1267,6 +1279,53 @@ async fn sessions_bulk_edit(state: State<'_, AppState>, items: Vec<(sessions::St
     Ok(TransferReport { done, problems })
 }
 
+/// Export sessions to a CSV file, as SuperXPuTTY's Export sessions to CSV: the ones given (a folder's, the
+/// selection's), or every session. Returns how many were written and how many had a -pw password masked.
+#[tauri::command]
+fn sessions_export_csv(state: State<'_, AppState>, items: Option<Vec<(sessions::Store, String)>>, path: PathBuf) -> Result<(usize, usize), String> {
+    use sessions::Store;
+    let all = state.sessions.lock().unwrap();
+    let every = [(Store::Saved, &all.saved), (Store::Private, &all.private), (Store::Database, &all.database)];
+    let list: Vec<(Store, &sessions::StoredSession)> = match &items {
+        Some(items) => items.iter().filter_map(|(store, id)| all.find(*store, id).map(|s| (*store, s))).collect(),
+        None => every.iter().flat_map(|(store, list)| list.iter().map(move |s| (*store, s))).collect(),
+    };
+    importing::export(&list, &path)?;
+    let masked = list.iter().filter(|(_, s)| importing::has_password(s.get("ExtraArgs"))).count();
+    Ok((list.len(), masked))
+}
+
+/// The plan for importing sessions (`kind` "csv", "mobaxterm", "rdp" or "ssh"), worked out without changing anything
+fn import_plan(state: &AppState, kind: &str, paths: &[PathBuf], store: sessions::Store) -> Result<importing::Plan, String> {
+    let all = state.sessions.lock().unwrap();
+    let use_saved = saved_folder(state).is_some();
+    let existing = importing::Existing { saved: &all.saved, private: &all.private, use_saved };
+    let store = if use_saved { store } else { sessions::Store::Private };
+    importing::plan(kind, paths, store, &existing)
+}
+
+/// What an import would do, for the window to show before anything changes
+#[tauri::command]
+fn sessions_import_plan(state: State<'_, AppState>, kind: String, paths: Vec<PathBuf>, store: sessions::Store) -> Result<importing::Summary, String> {
+    Ok(import_plan(&state, &kind, &paths, store)?.summary())
+}
+
+/// Import sessions, as planned again from the same files; returns how many were added and updated. The caller reloads.
+#[tauri::command]
+fn sessions_import_apply(state: State<'_, AppState>, kind: String, paths: Vec<PathBuf>, store: sessions::Store) -> Result<(usize, usize), String> {
+    let plan = import_plan(&state, &kind, &paths, store)?;
+    if let Some(error) = plan.error {
+        return Err(error);
+    }
+    importing::apply(&plan, |store| store_file(&state, store), |store| other_ids(&state, store))
+}
+
+/// ~/.ssh/config, for Import from ssh config
+#[tauri::command]
+fn ssh_config_path() -> String {
+    importing::ssh_config_path().display().to_string()
+}
+
 /// How Database sessions stand now, without reading anything (after a change from the tree)
 #[tauri::command]
 fn db_status(state: State<'_, AppState>) -> DbState {
@@ -1433,6 +1492,20 @@ fn menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         true,
         &[
             &MenuItem::with_id(app, "newLocalShell", "New Local Shell", true, Some("CmdOrCtrl+T"))?,
+            &PredefinedMenuItem::separator(app)?,
+            // SuperXPuTTY's File > Import sessions and Export sessions to CSV
+            &Submenu::with_items(
+                app,
+                "Import Sessions",
+                true,
+                &[
+                    &MenuItem::with_id(app, "import:csv", "From CSV File…", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "import:mobaxterm", "From MobaXterm File…", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "import:rdp", "From Remote Desktop (.rdp) Files…", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "import:ssh", "From ssh config…", true, None::<&str>)?,
+                ],
+            )?,
+            &MenuItem::with_id(app, "exportCsv", "Export Sessions to CSV…", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             // Cmd+W closes the tab, as in Terminal and iTerm2; the window closes with its red button
             &MenuItem::with_id(app, "closeTab", "Close Tab", true, Some("CmdOrCtrl+W"))?,
@@ -1619,6 +1692,10 @@ pub fn run() {
             pty::pty_special,
             overrides_get,
             sessions_bulk_edit,
+            sessions_export_csv,
+            sessions_import_plan,
+            sessions_import_apply,
+            ssh_config_path,
             overrides_set,
             pty::pty_serial_get,
             pty::pty_serial_set,

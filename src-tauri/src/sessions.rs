@@ -115,6 +115,8 @@ pub struct SessionsLoaded {
     pub problems: Vec<String>,
     pub saved_file: Option<String>,
     pub private_file: String,
+    /// Saved sessions are turned off (Settings > General > Use Sessions.xml)
+    pub saved_off: bool,
 }
 
 impl Sessions {

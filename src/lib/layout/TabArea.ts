@@ -17,6 +17,7 @@ import {
 import { mount, unmount } from "svelte";
 import type { CustomIcon } from "../icons/custom";
 import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
+import { OutputHost } from "../terminal/OutputHost";
 import SessionTab from "./SessionTab.svelte";
 import { isDark } from "../settings/store.svelte";
 import { tabStates } from "./tabStates.svelte";
@@ -70,6 +71,44 @@ class TabLabel implements ITabRenderer {
   /** Free the label */
   dispose(): void {
     if (this.label) void unmount(this.label);
+  }
+}
+
+/** What a Highlighted Output panel is given: the tab it follows, its log, and how its tab looks */
+interface OutputParams {
+  source: string;
+  logPath: string | null;
+  title: string;
+  icon: string;
+  environment: string | null;
+}
+
+/** A Highlighted Output panel: SuperXPuTTY's web/output page (Monaco) following a tab's log */
+class OutputPanel implements IContentRenderer {
+  readonly element: HTMLElement;
+  private host: OutputHost | null = null;
+
+  constructor(private readonly tabs: TabArea) {
+    this.element = document.createElement("div");
+    this.element.className = "terminal-panel";
+  }
+
+  init(parameters: GroupPanelPartInitParameters): void {
+    const id = parameters.api.id;
+    const { source, logPath, title } = parameters.params as OutputParams;
+    const frame = document.createElement("iframe");
+    frame.className = "terminal-frame";
+    frame.setAttribute("aria-label", `Highlighted output of ${title}`);
+    this.host = new OutputHost(id, frame, logPath, title);
+    this.tabs.outputs.set(source, this.host);
+    frame.src = `/web/output/index.html?tab=${encodeURIComponent(id)}`;
+    this.element.append(frame);
+  }
+
+  dispose(): void {
+    this.host?.dispose();
+    for (const [source, host] of this.tabs.outputs) if (host === this.host) this.tabs.outputs.delete(source);
+    this.host = null;
   }
 }
 
@@ -152,6 +191,8 @@ export class TabArea {
   private readonly sessions = new Map<string, string>();
   /** Each tab's page host, by panel id */
   readonly hosts = new Map<string, PageHost>();
+  /** Highlighted Output panels, by the tab they follow */
+  readonly outputs = new Map<string, OutputHost>();
   /** Tabs whose "Accept commands" is off */
   private readonly refusing = new Set<string>();
   /** Told when the active tab changes, or tabs open or close */
@@ -170,12 +211,15 @@ export class TabArea {
   constructor(element: HTMLElement, private readonly onOpenChanged: (open: Set<string>) => void) {
     this.api = createDockview(element, {
       theme: isDark() ? themeDark : themeLight,
-      createComponent: () => new TerminalPanel(this),
+      createComponent: (options) => (options.name === "output" ? new OutputPanel(this) : new TerminalPanel(this)),
       // dockview only uses createTabComponent for a named tab component, so make ours the default
       defaultTabComponent: "session",
       createTabComponent: () => new TabLabel(this),
     });
     this.api.onDidRemovePanel((panel) => {
+      // its Highlighted Output stays, marked closed
+      this.outputs.get(panel.id)?.sourceClosed();
+      this.outputs.delete(panel.id);
       this.hosts.delete(panel.id);
       this.refusing.delete(panel.id);
       if (this.sessions.delete(panel.id)) this.onOpenChanged(new Set(this.sessions.values()));
@@ -275,6 +319,28 @@ export class TabArea {
   /** The title a tab opened with, before any rename */
   private originalTitle(id: string): string {
     return this.titles.get(id) ?? this.api.getPanel(id)?.title ?? "";
+  }
+
+  /** Highlighted Output beside a tab, as HighlightedOutputPanel.ShowFor: the one it has if it's open */
+  openOutput(id: string): void {
+    const panelId = `output-${id}`;
+    const existing = this.api.getPanel(panelId);
+    if (existing) {
+      existing.api.setActive();
+      return;
+    }
+    const tab = this.api.getPanel(id);
+    const host = this.hosts.get(id);
+    if (!tab || !host) return;
+    const title = tab.title ?? "";
+    this.api.addPanel({
+      id: panelId,
+      component: "output",
+      title: `Output: ${title}`,
+      params: { source: id, logPath: host.logPath, title, icon: "document", environment: null } satisfies OutputParams,
+      position: { referencePanel: id, direction: "right" },
+      renderer: "always",
+    });
   }
 
   /** The active tab's page host, for the Edit menu's Find and Clear Scrollback */
@@ -398,6 +464,10 @@ export class TabArea {
   command(id: string, command: string): void {
     const panel = this.api.getPanel(id);
     if (!panel) return;
+    if (command === "document") {
+      this.openOutput(id);
+      return;
+    }
     const siblings = panel.group.panels;
     const index = siblings.indexOf(panel);
     const closing =

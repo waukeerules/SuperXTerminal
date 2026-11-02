@@ -31,8 +31,6 @@ const MENU_KEYS = [
   ["ESC", "Esc", ""],
 ];
 
-const LATER = "Comes in M4";
-
 /** Watch for Silence's choices, as SuperXPuTTY's */
 const SILENCE: [number, string][] = [[0, "Off"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], [300, "5 minutes"]];
 
@@ -62,7 +60,8 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
   const list = tabs.tabList();
   const tab = list.find((t) => t.id === id);
   const params = tabs.paramsOf(id);
-  if (!tab || !params) return [];
+  // a Highlighted Output panel's tab
+  if (!tab || !params) return [{ label: "Close", action: () => tabs.api.getPanel(id)?.api.close() }];
   const target = params.target;
   const session = target.kind === "session" ? host.sessions.find((s) => s.store === target.store && s.id === target.id) : undefined;
   const address = target.kind === "quickConnect" ? target.host : session?.host ?? "";
@@ -98,7 +97,7 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
     { label: "Accept commands", checked: tab.acceptCommands, action: () => tabs.setAccept(id, !tab.acceptCommands) },
     { separator: true },
     { label: "Search Output...", disabled: !tab.host.logPath && noLog, action: () => host.search(id) },
-    { label: "Highlighted Output", disabled: LATER },
+    { label: "Highlighted Output", disabled: !tab.host.logPath && noLog, action: () => tabs.openOutput(id) },
     {
       label: "Watch for Activity",
       checked: watch.activity,

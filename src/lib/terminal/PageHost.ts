@@ -242,6 +242,10 @@ export class PageHost implements ScriptTarget {
       case "tab":
         this.onTabCommand(String(message.command));
         break;
+      case "document":
+        // the page's Open as Document: Highlighted Output beside the tab
+        this.onTabCommand("document");
+        break;
       // log, document, bell, openInPutty, openLink, pref, cleared: later milestones
     }
   }

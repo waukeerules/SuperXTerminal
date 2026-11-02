@@ -15,7 +15,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 | [M1 MVP](#m1-mvp) | ✅ |
 | [M2 Database sessions](#m2-database-sessions) | ✅ |
 | [M3 Scripting and commands](#m3-scripting-and-commands) | ✅ |
-| [M4 Terminal extras](#m4-terminal-extras) | 🚧 |
+| [M4 Terminal extras](#m4-terminal-extras) | ✅ |
 | [M5 The rest](#m5-the-rest) | ⬜ |
 | [M6 Distribution](#m6-distribution) | ⬜ |
 | [Later](#later) | ⬜ |
@@ -116,7 +116,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 - ✅ Highlighting rules (cisco, junos, generic, auto, user rules), per tab, and per session and folder (`HighlightRules`, set in Edit Session): SuperXPuTTY's defaults bundled, then the team's and the user's `highlighting` folders; checked against SuperXPuTTY's colours on the lab switch (`sh ip int bri`)
 - ✅ Terminal preferences in Settings > Terminal, as SuperXPuTTY's TerminalPreferences (theme, font, size, cursor, blink, bell, drawing, highlighting, mark matches, copy on select, scrollback, paste check lines, log time stamps, keys): shared by every tab and applied at once, also when changed from a tab's own menu. Checked: a font size reached the open tab
-- ⬜ Highlighted Output (Monaco) beside the tab, from the menu's Open as Document
+- ✅ Highlighted Output (SuperXPuTTY's web/output page, Monaco) beside the tab, from the tab menu or the page's Open as Document: follows the tab's log every 250 ms, with Rules, Theme, Follow, Wrap, Find, Save As, Open File, Rules Folder and Reload Rules; stays, marked closed, when its tab closes. Checked on the lab switch (Cisco rules detected, new output followed)
 - ✅ Mac shortcuts: Cmd+C and Cmd+V (through paste check), Edit > Find… (Cmd+F, the terminal's find bar), Edit > Clear Scrollback (Cmd+K), File > Close Tab (Cmd+W, no longer the window). The page's bell (sound), Ctrl+click links (http/https, default browser) answered as TerminalControl does
 - ✅ Search Output (the tab's log; Match case, Regex; up to 5,000 lines; double-click copies; Open log) and Watch for Activity / Silence (10 s to 5 min) with SuperXPuTTY's orange and grey tab badges, status text and a Dock bounce when the app is in the background. Checked: a search, and a pinging tab watched from another
 - ✅ Paste check, as SuperXPuTTY's: a paste of 2 lines or more (Settings > Terminal; 0 never) is shown in the Paste window, editable, typed on Paste (Cmd+Return); Cmd+V, Ctrl+Shift+V, the menu and middle-click all go through it. Checked with a three-line paste

@@ -445,6 +445,21 @@ fn log_read(path: PathBuf, offset: u64) -> Result<(String, u64), String> {
     logs::read_from(&path, offset)
 }
 
+/// Highlighted Output's next chunk of a file: base64 bytes (512 KB at most), the offset after them, and whether the
+/// file started again
+#[tauri::command]
+fn log_chunk(path: PathBuf, offset: u64) -> Result<(String, u64, bool), String> {
+    logs::read_chunk(&path, offset, 512 * 1024)
+}
+
+/// The user's own highlighting folder (Highlighted Output's folder button), made if it isn't there
+#[tauri::command]
+fn highlighting_user_folder(state: State<'_, AppState>) -> Result<PathBuf, String> {
+    let folder = state.user_folder.join("highlighting");
+    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    Ok(folder)
+}
+
 /// Open a file in its own app (Search Output's Open log)
 #[tauri::command]
 fn open_path(path: PathBuf) -> Result<(), String> {
@@ -1370,6 +1385,8 @@ pub fn run() {
             log_write,
             log_close,
             log_read,
+            log_chunk,
+            highlighting_user_folder,
             open_path,
             buttonbars_load,
             buttonbars_save,

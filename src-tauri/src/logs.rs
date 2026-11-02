@@ -95,6 +95,22 @@ pub fn read_from(path: &Path, offset: u64) -> Result<(String, u64), String> {
     Ok((String::from_utf8_lossy(&bytes).into_owned(), start + bytes.len() as u64))
 }
 
+/// Up to `max` bytes of a file from `offset`, base64 (Highlighted Output's chunks), the offset after them, and whether
+/// the file is now shorter than `offset` (it started again)
+pub fn read_chunk(path: &Path, offset: u64, max: u64) -> Result<(String, u64, bool), String> {
+    use base64::Engine;
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let length = file.metadata().map_err(|e| e.to_string())?.len();
+    if length < offset {
+        return Ok((String::new(), 0, true));
+    }
+    file.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    file.take(max).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    Ok((base64::engine::general_purpose::STANDARD.encode(&bytes), offset + bytes.len() as u64, false))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

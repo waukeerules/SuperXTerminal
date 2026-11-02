@@ -65,6 +65,9 @@ pub struct Opened {
     smart_sizing: bool,
     /// The desktop's scale (100, or the screen's with Retina): its pixels per point, times 100
     scale: u32,
+    /// Windows key combinations (⌘ and a key as Windows and it): 0 on this computer (never), 1 on the remote
+    /// computer (always), 2 only in full screen
+    keyboard: u32,
 }
 
 /// Every open Remote Desktop, by the id given to its tab
@@ -189,7 +192,10 @@ pub fn rdp_open(
         .with_color_depth(if options.color_depth.unwrap_or(32) <= 16 { 16 } else { 32 })
         .with_credssp(true)
         // Audio=0 plays here; 1 (on the remote computer) and 2 (don't play) send none here
-        .with_sound(options.audio.unwrap_or(0) == 0);
+        .with_sound(options.audio.unwrap_or(0) == 0)
+        // no bulk compression: IronRDP drops its decompressor when Windows re-activates the session (after the
+        // desktop is resized, e.g. going full screen) while Windows keeps compressing, and every update after is garbage
+        .with_compression(false);
     if let Some(domain) = &target.domain {
         builder = builder.with_domain(domain.clone());
     }
@@ -283,14 +289,14 @@ pub fn rdp_open(
                     let _ = on_event.send(InvokeResponseBody::Raw(packet));
                 }
                 RdpOutputEvent::ConnectionFailure(error) => {
-                    crate::applog::warn(format!("Remote Desktop to {address} failed: {error}"));
-                    send_json(&on_event, &RdpEvent::Ended { reason: plain_failure(&error.to_string()), clean: false });
+                    crate::applog::warn(format!("Remote Desktop to {address} failed: {}", with_causes(&error)));
+                    send_json(&on_event, &RdpEvent::Ended { reason: plain_failure(&with_causes(&error)), clean: false });
                     break;
                 }
                 RdpOutputEvent::Terminated(result) => {
                     let (reason, clean) = match result {
                         Ok(reason) => (format!("{reason}"), true),
-                        Err(error) => (error.to_string(), false),
+                        Err(error) => (with_causes(&error), false),
                     };
                     crate::applog::info(format!("Remote Desktop to {address} ended: {reason}"));
                     send_json(&on_event, &RdpEvent::Ended { reason, clean });
@@ -299,7 +305,7 @@ pub fn rdp_open(
             }
         }
     });
-    Ok(Opened { id: rdp_id, width, height, fixed, smart_sizing: options.smart_sizing != Some(false), scale })
+    Ok(Opened { id: rdp_id, width, height, fixed, smart_sizing: options.smart_sizing != Some(false), scale, keyboard: options.keyboard.unwrap_or(2) })
 }
 
 /// The desktop's size and scale: the options' fixed size, else the tab's in points at 100%, or in Retina pixels at
@@ -314,6 +320,17 @@ fn desktop_size(options: &crate::rdp_options::RdpOptions, width: u16, height: u1
         return (clamp(width as u32 * factor / 100), clamp(height as u32 * factor / 100), factor);
     }
     (clamp(width as u32), clamp(height as u32), 100)
+}
+
+/// An error with what caused it (IronRDP's own message is often only "custom error")
+fn with_causes(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        text.push_str(&format!(": {cause}"));
+        source = cause.source();
+    }
+    text
 }
 
 /// A failure as the user can act on it

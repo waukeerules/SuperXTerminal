@@ -109,7 +109,7 @@
       {@render flag("microphone", "Microphone", true)}
     </div>
     <div class="row"><label>Remote audio: {@render list("audio", AUDIO.map((t, i) => [i, t]))}</label></div>
-    <div class="row"><label>Windows key combinations: {@render list("keyboard", KEYBOARD.map((t, i) => [i, t]), true)}</label></div>
+    <div class="row"><label>Windows key combinations (⌘ and a key): {@render list("keyboard", KEYBOARD.map((t, i) => [i, t]))}</label></div>
   </fieldset>
 
   <fieldset>
@@ -125,7 +125,10 @@
   </fieldset>
 
   <p class="hint">* Kept for SuperXPuTTY and Windows App (Connect external); the built-in client doesn't have it yet.
-    ⌘ keys stay with SuperXTerminal; Control and Option are Windows' Ctrl and Alt.</p>
+    Keys: Control and Option are Windows' Ctrl and Alt; ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z are its Ctrl ones. Where Windows
+    key combinations are on, ⌘ and another key is the Windows key and it (⌘L locks, ⌘R is Run), except ⌘W, ⌘T, ⌘Q,
+    ⌘, ⌘`, ⌘1–9 and ⌃⌘F, which stay SuperXTerminal's. Fn+Control+Option+Delete is Ctrl+Alt+Delete; the tab's menu has
+    the rest.</p>
 </div>
 
 <style>

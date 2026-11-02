@@ -7,6 +7,7 @@
  * Control and Option are Windows' Ctrl and Alt.
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { askLogin, askOne } from "../scripting/asking.svelte";
 import { settings } from "../settings/store.svelte";
 
@@ -54,6 +55,10 @@ const MODIFIERS: ["ctrlKey" | "shiftKey" | "altKey", string, string[]][] = [
 /** ⌘ and these keys go to Windows as Ctrl and the same key */
 const CTRL_FOR_COMMAND: Record<string, string> = { KeyC: "KeyC", KeyV: "KeyV", KeyX: "KeyX", KeyA: "KeyA", KeyZ: "KeyZ" };
 
+/** ⌘ keys SuperXTerminal keeps when ⌘ is Windows' key: closing and opening tabs, quitting, Settings, switching
+ *  windows, tab 1-9 */
+const APP_COMMANDS = new Set(["KeyW", "KeyT", "KeyQ", "Comma", "Backquote", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9"]);
+
 /** What the tab is: a stored session */
 export interface RdpTarget {
   store: "saved" | "private" | "database";
@@ -76,6 +81,10 @@ export class RdpHost {
   private readonly observer: ResizeObserver;
   private pendingMove: { x: number; y: number } | null = null;
   private disposed = false;
+  /** The Windows key combinations option: 0 on this computer, 1 on the remote, 2 only in full screen */
+  private keyboard = 2;
+  /** The window is full screen (kept up to date as the tab resizes) */
+  private fullScreen = false;
   /** Caps Lock as last sent */
   private capsLock: boolean | null = null;
   /** Reconnecting after a drop (Settings > General > Dropped sessions): the attempt and its timer */
@@ -128,10 +137,11 @@ export class RdpHost {
     channel.onmessage = (message) => generation === this.generation && this.receive(message);
     const { width: w, height: h, scale } = this.size();
     try {
-      const opened = await invoke<{ id: number; width: number; height: number; fixed: boolean; smartSizing: boolean; scale: number }>("rdp_open", {
+      const opened = await invoke<{ id: number; width: number; height: number; fixed: boolean; smartSizing: boolean; scale: number; keyboard: number }>("rdp_open", {
         ...this.target, width: w, height: h, scale, username: this.username, password: this.password, onEvent: channel,
       });
       this.id = opened.id;
+      this.keyboard = opened.keyboard;
       // SmartSizing off: the desktop at its own size (in points), scrolled when bigger than the tab, as SuperXPuTTY's
       this.element.classList.toggle("actual-size", !opened.smartSizing);
       this.canvas.style.width = opened.smartSizing ? "" : `${(opened.width * 100) / opened.scale}px`;
@@ -299,14 +309,31 @@ export class RdpHost {
     const key = (e: KeyboardEvent, down: boolean) => {
       if (this.id === null) return;
       if (e.metaKey || e.key === "Meta") {
-        // ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z as Windows' Ctrl ones, as Microsoft's Mac client does; other ⌘ shortcuts stay
-        // SuperXTerminal's (⌘W, ⌘T, ⌘D ...)
+        if (!down || e.key === "Meta" || e.repeat) return;
+        // ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z as Windows' Ctrl ones, as Microsoft's Mac client does
         const letter = CTRL_FOR_COMMAND[e.code];
-        if (!down || !letter || e.altKey || e.ctrlKey) return;
+        if (letter && !e.altKey && !e.ctrlKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          // macOS sends no key-up for a key pressed with ⌘, so the whole press goes now
+          void this.commandKey(e.shiftKey && e.code === "KeyZ" ? "KeyY" : letter);
+          return;
+        }
+        // other ⌘ keys as Windows and the key (⌘L locks, ⌘R is Run), when the Windows key combinations option
+        // says so; SuperXTerminal keeps the ones to leave or switch the tab (⌘W, ⌘T, ⌘Q, ⌘, ⌘1-9)
+        // ⌃⌘F (full screen) stays the app's too, so full screen can always be left
+        if (!this.windowsKeys() || APP_COMMANDS.has(e.code) || (e.ctrlKey && e.code === "KeyF") || !SCANCODES[e.code]) return;
         e.preventDefault();
         e.stopPropagation();
-        // macOS sends no key-up for a key pressed with ⌘, so the whole press goes now
-        void this.commandKey(e.shiftKey && e.code === "KeyZ" ? "KeyY" : letter);
+        const mods = [e.ctrlKey && "ControlLeft", e.altKey && "AltLeft", e.shiftKey && "ShiftLeft"].filter(Boolean) as string[];
+        void this.sendCombo(["MetaLeft", ...mods, e.code]);
+        return;
+      }
+      // Fn+Control+Option+Delete is Ctrl+Alt+Delete, as in Microsoft's Mac client
+      if (down && e.code === "Delete" && e.ctrlKey && e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        void this.sendCombo(["ControlLeft", "AltLeft", "Delete"]);
         return;
       }
       // Caps Lock goes as the lock's state (macOS reports it on and off, not as presses)
@@ -396,8 +423,14 @@ export class RdpHost {
     this.held.clear();
   }
 
+  /** Whether ⌘ and a key go to Windows as the Windows key and it now */
+  private windowsKeys(): boolean {
+    return this.keyboard === 1 || (this.keyboard === 2 && this.fullScreen);
+  }
+
   /** The tab changed size: the remote desktop follows, once the resizing settles */
   private sizeChanged(): void {
+    void getCurrentWindow().isFullscreen().then((on) => (this.fullScreen = on)).catch(() => {});
     clearTimeout(this.resizeTimer);
     this.resizeTimer = setTimeout(() => {
       if (this.id === null) return;

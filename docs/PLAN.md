@@ -4,7 +4,7 @@ SuperXTerminal is a macOS counterpart of [SuperXPuTTY](https://github.com/waukee
 
 This document is the starting point. It compares two ways to get there, lists every SuperXPuTTY feature with what happens to it on the Mac, and sets out the data the two apps share, the UI mapping and the milestones.
 
-Sources: SuperXPuTTY's `FORK_CHANGES.md`, `AGENTS.md`, `docs/DatabaseSessions.md`, `docs/MonacoTerminal.md`, the code and the `web/` pages, as of commit `66cf19d` (version 2.4).
+Sources: SuperXPuTTY's `FORK_CHANGES.md`, `AGENTS.md`, `docs/DatabaseSessions.md`, `docs/MonacoTerminal.md`, the code and the `web/` pages, as of commit `c1af592` (version 2.5.0.0), and a real Windows install's settings files in `reference/` (see [Reference material](#reference-material)).
 
 ## Contents
 
@@ -120,8 +120,8 @@ A new macOS app with SSH through `ssh`. It reads SuperXPuTTY's data files and Da
 | Edit Session dialog (all fields, hints, where it's kept in the title) | ✅ | PuTTY-only fields are greyed (see [SSH](#ssh-and-other-connections)) |
 | **Edit sessions...** (bulk edit, locked fields skipped) | ✅ | |
 | **Local overrides** (`SessionOverrides.json`, note, indicator) | ✅ | |
-| **Folder defaults** (username, profile, port, jump host, rules) | ✅ | "PuTTY profile" becomes "SSH config host" (see below) |
-| **Sessions.xml on a shared folder** | ✅ | The settings folder can be on a mounted SMB share, like on Windows |
+| **Folder defaults** (username, profile, port, jump host, rules) | ✅ | The profile is resolved against the user's own [Profiles](#profiles) |
+| **Sessions.xml on a shared folder** | ✅ | The settings folder can be on a mounted SMB share, like on Windows, or a synced cloud folder (the reference install uses OneDrive; on a Mac that's under `~/Library/CloudStorage/`) |
 | Sessions.xml reloaded when changed elsewhere (SHA-256, own saves ignored) | ✅ | `notify` crate |
 | Use Sessions.xml off (Private and Database only) | ✅ | |
 | **CSV export/import** (same columns as the Database table) | ✅ | Same columns, so a file moves between Mac and Windows |
@@ -176,11 +176,11 @@ All supported, against **the same table** (see [Sharing data](#3-sharing-data-wi
 |---|---|---|
 | **SSH** | 🔁 | `ssh -tt` in a pseudo-terminal, inside the tab |
 | Host, port, username | ✅ | `-p`, `user@` |
-| **PuTTY profile** (`putty_profile`, `PuttySession`) | 🔁 | Read as an **SSH config host alias**: if `~/.ssh/config` has a `Host` of that name, it's used (`ssh -F` stays default, so keys, ciphers and `ProxyJump` there apply). Otherwise it's ignored, and Edit Session says so. Optional mapping table in Settings (PuTTY profile name → Host alias) |
-| Keys and agent (Pageant) | 🔁 | `ssh-agent` and the macOS Keychain (`UseKeychain`, `AddKeysToAgent`). `.ppk` keys need converting (`puttygen key.ppk -O private-openssh`); Edit Session warns when `-i x.ppk` is in the extra args |
-| Password (`-pw`, with "allow -pw") | 🔁 | Stored in the Keychain, given to `ssh` by a small `SSH_ASKPASS` helper (`SSH_ASKPASS_REQUIRE=force`). Never on the command line or in logs |
+| **PuTTY profile** (`putty_profile`, `PuttySession`) | 🔁 | Resolved against SuperXTerminal's own **Profiles**, by name (see [Profiles](#profiles)). The shared value is never rewritten; each user's profile of that name decides the login |
+| Keys and agent (Pageant) | 🔁 | A key file in the [profile](#profiles), or `ssh-agent` and the macOS Keychain (`UseKeychain`, `AddKeysToAgent`). `.ppk` keys need converting (`puttygen key.ppk -O private-openssh`); Edit Session warns when `-i x.ppk` is in the extra args |
+| Password (`-pw`, with "allow -pw") | 🔁 | From the session's `-pw` (when allowed) or its [profile](#profiles). Stored in the Keychain, given to `ssh` by a small `SSH_ASKPASS` helper (`SSH_ASKPASS_REQUIRE=force`). Never on the command line or in logs |
 | Extra arguments (PuTTY syntax) | 🔁 | Translated where `ssh` has an equivalent: `-L`, `-R`, `-D`, `-A`, `-X`, `-C`, `-4`/`-6`, `-v` as is; `-P n` → `-p n`; `-i file` as is (warns for `.ppk`); `-load` ignored. Anything else is shown in Edit Session as "not used on Mac" |
-| PuTTY default parameters (Options) | 🔁 | "Default SSH options" instead |
+| PuTTY default parameters (Options) | 🔁 | The "Default Settings" [profile](#profiles)'s extra `ssh` options |
 | **Jump hosts** (session path or `user@host:port`, folder defaults) | 🔁 | `-J user@host:port` (OpenSSH ProxyJump); a saved session as the jump host is resolved to its address, as now. Chains work (`-J a,b`), which plink couldn't do |
 | **Telnet** | 🔁 | macOS has no `telnet` since 10.13: a small Telnet client in the Rust core (option negotiation, NAWS), drawn in the same terminal |
 | **Raw** | 🔁 | A TCP socket in the Rust core |
@@ -200,6 +200,30 @@ All supported, against **the same table** (see [Sharing data](#3-sharing-data-wi
 | **cmd, PowerShell, WSL** | 🔁 / ⬜ | Opened as **Local Shell** (the user's login shell, zsh) for cmd and WSL sessions, which are marked "opened as Local Shell". PowerShell sessions use `pwsh` if installed, else ⬜. A new protocol, `LocalShell`, is added for Mac-made sessions |
 | Mintty, Cygterm, Xorg (VcXsrv) | ⬜ | "Windows only" |
 
+### Profiles
+
+**The idea:** shared data (Sessions.xml, the Database table) says *what* a session is and how it looks in the tree: name, folder, host, protocol, icon, colour, and which profile it uses. *How each person logs in* is their own business. On Windows that's their PuTTY profile of that name in the registry; on the Mac it's their SuperXTerminal profile of that name. So "Media Server" with `PuttySession="root"` logs in as `root` for one person, with a key, and with a different account and a password for another, with no change to the shared row.
+
+- **What a profile holds:**
+  - **Login:** username, password, and an SSH key file or the agent.
+  - **Connection:** port, jump host, keepalive, port forwards, and extra `ssh` options.
+  - **Terminal:** cursor, bell and keys, read by `TerminalPreferences`' `"profile"` values.
+  - **SSH config host:** optional, a `Host` from `~/.ssh/config` used for anything the profile doesn't set.
+- **Where they're kept:** per user, in `Profiles.json` (see §3); passwords and key passphrases in the Keychain, never in a file. They're never written to the settings folder or the Database table.
+- **Order at launch, first wins:**
+  1. Local override
+  2. The session's own field
+  3. The folder's default
+  4. The profile
+  5. "Default Settings", then built-in defaults
+
+  It's the same order as SuperXPuTTY, where a session's own username beats its PuTTY profile's.
+- **"Default Settings"** is a built-in profile that always exists, like PuTTY's. Every other profile falls back to it.
+- **A profile that isn't set up on this Mac:** the session still connects with "Default Settings". Its tree tooltip and Edit Session say "Profile 'root' isn't set up on this Mac", with a button that creates it.
+- **Turned into `ssh` arguments** per launch: `-l`, `-p`, `-i … -o IdentitiesOnly=yes`, `-J`, `-o …`, and the password through the askpass helper.
+- **Filling them:** created by hand in Settings → Profiles. Later, optionally, imported from a `reg export` of `HKCU\Software\SimonTatham\PuTTY\Sessions`, keeping the fields `ssh` can use.
+- **Telnet, Raw and Serial** use a profile's terminal settings, and Serial its line settings, when they're set.
+
 ### Terminal
 
 All of this comes with the reused `web/terminal` page.
@@ -208,7 +232,7 @@ All of this comes with the reused `web/terminal` page.
 |---|---|---|
 | Highlighting as you type (rules: cisco, junos, generic, auto, user rules) | ✅ | Same JSON |
 | Rules per session and folder, per-tab choice | ✅ | |
-| Themes, font, cursor, bell, copy on select, mark matches | ✅ | `TerminalPreferences`, one JSON setting, as now |
+| Themes, font, cursor, bell, copy on select, mark matches | ✅ | `TerminalPreferences`, one JSON setting, as now. Its default for cursor, bell and keys is `"profile"`; on the Mac that means the session's [profile](#profiles) |
 | Paste check (several lines, production sessions) | ✅ | |
 | Find, clear scrollback/screen, links, unlimited scrollback | ✅ | Cmd shortcuts added beside the Ctrl ones |
 | **Highlighted Output** (Monaco, beside the tab) | ✅ | `web/output` reused |
@@ -254,7 +278,7 @@ All of this comes with the reused `web/terminal` page.
 
 | File | Mac reads | Mac writes | Notes |
 |---|---|---|---|
-| `Sessions.xml` | ✅ | ✅ | Same XML (`ArrayOfSessionData`, attributes as now). **Unknown attributes are kept** on save, so a newer Windows field isn't lost. Mac-only values (protocol `LocalShell`) are written so SuperXPuTTY can read them; SuperXPuTTY needs a small change to read an unknown protocol as greyed rather than as SSH (open question) |
+| `Sessions.xml` | ✅ | ✅ | Same XML (`ArrayOfSessionData`, attributes as now). The Mac app **keeps unknown attributes** on save, so a newer Windows field isn't lost. **The other direction doesn't hold:** SuperXPuTTY reads the file with `XmlSerializer` and has no `XmlAnyAttribute`, so a Mac-only attribute is dropped the next time a Windows user saves. **Unknown protocols:** an unknown `Proto` value (e.g. `LocalShell`) makes `XmlSerializer` throw, and SuperXPuTTY then loads **none** of the Saved sessions. (Database sessions are different: there an unknown protocol is read as SSH.) So the Mac app writes no new protocol or attribute to Sessions.xml until SuperXPuTTY can read it (open question 4) |
 | `Folders.xml` | ✅ | ✅ | |
 | `ButtonBars.xml` | ✅ | ✅ | |
 | `icons/` | ✅ | ✅ | |
@@ -266,7 +290,7 @@ The file watcher's SHA-256 check works the same way, so each app reloads when th
 
 ### Per-user files (not shared; each machine has its own)
 
-`SessionShortcuts.json`, `SessionOverrides.json`, `PrivateSessions.xml`, `EnvironmentVariables.json`, `DatabaseSessions.cache.xml`, `DatabaseSessions.outbox.xml`. They're in `~/Library/Application Support/SuperXTerminal/`. Their formats are the same, so a user can copy theirs over, except secret values (DPAPI on Windows, Keychain on Mac), which are asked for again.
+`SessionShortcuts.json`, `SessionOverrides.json`, `PrivateSessions.xml`, `EnvironmentVariables.json`, `DatabaseSessions.cache.xml`, `DatabaseSessions.outbox.xml`, and the Mac's own `Profiles.json` (the Windows counterpart is the user's PuTTY profiles in the registry). They're in `~/Library/Application Support/SuperXTerminal/`. Their formats are the same, so a user can copy theirs over, except secret values (DPAPI on Windows, Keychain on Mac), which are asked for again.
 
 ### The Postgres table
 
@@ -283,7 +307,7 @@ The file watcher's SHA-256 check works the same way, so each app reloads when th
 | Protocols `WINCMD`, `WSL` | Open as Local Shell, marked so |
 | Protocol `PS` | `pwsh` if installed, else greyed |
 | Protocols `Mintty`, `Cygterm`, `Rlogin` | Greyed: dimmed icon, can't be opened, tooltip says why |
-| `PuttySession` / `putty_profile` | SSH config host alias if one matches, else ignored (Edit Session says so); never rewritten |
+| `PuttySession` / `putty_profile` | The user's SuperXTerminal profile of that name, else "Default Settings" (Edit Session says so); never rewritten |
 | `ExtraArgs` / `extra_args` | Translated per launch (§2); never rewritten |
 | `-i C:\keys\x.ppk` | Not found: warning, connects without it |
 | `SPSLFileName = C:\...` | Not found: warning; URLs and relative paths work |
@@ -311,8 +335,8 @@ Aim: someone who knows SuperXPuTTY recognises every screen. The main window keep
 | Built-in terminal's own right-click menu | Same (it's the same page) | |
 | Button bar above the status bar | Same | |
 | Status bar (status text, script progress and Stop, version) | Same | |
-| Options dialog (Paths, GUI, Shortcuts, Advanced, RDP, Terminal) | Settings window (Cmd+,), same tabs | Paths: PuTTY, pscp, plink, Mintty, WinSCP, VNC, Xorg rows greyed; adds `ssh` path, SSH config, Terminal.app/iTerm2 choice. RDP tab: options for the `.rdp` file |
-| Edit Session | Sheet or window, same fields | PuTTY profile → "SSH config host"; greyed fields explained |
+| Options dialog (Paths, GUI, Shortcuts, Advanced, RDP, Terminal) | Settings window (Cmd+,), same tabs | Paths: PuTTY, pscp, plink, Mintty, WinSCP, VNC, Xorg rows greyed; adds `ssh` path, SSH config, Terminal.app/iTerm2 choice. RDP tab: options for the `.rdp` file. New **Profiles** tab: the user's profiles (see §2 Profiles) |
+| Edit Session | Sheet or window, same fields | "PuTTY profile" becomes "Profile": a list of the user's profiles plus the stored name, with Edit profile... beside it; greyed fields explained |
 | Edit sessions... (bulk), Local overrides, Environment Colours, Environment Variables, Database settings, Edit Button, Script Editor, Icon picker, Quick Selector, Paste check, Search Output, Rename | Windows or sheets with the same fields | |
 | Messenger (themed message boxes) | Native alerts or themed modal | Native alerts follow the system theme on their own |
 | Log viewer | Window | |
@@ -325,6 +349,30 @@ Aim: someone who knows SuperXPuTTY recognises every screen. The main window keep
 - Take screenshots of each SuperXPuTTY window as the reference for each screen.
 - One concession: native macOS window chrome (traffic lights, title bar).
 
+### Reference material
+
+`reference/` holds a copy of a working Windows install's files: `Sessions.xml`, `PrivateSessions.xml`, `ButtonBars.xml`, `SessionShortcuts.json`, `SessionOverrides.json`, `EnvironmentVariables.json`, `DatabaseSessions.cache.xml`, the Database settings export, `SuperXPuTTY.settings`, `layouts/` and `scripts/`, plus screenshots. **It's git-ignored**, because it holds hosts, usernames and secrets. Use it as test data for the readers and writers, and never copy values from it into the repo.
+
+What the reference install shows (main window screenshot, Light theme):
+- **Settings:** `InterfaceTheme` 2 (Light), icon size 24, sessions tree in Segoe UI 12 pt, built-in terminal and Highlighted Output on, settings folder on OneDrive.
+- **Toolbars:** the main window has two rows of toolbars under the menu (File, View, Tools, Help). The first is Quick connect: Protocol, Host, Login, Password, Session, Connect, Clear. The second is Send Commands: Command, Send, mask, script, editor, Stop.
+- **Sessions tree:** search box with Search and Clear; a toolbar (New session, New folder, Expand, Collapse, Sort); roots Favorites, Recent, Saved, Private and Database sessions, each with a count. Session icons sit on a filled environment-colour circle (red, green, purple), with a small green dot when the session is open.
+- **Tabs:** a coloured tab (red for production) with an icon and close button, a red frame around the terminal, and the tab list arrow at the right end.
+- **Bottom:** the button bar (bar picker "Default", then coloured round buttons or icons with labels), and below it the status bar (status text on the left, version and layout on the right).
+
+**Screenshots still wanted** (each in Light and Dark, at 100 % scaling if possible):
+1. The main window in Dark, with several tabs open, including a split and a disconnected tab with its badge.
+2. Session context menu, folder context menu, and each root's menu (Favorites, Private, Database).
+3. Tab context menu, including Send Key and Special Command opened, and the terminal's own right-click menu.
+4. Edit Session (each protocol that changes its fields: SSH, Serial, RDP), Folder settings, Local overrides, Edit sessions... (bulk).
+5. Options: every tab (Paths, GUI, Shortcuts, Advanced, RDP, Terminal).
+6. Database settings, Environment Colours, Environment Variables.
+7. Script Editor with the library and reference panes; Edit Button; the icon picker.
+8. Quick Selector, Paste check, Search Output, and Highlighted Output beside a tab.
+9. File, View, Tools and Help menus opened.
+
+**Files still wanted:** `Folders.xml` and `PrivateFolders.xml` if the install has them (folder colours and defaults), a user's `highlighting/` and `icons/` folders if any, and, optionally, a `reg export` of the PuTTY profiles (only if the profile import is built).
+
 ---
 
 ## 5. Milestones
@@ -334,7 +382,7 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 | # | Milestone | Size | Done when |
 |---|---|---|---|
 | M0 | **Skeleton**: Tauri app, dockview, CI building a macOS `.dmg` (unsigned) and a Windows dev build | 1 w | The app opens on Windows and on a Mac, with an empty tree and one local shell tab |
-| M1 | **MVP**: SSH tabs (`ssh` in a PTY, `web/terminal`), sessions tree from Sessions.xml/PrivateSessions.xml/Folders.xml (read and write), icons (templates redrawn as SVG, logos, custom), environment colours, quick connect, Edit Session, placeholders with Keychain secrets, Settings basics | 5-6 w | A Mac user opens the team's Sessions.xml and connects to switches with the right icons and colours |
+| M1 | **MVP**: SSH tabs (`ssh` in a PTY, `web/terminal`), sessions tree from Sessions.xml/PrivateSessions.xml/Folders.xml (read and write), icons (templates redrawn as SVG, logos, custom), environment colours, quick connect, Edit Session, Profiles (with Keychain passwords and keys), placeholders with Keychain secrets, Settings basics | 5-6 w | A Mac user opens the team's Sessions.xml and connects to switches with the right icons and colours |
 | M2 | **Database sessions**: read, cache, outbox, locks, version polling, folders table, writes, Move/Copy, settings dialog and JSON | 3-4 w | Mac and Windows users edit the same table and see each other's changes within 30 s |
 | M3 | **Scripting and commands**: button bar, Send Commands, SPSL (WAITFOR, SENDKEY...), Script Editor and library, snippet prompts, Send Key | 3 w | The existing button bars and scripts run unchanged |
 | M4 | **Terminal extras**: highlighting rules and preferences in Settings, Highlighted Output, Search Output, alerts, paste check, logs, reconnect | 2 w | |
@@ -365,7 +413,8 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 - **Copying from SuperXPuTTY:**
   - `web/terminal`, `web/output`, `web/shared` and `web/lib` copy across with their licences (xterm.js and Monaco: MIT; Simple Icons: CC0).
   - SuperXPuTTY itself is MIT, so its code can be ported with the copyright notice kept.
-  - The pages talk to the host through `chrome.webview.postMessage` (WebView2). A small shim maps that to Tauri's `invoke`/events, so the pages need no other change.
+  - The pages talk to the host through `chrome.webview.postMessage` (WebView2). A small shim maps that to Tauri's `invoke`/events, so the pages need no other change. They load their scripts by relative paths; SuperXPuTTY serves them from the made-up host `superputty-output.local`, and Tauri's bundled files or a custom protocol do the same.
+  - **The host side is more than a shim.** The pages' messages (`config`, `data`, `ack`, `log`, `pasteRequest`, `pref`...) are answered by `Gui/TerminalControl.cs` (about 1,300 lines). It builds `config` from the rules and themes folders, the preferences and the PuTTY profile, writes the log, and runs paste check, WAITFOR marks and reconnect. That's ported to Rust and TypeScript in M1 and M4, and counted in their sizes.
 
 ---
 
@@ -374,8 +423,8 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 1. **Stack:** is Tauri (B1) acceptable, or do you want a pure Swift app (B2) for the most Mac-native feel, at the cost of no Windows development and less reuse?
 2. **Cross-platform later?** Tauri would let SuperXTerminal run on Windows too. Should it stay Mac-only (and SuperXPuTTY stays the Windows app), or aim to replace SuperXPuTTY one day?
 3. **Database application name:** connect as `SuperPuTTY` (no schema change, locks enforced as now), or as `SuperXTerminal` (needs the guard trigger to accept both, changed in SuperXPuTTY's schema SQL too)?
-4. **New protocol `LocalShell` in shared Sessions.xml:** OK to add, with a matching small change in SuperXPuTTY so it shows such sessions greyed (today an unknown protocol is read as SSH)?
-5. **PuTTY profile → SSH config mapping:** use the profile name as a `Host` alias, a mapping table in Settings, or both?
+4. **New protocol `LocalShell` in shared Sessions.xml:** today an unknown protocol stops SuperXPuTTY loading Sessions.xml at all (§3). So SuperXPuTTY must change first: read an unknown protocol as greyed, and keep unknown attributes (`XmlAnyAttribute`). Do that, and ship it before the Mac app writes such sessions, or keep Mac-only sessions in Private sessions only?
+5. **Profiles:** decided: SuperXTerminal's own per-user profiles, matched by name (§2 Profiles). Still open: is the `reg export` import worth building, and should the non-secret parts of profiles ever be shareable through the settings folder?
 6. **RDP:** is opening Windows App (outside the tabs) good enough, or should an in-tab RDP client (e.g. FreeRDP) be a later milestone?
 7. **SENDBREAK:** make it work on the Mac for serial and SSH sessions (it can), or keep it "not available" to match SuperXPuTTY?
 8. **Distribution:** will you get an Apple Developer ID (for signing and notarisation), and should builds be public GitHub releases?

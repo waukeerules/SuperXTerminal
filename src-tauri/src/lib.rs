@@ -39,6 +39,8 @@ pub struct AppState {
     database: Mutex<DbState>,
     /// The Database sessions as last read from the table (or its cache), before queued changes are applied on top
     db_server: Mutex<Vec<sessions::StoredSession>>,
+    /// The session files' contents when last read, so a change made elsewhere can be noticed
+    files_seen: Mutex<u64>,
 }
 
 /// How Database sessions stand, for the tree's root
@@ -131,6 +133,7 @@ fn profiles_delete(state: State<'_, AppState>, name: String) -> Result<Vec<Profi
 #[tauri::command]
 fn sessions_load(state: State<'_, AppState>) -> SessionsLoaded {
     let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
+    *state.files_seen.lock().unwrap() = files_fingerprint(&state);
     let mut problems = Vec::new();
     let mut loaded = Sessions::load(settings_folder.as_deref(), &state.user_folder, &mut problems);
     // Database sessions come from the table (or its cache), not the files: keep them
@@ -505,6 +508,30 @@ fn session_external(state: State<'_, AppState>, store: sessions::Store, id: Stri
         }
         (_, proto) => Err(format!("{proto} sessions don't open in another app.")),
     }
+}
+
+/// The session files' contents, hashed: Sessions.xml and Folders.xml in the settings folder, the private ones in the
+/// user's folder, as SuperXPuTTY's SessionsFileWatcher compares (a file rewritten unchanged doesn't count)
+fn files_fingerprint(state: &AppState) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut files = vec![state.user_folder.join("PrivateSessions.xml"), state.user_folder.join("PrivateFolders.xml")];
+    if let Some(folder) = settings_folder {
+        files.push(folder.join("Sessions.xml"));
+        files.push(folder.join("Folders.xml"));
+    }
+    for file in files {
+        std::fs::read(&file).unwrap_or_default().hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// Whether a session file changed since it was last read (a teammate saving to the shared folder, SuperXPuTTY, an
+/// editor); the tree then reads them again
+#[tauri::command]
+fn sessions_files_changed(state: State<'_, AppState>) -> bool {
+    files_fingerprint(&state) != *state.files_seen.lock().unwrap()
 }
 
 /// The serial devices on this Mac, for choosing which one a COM name is
@@ -1402,6 +1429,7 @@ pub fn run() {
             profiles: Mutex::new(profiles),
             database: Mutex::new(DbState::default()),
             db_server: Mutex::new(Vec::new()),
+            files_seen: Mutex::new(0),
         })
         .invoke_handler(tauri::generate_handler![
             sessions_load,
@@ -1437,6 +1465,7 @@ pub fn run() {
             db_pending_list,
             shortcuts_get,
             serial_devices_list,
+            sessions_files_changed,
             session_external,
             serial_device_set,
             pty::pty_special,

@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import { untrack } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import TreeFolder from "./TreeFolder.svelte";
   import {
     deleteSession,
@@ -346,7 +347,7 @@
         },
         { separator: true },
         { label: "Copy host address", action: () => void navigator.clipboard.writeText(session.host) },
-        { label: "Duplicate as…", disabled: "Comes in M5" },
+        { label: "Duplicate as…", disabled: session.store === "database" && !db?.writable && "Database sessions can't be written now", action: () => void duplicateAs(session) },
         { label: "Edit", disabled: block, action: () => void edit(session) },
         { label: "Local overrides…", disabled: "Local overrides come in M5" },
         { label: "Delete", disabled: block, action: () => void remove(session) },
@@ -588,6 +589,29 @@
       error = String(e);
     }
   }
+
+  /** Duplicate as…: Edit Session for a new session in the same folder, filled in from this one, as SuperXPuTTY's */
+  async function duplicateAs(session: SessionView): Promise<void> {
+    try {
+      editing = { store: session.store, id: null, fields: await getSession(session.store, session.id) };
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  // a session file changed elsewhere (a teammate saving to the shared folder, SuperXPuTTY, an editor): read it again,
+  // but not while a window is open, so nothing being edited is lost
+  $effect(() => {
+    if (!settings.loaded) return;
+    const timer = setInterval(async () => {
+      if (editing || folderSettings || prompt || menu || showPending) return;
+      if (await invoke<boolean>("sessions_files_changed")) {
+        await reload();
+        context.status("The sessions changed on disk; read them again");
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  });
 
   /** Open a session in another app (Connect external, FileZilla), saying how it went in the status bar */
   async function external(session: SessionView, how: "terminal" | "filezilla"): Promise<void> {

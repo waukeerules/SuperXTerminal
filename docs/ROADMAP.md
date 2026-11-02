@@ -134,9 +134,9 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ⬜ Multi-select with Connect, Delete, Edit sessions...
 - ⬜ Edit sessions... (bulk edit)
 - ⬜ Local overrides (`SessionOverrides.json`)
-- ⬜ Duplicate session, Copy host address, Save session as...
+- ✅ Duplicate as… (Edit Session for a new session filled in from the copied one), Copy host address, and the tab menu's Duplicate session and Save session as…
 - ⬜ CSV export/import
-- ⬜ Sessions.xml reloaded when changed elsewhere
+- ✅ Sessions.xml, Folders.xml and the private files read again when they change elsewhere (a teammate, SuperXPuTTY, an editor), compared by contents every 3 s, not while a window is open. Checked with an outside change
 - ⬜ Use Sessions.xml off
 - ⬜ Import: MobaXterm, `.rdp` files, `~/.ssh/config`
 - ⬜ Environment Colours dialog

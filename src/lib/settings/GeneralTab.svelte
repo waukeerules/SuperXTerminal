@@ -5,6 +5,13 @@
 -->
 <script lang="ts">
   import { chooseSettingsFolder, saveSettings, settings } from "./store.svelte";
+  import { open } from "@tauri-apps/plugin-dialog";
+
+  /** Choose where kept session logs go */
+  async function chooseLogFolder(): Promise<void> {
+    const path = await open({ directory: true, title: "Choose the folder for session logs" });
+    if (typeof path === "string") await saveSettings({ sessionLogFolder: path });
+  }
   import { parseRules } from "../icons/environment";
 
   let rules = $state(settings.environmentColorRules);
@@ -68,6 +75,19 @@
       <input type="number" min="1" max="3600" value={settings.autoReconnectDelaySeconds} disabled={!settings.autoReconnect}
         onchange={(e) => void saveSettings({ autoReconnectDelaySeconds: Math.max(1, Number(e.currentTarget.value) || 10) })} />
     </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Session logs</legend>
+    <p class="hint">Every tab logs what it shows, for Search Output and Highlighted Output. Kept logs stay; otherwise a
+      tab's log is deleted when it closes.</p>
+    <label class="check"><input type="checkbox" checked={settings.sessionLogEnabled}
+      onchange={(e) => void saveSettings({ sessionLogEnabled: e.currentTarget.checked })} /> Keep a log of every session (one file per session, named with its start time)</label>
+    <div class="row">
+      <input value={settings.sessionLogFolder} placeholder="Documents/SuperXTerminal/logs" aria-label="Log folder" disabled={!settings.sessionLogEnabled}
+        onchange={(e) => void saveSettings({ sessionLogFolder: e.currentTarget.value.trim() })} />
+      <button disabled={!settings.sessionLogEnabled} onclick={chooseLogFolder}>Choose…</button>
+    </div>
   </fieldset>
 
   <fieldset>

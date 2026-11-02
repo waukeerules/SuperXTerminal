@@ -6,6 +6,7 @@ mod editing;
 mod folders;
 mod highlighting;
 mod launch;
+mod logs;
 mod profiles;
 mod pty;
 mod scripts;
@@ -403,6 +404,51 @@ fn text_file_read(path: PathBuf) -> Result<String, String> {
 #[tauri::command]
 fn text_file_write(path: PathBuf, text: String) -> Result<(), String> {
     std::fs::write(path, text.replace("\r\n", "\n").replace('\n', "\r\n")).map_err(|e| e.to_string())
+}
+
+/// A log just started: its id for writing, its file, and whether it goes when the tab closes
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LogStarted {
+    id: u32,
+    path: PathBuf,
+    temporary: bool,
+}
+
+/// Start a tab's session log: kept in the chosen folder when the settings say so, else temporary
+#[tauri::command]
+fn log_open(state: State<'_, AppState>, logs: State<'_, logs::Logs>, name: String) -> Result<LogStarted, String> {
+    let (keep, folder) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.session_log_enabled, settings.session_log_folder.clone())
+    };
+    let folder = if keep { logs::kept_folder(&folder) } else { logs::temp_folder() };
+    let (id, path) = logs.open(&folder, &name)?;
+    Ok(LogStarted { id, path, temporary: !keep })
+}
+
+/// Add a tab's finished lines to its log
+#[tauri::command]
+fn log_write(logs: State<'_, logs::Logs>, id: u32, text: String) -> Result<(), String> {
+    logs.write(id, &text)
+}
+
+/// Close a tab's log (a temporary one is deleted shortly after)
+#[tauri::command]
+fn log_close(logs: State<'_, logs::Logs>, id: u32, temporary: bool) {
+    logs.close(id, temporary);
+}
+
+/// A log's text from a byte offset, and the offset after it (Search Output, Highlighted Output)
+#[tauri::command]
+fn log_read(path: PathBuf, offset: u64) -> Result<(String, u64), String> {
+    logs::read_from(&path, offset)
+}
+
+/// Open a file in its own app (Search Output's Open log)
+#[tauri::command]
+fn open_path(path: PathBuf) -> Result<(), String> {
+    std::process::Command::new("open").arg(path).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// The Favorites and Recent lists
@@ -1271,12 +1317,14 @@ pub fn run() {
             let _ = app.emit("menu", event.id().0.as_str());
         })
         .setup(|app| {
+            logs::sweep_temp();
             #[cfg(target_os = "macos")]
             no_siri_badge();
             main_window(app.handle())?;
             Ok(())
         })
         .manage(pty::Ptys::default())
+        .manage(logs::Logs::default())
         .manage(AppState {
             user_folder,
             settings: Mutex::new(settings),
@@ -1318,6 +1366,11 @@ pub fn run() {
             db_create_schema,
             db_pending_list,
             shortcuts_get,
+            log_open,
+            log_write,
+            log_close,
+            log_read,
+            open_path,
             buttonbars_load,
             buttonbars_save,
             buttonbars_export,

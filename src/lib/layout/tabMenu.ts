@@ -10,6 +10,8 @@ import type { TabArea } from "./TabArea";
 
 /** What the menu needs from the window */
 export interface TabMenuHost {
+  /** Open Search Output for a tab */
+  search: (id: string) => void;
   tabs: TabArea;
   sessions: SessionView[];
   open: (session: SessionView) => void;
@@ -30,6 +32,9 @@ const MENU_KEYS = [
 ];
 
 const LATER = "Comes in M4";
+
+/** Watch for Silence's choices, as SuperXPuTTY's */
+const SILENCE: [number, string][] = [[0, "Off"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"], [300, "5 minutes"]];
 
 /** The sessions as a menu, folders as submenus, as ctlPuttyPanel's New session */
 function sessionsMenu(sessions: SessionView[], open: (s: SessionView) => void): MenuItem[] {
@@ -64,6 +69,8 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
   const port = session?.port ?? 0;
   const group = tabs.api.getPanel(id)?.group.panels ?? [];
   const index = group.findIndex((p) => p.id === id);
+  const watch = tabs.watchOf(id);
+  const noLog = "The session hasn't started yet";
   const roots: [string, SessionView["store"]][] = [["Saved sessions", "saved"], ["Private sessions", "private"], ["Database sessions", "database"]];
   return [
     {
@@ -90,10 +97,19 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
     { label: "Refresh tab", action: () => tab.host.refresh() },
     { label: "Accept commands", checked: tab.acceptCommands, action: () => tabs.setAccept(id, !tab.acceptCommands) },
     { separator: true },
-    { label: "Search Output...", disabled: LATER },
+    { label: "Search Output...", disabled: !tab.host.logPath && noLog, action: () => host.search(id) },
     { label: "Highlighted Output", disabled: LATER },
-    { label: "Watch for Activity", disabled: LATER },
-    { label: "Watch for Silence", disabled: LATER },
+    {
+      label: "Watch for Activity",
+      checked: watch.activity,
+      disabled: !tab.host.logPath && noLog,
+      action: () => tabs.setWatch(id, { activity: !watch.activity }),
+    },
+    {
+      label: "Watch for Silence",
+      disabled: !tab.host.logPath && noLog,
+      items: SILENCE.map(([seconds, label]) => ({ label, checked: watch.silence === seconds, action: () => tabs.setWatch(id, { silence: seconds }) })),
+    },
     { separator: true },
     {
       label: "Send Key",

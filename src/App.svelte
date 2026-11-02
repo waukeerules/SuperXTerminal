@@ -28,6 +28,8 @@
   import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
   import Prompt from "./lib/ui/Prompt.svelte";
   import { tabMenu } from "./lib/layout/tabMenu";
+  import SearchOutput from "./lib/terminal/SearchOutput.svelte";
+  import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 
   let tabElement: HTMLDivElement;
   let tabs = $state<TabArea | null>(null);
@@ -42,6 +44,8 @@
   let tree: SessionTree | undefined = $state();
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let renaming = $state<{ id: string; title: string } | null>(null);
+  /** Search Output windows, one per tab */
+  let searches = $state<{ id: string; title: string; logPath: string | null }[]>([]);
 
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
   void listen<string>("menu", (event) => {
@@ -74,6 +78,16 @@
     context.status = (text) => (status = text);
     context.openSession = (id) => tree?.openById(id) ?? false;
     context.editVariables = () => (variablesOpen = true);
+    tabs.onAlert = (text, background) => {
+      status = text;
+      // in the background, the Dock icon bounces once, as Windows flashes the taskbar button
+      if (background) void getCurrentWindow().requestUserAttention(UserAttentionType.Informational).catch(() => {});
+    };
+    // a Search Output window closes with its tab
+    tabs.onChange(() => {
+      const open = new Set(tabs?.tabList().map((t) => t.id));
+      if (searches.some((s) => !open.has(s.id))) searches = searches.filter((s) => open.has(s.id));
+    });
     tabs.onTabMenu = (id, x, y) => {
       if (!tabs || !tree) return;
       const t = tree;
@@ -87,6 +101,11 @@
             open: (session) => t.openById(session.id),
             saveAs: (store, sessionId, title) => void t.saveSessionAs(store, sessionId, title),
             rename: (tabId, title) => (renaming = { id: tabId, title }),
+            search: (tabId) => {
+              if (searches.some((s) => s.id === tabId)) return;
+              const host = tabs?.hosts.get(tabId);
+              searches = [...searches, { id: tabId, title: tabs?.api.getPanel(tabId)?.title ?? "", logPath: host?.logPath ?? null }];
+            },
             status: (text) => (status = text),
           },
           id,
@@ -180,6 +199,10 @@
 
 <Ask />
 <PasteCheck />
+
+{#each searches as search (search.id)}
+  <SearchOutput title={search.title} logPath={search.logPath} onClose={() => (searches = searches.filter((s) => s !== search))} />
+{/each}
 
 {#if menu}
   <Menu items={menu.items} x={menu.x} y={menu.y} onClose={() => (menu = null)} />

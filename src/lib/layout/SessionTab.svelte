@@ -23,6 +23,8 @@
   const scripting = $derived(running.runs.some((r) => r.tabId === tabId));
   /** The session is down: SuperXPuTTY's disconnected badge on the icon */
   const disconnected = $derived(tabStates[tabId]?.ended ?? false);
+  /** Watch for Activity's orange dot, or Watch for Silence's grey pause */
+  const alert = $derived(tabStates[tabId]?.alert ?? null);
 </script>
 
 <span class="tab" class:coloured={!!environment} style:--env={environment ?? "transparent"}>
@@ -34,7 +36,9 @@
   {:else}
     <span class="icon" class:down={disconnected} title={disconnected ? "Disconnected" : undefined}>
       <Icon key={icon} size={Math.round(iconSize * 0.75)} {customs} />
-      {#if disconnected}<span class="badge" aria-label="Disconnected">✕</span>{/if}
+      {#if disconnected}<span class="badge" aria-label="Disconnected">✕</span>
+      {:else if alert === "activity"}<span class="badge activity" title="New output" aria-label="New output"></span>
+      {:else if alert === "silence"}<span class="badge silence" title="Quiet" aria-label="Quiet">❚❚</span>{/if}
     </span>
   {/if}
   <span class="title">{title}</span>
@@ -81,6 +85,18 @@
     font-size: 7px;
     line-height: 11px;
     text-align: center;
+  }
+
+  .badge.activity {
+    background: #f0883e;
+    box-shadow: 0 0 0 1.5px #fff;
+  }
+
+  .badge.silence {
+    background: #6e7681;
+    box-shadow: 0 0 0 1.5px #fff;
+    font-size: 5px;
+    letter-spacing: -1px;
   }
 
   .cell {

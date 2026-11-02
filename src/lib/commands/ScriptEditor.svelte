@@ -186,6 +186,7 @@
     padding: 8px 0 0;
     color: var(--text-muted);
     cursor: move;
+    outline: none;
   }
 
   .close {

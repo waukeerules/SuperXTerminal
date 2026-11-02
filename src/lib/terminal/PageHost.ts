@@ -14,7 +14,7 @@ import { isDark, settings } from "../settings/store.svelte";
 import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
 import { askOne } from "../scripting/asking.svelte";
-import { allPrefs, onPrefsChanged, setPrefs } from "./prefs";
+import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
 import { checkPaste } from "./pasting.svelte";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
@@ -104,6 +104,13 @@ export class PageHost implements ScriptTarget {
   private mark = 0;
   /** The program ended: nothing more can be typed */
   private ended = false;
+  /** The tab's session log (SessionLog): its id for writing, its file, and whether it goes when the tab closes */
+  private log: { id: number; path: string; temporary: boolean } | null = null;
+  /** When the last time stamp went in the log; 0 for none yet, so the first write is stamped */
+  private lastLogStamp = 0;
+  /** Characters of finished output so far, and when the last came (Watch for Activity and Silence) */
+  outputLength = 0;
+  lastOutputAt = Date.now();
   /** When the session last started, and how many reconnects have run since it last stayed up (TerminalControl) */
   private startedAt = 0;
   private reconnectAttempts = 0;
@@ -155,6 +162,8 @@ export class PageHost implements ScriptTarget {
   dispose(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.stopPrefs();
+    if (this.log) void invoke("log_close", { id: this.log.id, temporary: this.log.temporary });
+    this.log = null;
     window.removeEventListener("message", this.onWindowMessage);
     if (this.ptyId !== null) {
       void invoke("pty_close", { id: this.ptyId });
@@ -249,10 +258,18 @@ export class PageHost implements ScriptTarget {
     }
   }
 
-  /** Lines the page has finished showing, and the cursor's line: kept for WAITFOR (the session log comes in M4) */
+  /** The log's file, for Search Output and Highlighted Output; null until the session starts */
+  get logPath(): string | null {
+    return this.log?.path ?? null;
+  }
+
+  /** Lines the page has finished showing, and the cursor's line: kept for WAITFOR, and written to the session log */
   private onLog(lines: string[], current: string): void {
     if (lines.length) {
       const text = lines.map((l) => l + "\n").join("");
+      this.writeLog(text);
+      this.outputLength += text.length;
+      this.lastOutputAt = Date.now();
       this.recent += text;
       this.committedTotal += text.length;
       if (this.recent.length > RECENT_OUTPUT_LIMIT) {
@@ -262,6 +279,20 @@ export class PageHost implements ScriptTarget {
       }
     }
     this.currentLine = current;
+  }
+
+  /** Add finished lines to the session log: a time stamp first when one is due, CRLF line endings, as TerminalControl */
+  private writeLog(text: string): void {
+    if (!this.log) return;
+    const interval = parseInt(pref("logTimestamps"), 10) || 0;
+    const now = new Date();
+    let stamp = "";
+    if (interval > 0 && now.getTime() - this.lastLogStamp >= interval * 1000) {
+      const two = (n: number) => String(n).padStart(2, "0");
+      stamp = `--- ${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())} ---\n`;
+      this.lastLogStamp = now.getTime();
+    }
+    void invoke("log_write", { id: this.log.id, text: (stamp + text).replace(/\n/g, "\r\n") }).catch(() => {});
   }
 
   /** Type text and key sequences into the session (Send Commands, the button bar, SPSL) */
@@ -425,6 +456,8 @@ export class PageHost implements ScriptTarget {
     try {
       this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel });
       this.startedAt = Date.now();
+      // one log for the tab, kept across reconnects, as SuperXPuTTY's
+      if (!this.log) this.log = await invoke<{ id: number; path: string; temporary: boolean }>("log_open", { name: this.title }).catch(() => null);
       this.markStarted();
     } catch (error) {
       // nothing started, so the page has had no settings yet

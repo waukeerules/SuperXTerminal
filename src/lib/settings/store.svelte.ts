@@ -31,6 +31,9 @@ export interface AppSettings {
   autoReconnectDelaySeconds: number;
   /** The terminal's preferences, by name; only those changed from their defaults */
   terminalPrefs: Record<string, string>;
+  /** Keep a log of every session (in sessionLogFolder, "" for Documents/SuperXTerminal/logs); otherwise temporary */
+  sessionLogEnabled: boolean;
+  sessionLogFolder: string;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -50,6 +53,8 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   autoReconnectAttempts: 6,
   autoReconnectDelaySeconds: 10,
   terminalPrefs: {},
+  sessionLogEnabled: false,
+  sessionLogFolder: "",
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

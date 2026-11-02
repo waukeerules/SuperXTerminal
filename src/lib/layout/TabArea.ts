@@ -121,7 +121,7 @@ class TerminalPanel implements IContentRenderer {
       () => parameters.api.close(),
       (command) => this.tabs.command(id, command),
       () => {
-        tabStates[id] = { ended: this.host?.isEnded ?? false };
+        tabStates[id] = { ...tabStates[id], ended: this.host?.isEnded ?? false };
         this.tabs.notify();
       },
     );
@@ -158,6 +158,10 @@ export class TabArea {
   private readonly listeners = new Set<() => void>();
   /** A tab was right-clicked: App shows its menu */
   onTabMenu: ((id: string, x: number, y: number) => void) | null = null;
+  /** An output alert to show in the status bar (Watch for Activity and Silence) */
+  onAlert: ((text: string, background: boolean) => void) | null = null;
+  /** Watched tabs, as ctlPuttyPanel's watches: activity on or off, silence in seconds (0 off) */
+  private readonly watches = new Map<string, { activity: boolean; silence: number; length: number; lastOutput: number; silenceAlerted: boolean }>();
 
   /**
    * Create the tab area inside `element`
@@ -178,6 +182,8 @@ export class TabArea {
       this.changed();
     });
     this.api.onDidActivePanelChange(() => this.changed());
+    // as SuperXPuTTY, the watched tabs are looked at about once a second
+    setInterval(() => this.checkAlerts(), 1000);
     this.api.onDidAddPanel(() => this.changed());
   }
 
@@ -280,6 +286,63 @@ export class TabArea {
   /** File > Close Tab (Cmd+W) */
   closeActive(): void {
     this.api.activePanel?.api.close();
+  }
+
+  /** A tab's watches */
+  watchOf(id: string): { activity: boolean; silence: number } {
+    const w = this.watches.get(id);
+    return { activity: w?.activity ?? false, silence: w?.silence ?? 0 };
+  }
+
+  /** Turn Watch for Activity on or off, or set Watch for Silence's seconds (0 off); either starts from now */
+  setWatch(id: string, change: { activity?: boolean; silence?: number }): void {
+    const host = this.hosts.get(id);
+    if (!host) return;
+    const old = this.watchOf(id);
+    const activity = change.activity ?? old.activity;
+    const silence = change.silence ?? old.silence;
+    if (!activity && !silence) this.watches.delete(id);
+    else this.watches.set(id, { activity, silence, length: host.outputLength, lastOutput: Date.now(), silenceAlerted: false });
+    this.setAlert(id, null);
+  }
+
+  /** Show or clear a tab's alert badge */
+  private setAlert(id: string, alert: "activity" | "silence" | null): void {
+    if ((tabStates[id]?.alert ?? null) === alert) return;
+    tabStates[id] = { ...tabStates[id], alert };
+  }
+
+  /**
+   * Look at the watched tabs, as ctlPuttyPanel.CheckOutputAlerts: new output in a tab not being looked at is
+   * Activity; a quiet spell as long as the watch is Silence, once per spell. Looking at the tab clears its alert.
+   */
+  private checkAlerts(): void {
+    const active = this.api.activePanel?.id;
+    const front = document.hasFocus();
+    for (const [id, watch] of this.watches) {
+      const host = this.hosts.get(id);
+      if (!host) {
+        this.watches.delete(id);
+        continue;
+      }
+      const title = this.api.getPanel(id)?.title ?? "";
+      const fresh = host.outputLength !== watch.length;
+      if (fresh) {
+        watch.length = host.outputLength;
+        watch.lastOutput = Date.now();
+        watch.silenceAlerted = false;
+      }
+      if (front && id === active) {
+        this.setAlert(id, null);
+      } else if (fresh && watch.activity) {
+        if ((tabStates[id]?.alert ?? null) !== "activity") this.onAlert?.(`New output in ${title}`, !front);
+        this.setAlert(id, "activity");
+      } else if (watch.silence > 0 && !watch.silenceAlerted && watch.length > 0 && Date.now() - watch.lastOutput >= watch.silence * 1000) {
+        watch.silenceAlerted = true;
+        this.setAlert(id, "silence");
+        this.onAlert?.(`${title} has been quiet for ${watch.silence} s`, !front);
+      }
+    }
   }
 
   /** Turn a tab's Accept commands on or off */

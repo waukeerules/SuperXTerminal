@@ -90,7 +90,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - 🚧 Cache (`DatabaseSessions.cache.xml`) and retry while offline: written in SuperXPuTTY's format and shown when the database can't be reached; not yet tried offline
 - ⬜ Writes (insert, update, delete, read back) and the outbox
 - ⬜ Locks (`locked`, `locked_fields`) checked in the UI
-- 🚧 Changes noticed every 30 s (`<table>_version`): written; not yet seen working (needs a change made in the table)
+- ✅ Changes noticed every 30 s (`<table>_version`): a session added in SuperXPuTTY on Windows appeared on the Mac within the check
 - ✅ `deleted_at` rows hidden (in the query; columns a table lacks read as defaults)
 - 🚧 Folders table (colours, defaults): read and applied; writing comes with the next part
 - ⬜ Move to / Copy to between Database and Saved/Private

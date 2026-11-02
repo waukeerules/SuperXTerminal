@@ -394,8 +394,9 @@
         { label: "Connect", bold: true, action: () => open(session) },
         {
           label: "Connect external",
-          disabled: (session.protocol || "SSH").toUpperCase() !== "SSH" && "Only SSH sessions open in Terminal",
-          action: () => void external(session, "terminal"),
+          disabled: !["SSH", "RDP", "VNC"].includes((session.protocol || "SSH").toUpperCase()) && "Only SSH (in Terminal), RDP and VNC sessions open in another app",
+          // SSH in Terminal; RDP in Windows App, VNC in Screen Sharing
+          action: () => void external(session, (session.protocol || "SSH").toUpperCase() === "SSH" ? "terminal" : "open"),
         },
         {
           label: "Connect in new window",
@@ -875,7 +876,7 @@
   });
 
   /** Open a session in another app (Connect external, FileZilla), saying how it went in the status bar */
-  async function external(session: SessionView, how: "terminal" | "filezilla"): Promise<void> {
+  async function external(session: SessionView, how: "terminal" | "filezilla" | "open"): Promise<void> {
     try {
       context.status(await openExternally(session.store, session.id, how));
     } catch (e) {

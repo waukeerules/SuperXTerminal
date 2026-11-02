@@ -273,7 +273,13 @@
   /** Open a session from the tree in a new tab */
   function openSession(session: SessionView, environment: string | null): void {
     if (settings.sessionsAutoHide) slideIn();
-    // RDP and VNC open in their own apps, as SuperXPuTTY's launchers
+    // RDP in a tab with the built-in client, as SuperXPuTTY's (unless Settings > General says Windows App)
+    if (session.protocol.toUpperCase() === "RDP" && settings.rdpBuiltIn) {
+      tabs?.openRdp(session.store, session.id, session.name, session.icon, environment);
+      status = `Opened session: ${session.name} [RDP]`;
+      return;
+    }
+    // VNC (and RDP when Windows App is chosen) open in their own apps, as SuperXPuTTY's launchers
     if (opensExternally(session.protocol)) {
       openExternally(session.store, session.id, "open").then((text) => (status = text), (e) => (status = String(e)));
       return;
@@ -898,6 +904,36 @@
   .tabs :global(.tab-list-button:hover) {
     color: var(--text);
     background: color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  /* a Remote Desktop tab (RdpHost): the remote screen scaled to fit, and what's happening over it */
+  .tabs :global(.rdp-panel) {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: #000;
+  }
+
+  .tabs :global(.rdp-screen) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    outline: none;
+  }
+
+  .tabs :global(.rdp-overlay) {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    text-align: center;
+    white-space: pre-wrap;
+    color: #ddd;
+    background: rgb(0 0 0 / 0.75);
+    cursor: pointer;
   }
 
   .statusbar {

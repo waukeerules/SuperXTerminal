@@ -15,6 +15,7 @@ mod layouts;
 mod logs;
 mod profiles;
 mod pty;
+mod rdp;
 mod scripts;
 mod secrets;
 mod outbox;
@@ -2000,7 +2001,8 @@ pub fn run() {
             tauri::WindowEvent::Focused(true) => *FRONT_WINDOW.lock().unwrap() = Some(window.label().to_string()),
             tauri::WindowEvent::Destroyed => {
                 applog::info(format!("Window {} closed; its sessions end", window.label()));
-                pty::close_window(&window.state::<pty::Ptys>(), window.label())
+                pty::close_window(&window.state::<pty::Ptys>(), window.label());
+                rdp::close_window(&window.state::<rdp::Rdps>(), window.label())
             }
             _ => {}
         })
@@ -2013,6 +2015,7 @@ pub fn run() {
             Ok(())
         })
         .manage(pty::Ptys::default())
+        .manage(rdp::Rdps::default())
         .manage(logs::Logs::default())
         .manage(AppState {
             user_folder,
@@ -2118,6 +2121,11 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_close,
+            rdp::rdp_open,
+            rdp::rdp_key,
+            rdp::rdp_mouse,
+            rdp::rdp_resize,
+            rdp::rdp_close,
             pty::pty_attach
         ])
         .build(tauri::generate_context!())

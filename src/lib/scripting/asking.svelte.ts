@@ -48,6 +48,16 @@ export async function resolveSnippet(text: string, title: string): Promise<strin
 }
 
 /** One of a list, e.g. which serial device a COM name is; null if cancelled */
+/** A login: the username (filled in with `username`) and the password; null if cancelled */
+export async function askLogin(title: string, username = ""): Promise<{ username: string; password: string } | null> {
+  const answers = await ask({
+    title,
+    okLabel: "Connect",
+    fields: [{ label: "Username:", value: username, secret: false }, { label: "Password:", value: "", secret: true }],
+  });
+  return answers ? { username: answers[0].trim(), password: answers[1] } : null;
+}
+
 export async function askChoice(title: string, label: string, choices: string[]): Promise<string | null> {
   const answers = await ask({ title, okLabel: "OK", fields: [{ label, value: choices[0] ?? "", secret: false, choices }] });
   return answers ? answers[0] : null;

@@ -58,6 +58,8 @@ export interface AppSettings {
   showSessionsPane: boolean;
   showStatusBar: boolean;
   alwaysOnTop: boolean;
+  /** RDP sessions open in a tab with the built-in client; off, in Windows App */
+  rdpBuiltIn: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -93,6 +95,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   showSessionsPane: true,
   showStatusBar: true,
   alwaysOnTop: false,
+  rdpBuiltIn: true,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

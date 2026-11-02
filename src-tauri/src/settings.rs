@@ -77,6 +77,9 @@ pub struct AppSettings {
     pub show_sessions_pane: bool,
     pub show_status_bar: bool,
     pub always_on_top: bool,
+    /// RDP sessions open in a tab with the built-in client (IronRDP), as SuperXPuTTY's General > Built-in client;
+    /// off, in Windows App
+    pub rdp_built_in: bool,
 }
 
 impl Default for AppSettings {
@@ -114,6 +117,7 @@ impl Default for AppSettings {
             show_sessions_pane: true,
             show_status_bar: true,
             always_on_top: false,
+            rdp_built_in: true,
         }
     }
 }

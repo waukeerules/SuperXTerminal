@@ -22,6 +22,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { CustomIcon } from "../icons/custom";
 import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
 import { OutputHost } from "../terminal/OutputHost";
+import { RdpHost } from "../terminal/RdpHost";
 import SessionTab from "./SessionTab.svelte";
 import { isDark } from "../settings/store.svelte";
 import { tabStates } from "./tabStates.svelte";
@@ -151,6 +152,37 @@ class OutputPanel implements IContentRenderer {
   dispose(): void {
     this.host?.dispose();
     for (const [source, host] of this.tabs.outputs) if (host === this.host) this.tabs.outputs.delete(source);
+    this.host = null;
+  }
+}
+
+/** A Remote Desktop tab: IronRDP in the core, drawn on a canvas (RdpHost), as SuperXPuTTY's RDP tab */
+class RdpPanel implements IContentRenderer {
+  readonly element: HTMLElement;
+  private host: RdpHost | null = null;
+
+  constructor(private readonly tabs: TabArea) {
+    this.element = document.createElement("div");
+    this.element.className = "terminal-panel";
+  }
+
+  init(parameters: GroupPanelPartInitParameters): void {
+    const { target, environment } = parameters.params as TerminalParams;
+    if (target.kind !== "session") return;
+    // the environment colour frames the remote desktop, as it frames a terminal
+    if (environment) {
+      this.element.style.padding = "3px";
+      this.element.style.background = environment;
+    }
+    this.host = new RdpHost({ store: target.store, id: target.id }, () => parameters.api.title ?? "");
+    this.tabs.rdpHosts.set(parameters.api.id, this.host);
+    this.element.append(this.host.element);
+    void this.host.connect();
+  }
+
+  dispose(): void {
+    this.host?.dispose();
+    for (const [id, host] of this.tabs.rdpHosts) if (host === this.host) this.tabs.rdpHosts.delete(id);
     this.host = null;
   }
 }
@@ -322,7 +354,10 @@ export class TabArea {
     this.api = createDockview(element, {
       theme: isDark() ? themeDark : themeLight,
       createComponent: (options) =>
-        options.name === "output" ? new OutputPanel(this) : options.name === "compare" ? new ComparePanel(this) : new TerminalPanel(this),
+        options.name === "output" ? new OutputPanel(this)
+        : options.name === "compare" ? new ComparePanel(this)
+        : options.name === "rdp" ? new RdpPanel(this)
+        : new TerminalPanel(this),
       // dockview only uses createTabComponent for a named tab component, so make ours the default
       defaultTabComponent: "session",
       createTabComponent: () => new TabLabel(this),
@@ -360,6 +395,26 @@ export class TabArea {
   /** Open a tab for a stored session, with its icon and environment colour */
   openSession(store: "saved" | "private" | "database", id: string, title: string, local: boolean, icon: string, environment: string | null): string {
     const panelId = this.add(title, { target: { kind: "session", store, id }, local, icon, environment });
+    this.sessions.set(panelId, `${store}:${id}`);
+    this.onOpenChanged(new Set(this.sessions.values()));
+    this.changed();
+    return panelId;
+  }
+
+  /** Remote Desktop tabs' hosts, by panel id */
+  readonly rdpHosts = new Map<string, RdpHost>();
+
+  /** Open a Remote Desktop session in a tab (the built-in client), as SuperXPuTTY shows RDP in a tab */
+  openRdp(store: "saved" | "private" | "database", id: string, title: string, icon: string, environment: string | null): string {
+    const panelId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.titles.set(panelId, title);
+    this.api.addPanel({
+      id: panelId,
+      component: "rdp",
+      title,
+      params: { target: { kind: "session", store, id }, local: false, icon, environment } satisfies TerminalParams,
+      renderer: "always",
+    });
     this.sessions.set(panelId, `${store}:${id}`);
     this.onOpenChanged(new Set(this.sessions.values()));
     this.changed();
@@ -732,6 +787,11 @@ export class TabArea {
   /** Put the keyboard back in the active tab, after a button or Send Commands */
   focusActive(): void {
     const panel = this.api.activePanel;
+    const rdp = panel ? this.rdpHosts.get(panel.id) : undefined;
+    if (rdp) {
+      rdp.focus();
+      return;
+    }
     const frame = panel?.view.content.element.querySelector("iframe");
     frame?.contentWindow?.focus();
     frame?.contentWindow?.postMessage({ channel: "sxt-host", tab: panel?.id, message: { type: "focus" } }, window.location.origin);

@@ -31,12 +31,16 @@ dirs = "7"
 tokio-postgres = "0.7"
 postgres-native-tls = "0.5"
 native-tls = "0.2"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "rt", "net"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-single-instance = "2"
+ironrdp-client = { version = "0.1", features = ["native-tls", "sound", "clipboard"] }
+ironrdp-pdu = "0.9"
+ironrdp-graphics = "0.9"
+smallvec = "1"
 
 # the main window's WebKit settings (Writing Tools off), as Tauri itself uses them
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -52,3 +56,16 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# the RDP client decodes every screen update: optimised even in development builds, or remote desktops crawl
+[profile.dev.package.ironrdp-graphics]
+opt-level = 3
+[profile.dev.package.ironrdp-session]
+opt-level = 3
+[profile.dev.package.ironrdp-client]
+opt-level = 3
+[profile.dev.package.ironrdp-pdu]
+opt-level = 3
+# and this crate's own per-pixel work (finding what changed, packing it for the tab)
+[profile.dev.package.superxterminal]
+opt-level = 2

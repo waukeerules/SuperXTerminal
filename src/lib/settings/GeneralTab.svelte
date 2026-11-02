@@ -55,6 +55,14 @@
   </fieldset>
 
   <fieldset>
+    <legend>Remote Desktop</legend>
+    <label class="check"><input type="checkbox" checked={settings.rdpBuiltIn}
+      onchange={(e) => void saveSettings({ rdpBuiltIn: e.currentTarget.checked })} /> Open RDP sessions in a tab (the built-in client)</label>
+    <p class="hint">As SuperXPuTTY's built-in client. Untick to open them in Microsoft's Windows App instead; Connect
+      external, in a session's menu, opens one there either way.</p>
+  </fieldset>
+
+  <fieldset>
     <legend>Updates</legend>
     <label class="check"><input type="checkbox" checked={settings.autoUpdateCheck}
       onchange={(e) => void saveSettings({ autoUpdateCheck: e.currentTarget.checked })} /> Check for a newer version at start</label>

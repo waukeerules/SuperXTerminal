@@ -1,0 +1,383 @@
+# SuperXTerminal: the plan
+
+SuperXTerminal is a macOS counterpart of [SuperXPuTTY](https://github.com/waukeerules/superputty): the same sessions tree, Database sessions, icons, environment colours and tabs, with SSH through the Mac's own `ssh` instead of PuTTY.
+
+This document is the starting point. It compares two ways to get there, lists every SuperXPuTTY feature with what happens to it on the Mac, and sets out the data the two apps share, the UI mapping and the milestones.
+
+Sources: SuperXPuTTY's `FORK_CHANGES.md`, `AGENTS.md`, `docs/DatabaseSessions.md`, `docs/MonacoTerminal.md`, the code and the `web/` pages, as of commit `66cf19d` (version 2.4).
+
+## Contents
+
+1. [Option A or B](#1-option-a-or-b)
+2. [Feature matrix](#2-feature-matrix)
+3. [Sharing data with SuperXPuTTY](#3-sharing-data-with-superxputty)
+4. [UI mapping](#4-ui-mapping)
+5. [Milestones](#5-milestones)
+6. [Open questions](#6-open-questions)
+
+---
+
+## 1. Option A or B
+
+### What can't move to the Mac, whichever option
+
+- **PuTTY.** There's no PuTTY for macOS worth depending on (the Unix PuTTY needs X11/GTK). SSH goes through OpenSSH (`/usr/bin/ssh`), which every Mac has.
+- **Embedding other programs' windows.** SuperXPuTTY's `ApplicationPanel` puts PuTTY, mstsc, VNC and console windows inside its tabs with `SetParent`. macOS has no equivalent: one app can't host another app's window. So every tab's content must be drawn by SuperXTerminal itself. That's how SuperXPuTTY's **built-in terminal** already works (xterm.js in a WebView, fed by a pseudo console), and it's the model to copy.
+- **Windows-only programs and APIs:** cmd, PowerShell (Windows edition), WSL, Mintty/Cygterm, WinSCP, KiTTY, the RDP ActiveX control, DPAPI, the registry.
+
+### Option A: port SuperXPuTTY itself
+
+Move the existing C# code to a cross-platform UI.
+
+- **The UI must be rewritten anyway.** WinForms is Windows-only (Mono's WinForms is unmaintained and X11-based). Upstream's `upgrade-to-NET10` branch moves to .NET 10, but WinForms on .NET 10 is still Windows-only.
+- **Candidates:**
+  - **Avalonia.** The most mature. Its `Dock` library could stand in for DockPanelSuite.
+  - **.NET MAUI.** Mac Catalyst, desktop-weak; not recommended.
+- **What carries over:**
+  - **Data, with work:** `SessionData`, `FolderSettings`, `SessionShortcuts`, `SessionOverrides`, `SessionCsv`, `DatabaseSessions` (Npgsql runs on macOS), `SessionVariables`, the SPSL parser, `TerminalKeys` and `SnippetPrompts`. They'd move to a .NET 8+ class library.
+  - **Hidden dependencies:** many of those classes reach into `SuperPuTTY` (the static core), WinForms types (`Keys`, `Image`, `TreeNode`) and DPAPI. Untangling that is a refactor of its own.
+- **What doesn't:**
+  - all 62 forms and dialogs, DockPanelSuite and its copied tab strips, DarkModeForms;
+  - the GDI+ icon drawing (`IconTemplates`, `BrandLogos`; System.Drawing is Windows-only on .NET 6+);
+  - `ApplicationPanel`, `RdpControl` and `ConPty`.
+- **Terminal hosting:**
+  - Avalonia has no mature terminal control and no built-in web view.
+  - Hosting `web/terminal` would need a third-party WebView (some are paid), and a macOS pseudo-terminal through P/Invoke `forkpty`.
+- **Effort:** high. Every screen is rewritten, plus the refactor.
+- **Risk:** medium-high (the WebView, and the refactor touching a live Windows app).
+- **Fidelity:** good if done well.
+- **Pay-off:** one C# codebase for both systems, but only after Windows is moved to Avalonia too, which is a second rewrite of a working app.
+
+### Option B: a new app that reproduces what it can
+
+A new macOS app with SSH through `ssh`. It reads SuperXPuTTY's data files and Database sessions table, and reuses its web pages. The stack is the main choice.
+
+| | **B1: Tauri 2** (Rust core, HTML/TypeScript UI) | **B2: Swift** (SwiftUI + AppKit) | **B3: Electron** (Node core, HTML UI) |
+|---|---|---|---|
+| Terminal | `web/terminal` (xterm.js) as is, in WKWebView | SwiftTerm (native), or `web/terminal` in a WKWebView | `web/terminal` as is, in Chromium |
+| PTY + `ssh` | `portable-pty` crate (also ConPTY on Windows) | `forkpty` / SwiftTerm's `LocalProcess` | `node-pty` |
+| Highlighting rules, themes, Highlighted Output (Monaco) | Reused: `web/shared/rules.js`, the JSON files, `web/output` | Rewritten, or the web pages in WKWebView (hybrid) | Reused |
+| Postgres | `tokio-postgres` | PostgresNIO | `pg` |
+| Secrets | `keyring` crate: Keychain on Mac, Credential Manager on Windows | Keychain (native) | `keytar` (archived) or `safeStorage` |
+| Look | HTML/CSS: can copy SuperXPuTTY's VS2015 theme pixel for pixel; native menu bar and windows | Most Mac-like; copying SuperXPuTTY's look is harder | Same as Tauri |
+| Size | ~10-20 MB | ~10 MB | ~150 MB |
+| **Develop and test on Windows** | **Yes**: runs on Windows with WebView2 (as SuperXPuTTY's pages do) and Windows' own OpenSSH `ssh.exe` | **No**: needs a Mac to build and run | Yes |
+| Effort / risk | Medium / low-medium | High / medium; Swift and a Mac are needed from day one | Medium / low, but heavy |
+
+### Recommendation: B1, Tauri 2
+
+- **Most reuse.** It keeps the parts of SuperXPuTTY that were hardest to get right:
+  - the xterm.js terminal page with its decorations, WAITFOR text, paste check, logs and keys;
+  - the highlighting rules engine and its JSON;
+  - the Monaco Highlighted Output page.
+- **Buildable now.** It can be written and run on this Windows machine today. GitHub Actions' macOS runners build the Mac app.
+- **The closest look.** HTML/CSS can match SuperXPuTTY's dark (VS2015) and light themes closely: tree rows, the environment-colour circles behind icons, tab stripes and the button bar.
+- **Cross-platform later.** It could become a cross-platform SuperXPuTTY. That's not a goal, but it's a door left open (see Open questions).
+
+**The stack:**
+- Tauri 2, Rust stable, TypeScript.
+- A small UI framework (Svelte or Solid) for the tree, dialogs and settings.
+- [dockview](https://dockview.dev) for tabs, splits and floating groups.
+- xterm.js 6.0.0 and Monaco 0.57.0, copied from SuperXPuTTY's `web/lib`.
+- Crates: `portable-pty`, `tokio-postgres` (with `native-tls` or `rustls`), `quick-xml` + `serde` (Sessions.xml and friends), `keyring`, `notify` (the file watcher), `serialport` (serial sessions), `csv`.
+
+### How terminals are hosted
+
+| Way | Fits the UI? | Notes |
+|---|---|---|
+| **Embedded: `ssh` in a pseudo-terminal, drawn by xterm.js inside the tab** | **Yes** | Tabs, splits, environment colours, WAITFOR, logs, highlighting, Send Key and the button bar all work, as in SuperXPuTTY's built-in terminal. **This is the main mode.** |
+| Launch Terminal.app or iTerm2 (AppleScript, `open -a`) | No | A separate window, outside the tabs. SuperXTerminal can't see its output, so no WAITFOR, logs or highlighting. Offered only as a tab menu item, **Open in Terminal.app / iTerm2**, the way SuperXPuTTY offers Open in PuTTY. |
+
+`ssh` runs as `ssh -tt <args> [user@]host` in the pseudo-terminal. Password, passphrase and host-key prompts appear in the terminal and are answered there, as with plink today.
+
+---
+
+## 2. Feature matrix
+
+**How unsupported features look:** shown but disabled (greyed out), never hidden. A menu item, button or Options row that can't work is disabled, with a tooltip giving the reason, e.g. "Windows only: needs PuTTY". A session the Mac can't open is shown in the tree with a dimmed icon and the same tooltip.
+
+**Key:**
+- ✅ **Supported:** works as in SuperXPuTTY.
+- 🔁 **Supported differently:** says how.
+- ⬜ **Greyed out:** shown, disabled, with the reason.
+- ❌ **Dropped:** not shown; it has no meaning on a Mac.
+
+### Sessions tree
+
+| Feature | Mac | How |
+|---|---|---|
+| Tree of folders and sessions, drag to move, rename, delete, new folder/session | ✅ | |
+| Search box (all fields, filter while typing, Search in... fields) | ✅ | |
+| Session counts on folders, folders first, sort | ✅ | |
+| Filled on demand (placeholder children) | ✅ | Same idea, for large trees |
+| Multi-select (Cmd/Shift-click) with Connect, Delete, Edit sessions... | 🔁 | Cmd instead of Ctrl |
+| Open sessions marked in the tree | ✅ | |
+| Tooltips (protocol, host, notes) | ✅ | |
+| Expand tree on startup, show lines, root arrows | ✅ | |
+| **Favorites and Recent** (`SessionShortcuts.json`, collapsed state remembered) | ✅ | Per user, in `~/Library/Application Support/SuperXTerminal/` |
+| **Private sessions** (`PrivateSessions.xml`) | ✅ | Same file format, per user |
+| Duplicate session, Copy host address, Save session as... | ✅ | |
+| Edit Session dialog (all fields, hints, where it's kept in the title) | ✅ | PuTTY-only fields are greyed (see [SSH](#ssh-and-other-connections)) |
+| **Edit sessions...** (bulk edit, locked fields skipped) | ✅ | |
+| **Local overrides** (`SessionOverrides.json`, note, indicator) | ✅ | |
+| **Folder defaults** (username, profile, port, jump host, rules) | ✅ | "PuTTY profile" becomes "SSH config host" (see below) |
+| **Sessions.xml on a shared folder** | ✅ | The settings folder can be on a mounted SMB share, like on Windows |
+| Sessions.xml reloaded when changed elsewhere (SHA-256, own saves ignored) | ✅ | `notify` crate |
+| Use Sessions.xml off (Private and Database only) | ✅ | |
+| **CSV export/import** (same columns as the Database table) | ✅ | Same columns, so a file moves between Mac and Windows |
+| Import from PuTTY (registry), KiTTY | ⬜ | "Windows only" |
+| Import from MobaXterm (`.mxtsessions`) | ✅ | It's a file; SSH entries come in, others greyed |
+| Import `.rdp` files | 🔁 | Imported as RDP sessions, which open in Windows App (see RDP) |
+| **Import from `~/.ssh/config`** | 🔁 New | Each `Host` becomes a session |
+
+### Database sessions (PostgreSQL)
+
+All supported, against **the same table** (see [Sharing data](#3-sharing-data-with-superxputty)).
+
+| Feature | Mac | How |
+|---|---|---|
+| Read in pages in the background, cached (`DatabaseSessions.cache.xml`), retried while offline | ✅ | |
+| `@db/` ids, never saved to Sessions.xml | ✅ | |
+| Writes (Insert/Update/Delete, read back), the outbox while offline | ✅ | |
+| Locks: `locked`, `locked_fields`, checked in the UI and enforced by the guard trigger | ✅ | Connects with `application_name = 'SuperPuTTY'` so the trigger treats it as SuperXPuTTY (see §3) |
+| Changes noticed every 30 s (`<table>_version`) | ✅ | |
+| `deleted_at` soft delete hidden | ✅ | |
+| Nickname (`superputty.nickname`, `updated_by`) | ✅ | |
+| Folders table (colours, defaults) | ✅ | |
+| Move to / Copy to between Database and Saved/Private | ✅ | |
+| Database settings dialog, Create / upgrade schema, read-only | ✅ | Schema SQL copied as is |
+| Database settings export/import (JSON), Clear | ✅ | Same JSON, so settings move between Mac and Windows |
+| Password | 🔁 | Keychain instead of DPAPI; `{env vars}` in it work |
+
+### Icons and colours
+
+| Feature | Mac | How |
+|---|---|---|
+| Vector icon templates, colourable keys (`switch#1E63B4`) | 🔁 | `IconTemplates` (GDI+ drawing code) is redrawn as SVG; same keys and names |
+| Brand logos (Simple Icons, CC0) | ✅ | Already SVG paths in `BrandLogos`; copied |
+| Custom icons (one-colour PNGs in `<SettingsFolder>/icons`) | ✅ | Same folder, shared |
+| Icon picker, icon size option | ✅ | |
+| Old PNG keys mapped onto templates | ✅ | Same mapping table |
+| **Environment colours** on tabs, frame around the terminal, circle behind the tree icon | ✅ | |
+| Colour from session, else nearest folder, else name rule | ✅ | Same resolution order |
+| Environment Colours dialog (name rules) | ✅ | |
+
+### Placeholders, variables, prompts
+
+| Feature | Mac | How |
+|---|---|---|
+| `{key}` placeholders in host, username, args, scripts, buttons | ✅ | |
+| Environment Variables dialog (`EnvironmentVariables.json`) | 🔁 | Same file format; **secret values in the Keychain** instead of DPAPI. Windows-encrypted secrets can't be read on a Mac, so they're asked for again |
+| `{prompt:Name}`, `{prompt:Name=default}`, `{secret:Name}` | ✅ | Secrets never logged or remembered |
+
+### SSH and other connections
+
+| Feature | Mac | How |
+|---|---|---|
+| **SSH** | 🔁 | `ssh -tt` in a pseudo-terminal, inside the tab |
+| Host, port, username | ✅ | `-p`, `user@` |
+| **PuTTY profile** (`putty_profile`, `PuttySession`) | 🔁 | Read as an **SSH config host alias**: if `~/.ssh/config` has a `Host` of that name, it's used (`ssh -F` stays default, so keys, ciphers and `ProxyJump` there apply). Otherwise it's ignored, and Edit Session says so. Optional mapping table in Settings (PuTTY profile name → Host alias) |
+| Keys and agent (Pageant) | 🔁 | `ssh-agent` and the macOS Keychain (`UseKeychain`, `AddKeysToAgent`). `.ppk` keys need converting (`puttygen key.ppk -O private-openssh`); Edit Session warns when `-i x.ppk` is in the extra args |
+| Password (`-pw`, with "allow -pw") | 🔁 | Stored in the Keychain, given to `ssh` by a small `SSH_ASKPASS` helper (`SSH_ASKPASS_REQUIRE=force`). Never on the command line or in logs |
+| Extra arguments (PuTTY syntax) | 🔁 | Translated where `ssh` has an equivalent: `-L`, `-R`, `-D`, `-A`, `-X`, `-C`, `-4`/`-6`, `-v` as is; `-P n` → `-p n`; `-i file` as is (warns for `.ppk`); `-load` ignored. Anything else is shown in Edit Session as "not used on Mac" |
+| PuTTY default parameters (Options) | 🔁 | "Default SSH options" instead |
+| **Jump hosts** (session path or `user@host:port`, folder defaults) | 🔁 | `-J user@host:port` (OpenSSH ProxyJump); a saved session as the jump host is resolved to its address, as now. Chains work (`-J a,b`), which plink couldn't do |
+| **Telnet** | 🔁 | macOS has no `telnet` since 10.13: a small Telnet client in the Rust core (option negotiation, NAWS), drawn in the same terminal |
+| **Raw** | 🔁 | A TCP socket in the Rust core |
+| **Serial** | 🔁 | The `serialport` crate, devices `/dev/cu.*`; speed, data bits, parity, stop bits and flow control from the session |
+| **Rlogin** | ⬜ | "Not supported on Mac"; rare and insecure |
+| **Special Commands** | 🔁 | **Serial Break:** `serialport`'s break, so it works on the Mac, unlike plink. **SSH Break:** OpenSSH's `~B` escape. **Telnet Break, Are You There...:** the Rust client sends the IAC codes. SSH signals: ⬜ ("ssh can't send them") |
+| **Send Key** (Ctrl+C, Ctrl+Shift+6, Ctrl+]...) | ✅ | `TerminalKeys` ported (it's small and already xterm-style) |
+| Dropped sessions reconnect (badge, Reconnect, Stop Reconnecting) | ✅ | `ssh` exiting with 255 starts the same logic as the built-in terminal |
+| **Session logs** (kept or temporary, time stamps) | ✅ | Written from the screen by the page, as now |
+| KiTTY, PuTTY path, pscp, plink/klink options | ⬜ | Options → Paths rows greyed: "Windows only" |
+| Open in PuTTY | 🔁 | Becomes **Open in Terminal.app / iTerm2** |
+| **RDP** | 🔁 | In-tab: ⬜. The session opens in Microsoft's **Windows App** (formerly Microsoft Remote Desktop) from a generated `.rdp` file, outside the tabs. Most RDP options map onto `.rdp` file settings |
+| **VNC** | 🔁 | Opens in macOS Screen Sharing (`open vnc://host:port`), outside the tabs |
+| **SCP file browser** (pscp) | ⬜ in the MVP | Later 🔁 with `sftp` |
+| WinSCP | ⬜ | "Windows only" |
+| FileZilla | 🔁 | FileZilla exists for macOS: opened with `sftp://user@host:port` |
+| **cmd, PowerShell, WSL** | 🔁 / ⬜ | Opened as **Local Shell** (the user's login shell, zsh) for cmd and WSL sessions, which are marked "opened as Local Shell". PowerShell sessions use `pwsh` if installed, else ⬜. A new protocol, `LocalShell`, is added for Mac-made sessions |
+| Mintty, Cygterm, Xorg (VcXsrv) | ⬜ | "Windows only" |
+
+### Terminal
+
+All of this comes with the reused `web/terminal` page.
+
+| Feature | Mac | How |
+|---|---|---|
+| Highlighting as you type (rules: cisco, junos, generic, auto, user rules) | ✅ | Same JSON |
+| Rules per session and folder, per-tab choice | ✅ | |
+| Themes, font, cursor, bell, copy on select, mark matches | ✅ | `TerminalPreferences`, one JSON setting, as now |
+| Paste check (several lines, production sessions) | ✅ | |
+| Find, clear scrollback/screen, links, unlimited scrollback | ✅ | Cmd shortcuts added beside the Ctrl ones |
+| **Highlighted Output** (Monaco, beside the tab) | ✅ | `web/output` reused |
+| Search Output, Activity and Silence alerts | ✅ | |
+| Classic look of PuTTY windows | ❌ | No PuTTY windows |
+
+### Commands and scripting
+
+| Feature | Mac | How |
+|---|---|---|
+| **Button bar** (`ButtonBars.xml`, bars per icon, JSON export/import) | ✅ | Same file, shared |
+| **Send Commands** toolbar (to active/selected tabs, mask button, history) | ✅ | |
+| **SPSL**: SENDLINE, SENDCHAR, SENDKEY (modifiers, symbols, repeats), WAITFOR, SLEEP, PROMPT, PWDPROMPT, OPENSESSION | ✅ | Parser and runner ported to TypeScript; WAITFOR reads the page's output, as the built-in terminal does |
+| SENDBREAK, CLOSESESSION | ⬜ | Listed "not available", as in SuperXPuTTY. SENDBREAK could become possible for serial and SSH (see Special Commands); open question |
+| Script Editor (Run as, saved scripts library, reference, Check script, Always on top) | ✅ | Library in `<SettingsFolder>/scripts`, shared |
+| Session's own script (`SPSLFileName`, run on open; URL too) | 🔁 | Windows paths (`C:\...`) can't be found: shown as a warning; URLs and paths in the settings folder work |
+
+### Windows, tabs, app
+
+| Feature | Mac | How |
+|---|---|---|
+| Tabs (wide, up to 30 characters, icons, colour stripe, close buttons, tab list) | ✅ | dockview |
+| Splits and docking, floating windows, multiple monitors | 🔁 | dockview groups and splits; floating groups become separate windows |
+| **Layouts** (save, restore, default layout) | 🔁 | Own JSON format; SuperXPuTTY's DockPanelSuite layout XML can't be read. Stored apart from Windows layouts (`layouts-mac/`) so they don't mix |
+| Quick connect toolbar (Protocol, Host, Login, Password, Session) | ✅ | |
+| **Quick Selector** | ✅ | |
+| Keyboard shortcuts (editor), Ctrl+Tab switching, global hotkeys | 🔁 | Cmd-based defaults; global hotkeys through Tauri's global-shortcut plugin |
+| Single instance, command-line arguments (`-session`, `ssh://`) | ✅ | Plus a `superxterminal://` / `ssh://` URL handler |
+| Minimise to tray | 🔁 | A menu-bar extra (status item) with the session list |
+| Themes (Dark, Dark Blue, Light, Classic) | 🔁 | Follows macOS Light/Dark by default, with SuperXPuTTY's themes to choose from |
+| Options dialog | 🔁 | **Settings** window (Cmd+,), same tabs; rows for Windows-only paths greyed |
+| Log viewer, log file | ✅ | `~/Library/Logs/SuperXTerminal/` |
+| Update check (this fork's releases) | ✅ | GitHub releases of SuperXTerminal; Tauri's updater later |
+| Installer (WiX MSI, portable zip) | 🔁 | `.dmg`, then signed and notarised (see Milestones) |
+
+---
+
+## 3. Sharing data with SuperXPuTTY
+
+**The goal:** Windows and Mac users of one team share one settings folder and one Database table, and each app shows the other's sessions.
+
+### Files in the settings folder (shared)
+
+| File | Mac reads | Mac writes | Notes |
+|---|---|---|---|
+| `Sessions.xml` | ✅ | ✅ | Same XML (`ArrayOfSessionData`, attributes as now). **Unknown attributes are kept** on save, so a newer Windows field isn't lost. Mac-only values (protocol `LocalShell`) are written so SuperXPuTTY can read them; SuperXPuTTY needs a small change to read an unknown protocol as greyed rather than as SSH (open question) |
+| `Folders.xml` | ✅ | ✅ | |
+| `ButtonBars.xml` | ✅ | ✅ | |
+| `icons/` | ✅ | ✅ | |
+| `scripts/` (`.spsl`, `.txt`) | ✅ | ✅ | Line endings kept as found |
+| `highlighting/` (rules, themes JSON) | ✅ | ✅ | |
+| `layouts/` (DockPanelSuite XML) | ❌ | ❌ | Mac layouts go in `layouts-mac/` |
+
+The file watcher's SHA-256 check works the same way, so each app reloads when the other saves.
+
+### Per-user files (not shared; each machine has its own)
+
+`SessionShortcuts.json`, `SessionOverrides.json`, `PrivateSessions.xml`, `EnvironmentVariables.json`, `DatabaseSessions.cache.xml`, `DatabaseSessions.outbox.xml`. They're in `~/Library/Application Support/SuperXTerminal/`. Their formats are the same, so a user can copy theirs over, except secret values (DPAPI on Windows, Keychain on Mac), which are asked for again.
+
+### The Postgres table
+
+- **Same table and schema.** The Mac app runs the same Create / upgrade schema SQL (copied from SuperXPuTTY). It never changes the schema on its own, and never when read-only.
+- **Same rules:** `@db/` ids, `deleted_at` hidden, `UNIQUE (folder, name)`, the folders table, the `<table>_version` table raised by the change trigger and checked every 30 s, and `updated_by` from `superputty.nickname`.
+- **Locks.** The guard trigger enforces `locked` and `locked_fields` only for connections whose `application_name` is `SuperPuTTY`. The Mac app must connect with that same name, or the trigger would treat it as an outside program and let it change locked rows. A distinct name (e.g. `SuperXTerminal`) would need the trigger changed in both apps; that's an open question.
+- **New columns:** one that only the Mac needs goes through the same optional-column path (`DatabaseSessions.OptionalWriteColumns`), so neither app breaks the other.
+
+### Windows-specific values in shared data
+
+| Value | Mac behaviour |
+|---|---|
+| Protocols `RDP`, `VNC` | Open in Windows App / Screen Sharing, outside the tabs |
+| Protocols `WINCMD`, `WSL` | Open as Local Shell, marked so |
+| Protocol `PS` | `pwsh` if installed, else greyed |
+| Protocols `Mintty`, `Cygterm`, `Rlogin` | Greyed: dimmed icon, can't be opened, tooltip says why |
+| `PuttySession` / `putty_profile` | SSH config host alias if one matches, else ignored (Edit Session says so); never rewritten |
+| `ExtraArgs` / `extra_args` | Translated per launch (§2); never rewritten |
+| `-i C:\keys\x.ppk` | Not found: warning, connects without it |
+| `SPSLFileName = C:\...` | Not found: warning; URLs and relative paths work |
+| `rdp_options` | Mapped to `.rdp` settings |
+| `LocalPath` / `RemotePath` (SCP browser) | Ignored until the SFTP browser exists |
+| Serial line (`COM6`) in host | Asked once per machine which `/dev/cu.*` device it is, kept per user |
+
+**The rule:** the Mac app never rewrites a Windows-specific value just because it can't use it. It adapts it at launch time, as `SessionVariables.Resolve` does for placeholders.
+
+---
+
+## 4. UI mapping
+
+Aim: someone who knows SuperXPuTTY recognises every screen. The main window keeps SuperXPuTTY's layout. Menus move to the macOS menu bar, and shortcuts use Cmd where macOS expects it.
+
+| SuperXPuTTY | SuperXTerminal | Notes |
+|---|---|---|
+| Main window: menus File/View/Tools/Help | Main window + macOS menu bar (SuperXTerminal, File, Edit, View, Session, Tools, Window, Help) | Same items, in the same order inside each menu |
+| Quick connect toolbar | Same toolbar, under the title bar | Protocol list shows only Mac-capable protocols enabled, the rest greyed |
+| Send Commands toolbar (and mask button) | Same | |
+| Sessions pane (DockPanelSuite tool window, left) | Left sidebar, resizable, collapsible (Cmd+Ctrl+S) | Same tree look: icons with colour circles, counts, bold Favorites/Recent/Private/Database roots |
+| Document tabs (DockPanelSuite, wide tabs, colour stripe) | dockview tabs, styled to match | Tab strip CSS copied from the dark/light themes |
+| Splits, floating windows | dockview splits; pop out to a window | |
+| Tab context menu (Rename, Duplicate, Restart, Send Key, Special Command, Search Output, Close...) | Same menu | PuTTY items (Change settings, Event log, About PuTTY) greyed |
+| Built-in terminal's own right-click menu | Same (it's the same page) | |
+| Button bar above the status bar | Same | |
+| Status bar (status text, script progress and Stop, version) | Same | |
+| Options dialog (Paths, GUI, Shortcuts, Advanced, RDP, Terminal) | Settings window (Cmd+,), same tabs | Paths: PuTTY, pscp, plink, Mintty, WinSCP, VNC, Xorg rows greyed; adds `ssh` path, SSH config, Terminal.app/iTerm2 choice. RDP tab: options for the `.rdp` file |
+| Edit Session | Sheet or window, same fields | PuTTY profile → "SSH config host"; greyed fields explained |
+| Edit sessions... (bulk), Local overrides, Environment Colours, Environment Variables, Database settings, Edit Button, Script Editor, Icon picker, Quick Selector, Paste check, Search Output, Rename | Windows or sheets with the same fields | |
+| Messenger (themed message boxes) | Native alerts or themed modal | Native alerts follow the system theme on their own |
+| Log viewer | Window | |
+| System tray icon | Menu-bar extra | |
+
+**Keeping the look close:**
+- Carry over SuperXPuTTY's theme colours as CSS variables, taken from the DockPanelSuite VS2015 themes and DarkModeForms.
+- Use SuperXPuTTY's fonts, or SF Pro where Segoe UI is used.
+- Draw the icons from the same templates.
+- Take screenshots of each SuperXPuTTY window as the reference for each screen.
+- One concession: native macOS window chrome (traffic lights, title bar).
+
+---
+
+## 5. Milestones
+
+Sizes are rough, for one developer working with an AI assistant. "w" means weeks.
+
+| # | Milestone | Size | Done when |
+|---|---|---|---|
+| M0 | **Skeleton**: Tauri app, dockview, CI building a macOS `.dmg` (unsigned) and a Windows dev build | 1 w | The app opens on Windows and on a Mac, with an empty tree and one local shell tab |
+| M1 | **MVP**: SSH tabs (`ssh` in a PTY, `web/terminal`), sessions tree from Sessions.xml/PrivateSessions.xml/Folders.xml (read and write), icons (templates redrawn as SVG, logos, custom), environment colours, quick connect, Edit Session, placeholders with Keychain secrets, Settings basics | 5-6 w | A Mac user opens the team's Sessions.xml and connects to switches with the right icons and colours |
+| M2 | **Database sessions**: read, cache, outbox, locks, version polling, folders table, writes, Move/Copy, settings dialog and JSON | 3-4 w | Mac and Windows users edit the same table and see each other's changes within 30 s |
+| M3 | **Scripting and commands**: button bar, Send Commands, SPSL (WAITFOR, SENDKEY...), Script Editor and library, snippet prompts, Send Key | 3 w | The existing button bars and scripts run unchanged |
+| M4 | **Terminal extras**: highlighting rules and preferences in Settings, Highlighted Output, Search Output, alerts, paste check, logs, reconnect | 2 w | |
+| M5 | **The rest**: Favorites/Recent, multi-select, bulk edit, local overrides, CSV, file watcher, Quick Selector, jump hosts (`-J`), extra-args translation, Telnet/Raw/Serial with Special Commands, RDP/VNC/FileZilla launchers, layouts, menu-bar extra, `~/.ssh/config` import | 4 w | Feature matrix complete except the SFTP browser |
+| M6 | **Distribution**: Developer ID signing, notarisation, auto update, `.dmg` design | 1 w | A download opens on any Mac without warnings |
+| Later | SFTP file browser | 2-3 w | |
+
+**Total to M6:** about 19-21 weeks.
+
+### Working on it from Windows now
+
+- **Nearly everything runs on Windows.**
+  - Tauri uses WebView2 there, the same engine SuperXPuTTY's pages run in.
+  - `portable-pty` uses ConPTY.
+  - Windows 10/11 ship OpenSSH's `ssh.exe`, so SSH tabs, the tree, the data files, Postgres, scripting and highlighting can all be built and tested here.
+  - `keyring` uses Windows Credential Manager in place of the Keychain.
+- **Mac-only, needing a Mac to check:**
+  - the Keychain itself, the menu bar and app menu;
+  - WKWebView differences from WebView2 (fonts, IME, clipboard);
+  - `/dev/cu.*` serial devices;
+  - Windows App and Screen Sharing launching;
+  - signing and notarisation.
+  - Keep these behind small interfaces so the Windows build stubs them.
+- **Builds.** A GitHub Actions workflow on `macos-14` (Apple silicon) builds an unsigned universal `.app`/`.dmg` on every push and keeps it as an artifact.
+- **Running the Mac build.** An unsigned build runs after right-click → Open, or `xattr -dr com.apple.quarantine SuperXTerminal.app`.
+- **A real Mac is needed by the end of M1** to check the Mac-only items. A cloud Mac (e.g. MacStadium, AWS EC2 Mac) works if no Mac is at hand.
+- **Signing and notarisation (M6)** need an Apple Developer Program membership (USD 99/year) for a Developer ID certificate. CI runs `notarytool` with an app-specific password or API key kept in GitHub secrets.
+- **Copying from SuperXPuTTY:**
+  - `web/terminal`, `web/output`, `web/shared` and `web/lib` copy across with their licences (xterm.js and Monaco: MIT; Simple Icons: CC0).
+  - SuperXPuTTY itself is MIT, so its code can be ported with the copyright notice kept.
+  - The pages talk to the host through `chrome.webview.postMessage` (WebView2). A small shim maps that to Tauri's `invoke`/events, so the pages need no other change.
+
+---
+
+## 6. Open questions
+
+1. **Stack:** is Tauri (B1) acceptable, or do you want a pure Swift app (B2) for the most Mac-native feel, at the cost of no Windows development and less reuse?
+2. **Cross-platform later?** Tauri would let SuperXTerminal run on Windows too. Should it stay Mac-only (and SuperXPuTTY stays the Windows app), or aim to replace SuperXPuTTY one day?
+3. **Database application name:** connect as `SuperPuTTY` (no schema change, locks enforced as now), or as `SuperXTerminal` (needs the guard trigger to accept both, changed in SuperXPuTTY's schema SQL too)?
+4. **New protocol `LocalShell` in shared Sessions.xml:** OK to add, with a matching small change in SuperXPuTTY so it shows such sessions greyed (today an unknown protocol is read as SSH)?
+5. **PuTTY profile → SSH config mapping:** use the profile name as a `Host` alias, a mapping table in Settings, or both?
+6. **RDP:** is opening Windows App (outside the tabs) good enough, or should an in-tab RDP client (e.g. FreeRDP) be a later milestone?
+7. **SENDBREAK:** make it work on the Mac for serial and SSH sessions (it can), or keep it "not available" to match SuperXPuTTY?
+8. **Distribution:** will you get an Apple Developer ID (for signing and notarisation), and should builds be public GitHub releases?
+9. **Mac hardware:** is a Mac available for testing by the end of M1, or should we plan for a cloud Mac?
+10. **Repository:** name `SuperXTerminal` under `waukeerules`, public or private, and MIT licence like SuperXPuTTY?

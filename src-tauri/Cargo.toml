@@ -1,6 +1,6 @@
 [package]
 name = "superxterminal"
-version = "0.1.0"
+version = "0.1.1"
 description = "A macOS counterpart of SuperXPuTTY"
 authors = ["waukeerules"]
 license = "MIT"

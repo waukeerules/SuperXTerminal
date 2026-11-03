@@ -3,6 +3,9 @@
   shared Sessions.xml works for everyone ("{user}@{domain}", "-pw {admin_password}"). Secret values are kept in
   the Keychain, never shown again: leave one empty to keep it, type to replace it. A secret copied over from
   Windows can't be read on a Mac (it was encrypted for that PC), so it asks to be typed again.
+
+  Beside the user's own: where each is used, the placeholders used that have no value yet, the ones SuperXTerminal
+  fills itself (which no variable can be named), and a preview of a template filled in, secrets as dots.
 -->
 <script lang="ts">
   import { onMount } from "svelte";
@@ -23,19 +26,64 @@
   let { onClose }: Props = $props();
 
   let rows = $state<Variable[]>([]);
+  /** Where each placeholder is used, by name in lower case (sessions, folders, profiles, overrides, presets) */
+  let usage = $state<Record<string, string[]>>({});
+  /** The placeholders SuperXTerminal fills itself: name and what it is */
+  let builtIn = $state<[string, string][]>([]);
+  let template = $state("");
   let message = $state("");
 
   onMount(async () => {
-    rows = await invoke<Variable[]>("variables_list");
+    [rows, usage, builtIn] = await Promise.all([
+      invoke<Variable[]>("variables_list"),
+      invoke<Record<string, string[]>>("variables_usage"),
+      invoke<[string, string][]>("variables_built_in"),
+    ]);
   });
 
-  /** Add an empty row */
-  function add(): void {
-    rows = [...rows, { key: "", value: "", secret: false, hasValue: false, fromWindows: false }];
+  const builtInNames = $derived(new Set(builtIn.map(([n]) => n.toLowerCase())));
+
+  /** Why a row's key can't be saved, or "" when it can (an empty row is just left out) */
+  function problem(row: Variable, index: number): string {
+    const key = row.key.trim();
+    if (!key) return "";
+    if (!/^[\p{L}\p{N}_]+$/u.test(key)) return "Letters, digits and _ only";
+    if (builtInNames.has(key.toLowerCase())) return `{${key}} is built in: give the variable another name`;
+    if (rows.some((r, j) => j !== index && r.key.trim().toLowerCase() === key.toLowerCase())) return `{${key}} is there twice`;
+    return "";
+  }
+
+  const problems = $derived(rows.map((r, i) => problem(r, i)));
+  const blocked = $derived(problems.some(Boolean));
+
+  /** Placeholders used somewhere that are neither the user's nor built in: they'd stop a session opening */
+  const undefinedUsed = $derived(
+    Object.entries(usage)
+      .filter(([name]) => !builtInNames.has(name) && !rows.some((r) => r.key.trim().toLowerCase() === name))
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+
+  /** Where a variable is used, for its row */
+  const usedBy = (key: string) => usage[key.trim().toLowerCase()] ?? [];
+
+  /** The template with the user's values filled in: secrets as dots, built-ins and unknowns left as written */
+  const preview = $derived.by(() =>
+    template.replace(/\{([\p{L}\p{N}_]+)\}/gu, (whole, name: string) => {
+      const row = rows.find((r) => r.key.trim().toLowerCase() === name.toLowerCase());
+      if (!row) return whole;
+      if (row.secret) return row.hasValue || row.value ? "••••" : whole;
+      return row.value;
+    }),
+  );
+
+  /** Add an empty row, or one for a placeholder that's used but has no value */
+  function add(key = ""): void {
+    rows = [...rows, { key, value: "", secret: /pass|pw|secret|token/i.test(key), hasValue: false, fromWindows: false }];
   }
 
   /** Save and close */
   async function save(): Promise<void> {
+    if (blocked) return;
     try {
       rows = await invoke<Variable[]>("variables_save", { variables: rows });
       onClose();
@@ -61,26 +109,68 @@
       Sessions can use these as <code>{"{key}"}</code> in the host, username, extra arguments and jump host, e.g.
       <code>{"{user}@{domain}"}</code> or <code>-pw {"{admin_password}"}</code>. They're yours only, kept beside your settings.
     </p>
-    <div class="table">
-      <div class="head">Key</div>
-      <div class="head">Value</div>
-      <div class="head">Secret</div>
-      <div class="head"></div>
-      {#each rows as row, i}
-        <input bind:value={row.key} placeholder="e.g. user" aria-label="Key" />
-        {#if row.secret}
-          <input type="password" bind:value={row.value} placeholder={secretHint(row)} aria-label="Secret value" />
-        {:else}
-          <input bind:value={row.value} aria-label="Value" />
+
+    <div class="body">
+      <div class="table">
+        <div class="head">Key</div>
+        <div class="head">Value</div>
+        <div class="head">Secret</div>
+        <div class="head">Used by</div>
+        <div class="head"></div>
+        {#each rows as row, i}
+          <input bind:value={row.key} placeholder="e.g. user" aria-label="Key" class:bad={!!problems[i]} title={problems[i]} />
+          {#if row.secret}
+            <input type="password" bind:value={row.value} placeholder={secretHint(row)} aria-label="Secret value" />
+          {:else}
+            <input bind:value={row.value} aria-label="Value" />
+          {/if}
+          <input type="checkbox" bind:checked={row.secret} aria-label="Secret" />
+          <span class="used" title={usedBy(row.key).join("\n")}>
+            {usedBy(row.key).length ? `${usedBy(row.key).length} place${usedBy(row.key).length === 1 ? "" : "s"}` : row.key.trim() ? "none" : ""}
+          </span>
+          <button title="Remove" aria-label="Remove {row.key}" onclick={() => (rows = rows.filter((_, j) => j !== i))}>✕</button>
+          {#if problems[i]}<p class="problem">{problems[i]}</p>{/if}
+        {/each}
+      </div>
+
+      {#if undefinedUsed.length}
+        <section>
+          <h3>Used but not defined</h3>
+          <p class="hint">A session using one of these says it has no value yet, and doesn't open.</p>
+          <ul>
+            {#each undefinedUsed as [name, places] (name)}
+              <li><code>{`{${name}}`}</code> <span class="where" title={places.join("\n")}>{places.slice(0, 3).join(", ")}{places.length > 3 ? `, and ${places.length - 3} more` : ""}</span>
+                <button onclick={() => add(name)}>Add</button></li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
+
+      <section>
+        <h3>Built in</h3>
+        <p class="hint">Filled by SuperXTerminal itself, so no variable can have these names.</p>
+        <ul>
+          {#each builtIn as [name, about] (name)}
+            <li><code>{`{${name}}`}</code> <span class="where">{about}</span></li>
+          {/each}
+        </ul>
+      </section>
+
+      <section>
+        <h3>Preview</h3>
+        <input class="template" bind:value={template} aria-label="Template to preview"
+          placeholder="Type a template, e.g. {'{'}ad_username{'}'}@{'{'}domain{'}'}#{'{'}cyberark_region{'}'}" />
+        {#if template}
+          <p class="filled" aria-label="Preview">{preview}</p>
+          <p class="hint">Secrets show as dots; built-in and undefined placeholders stay as written.</p>
         {/if}
-        <input type="checkbox" bind:checked={row.secret} aria-label="Secret" />
-        <button title="Remove" aria-label="Remove {row.key}" onclick={() => (rows = rows.filter((_, j) => j !== i))}>✕</button>
-      {/each}
+      </section>
     </div>
+
     <footer>
-      <button onclick={add}>Add</button>
-      <span class="message">{message}</span>
-      <button class="primary" onclick={save}>OK</button>
+      <button onclick={() => add()}>Add</button>
+      <span class="message">{message || (blocked ? "Fix the names marked in red to save." : "")}</span>
+      <button class="primary" onclick={save} disabled={blocked}>OK</button>
       <button onclick={onClose}>Cancel</button>
     </footer>
   </div>
@@ -98,7 +188,7 @@
   }
 
   .dialog {
-    width: min(720px, 94vw);
+    width: min(760px, 94vw);
     max-height: 90vh;
     display: flex;
     flex-direction: column;
@@ -123,17 +213,86 @@
     white-space: nowrap;
   }
 
+  /* the rows and the sections below scroll; the title and OK stay put */
+  .body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
   .table {
     display: grid;
-    grid-template-columns: 200px 1fr 60px 32px;
+    grid-template-columns: 200px 1fr 60px 70px 32px;
     gap: 6px;
     align-items: center;
-    overflow: auto;
   }
 
   .head {
     color: var(--text-muted);
     font-size: 12px;
+  }
+
+  .used,
+  .where {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .problem {
+    grid-column: 1 / -1;
+    margin: -2px 0 2px;
+    color: #e5534b;
+    font-size: 12px;
+  }
+
+  input.bad {
+    border-color: #e5534b;
+  }
+
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 13px;
+  }
+
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  li button {
+    margin-left: auto;
+  }
+
+  .template {
+    width: 100%;
+  }
+
+  .filled {
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: Menlo, Consolas, monospace;
+    word-break: break-all;
   }
 
   input:not([type="checkbox"]),

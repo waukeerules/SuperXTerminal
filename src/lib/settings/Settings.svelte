@@ -61,7 +61,7 @@
       <button class="close" onclick={onClose} aria-label="Close">✕</button>
     </header>
     <main>
-      {#if current === "General"}<GeneralTab />{:else if current === "Terminal"}<TerminalTab />{:else if current === "Remote Desktop"}<RemoteDesktopTab />{:else if current === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab initial={profile} />{/if}
+      {#if current === "General"}<GeneralTab />{:else if current === "Terminal"}<TerminalTab />{:else if current === "Remote Desktop"}<RemoteDesktopTab />{:else if current === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab initial={profile} onLeave={onClose} />{/if}
     </main>
   </div>
 </div>

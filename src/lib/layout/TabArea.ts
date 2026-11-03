@@ -458,6 +458,11 @@ export class TabArea {
   }
 
   /** Open a new Local Shell tab */
+  /** Open a tab that runs a profile's key fetch on its own (Settings > Profiles > Log in & cache key) */
+  openKeyFetch(profile: string): void {
+    this.add(`Key fetch: ${profile}`, { target: { kind: "keyFetch", profile }, local: true, icon: "terminal", environment: null });
+  }
+
   openLocalShell(): void {
     this.count += 1;
     this.add(this.count === 1 ? "Local Shell" : `Local Shell (${this.count})`, {
@@ -730,12 +735,17 @@ export class TabArea {
 
   /**
    * The tabs as a layout: dockview's own JSON (the groups, their sizes, each tab's title and what it runs), without
-   * Highlighted Output and Compare Output panes (they follow tabs' logs, which new sessions won't have) or Quick connect
-   * passwords
+   * Highlighted Output and Compare Output panes (they follow tabs' logs, which new sessions won't have), key fetches'
+   * tabs, or Quick connect passwords
    */
   layoutState(): SerializedDockview {
     const state = this.api.toJSON();
-    const dropped = new Set(Object.entries(state.panels).filter(([, p]) => p.contentComponent === "output" || p.contentComponent === "compare").map(([id]) => id));
+    // a key fetch's tab too: a layout opening shouldn't start a sign-in
+    const dropped = new Set(
+      Object.entries(state.panels)
+        .filter(([, p]) => p.contentComponent === "output" || p.contentComponent === "compare" || (p.params as unknown as TerminalParams | undefined)?.target?.kind === "keyFetch")
+        .map(([id]) => id),
+    );
     for (const id of dropped) delete state.panels[id];
     for (const panel of Object.values(state.panels)) {
       const params = { ...(panel.params as unknown as TerminalParams) };

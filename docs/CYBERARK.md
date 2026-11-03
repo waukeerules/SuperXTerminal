@@ -180,6 +180,12 @@ When a session using the profile opens (`launch.rs` and `PageHost.ts`):
 5. **Expired while open.** A key only matters at login, so open sessions carry on. A reconnect after the lifetime
    fetches again first.
 
+**Log in & cache key**, under the fetch's fields, runs the fetch now in a tab of its own ("Key fetch: CyberArk"),
+Settings closing so its sign-in shows: sign in at the start of the day, and sessions then log in with the key. The
+tab stays when it ends, saying the key is cached or why not; Enter runs it again. It's greyed while the profile has
+unsaved changes, as it runs the saved command, and layouts leave such tabs out, so opening one never starts a
+sign-in.
+
 For a command like the macOS `pam` function above, the Fetch command is its `sftp` line (or a function of its own
 that runs it), and the Key file the path it writes, e.g. `~/.ssh/cyberark_key`.
 
@@ -187,7 +193,7 @@ Not built yet:
 
 - A hint after ssh's "Permission denied (publickey)" when the gateway refuses the key anyway (revoked early, or the
   lifetime set longer than the issuer's), with the key's age.
-- **Fetch now** and **Forget key** in the profile editor.
+- **Forget key** in the profile editor.
 - Tabs in different windows share nothing: each window fetches on its own.
 
 The key is a credential, so it's kept only where the profile's Key file says, in the user's own folders (never the
@@ -223,5 +229,6 @@ which are per user.
   key is fetched first, saying why; a fresh one connects, made the user's own; lifetime 0 fetches only when
   there's none; no Fetch command is as before; the command gets `{key_file}` and the variables filled in, and an
   undefined one says so; the editor's key state.
-- To do: tried in production with CyberArk; the hint after "Permission denied (publickey)", Fetch now and Forget key;
+- ✅ Log in & cache key: the fetch on its own, in a tab, from the profile.
+- To do: tried in production with CyberArk; the hint after "Permission denied (publickey)" and Forget key;
   then a section in a user guide.

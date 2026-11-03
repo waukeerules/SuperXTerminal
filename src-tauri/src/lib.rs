@@ -821,6 +821,57 @@ fn variables_list(state: State<'_, AppState>) -> Vec<variables::Variable> {
     variables::list(&state.user_folder)
 }
 
+/// Where each {placeholder} is used, by name in lower case: sessions (host, username, extra arguments, jump host),
+/// folders, profiles and the user's own local overrides and presets, for Environment Variables to say what's used and
+/// what has no value yet
+#[tauri::command]
+fn variables_usage(state: State<'_, AppState>) -> BTreeMap<String, Vec<String>> {
+    let mut usage: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut note = |texts: &[&str], place: String| {
+        for text in texts {
+            for name in variables::names_in(text) {
+                let places = usage.entry(name).or_default();
+                if !places.contains(&place) {
+                    places.push(place.clone());
+                }
+            }
+        }
+    };
+    {
+        let sessions = state.sessions.lock().unwrap();
+        for session in sessions.saved.iter().chain(&sessions.private).chain(&sessions.database) {
+            let name = session.id().trim_start_matches("@db/").to_string();
+            note(&[session.get("Host"), session.get("Username"), session.get("ExtraArgs"), session.get("JumpHost")], format!("session {name}"));
+        }
+        for folders in sessions.folders.values() {
+            for folder in folders.values() {
+                note(&[&folder.username, &folder.jump_host], format!("folder {}", folder.path));
+            }
+        }
+    }
+    for profile in &state.profiles.lock().unwrap().profiles {
+        note(
+            &[&profile.username, &profile.host, &profile.jump_host, &profile.key_fetch, &profile.ssh_options],
+            format!("profile {}", profile.name),
+        );
+    }
+    for (id, o) in overrides::load(&state.user_folder) {
+        let texts = [o.host.as_deref(), o.username.as_deref(), o.extra_args.as_deref(), o.jump_host.as_deref()].map(|t| t.unwrap_or(""));
+        note(&texts, format!("your override for {}", id.trim_start_matches("@db/")));
+    }
+    for (name, o) in overrides::presets(&state.user_folder) {
+        let texts = [o.host.as_deref(), o.username.as_deref(), o.extra_args.as_deref(), o.jump_host.as_deref()].map(|t| t.unwrap_or(""));
+        note(&texts, format!("preset {name}"));
+    }
+    usage
+}
+
+/// The placeholders SuperXTerminal fills itself, with what each is
+#[tauri::command]
+fn variables_built_in() -> Vec<(String, String)> {
+    variables::BUILT_IN.iter().map(|(n, d)| (n.to_string(), d.to_string())).collect()
+}
+
 /// Save the Environment Variables window; a secret left empty keeps its stored value
 #[tauri::command]
 fn variables_save(state: State<'_, AppState>, variables: Vec<variables::Variable>) -> Result<Vec<variables::Variable>, String> {
@@ -2312,6 +2363,8 @@ pub fn run() {
             overrides_set,
             override_presets_get,
             profile_key_age,
+            variables_usage,
+            variables_built_in,
             override_presets_set,
             pty::pty_serial_get,
             pty::pty_serial_set,

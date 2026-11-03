@@ -526,6 +526,14 @@ export class PageHost implements ScriptTarget {
           return;
         }
         this.ended = true;
+        // a tab of its own for a key fetch (Log in & cache key): it stays, saying how it went; Enter runs it again
+        if (this.target.kind === "keyFetch") {
+          this.post(event.code === 0
+            ? { type: "notice", text: "The key is cached: sessions using the profile log in with it. Press Enter to fetch again.", kind: "info" }
+            : { type: "notice", text: `The key fetch didn't finish${event.code == null ? "" : ` (exit code ${event.code})`}. Press Enter to try again.`, kind: "error" });
+          this.onState();
+          return;
+        }
         // a clean end (a logout) or a local shell closes the tab, as PuTTY's window would
         if (this.local || event.code === 0) this.onExit();
         else this.dropped();

@@ -29,6 +29,33 @@ pub struct Variable {
     pub from_windows: bool,
 }
 
+/// Placeholders SuperXTerminal fills itself, which no Environment Variable can be named (or change): the session's own
+/// host and port (launch.rs, for a username naming the target), and a key fetch's key file
+pub const BUILT_IN: [(&str, &str); 3] = [
+    ("host_address", "The session's own host (for a gateway such as CyberArk's, the target in the username)"),
+    ("host_port", "The session's own port"),
+    ("key_file", "In a profile's key fetch: where the key goes (the profile's Key file)"),
+];
+
+/// The {placeholder} names a text uses, in lower case, each once
+pub fn names_in(text: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('{') {
+        let after = &rest[open + 1..];
+        let Some(close) = after.find('}') else { break };
+        let key = &after[..close];
+        if !key.is_empty() && key.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            let key = key.to_lowercase();
+            if !found.contains(&key) {
+                found.push(key);
+            }
+        }
+        rest = &after[close + 1..];
+    }
+    found
+}
+
 /// The file's entries, each kept whole so fields this app doesn't use (Windows' ProtectedValue) are written back
 fn read_entries(path: &Path) -> Vec<Map<String, Value>> {
     let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
@@ -100,6 +127,12 @@ pub fn save(user_folder: &Path, variables: &[Variable]) -> Result<(), String> {
         }
         if !key.chars().all(|c| c.is_alphanumeric() || c == '_') {
             return Err(format!("\"{key}\" can't be a placeholder name: use letters, digits and _ only."));
+        }
+        if BUILT_IN.iter().any(|(name, _)| name.eq_ignore_ascii_case(key)) {
+            return Err(format!("{{{key}}} is built in (filled by SuperXTerminal itself): give the variable another name."));
+        }
+        if variables.iter().filter(|v| v.key.trim().eq_ignore_ascii_case(key)).count() > 1 {
+            return Err(format!("{{{key}}} is there twice (names are the same whatever their case): keep one."));
         }
         // start from the old entry, so Windows' ProtectedValue and any other field stay
         let mut e = old
@@ -192,5 +225,23 @@ mod tests {
         let values = HashMap::from([("user".to_string(), "tim".to_string()), ("loop".to_string(), "{user}".to_string())]);
         assert_eq!(substitute("{User}@{domain} {loop} {prompt:x}", &values), "tim@{domain} {user} {prompt:x}");
         assert_eq!(missing("{User}@{domain} {DOMAIN} {prompt:x}", &values), ["{domain}"]);
+    }
+
+    #[test]
+    fn names_in_finds_each_placeholder_once_in_lower_case() {
+        assert_eq!(names_in("{Email}#{region}@{email} {prompt:x} {"), ["email", "region"]);
+    }
+
+    #[test]
+    fn a_name_that_clashes_isnt_saved() {
+        let folder = std::env::temp_dir().join(format!("sxt-variables-{}", std::process::id()));
+        let row = |key: &str| Variable { key: key.into(), value: "x".into(), secret: false, has_value: false, from_windows: false };
+        // the same name twice, whatever its case
+        let error = save(&folder, &[row("user"), row("User")]).unwrap_err();
+        assert!(error.contains("twice"), "{error}");
+        // a built-in placeholder's name
+        let error = save(&folder, &[row("Host_Address")]).unwrap_err();
+        assert!(error.contains("built in"), "{error}");
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

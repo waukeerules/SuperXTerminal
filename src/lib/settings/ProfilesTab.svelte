@@ -8,6 +8,7 @@
   import { ask, open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { isMac } from "../shortcuts";
+  import { context } from "../commands/sending.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, saveProfile, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
@@ -15,9 +16,11 @@
   interface Props {
     /** The profile to show first (Quick connect's Edit…, Edit Session's Profiles…); Default Settings when it's none */
     initial?: string | null;
+    /** Close Settings, for what goes on in a tab (Log in & cache key) */
+    onLeave?: () => void;
   }
 
-  let { initial = null }: Props = $props();
+  let { initial = null, onLeave = () => {} }: Props = $props();
 
   let profiles = $state<Profile[]>([]);
   let selected = $state(DEFAULT_PROFILE);
@@ -260,6 +263,11 @@
       {#if draft.keyFetch.trim()}
         <p class="note under">{keyState} The fetch runs in the session's tab, through {isMac ? "your shell (its ~/.zshrc read, so a function works)" : "PowerShell"},
           so its sign-in (a link, a PIN) happens there; {"{key_file}"} and your Environment Variables are filled in. See docs/CYBERARK.md.</p>
+        <p class="under">
+          <button disabled={changes > 0 || !originalName || !draft.keyFile.trim()}
+            title={changes > 0 ? "Save the profile first: the fetch runs its saved command" : "Run the fetch now in a tab of its own, so sessions log in with the key"}
+            onclick={() => { context.tabs?.openKeyFetch(originalName); onLeave(); }}>Log in & cache key</button>
+        </p>
       {/if}
       <!-- Default Settings has no default of its own to point at: its blank is the built-in behaviour -->
       <label>{@render caption("SSH keys", "offerKeys")}
@@ -452,6 +460,10 @@
   .note.under {
     margin-left: 138px;
     font-size: 12px;
+  }
+
+  p.under:not(.note) {
+    margin: 0 0 0 138px;
   }
 
   fieldset {

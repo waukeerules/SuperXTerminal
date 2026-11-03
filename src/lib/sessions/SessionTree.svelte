@@ -1252,14 +1252,31 @@
   }
 
   /** Expand all: every folder of every root */
+  /**
+   * Expand all: every folder. During a search it opens every folder holding a match, the search kept, past the limit
+   * for a broad one too (asked for, so drawn); clearing the search puts the tree back as it was
+   */
   function expandAll(): void {
-    query = "";
+    if (searching) {
+      closedInSearch = new Set();
+      openedInSearch = new Set(roots.flatMap(folderKeys));
+      // a broad search only opens what's in openedInSearch; a narrow one everything not in closedInSearch
+      return;
+    }
     expanded = new Set(roots.flatMap(folderKeys));
   }
 
-  /** Collapse all, leaving Saved sessions and Private sessions open so their top-level folders show */
+  /**
+   * Collapse all, leaving Saved sessions and Private sessions open so their top-level folders show. During a search,
+   * every folder below the roots closes in the search's own view, the search kept
+   */
   function collapseAll(): void {
-    query = "";
+    if (searching) {
+      const rootKeys = new Set(roots.map((r) => r.key));
+      openedInSearch = new Set();
+      closedInSearch = new Set(roots.flatMap(folderKeys).filter((k) => !rootKeys.has(k)));
+      return;
+    }
     expanded = new Set(["saved:", "private:"]);
   }
 
@@ -1317,8 +1334,8 @@
   {#if error}
     <p class="message">{error}</p>
   {/if}
-  {#if broadSearch}
-    <p class="message">{matchCount.toLocaleString()} matches: open a folder to see them, or narrow the search.</p>
+  {#if broadSearch && openedInSearch.size === 0}
+    <p class="message">{matchCount.toLocaleString()} matches: open a folder (or Expand all) to see them, or narrow the search.</p>
   {/if}
   {#if loaded}
     {#each loaded.problems as problem}

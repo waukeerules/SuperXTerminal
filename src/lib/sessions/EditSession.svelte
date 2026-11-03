@@ -96,6 +96,19 @@
     if (serial) void untrack(listSerialDevices);
   });
 
+  /** The usual port of a connection type, as SuperXPuTTY's GetDefaultPort; null leaves the port as it is (Raw) */
+  function defaultPort(protocol: string): number | null {
+    const ports: Record<string, number | null> = { SSH: 22, TELNET: 23, RLOGIN: 513, VNC: 5900, RDP: 3389, RAW: null };
+    const p = protocol.toUpperCase();
+    return p in ports ? ports[p] : 0;
+  }
+
+  /** The connection type was chosen: its usual port, as SuperXPuTTY's Edit Session does */
+  function protocolChanged(): void {
+    const port = defaultPort(draft.protocol);
+    if (port !== null && !locked("port")) draft.port = port;
+  }
+
   /** Save and close, or show why it can't be saved */
   async function save(): Promise<void> {
     // a name already taken there is offered with -1, -2… added, as SuperXPuTTY's Edit Session
@@ -164,7 +177,8 @@
 
       <div class="row">
         <label>Connection type:
-          <select bind:value={draft.protocol} disabled={locked("protocol")} title={locked("protocol") ? lockTip : ""}>
+          <select bind:value={draft.protocol} disabled={locked("protocol")} title={locked("protocol") ? lockTip : ""}
+            onchange={() => protocolChanged()}>
             {#each PROTOCOLS as p}<option value={p}>{p}</option>{/each}
           </select>
         </label>

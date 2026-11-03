@@ -11,12 +11,16 @@ CyberArk isn't a jump host. ssh connects to the gateway (e.g. `example.cyberark.
 you are and which target to open, for example:
 
 ```text
-{ad_username}#{cyberark_region}@{cyberark_username}#{cyberark_address}@{host_address}#{cyberark_connector}
+{email}@{domain}#{cyberark_region}@{cyberark_username}#{cyberark_address}@{host_address}#{cyberark_connector}
 ```
 
-- `{ad_username}`, `{cyberark_region}`, `{cyberark_username}`, `{cyberark_address}` and `{cyberark_connector}` are
+- `{email}`, `{domain}`, `{cyberark_region}`, `{cyberark_username}`, `{cyberark_address}` and `{cyberark_connector}` are
   each user's own Environment Variables (Tools > Environment Variables), so a shared Database session holds no one's
   login.
+- The names are only names: what matters is that the profile's username and the Environment Variables use the same
+  ones. The first part is whatever CyberArk signs you in as, e.g. `{ad_username}@{domain}` where the email address is
+  the AD username at the domain, or one `{email}` variable holding it all. The fetch command (below) uses the same
+  first part.
 - `{host_address}` is the target: the session's own Host.
 - The login is an SSH key that CyberArk issues for a short time (MFA caching). It's fetched beforehand; on Windows
   today that's a `.bat` (see [Getting the key](#getting-the-key)).
@@ -74,8 +78,8 @@ otherwise a session's own host wins:
 
 ### 3. The username goes to ssh with `-l`
 
-It already does (`launch.rs`). That matters here: `user@host` form would split this username at its last `@`, while
-`-l` passes `#` and `@` through as they are.
+It already does (`launch.rs`). `user@host` form works too, as OpenSSH splits it at its *last* `@` (the macOS
+function below connects that way); `-l` just leaves no doubt about where the username ends.
 
 ### 4. The CyberArk profile
 
@@ -101,23 +105,41 @@ Today on Windows a `.bat` does the fetch with `psftp` and converts the key to `.
 
 ### By hand, today
 
-The same fetch on the Mac with OpenSSH (untested), in a Local Shell tab so the link and the PIN prompt show there:
+**macOS**: a shell function (in `~/.zshrc`, say), the Mac's version of the `.bat`. It fetches the key when there's
+none or it's over 4 hours old (14400 seconds, the key's lifetime here), then connects to the target given as its
+argument, e.g. `pam 192.168.0.50`:
 
 ```bash
-printf 'get /key %s\nquit\n' ~/.ssh/cyberark_key | sftp -b - "<user>@<domain>#<region>@key@example.ssh.cyberark.cloud"
+function pam() {
+    email="my_email"
+    domain="example.com"
+    cyberark_region="example"
+    cyberark_username="PAM_EXAMPLE_001"
+    cyberark_address="example.com"
+    cyberark_connector="ConnectorPool"
+    ssh_host="example.ssh.cyberark.cloud"
+    key=~/.ssh/key
+
+    if [ -f "$key" ]; then
+        age=$(( $(date +%s) - $(stat -f %m "$key") ))
+    fi
+    if [ ! -f "$key" ] || [ "$age" -gt 14400 ]; then
+        sftp "$email@$domain#$cyberark_region@key@$ssh_host:/key" ~/.ssh
+    fi
+    ssh -i "$key" "$email@$domain#$cyberark_region@$cyberark_username#$cyberark_address@$1#$cyberark_connector@$ssh_host"
+}
 ```
 
-```bash
-chmod 600 ~/.ssh/cyberark_key
-```
+- The fetch is `sftp` run interactively, downloading `/key` from the gateway's `key` target (`host:/key` form) into
+  `~/.ssh`. The sign-in (the link to Okta, then the PIN pasted back) happens at its prompts, in the same terminal.
+- The key's age is its file's modified time against now (`stat -f %m`, macOS's `stat`).
+- The connection is `user@host` form: OpenSSH splits at the last `@`, so the gateway is `$ssh_host` and everything
+  before it, `@` and `#` included, is the username. The target (`$1`) sits where SuperXTerminal puts `{host_address}`.
+- `~/.ssh/key` is a generic name; a name of its own (`~/.ssh/cyberark_key`) keeps it apart from other keys.
 
-On Windows, SuperXTerminal uses Windows' own OpenSSH too, so the same `sftp` command works in PowerShell, with the
-key kept in OpenSSH's format: the `.bat`'s WinSCP conversion is only for PuTTY. (A guess to check: whether CyberArk
-hands out an OpenSSH key or a PuTTY one; a `.ppk` works anyway, as SuperXTerminal converts any profile's `.ppk`.)
-
-`sftp -b -` reads its commands from the pipe, so the PIN can't come from there: it's asked for on the terminal
-itself (keyboard-interactive), which is what the tab gives it. To check: that `-b` doesn't turn the sign-in prompt
-off; if it does, `sftp` without `-b`, typing `get /key …` by hand, does the same.
+**Windows**: the `.bat` fetches with `psftp` and converts the key to `.ppk` with WinSCP, for PuTTY. SuperXTerminal
+uses Windows' own OpenSSH, so the macOS function's `sftp` and `ssh` lines work in PowerShell as they are, with the
+key kept in OpenSSH's format; no conversion. (A `.ppk` works anyway: SuperXTerminal converts any profile's `.ppk`.)
 
 ### Built in (proposed, not built)
 
@@ -125,14 +147,14 @@ A profile gets a **Key fetch** section, used only when it has a Key file:
 
 | Field | What it's for |
 |---|---|
-| Fetch command | The command that gets a new key, e.g. the `sftp` line above, with `{key_file}` for where to write it and the usual `{placeholders}` (each user's `{ad_username}` and so on). One per system if they differ: macOS, Windows. |
-| Lifetime | How long a key is good for, in minutes (e.g. 60). |
+| Fetch command | The command that gets a new key, e.g. the function's `sftp` line, with `{key_file}` for where to write it and the usual `{placeholders}` (each user's `{email}` and so on). One per system if they differ: macOS, Windows. |
+| Lifetime | How long a key is good for, in minutes (240 here: CyberArk's 4 hours). |
 
 When a session using the profile opens:
 
 1. **The key is checked first.** No key file, or one older than the lifetime (by the file's modified time), and the
-   key is fetched before connecting. The tab says why: "The CyberArk key is 72 minutes old (good for 60): fetching
-   a new one." That's the "why can't I connect" answer, before ssh even starts.
+   key is fetched before connecting. The tab says why: "The CyberArk key is 4 h 12 min old (good for 4 h):
+   fetching a new one." That's the "why can't I connect" answer, before ssh even starts.
 2. **The fetch runs in the session's own tab**, as an ordinary terminal program, so CyberArk's link and its PIN
    prompt are right there. The link opens with Ctrl+click (or copy it), Okta signs in and shows the PIN, and the PIN
    is pasted into the tab. The app types nothing itself here: no stored password goes into a fetch.
@@ -166,8 +188,9 @@ with a stand-in command; only CyberArk and Okta themselves need production.
   `@` reaches the gateway unchanged.
 - The key: its format, its lifetime, and what the gateway says when it has expired (so the tab can say "fetch a new
   key").
-- The fetch: that CyberArk's link and PIN prompt show in a terminal with `sftp -b`, that the link opens with Ctrl+click
-  on the Mac (where Ctrl+click is also a right-click) or else by copying it, and that a pasted PIN is taken.
+- The fetch in a tab: that CyberArk's link and PIN prompt show as they do in Terminal, that the link opens with
+  Ctrl+click on the Mac (where Ctrl+click is also a right-click) or else by copying it, and that a pasted PIN is
+  taken.
 - The gateway's host key: one key for every target, so known_hosts gets a single entry for the gateway.
 - MFA or other keyboard-interactive prompts at the gateway, and whether the app's automatic password typing must stay
   out of them.
@@ -184,5 +207,6 @@ with a stand-in command; only CyberArk and Okta themselves need production.
   profile's port; an override's own username connects to the Host; `{host_address}` without a profile Host refuses;
   a session with no host uses its profile's, at the profile's port; no host anywhere, or `{host_address}` with no
   session host, refuses with a message.
-- To do: the Mac key command tried in production; then the built-in key fetch and its lifetime
+- To do: the macOS function tried in a session tab in production (it's the Mac's counterpart of the `.bat`, for
+  Terminal); then the built-in key fetch and its lifetime
   ([Built in](#built-in-proposed-not-built)); then a section in a user guide.

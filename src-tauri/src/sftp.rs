@@ -885,9 +885,9 @@ async fn scp_transfer(
                 }
             })
         })
-        .await
-        .map_err(|e| e.to_string())?;
+        .await;
         watching.store(false, Ordering::Relaxed);
+        let result = result.map_err(|e| e.to_string())?;
         if let Err(said) = result {
             return Err(if said == "Cancelled" { said } else { format!("{name}: {}", privilege_hint(&said)) });
         }

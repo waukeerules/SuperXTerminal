@@ -39,10 +39,10 @@
     message = "";
   }
 
-  /** Start a new profile */
+  /** Start a new profile: it asks for the password rather than offering SSH keys, as most are for network devices */
   function add(): void {
     selected = "";
-    draft = emptyProfile("");
+    draft = { ...emptyProfile(""), offerKeys: false };
     originalName = "";
     password = undefined;
     message = "Name it after the PuTTY profile your sessions use, e.g. root.";

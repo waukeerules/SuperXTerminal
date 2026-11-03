@@ -8,9 +8,10 @@ A macOS counterpart of [SuperXPuTTY](https://github.com/waukeerules/superputty):
 ## Status
 
 M0 to M5 are done: the sessions tree and Database sessions, SSH, Telnet and serial, scripting and commands, terminal
-extras, RDP in a tab (IronRDP), file transfer (SFTP, and SCP for network devices) and the rest. M6 (distribution) is
-under way: a signed local release build, its installer window and the third-party notices are done; Developer ID
-signing, notarisation and auto update are next.
+extras, RDP in a tab (IronRDP), file transfer (SFTP, and SCP for network devices) and the rest. M6 (distribution)
+is partly done: a signed local release build, its installer window, the app icon and the third-party notices.
+Developer ID signing, notarisation and auto update are deferred until it's decided who installs it and where releases
+live (docs/PLAN.md §6, question 8).
 
 - **[docs/PLAN.md](docs/PLAN.md):** the plan. It covers the options and the chosen stack (Tauri 2 and Svelte 5, reusing SuperXPuTTY's xterm.js and Monaco pages), licensing, the feature matrix, data compatibility, the UI mapping, milestones and open questions.
 - **[docs/ROADMAP.md](docs/ROADMAP.md):** progress, one line per feature, ticked ✅ as each is delivered.

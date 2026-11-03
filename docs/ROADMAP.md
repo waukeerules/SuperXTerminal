@@ -6,6 +6,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ **Done:** delivered and checked on a Mac.
 - 🚧 **In progress.**
 - ⬜ **Not started.**
+- ⏸ **Deferred:** waiting on a decision, noted in PLAN.md §6.
 
 **How lines change:** a line becomes ✅ in the same commit that delivers the feature, with a note of how it was checked when that isn't obvious. A milestone is done when all its lines are ✅ and its "done when" holds.
 
@@ -17,7 +18,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 | [M3 Scripting and commands](#m3-scripting-and-commands) | ✅ |
 | [M4 Terminal extras](#m4-terminal-extras) | ✅ |
 | [M5 The rest](#m5-the-rest) | ✅ |
-| [M6 Distribution](#m6-distribution) | 🚧 |
+| [M6 Distribution](#m6-distribution) | ⏸ |
 | [Later](#later) | ⬜ |
 
 ---
@@ -186,11 +187,11 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 **Done when:** a download opens on any Mac without warnings.
 
 - 🚧 Local release build (`npm run tauri build`, APPLE_SIGNING_IDENTITY set to the Apple Development certificate): SuperXTerminal.app (11.8 MB) and a plain .dmg (6.4 MB), hardened runtime, the Apple Events entitlement (Connect external drives Terminal), macOS 12 or later, the permission messages for Terminal and the local network. Checked running from the bundle: Local Shell, an SSH session (Media Server, key login) and File transfer (SFTP). Fixed for it: the tab pages' messages named the main window's origin, which under Tauri's tauri:// scheme isn't one postMessage accepts, so terminal tabs stayed blank; they now send to "/" (the same origin)
-- ⬜ Developer ID signing and notarisation
+- ⏸ Developer ID signing and notarisation: deferred, waiting on whether to join the Apple Developer Program (PLAN.md §6, question 8)
 - ✅ App icon: SuperXPuTTY's terminal screen and `>_` as a Mac icon (a graphite rounded square on Apple's grid), with a blue "X" raised like a superscript; drawn by `scripts/app-icon.swift` (`src-tauri/icons/app-icon.png`), every size made by `npx tauri icon`. The menu bar keeps its own template icon. Checked in the Dock and the .dmg
 - ✅ `.dmg` (designed): a 660 × 400 window, the app and Applications on an arrow over a light background with the name and what to do (`src-tauri/dmg/background.tiff`, 1x and 2x, drawn by `scripts/dmg-background.swift`; layout in tauri.conf.json's bundle.macOS.dmg), kept in the top 300 points so Finder's tab and path bars don't hide it. Checked in Finder. Build steps: [BUILD-macOS.md](BUILD-macOS.md), with a Windows placeholder in [BUILD-Windows.md](BUILD-Windows.md)
 - ✅ `THIRD-PARTY-NOTICES.txt` generated per release (`npm run notices`, `scripts/notices.mjs`, run before every release build): the Rust crates built into the program (cargo metadata, normal dependencies), the npm packages and the bundled web libraries, each distinct licence text once (490 components, 317 texts, about 960 KB); a package with no licence file gets its authors' copyright and the standard text (`scripts/licences/`), and the script fails if any component has none. Bundled in the app's Resources; SuperXTerminal > Third-Party Notices opens it. Checked in the release build
-- ⬜ Auto update
+- ⏸ Auto update: deferred, waiting on where releases live (the repository is private, so the app can't see its releases) and on notarisation (PLAN.md §6, question 8)
 - ⬜ Signed Windows MSI; Linux `.deb`, `.rpm`, AppImage
 
 ## Later

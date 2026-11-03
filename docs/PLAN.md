@@ -455,8 +455,11 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
 3. **Database application name:** connect as `SuperPuTTY` (no schema change, locks enforced as now), or as `SuperXTerminal` (needs the guard trigger to accept both, changed in SuperXPuTTY's schema SQL too)?
 4. **New protocol `LocalShell` in shared Sessions.xml:** today an unknown protocol stops SuperXPuTTY loading Sessions.xml at all (§3). So SuperXPuTTY must change first: read an unknown protocol as greyed, and keep unknown attributes (`XmlAnyAttribute`). Do that, and ship it before the Mac app writes such sessions, or keep Mac-only sessions in Private sessions only?
 5. **Profiles:** decided: SuperXTerminal's own per-user profiles, matched by name (§2 Profiles). Still open: is the `reg export` import worth building, and should the non-secret parts of profiles ever be shareable through the settings folder?
-6. **RDP:** is opening Windows App (outside the tabs) good enough, or should an in-tab RDP client (e.g. FreeRDP) be a later milestone?
+6. **RDP:** decided: an in-tab client built on IronRDP (MIT/Apache), with Windows App kept as an option (Settings > Remote Desktop) and for Connect external.
 7. **SENDBREAK:** make it work on the Mac for serial and SSH sessions (it can), or keep it "not available" to match SuperXPuTTY?
-8. **Distribution:** will you get an Apple Developer ID (for signing and notarisation), and should builds be public GitHub releases?
+8. **Distribution:** deferred (November 2026); the Mac release build, its .dmg, icon and notices are done, and the rest waits on two decisions:
+   - **Developer ID and notarisation:** needs an Apple Developer Program membership (USD 99 a year). Only needed if people other than the developer install the app; without it, other Macs warn ("unidentified developer") and need right-click > Open. Builds are signed with an Apple Development certificate meanwhile.
+   - **Where releases live:** the repository is private, so the app's update check can't see its releases (no token), and an auto updater couldn't either. Make the repository public, publish releases somewhere public (a public repository or a web server), or keep updating by hand. Tauri's updater also needs its own signing key (free, separate from Apple's); without notarisation, an update on another Mac still meets the warning.
+   - **Also deferred:** a universal (Intel and Apple silicon) build, documented in BUILD-macOS.md but not tried.
 9. **Mac hardware:** decided: development happens on a Mac.
 10. **Repository:** name `SuperXTerminal` under `waukeerules`, public or private, and MIT licence like SuperXPuTTY?

@@ -4,6 +4,7 @@
   (theme, session tree font, icon size) for the Mac; its Windows-only rows (PuTTY, plink, WinSCP...) aren't here.
 -->
 <script lang="ts">
+  import { SEARCH_FIELDS, searchFieldsOf, toggledSearchFields } from "../sessions/tree";
   import { SYSTEM, THIS_COMPUTER } from "../platform";
   import { chooseSettingsFolder, saveSettings, settings } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -32,6 +33,9 @@
     }
   }
   const colourRules = $derived(parseRules(settings.environmentColorRules));
+
+  /** The Sessions search's fields, as its ⋯ button shows them */
+  const searchFields = $derived(searchFieldsOf(settings.treeSearchFields));
 </script>
 
 <div class="general">
@@ -126,6 +130,27 @@
       onchange={(e) => void saveSettings({ treeLines: e.currentTarget.checked })} /> Show lines in the Sessions tree</label>
     <label class="check"><input type="checkbox" checked={settings.searchWidensPane}
       onchange={(e) => void saveSettings({ searchWidensPane: e.currentTarget.checked })} /> Widen the Sessions pane while searching, so names fit (up to 600 px)</label>
+    <!-- the Sessions search's own Aa, .* and ⋯ buttons set the same, as SuperXPuTTY's Search and Search in… -->
+    <div class="search-settings">
+      <span class="label">Sessions search</span>
+      <label class="check"><input type="checkbox" checked={settings.treeSearchCase}
+        onchange={(e) => void saveSettings({ treeSearchCase: e.currentTarget.checked })} /> Match case</label>
+      <label class="check"><input type="checkbox" checked={settings.treeSearchRegex}
+        onchange={(e) => void saveSettings({ treeSearchRegex: e.currentTarget.checked })} /> Regular expression</label>
+      <span class="label">Search in</span>
+      <div class="fields">
+        {#each SEARCH_FIELDS as [field, label] (field)}
+          <label class="check"><input type="checkbox" checked={searchFields.includes(field)}
+            disabled={searchFields.includes(field) && searchFields.length === 1}
+            onchange={() => void saveSettings({ treeSearchFields: toggledSearchFields(searchFields, field) })} /> {label}</label>
+        {/each}
+      </div>
+      <span class="buttons">
+        <button onclick={() => void saveSettings({ treeSearchFields: toggledSearchFields(searchFields, "all") })}
+          disabled={searchFields.length === SEARCH_FIELDS.length}>All fields</button>
+        <button onclick={() => void saveSettings({ treeSearchFields: [] })} disabled={settings.treeSearchFields.length === 0}>Defaults</button>
+      </span>
+    </div>
   </fieldset>
 
   <fieldset>
@@ -265,5 +290,28 @@
     border-radius: 4px;
     padding: 4px 6px;
     min-width: 0;
+  }
+
+  .search-settings {
+    display: grid;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .search-settings .label {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  .search-settings .fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px 12px;
+  }
+
+  .search-settings .buttons {
+    display: flex;
+    gap: 8px;
   }
 </style>

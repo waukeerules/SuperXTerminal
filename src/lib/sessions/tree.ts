@@ -115,13 +115,37 @@ function finish(node: FolderNode, descending: boolean): number {
 }
 
 /** A field the Sessions search can look in (Search in…, as SuperXPuTTY's) */
-export type SearchField = "name" | "host" | "username" | "folder" | "note" | "icon" | "protocol" | "profile";
+export type SearchField =
+  | "name" | "folder" | "host" | "username" | "port" | "protocol" | "profile" | "extraArgs" | "note" | "script" | "icon";
 
-/** Every field, in Search in…'s order, with its label */
+/** Every field, in Search in…'s order and with its names, as SuperXPuTTY's, then the icon */
 export const SEARCH_FIELDS: [SearchField, string][] = [
-  ["name", "Name"], ["host", "Host"], ["username", "Username"], ["folder", "Folder"], ["note", "Notes"],
-  ["icon", "Icon"], ["protocol", "Protocol"], ["profile", "Profile"],
+  ["name", "Session name"], ["folder", "Folder"], ["host", "Host address"], ["username", "Login username"],
+  ["port", "TCP port"], ["protocol", "Connection type"], ["profile", "Profile"], ["extraArgs", "Extra arguments"],
+  ["note", "Notes"], ["script", "SPSL script file"], ["icon", "Icon"],
 ];
+
+/** Every field, for All fields */
+export const ALL_SEARCH_FIELDS: SearchField[] = SEARCH_FIELDS.map(([f]) => f);
+
+/** The fields the settings name (treeSearchFields), else the defaults; names it doesn't know are left out */
+export function searchFieldsOf(saved: string[]): SearchField[] {
+  const known = saved.filter((f): f is SearchField => ALL_SEARCH_FIELDS.includes(f as SearchField));
+  return known.length ? known : DEFAULT_SEARCH_FIELDS;
+}
+
+/**
+ * What to save after ticking or unticking a field (or "all"): in Search in…'s order, [] when it comes back to the
+ * defaults, and the last field kept, so the search always looks somewhere
+ */
+export function toggledSearchFields(current: SearchField[], field: SearchField | "all"): SearchField[] {
+  const next = field === "all"
+    ? ALL_SEARCH_FIELDS
+    : ALL_SEARCH_FIELDS.filter((f) => (f === field ? !current.includes(f) : current.includes(f)));
+  if (next.length === 0) return current;
+  const isDefault = next.length === DEFAULT_SEARCH_FIELDS.length && next.every((f) => DEFAULT_SEARCH_FIELDS.includes(f));
+  return isDefault ? [] : next;
+}
 
 /** The fields searched unless the user picks others: those it always looked in */
 export const DEFAULT_SEARCH_FIELDS: SearchField[] = ["name", "host", "username", "folder", "note"];
@@ -148,8 +172,8 @@ function fieldText(s: SessionView, field: SearchField): string {
   switch (field) {
     case "icon": return iconText(s.icon);
     case "protocol": return s.protocol || "SSH";
-    case "note": return s.note;
-    default: return s[field];
+    case "port": return s.port ? String(s.port) : "";
+    default: return s[field] ?? "";
   }
 }
 

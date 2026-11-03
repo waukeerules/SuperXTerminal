@@ -88,6 +88,9 @@ pub struct SessionView {
     pub icon: String,
     pub color: String,
     pub note: String,
+    /// The extra arguments with any -pw value masked, and the SPSL script file: for the search (Search in…)
+    pub extra_args: String,
+    pub script: String,
     pub updated_by: String,
     pub locked: bool,
     /// Database sessions: the columns locked in the table, comma-separated ("host,port")
@@ -185,6 +188,8 @@ fn view(session: &StoredSession, store: Store) -> SessionView {
         icon: session.get("ImageKey").to_string(),
         color: session.get("Color").to_string(),
         note: session.get("Note").to_string(),
+        extra_args: masked_password(session.get("ExtraArgs")),
+        script: session.get("SPSLFileName").to_string(),
         updated_by: session.get("DatabaseUpdatedBy").to_string(),
         pending: session.get("DatabasePending") == "true",
         pending_note: session.get("DatabasePendingNote").to_string(),
@@ -192,6 +197,17 @@ fn view(session: &StoredSession, store: Store) -> SessionView {
         locked_fields: session.get("DatabaseLockedFields").to_string(),
         id,
     }
+}
+
+/// Extra arguments with the word after -pw masked, so searching them can't find a session by its password
+fn masked_password(extra: &str) -> String {
+    let mut out = Vec::new();
+    let mut hide = false;
+    for word in extra.split_whitespace() {
+        out.push(if hide { "********" } else { word });
+        hide = word == "-pw";
+    }
+    out.join(" ")
 }
 
 /// Read the sessions of a file with `<SessionData>` elements (Sessions.xml, the Database cache)
@@ -290,6 +306,12 @@ pub fn user_folder() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_session_shown_to_the_search_has_its_password_masked() {
+        assert_eq!(super::masked_password("-l admin -pw cisco -L 80:x:80"), "-l admin -pw ******** -L 80:x:80");
+        assert_eq!(super::masked_password(""), "");
+    }
 
     /// A file as SuperXPuTTY's XmlSerializer writes it: CRLF, escaped characters, and an attribute this app doesn't know
     const SESSIONS: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<ArrayOfSessionData xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\r\n  <SessionData SessionId=\"Lab/Core/sw &amp; rtr\" Color=\"#C62828\" SessionName=\"sw &amp; rtr\" Host=\"10.0.0.1\" Note=\"line one&#xA;line two\" Port=\"0\" Proto=\"SSH\" FutureField=\"kept\" />\r\n</ArrayOfSessionData>\r\n";

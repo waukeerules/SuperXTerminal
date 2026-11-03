@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SessionView } from "./api";
-import { buildTree, searchProblem, searchTest } from "./tree";
+import { ALL_SEARCH_FIELDS, DEFAULT_SEARCH_FIELDS, buildTree, searchFieldsOf, searchProblem, searchTest, toggledSearchFields } from "./tree";
 
 function session(name: string, extra: Partial<SessionView> = {}): SessionView {
   return {
     id: `Lab/${name}`, store: "saved", name, folder: "Lab", protocol: "SSH", host: "", port: 22, username: "", profile: "",
-    icon: "", color: "", note: "", updatedBy: "", locked: false, lockedFields: "", pending: false, pendingNote: "", ...extra,
+    icon: "", color: "", note: "", extraArgs: "", script: "", updatedBy: "", locked: false, lockedFields: "", pending: false, pendingNote: "", ...extra,
   } as SessionView;
 }
 
@@ -64,7 +64,28 @@ describe("Search in…", () => {
     expect(searchTest("cyberark", fields(["profile"]))!(router)).toBe(true);
   });
 
+  it("finds the port, the extra arguments without their password, and the script", () => {
+    const s = session("sw", { port: 2222, extraArgs: "-L 8080:localhost:80 -pw ********", script: "scripts/login.spsl" });
+    expect(searchTest("2222", fields(["port"]))!(s)).toBe(true);
+    expect(searchTest("8080", fields(["extraArgs"]))!(s)).toBe(true);
+    expect(searchTest("login.spsl", fields(["script"]))!(s)).toBe(true);
+  });
+
   it("looks only where it's told", () => {
     expect(searchTest("edge", fields(["host"]))!(router)).toBe(false);
+  });
+});
+
+describe("Search in…'s choices", () => {
+  it("ticks and unticks in order, back to the defaults as none chosen, and keeps the last field", () => {
+    expect(toggledSearchFields(DEFAULT_SEARCH_FIELDS, "icon")).toEqual(["name", "folder", "host", "username", "note", "icon"]);
+    expect(toggledSearchFields(["name", "folder", "host", "username", "note", "icon"], "icon")).toEqual([]);
+    expect(toggledSearchFields(["icon"], "icon")).toEqual(["icon"]);
+    expect(toggledSearchFields(DEFAULT_SEARCH_FIELDS, "all")).toEqual(ALL_SEARCH_FIELDS);
+  });
+
+  it("reads the settings, leaving out names it doesn't know", () => {
+    expect(searchFieldsOf([])).toEqual(DEFAULT_SEARCH_FIELDS);
+    expect(searchFieldsOf(["icon", "bogus"])).toEqual(["icon"]);
   });
 });

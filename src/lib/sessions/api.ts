@@ -21,6 +21,9 @@ export interface SessionView {
   icon: string;
   color: string;
   note: string;
+  /** The extra arguments with any -pw value masked, and the SPSL script file, for the search */
+  extraArgs: string;
+  script: string;
   /** Database sessions: who changed it last (their SuperXPuTTY nickname) */
   updatedBy: string;
   /** Database sessions: locked against changes in the table */

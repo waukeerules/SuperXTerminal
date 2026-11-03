@@ -44,20 +44,30 @@ Environment Variable called `host_address` can't redirect a session.
 
 Before these, every `{key}` had to be an Environment Variable (`variables.rs`), so this username refused to start.
 
-### 2. A gateway host on the profile
+### 2. The profile's Host
 
-Settings > Profiles > Connection has **Gateway host** (and uses the profile's Port for it, else 22): where ssh connects
-when the username names the target, e.g. a CyberArk SSH gateway.
+Settings > Profiles > Connection has **Host** (at the profile's Port). It's used in two cases, as this table shows;
+otherwise a session's own host wins:
 
-The rule, kept deliberately narrow so an override can switch it off with the username alone:
+| Session's Host | Username has `{host_address}`? | ssh connects to |
+|---|---|---|
+| set | no | the session's Host, as always |
+| set | yes | the profile's Host (the gateway), the session's Host in the username |
+| empty | no | the profile's Host, as a PuTTY saved session's Host Name |
+| empty | yes | nothing: it refuses, as there's no target to put in the username |
 
-> When the username (after the session, its folders and the profile, and after local overrides) contains
-> `{host_address}`, ssh connects to the profile's **Gateway host** instead of the session's Host. Otherwise the
-> gateway is ignored.
-
-- `{host_address}` in the username with no gateway set: the session doesn't start, and the tab says to set the
-  profile's Gateway host. (Connecting to the target with a CyberArk username would only fail confusingly.)
-- The tab says where it's going first: "Connecting to 192.168.0.50 through the gateway example.cyberark.cloud."
+- **Several profiles, one address**: sessions that leave Host empty and only pick a profile, each profile with its
+  own username, all reach the profile's Host. On a computer without that profile the session says it has no host,
+  as PuTTY would with a saved session it doesn't have.
+- **Through a gateway**: the narrow rule keeps an override able to switch it off with the username alone. A local
+  override's own username (no `{host_address}`) connects straight to the session's Host.
+- **Ports**: the profile's Port when the profile's Host is used. Through a gateway, the session's port is the
+  target's (it travels as `{host_port}`) and the gateway's is the profile's, else 22; with no host of its own, the
+  profile's Port, else the session's.
+- `{host_address}` in the username with no profile Host: the session doesn't start, and the tab says to set one.
+  (Connecting to the target with a CyberArk username would only fail confusingly.)
+- The tab says where it's going first: "Connecting to 192.168.0.50 through the gateway example.cyberark.cloud.", or
+  "No host of its own: connecting to profile "…"'s host …".
 - A jump host still applies, to the gateway.
 - The app's log records `ssh command: … -l <user> <gateway>`; Verbose SSH (Settings > General > Diagnostics) shows
   the gateway's side of the login.
@@ -72,7 +82,7 @@ It already does (`launch.rs`). That matters here: `user@host` form would split t
 | Field | Value |
 |---|---|
 | Username | the connection string above |
-| Gateway host | e.g. `example.cyberark.cloud` |
+| Host | e.g. `example.cyberark.cloud` (the gateway) |
 | Key file | the cached key (`~/.ssh/cyberark_key`, or the `.ppk` on Windows; `.ppk` files are converted for ssh) |
 | SSH keys | either: with a key file, only that key is offered (`IdentitiesOnly`, as today), so no other key is spent on the gateway |
 | No username | use ssh's own (the profile always gives one) |
@@ -116,7 +126,9 @@ its lifetime, instead of by hand.
 
 - ✅ `{host_address}` / `{host_port}` built-ins (`launch.rs`, filled before `variables::missing`). Tests: a username
   holding them starts, and an Environment Variable of the same name doesn't win.
-- ✅ Profile `gateway_host` (`profiles.rs`, `profiles.ts`, the editor with its change dot) and the rule above. Tests:
-  the gateway is used only with `{host_address}` in the username, at the profile's port; an override's own username
-  connects to the Host; `{host_address}` without a gateway refuses with a message.
+- ✅ Profile `host` (`profiles.rs`, `profiles.ts`, the editor with its change dot; read from `gatewayHost` too, its
+  first name) and the table above. Tests: the gateway is used only with `{host_address}` in the username, at the
+  profile's port; an override's own username connects to the Host; `{host_address}` without a profile Host refuses;
+  a session with no host uses its profile's, at the profile's port; no host anywhere, or `{host_address}` with no
+  session host, refuses with a message.
 - To do: this document's Mac key command, tried in production; then a section in a user guide.

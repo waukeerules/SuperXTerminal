@@ -429,26 +429,38 @@ fn ssh(
         ));
     }
     let mut host = variables::substitute(session.get("Host").trim(), values);
-    // a username naming the target ({host_address}) is a gateway's: ssh connects to the profile's gateway host, at the
-    // profile's port, and the target travels in the username; any other username connects to the host as usual, so a
-    // local override's own username (and profile) goes straight there
+    // the profile's Host (docs/CYBERARK.md), at the profile's port: for a session with no host of its own, as a PuTTY
+    // saved session's Host Name; and for a username naming the session's host ({host_address}), a gateway's, which
+    // takes the target in the username. Any other username connects to the session's host, so a local override's
+    // own username (and profile) goes straight there.
     let through_gateway = username.to_ascii_lowercase().contains(&format!("{{{HOST_ADDRESS}}}"));
     let username = variables::substitute(&username, values);
     let jump_host = variables::substitute(&jump_host, values);
+    let profile_host = variables::substitute(first(&profile.host, &default.host).trim(), values);
+    let profile_port = [profile.port, default.port].into_iter().find(|p| *p != 0);
     if host.is_empty() {
-        return Err("This session has no host.".into());
-    }
-    if through_gateway {
-        let gateway = variables::substitute(first(&profile.gateway_host, &default.gateway_host).trim(), values);
-        if gateway.is_empty() {
+        if through_gateway {
             return Err(format!(
-                "This session's username names its target ({{{HOST_ADDRESS}}}), so it connects through a gateway, but profile \"{}\" has no Gateway host. Set one in Settings > Profiles.",
+                "This session's username names its host ({{{HOST_ADDRESS}}}), but the session has no host to put there."
+            ));
+        }
+        if profile_host.is_empty() {
+            return Err(format!("This session has no host, and profile \"{}\" has none either. Set one in Settings > Profiles.", profile.name));
+        }
+        notices.push(format!("No host of its own: connecting to profile \"{}\"'s host {profile_host}.", profile.name));
+        host = profile_host;
+        port = profile_port.unwrap_or(if port != 0 { port } else { 22 });
+    } else if through_gateway {
+        if profile_host.is_empty() {
+            return Err(format!(
+                "This session's username names its host ({{{HOST_ADDRESS}}}), so it connects through a gateway, but profile \"{}\" has no Host. Set one in Settings > Profiles.",
                 profile.name
             ));
         }
-        notices.push(format!("Connecting to {host} through the gateway {gateway}."));
-        host = gateway;
-        port = [profile.port, default.port].into_iter().find(|p| *p != 0).unwrap_or(22);
+        notices.push(format!("Connecting to {host} through the gateway {profile_host}."));
+        host = profile_host;
+        // the session's port is the target's, which travels as {host_port}; the gateway's is the profile's
+        port = profile_port.unwrap_or(22);
     }
     let mut login = Login { host: host.clone(), port, username: username.clone(), key_file: String::new() };
 
@@ -737,7 +749,7 @@ mod tests {
         profiles.profiles.push(Profile {
             name: "CyberArk".into(),
             username: "{ad_user}#{region}@{target_user}#{vault}@{host_address}#{connector}".into(),
-            gateway_host: "gw.example.test".into(),
+            host: "gw.example.test".into(),
             ..Profile::default()
         });
         profiles
@@ -788,9 +800,28 @@ mod tests {
 
         // naming the target with no gateway to go through: it says so rather than sending that username to the host
         let mut profiles = cyberark();
-        profiles.profiles[2].gateway_host.clear();
+        profiles.profiles[2].host.clear();
         let error = launched(&profiles, &CYBERARK_VALUES, &session(&[("PuttySession", "CyberArk")])).unwrap_err();
-        assert!(error.contains("Gateway host"), "{error}");
+        assert!(error.contains("has no Host"), "{error}");
+    }
+
+    #[test]
+    fn a_session_with_no_host_uses_its_profiles() {
+        // as a PuTTY saved session's Host Name: several profiles, each its own username, one address
+        let mut profiles = cyberark();
+        profiles.profiles[1].host = "jump.example.test".into();
+        let no_host = at("", &[("PuttySession", "root")]);
+        let args = launched(&profiles, &[], &no_host).unwrap();
+        assert_eq!(args.last().unwrap(), "jump.example.test");
+        // the profile's port (2222 for root) wins over the session's
+        assert!(args.windows(2).any(|w| w == ["-p", "2222"]), "{args:?}");
+
+        // no host anywhere: says so, naming the profile
+        let error = launched(&profiles, &[], &at("", &[])).unwrap_err();
+        assert!(error.contains("has none either"), "{error}");
+        // a username naming a host the session doesn't have: nothing to put there
+        let error = launched(&cyberark(), &CYBERARK_VALUES, &at("", &[("PuttySession", "CyberArk")])).unwrap_err();
+        assert!(error.contains("no host to put there"), "{error}");
     }
 
     #[test]

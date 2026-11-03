@@ -18,8 +18,11 @@ export interface Profile {
   /** A session with no username asks for one in the tab ("login as:"); null: Default Settings', else no */
   askUsername: boolean | null;
   jumpHost: string;
-  /** Where ssh connects when the username names the target as {host_address} (a CyberArk gateway), at its port */
-  gatewayHost: string;
+  /**
+   * Where ssh connects, at the profile's port: for a session with no host of its own (as a PuTTY saved session's
+   * Host Name), and for one whose username names its host as {host_address} (a CyberArk gateway)
+   */
+  host: string;
   keepalive: number;
   sshOptions: string;
   olderAlgorithms: boolean | null;
@@ -35,7 +38,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, username: "", port: 0, keyFile: "", offerKeys: null, askUsername: null, jumpHost: "", gatewayHost: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
+    name, username: "", port: 0, keyFile: "", offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", hasPassword: false,
   };
 }

@@ -239,7 +239,8 @@
         </div>
       {:else}
         <div class="row">
-          <label class="grow">{@render caption("Host address:", "host")}<input bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""} /></label>
+          <label class="grow">{@render caption("Host address:", "host")}<input bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""}
+            placeholder={draft.protocol.toUpperCase() === "SSH" ? "none: the profile's Host" : ""} /></label>
           <label>{@render caption("TCP port:", "port")}<input class="port" type="number" min="0" max="65535" bind:value={draft.port}
             placeholder={inherited("port")} disabled={locked("port")} title={locked("port") ? lockTip : ""} /></label>
         </div>

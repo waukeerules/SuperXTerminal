@@ -54,7 +54,7 @@
 
   /** The fields the editor shows, for counting the changes */
   const FIELDS: Field[] = [
-    "name", "username", "password", "keyFile", "offerKeys", "askUsername", "port", "jumpHost", "gatewayHost", "keepalive",
+    "name", "username", "password", "keyFile", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
   ];
   /** How many fields have changed since the profile was loaded or saved */
@@ -203,10 +203,10 @@
       <legend>Connection</legend>
       <label>{@render caption("Port", "port")}<input class="short" type="number" min="0" max="65535" bind:value={draft.port} /> <span class="note">0: not set</span></label>
       <label>{@render caption("Jump host", "jumpHost")}<input bind:value={draft.jumpHost} placeholder="a session, or admin@10.0.0.1:22" /></label>
-      <label>{@render caption("Gateway host", "gatewayHost")}<input bind:value={draft.gatewayHost} placeholder="none; e.g. example.cyberark.cloud" /></label>
-      <p class="note under">Used only when the username names the target as {"{host_address}"} (a CyberArk SSH gateway): ssh
-        connects here, at the Port above, and the session's own host goes in the username. Any other username connects
-        to the session's host as usual. See docs/CYBERARK.md.</p>
+      <label>{@render caption("Host", "host")}<input bind:value={draft.host} placeholder="none; e.g. example.cyberark.cloud" /></label>
+      <p class="note under">Used, at the Port above, by sessions with no host of their own, as a PuTTY saved session's
+        Host Name; and by sessions whose username names their host as {"{host_address}"} (a CyberArk SSH gateway, which
+        takes the target in the username). Otherwise a session's own host wins. See docs/CYBERARK.md.</p>
       <label>{@render caption("Keep-alive", "keepalive")}<input class="short" type="number" min="0" bind:value={draft.keepalive} /> <span class="note">seconds (0: none)</span></label>
       <label>{@render caption("Older algorithms", "olderAlgorithms")}
         <select value={triToValue(draft.olderAlgorithms)} onchange={(e) => (draft.olderAlgorithms = valueToTri(e.currentTarget.value))}>

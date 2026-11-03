@@ -33,9 +33,11 @@ pub struct Profile {
     /// before connecting; None: the default's, else no (ssh then uses this computer's user name)
     pub ask_username: Option<bool>,
     pub jump_host: String,
-    /// Where ssh connects when the username names the target as {host_address} (a CyberArk SSH gateway, say), at the
-    /// profile's port; ignored otherwise (docs/CYBERARK.md)
-    pub gateway_host: String,
+    /// Where ssh connects, at the profile's port, for a session with no host of its own, as a PuTTY saved session's
+    /// Host Name; and for one whose username names its host as {host_address} (a CyberArk SSH gateway, which takes the
+    /// target in the username). Otherwise the session's host wins (docs/CYBERARK.md). Was "gatewayHost".
+    #[serde(alias = "gatewayHost")]
+    pub host: String,
     /// Seconds between keep-alives (ssh's ServerAliveInterval); 0 for not set
     pub keepalive: u32,
     /// More ssh arguments, e.g. "-L 8080:localhost:80 -o Compression=yes"
@@ -125,4 +127,16 @@ pub fn password(profile: &str) -> Option<String> {
 /// Store a profile's password, or forget it when `password` is empty
 pub fn set_password(profile: &str, password: &str) -> Result<(), String> {
     secrets::set(&account(profile), password)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Profile;
+
+    #[test]
+    fn a_profile_saved_with_gateway_host_reads_it_as_its_host() {
+        let profile: Profile = serde_json::from_str(r#"{"name":"CyberArk","gatewayHost":"gw.example.test"}"#).unwrap();
+        assert_eq!(profile.host, "gw.example.test");
+        assert!(serde_json::to_string(&profile).unwrap().contains(r#""host":"gw.example.test""#));
+    }
 }

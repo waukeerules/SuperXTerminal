@@ -175,8 +175,20 @@ pub fn pty_open(
         }
     };
     let launch = launch.inspect_err(|e| crate::applog::warn(format!("Couldn't open {what}: {e}")));
-    let Launch { mut command, password, local, notices, look, stream, .. } = launch?;
+    let Launch { mut command, password, local, mut notices, look, stream, .. } = launch?;
     crate::applog::info(format!("Opening {what} in {}", window.label()));
+    // an SSH session: its command goes in the app's log, and with Verbose SSH (Settings > General) ssh tells the tab
+    // how connecting and logging in went; -v right after the program, as the host and any remote command come last
+    let ssh = stream.is_none()
+        && !local
+        && command.get_argv().first().and_then(|p| std::path::Path::new(p).file_stem()).is_some_and(|s| s.eq_ignore_ascii_case("ssh"));
+    if ssh {
+        if state.settings.lock().unwrap().ssh_verbose {
+            command.get_argv_mut().insert(1, "-v".into());
+            notices.push("Verbose SSH is on (Settings > General > Diagnostics): ssh's own messages follow.".into());
+        }
+        crate::applog::info(format!("ssh command: {}", shown_command(command.get_argv())));
+    }
     let link = match &stream {
         Some(crate::streams::Target::Telnet { .. }) => "telnet",
         Some(crate::streams::Target::Raw { .. }) => "raw",
@@ -372,6 +384,30 @@ pub fn pty_resize(ptys: State<'_, Ptys>, id: u32, cols: u16, rows: u16) -> Resul
     }
 }
 
+/// A command line for the app's log, each word quoted when it holds a space, and secrets masked: the word after -pw
+/// or -pass, and the value of any option whose name says password (not ssh's PasswordAuthentication=yes/no) (the launch never puts the password itself in
+/// ssh's arguments, as it types it at the prompt, but a profile's ssh options are free text)
+fn shown_command(argv: &[std::ffi::OsString]) -> String {
+    let mut words = Vec::new();
+    let mut hide_next = false;
+    for arg in argv {
+        let arg = arg.to_string_lossy();
+        let word = if hide_next {
+            "********".to_string()
+        } else if let Some((name, _)) = arg.split_once('=').filter(|(name, _)| {
+            let name = name.to_ascii_lowercase();
+            name.contains("pass") && !name.ends_with("authentication")
+        }) {
+            format!("{name}=********")
+        } else {
+            arg.to_string()
+        };
+        hide_next = matches!(arg.as_ref(), "-pw" | "-pass" | "--password");
+        words.push(if word.contains(' ') { format!("\"{word}\"") } else { word });
+    }
+    words.join(" ")
+}
+
 /// Close a tab's pseudo terminal: end its program if it's still running and forget it
 #[tauri::command]
 pub fn pty_close(ptys: State<'_, Ptys>, id: u32) -> Result<(), String> {
@@ -418,7 +454,20 @@ fn end(session: Option<Session>) {
 
 #[cfg(test)]
 mod tests {
-    use super::PasswordPrompt;
+    use super::{shown_command, PasswordPrompt};
+
+    #[test]
+    fn the_logged_command_hides_passwords() {
+        let argv: Vec<std::ffi::OsString> =
+            ["ssh", "-v", "-pw", "cisco", "-o", "PasswordAuthentication=no", "-o", "Password=x", "-l", "a b", "192.168.0.50"]
+                .iter()
+                .map(Into::into)
+                .collect();
+        assert_eq!(
+            shown_command(&argv),
+            "ssh -v -pw ******** -o PasswordAuthentication=no -o Password=******** -l \"a b\" 192.168.0.50"
+        );
+    }
 
     #[test]
     fn answers_the_first_prompt_even_when_split() {

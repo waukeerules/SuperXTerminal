@@ -144,6 +144,15 @@
   </fieldset>
 
   <fieldset>
+    <legend>Diagnostics</legend>
+    <p class="hint">For working out why an SSH session won't connect or log in. ssh's own messages (ssh -v) show in the
+      tab, above its output: the algorithms agreed, the keys offered, the login methods the device allows. Passwords
+      never appear in them. Each SSH session's command is also written to View > Log Viewer.</p>
+    <label class="check"><input type="checkbox" checked={settings.sshVerbose}
+      onchange={(e) => void saveSettings({ sshVerbose: e.currentTarget.checked })} /> Verbose SSH (ssh -v) for sessions opened from now on</label>
+  </fieldset>
+
+  <fieldset>
     <legend>Session logs</legend>
     <p class="hint">Every tab logs what it shows, for Search Output and Highlighted Output. Kept logs stay; otherwise a
       tab's log is deleted when it closes.</p>

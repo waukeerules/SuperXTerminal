@@ -67,7 +67,7 @@ otherwise a session's own host wins:
 - `{host_address}` in the username with no profile Host: the session doesn't start, and the tab says to set one.
   (Connecting to the target with a CyberArk username would only fail confusingly.)
 - The tab says where it's going first: "Connecting to 192.168.0.50 through the gateway example.cyberark.cloud.", or
-  "No host of its own: connecting to profile "…"'s host …".
+  "No host of its own: connecting to … (the Host of profile "…").".
 - A jump host still applies, to the gateway.
 - The app's log records `ssh command: … -l <user> <gateway>`; Verbose SSH (Settings > General > Diagnostics) shows
   the gateway's side of the login.

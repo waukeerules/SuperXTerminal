@@ -447,7 +447,7 @@ fn ssh(
         if profile_host.is_empty() {
             return Err(format!("This session has no host, and profile \"{}\" has none either. Set one in Settings > Profiles.", profile.name));
         }
-        notices.push(format!("No host of its own: connecting to profile \"{}\"'s host {profile_host}.", profile.name));
+        notices.push(format!("No host of its own: connecting to {profile_host} (the Host of profile \"{}\").", profile.name));
         host = profile_host;
         port = profile_port.unwrap_or(if port != 0 { port } else { 22 });
     } else if through_gateway {

@@ -5,7 +5,8 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { ask, open } from "@tauri-apps/plugin-dialog";
+  import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, saveProfile, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
 
@@ -29,6 +30,8 @@
   let message = $state("");
   /** SSH algorithms… open over the tab */
   let algorithming = $state(false);
+  /** The list's right-click menu, where it was opened */
+  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
   const isDefault = $derived(originalName.toLowerCase() === DEFAULT_PROFILE.toLowerCase());
 
@@ -106,15 +109,56 @@
     message = "";
   }
 
-  /** Remove the selected profile */
-  async function remove(): Promise<void> {
+  /** Remove a profile (the selected one by default), after asking */
+  async function remove(name = originalName): Promise<void> {
+    if (!(await ask(`Delete profile "${name}"? Sessions that name it use Default Settings until it's set up again.`,
+      { title: "Delete profile", kind: "warning", okLabel: "Delete" }))) return;
     try {
-      profiles = await deleteProfile(originalName);
+      profiles = await deleteProfile(name);
       select(DEFAULT_PROFILE);
-      message = "Removed.";
+      message = `Removed "${name}".`;
     } catch (e) {
       message = String(e);
     }
+  }
+
+  /** The first free copy name: "root-1", "root-2"…; a copy of "root-1" is "root-2", not "root-1-1" */
+  function copyName(name: string): string {
+    const base = name.replace(/-\d+$/, "");
+    const taken = new Set(profiles.map((p) => p.name.toLowerCase()));
+    let n = 1;
+    while (taken.has(`${base}-${n}`.toLowerCase())) n++;
+    return `${base}-${n}`;
+  }
+
+  /** Save a copy of a profile under the next free name and open it; its stored password stays with the original */
+  async function duplicate(name: string): Promise<void> {
+    const original = profiles.find((p) => p.name === name);
+    if (!original) return;
+    const copy = copyName(name);
+    try {
+      profiles = await saveProfile({ ...original, name: copy, hasPassword: false }, "", undefined);
+      select(copy);
+      message = original.hasPassword ? `Duplicated as "${copy}". Its password isn't copied: type it again.` : `Duplicated as "${copy}".`;
+    } catch (e) {
+      message = String(e);
+    }
+  }
+
+  /** The list's right-click menu: Duplicate and Delete, greyed while there are unsaved changes */
+  function showMenu(event: MouseEvent, name: string): void {
+    event.preventDefault();
+    const busy = changes > 0 ? "Save or revert the changes first" : false;
+    const isDefaultProfile = name.toLowerCase() === DEFAULT_PROFILE.toLowerCase();
+    menu = {
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: "Duplicate", disabled: busy, action: () => void duplicate(name) },
+        { separator: true },
+        { label: "Delete…", disabled: busy || (isDefaultProfile ? "Default Settings can't be deleted" : false), action: () => void remove(name) },
+      ],
+    };
   }
 
   /** Choose a private key file */
@@ -137,6 +181,7 @@
           class:selected={profile.name === selected} class:locked={changes > 0}
           title={changes > 0 && profile.name !== selected ? "Save or revert the changes first" : undefined}
           onclick={() => changes === 0 && select(profile.name)}
+          oncontextmenu={(e) => showMenu(e, profile.name)}
           onkeydown={(e) => e.key === "Enter" && changes === 0 && select(profile.name)} tabindex="0">
           {profile.name}
         </li>
@@ -144,7 +189,7 @@
     </ul>
     <div class="list-buttons">
       <button onclick={add} disabled={changes > 0}>New</button>
-      <button onclick={remove} disabled={changes > 0 || isDefault || originalName === ""}>Remove</button>
+      <button onclick={() => void remove()} disabled={changes > 0 || isDefault || originalName === ""}>Remove</button>
     </div>
   </div>
 
@@ -254,6 +299,11 @@
 {#snippet caption(text: string, field: Field)}
   <span class="caption">{text}{#if changed(field)}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</span>
 {/snippet}
+
+{#if menu}
+  <Menu items={menu.items} x={menu.x} y={menu.y} onClose={() => (menu = null)} />
+{/if}
+<svelte:window onclick={() => (menu = null)} />
 
 {#if algorithming}
   <AlgorithmsDialog title={`SSH algorithms: ${draft.name || "new profile"}`} text={draft.algorithms ?? ""}

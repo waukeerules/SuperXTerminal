@@ -7,7 +7,10 @@ A macOS counterpart of [SuperXPuTTY](https://github.com/waukeerules/superputty):
 
 ## Status
 
-M0 (skeleton), M1 (sessions tree, SSH, profiles), M2 (Database sessions), M3 (scripting and commands) and M4 (terminal extras) are done; M5 (the rest) is next.
+M0 to M5 are done: the sessions tree and Database sessions, SSH, Telnet and serial, scripting and commands, terminal
+extras, RDP in a tab (IronRDP), file transfer (SFTP, and SCP for network devices) and the rest. M6 (distribution) is
+under way: a signed local release build, its installer window and the third-party notices are done; Developer ID
+signing, notarisation and auto update are next.
 
 - **[docs/PLAN.md](docs/PLAN.md):** the plan. It covers the options and the chosen stack (Tauri 2 and Svelte 5, reusing SuperXPuTTY's xterm.js and Monaco pages), licensing, the feature matrix, data compatibility, the UI mapping, milestones and open questions.
 - **[docs/ROADMAP.md](docs/ROADMAP.md):** progress, one line per feature, ticked ✅ as each is delivered.
@@ -16,20 +19,19 @@ Mac first; the code stays buildable on Windows and Linux. Builds and releases ar
 
 ## Building
 
-Needs Rust (`rustup`, stable) and Node (LTS). Then, in this folder:
+- **[docs/BUILD-macOS.md](docs/BUILD-macOS.md):** what you need, the signing certificate, running it while developing,
+  the checks, the release build and its `.dmg`, notarisation, and publishing a release.
+- **[docs/BUILD-Windows.md](docs/BUILD-Windows.md):** a placeholder: what a Windows build will need, and what's still
+  Mac-only.
+
+The short version, on a Mac with Rust and Node:
 
 ```bash
-npm install          # once, and after package.json changes
-npm run tauri dev    # run the app; UI changes reload live, Rust changes rebuild and restart
-npm run tauri build  # release build: the .app and .dmg in src-tauri/target/release/bundle/
+npm install
 ```
 
-Checks:
-
 ```bash
-npm run check                          # Svelte and TypeScript
-npm run licenses                       # licences of the shipped npm packages
-(cd src-tauri && cargo deny check)     # Rust licences, advisories and sources (cargo install cargo-deny)
+npm run tauri dev
 ```
 
 ## Licence

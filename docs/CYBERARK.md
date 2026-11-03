@@ -92,8 +92,16 @@ string applies.
 
 ## Getting the key
 
-On Windows today a `.bat` fetches the key with `psftp` from CyberArk's `key` target and converts it to `.ppk` with
-WinSCP for PuTTY. The same on the Mac with OpenSSH, untested:
+CyberArk issues the SSH key for a short time (MFA caching), from a special `key` target on its gateway. Fetching it
+is itself an SSH login with a sign-in step: CyberArk prints a link, the link opens Okta in the browser, Okta shows a
+PIN after sign-in, and the PIN is pasted back into the terminal, where the fetch's ssh is waiting at a prompt. Then
+the key is written to a file, and sessions log in with it until it expires.
+
+Today on Windows a `.bat` does the fetch with `psftp` and converts the key to `.ppk` with WinSCP for PuTTY.
+
+### By hand, today
+
+The same fetch on the Mac with OpenSSH (untested), in a Local Shell tab so the link and the PIN prompt show there:
 
 ```bash
 printf 'get /key %s\nquit\n' ~/.ssh/cyberark_key | sftp -b - "<user>@<domain>#<region>@key@example.ssh.cyberark.cloud"
@@ -103,11 +111,54 @@ printf 'get /key %s\nquit\n' ~/.ssh/cyberark_key | sftp -b - "<user>@<domain>#<r
 chmod 600 ~/.ssh/cyberark_key
 ```
 
-No conversion is needed for OpenSSH. (A guess to check: whether CyberArk hands out an OpenSSH key or a PuTTY one; if
-it's `.ppk`, SuperXTerminal converts it already, as for any profile's key file.)
+On Windows, SuperXTerminal uses Windows' own OpenSSH too, so the same `sftp` command works in PowerShell, with the
+key kept in OpenSSH's format: the `.bat`'s WinSCP conversion is only for PuTTY. (A guess to check: whether CyberArk
+hands out an OpenSSH key or a PuTTY one; a `.ppk` works anyway, as SuperXTerminal converts any profile's `.ppk`.)
 
-Later, possibly: a profile **Before connecting, run** command, so the key is fetched when it's missing or older than
-its lifetime, instead of by hand.
+`sftp -b -` reads its commands from the pipe, so the PIN can't come from there: it's asked for on the terminal
+itself (keyboard-interactive), which is what the tab gives it. To check: that `-b` doesn't turn the sign-in prompt
+off; if it does, `sftp` without `-b`, typing `get /key …` by hand, does the same.
+
+### Built in (proposed, not built)
+
+A profile gets a **Key fetch** section, used only when it has a Key file:
+
+| Field | What it's for |
+|---|---|
+| Fetch command | The command that gets a new key, e.g. the `sftp` line above, with `{key_file}` for where to write it and the usual `{placeholders}` (each user's `{ad_username}` and so on). One per system if they differ: macOS, Windows. |
+| Lifetime | How long a key is good for, in minutes (e.g. 60). |
+
+When a session using the profile opens:
+
+1. **The key is checked first.** No key file, or one older than the lifetime (by the file's modified time), and the
+   key is fetched before connecting. The tab says why: "The CyberArk key is 72 minutes old (good for 60): fetching
+   a new one." That's the "why can't I connect" answer, before ssh even starts.
+2. **The fetch runs in the session's own tab**, as an ordinary terminal program, so CyberArk's link and its PIN
+   prompt are right there. The link opens with Ctrl+click (or copy it), Okta signs in and shows the PIN, and the PIN
+   is pasted into the tab. The app types nothing itself here: no stored password goes into a fetch.
+3. **When the fetch ends**, and the key file is new, the tab goes on to connect with it. If the fetch fails or the
+   file didn't change, the tab says so, and Enter tries again.
+4. **One fetch at a time.** Several sessions opening together (Connect all, a layout) share it: the first tab
+   fetches, and the others wait for it, saying so, then connect.
+5. **Expired while open.** A key only matters at login, so open sessions carry on. A reconnect after the lifetime
+   fetches again first.
+6. **When the gateway refuses the key anyway** (revoked early, or the lifetime is set longer than CyberArk's), the
+   tab adds a hint after ssh's "Permission denied (publickey)": the key's age, and that deleting it or Fetch now
+   gets a new one. The profile's editor has **Fetch now** and shows the key's age.
+
+The key is a credential, so:
+
+- It lives in the user's own folder (`keys/cyberark-<profile>.key`, readable by the user alone: mode 600 on the
+  Mac, the user's own access on Windows, as `.ppk` copies are kept today), never in the settings folder, the
+  Database table or anything shared.
+- It's deleted once it's past its lifetime and a fetch has replaced it, or by **Forget key** in the profile.
+- The fetch command and lifetime are profile fields, which are per user; a team shares the command by writing it
+  into its own setup notes.
+
+What's needed: profile fields (`key_fetch_mac`, `key_fetch_windows`, `key_lifetime_minutes`), the age check and
+the fetch-then-connect step in the tab (`PageHost.ts`, a pseudo terminal running the fetch, then the session), the
+one-at-a-time lock, and the hint after "Permission denied (publickey)". All of it can be built and unit tested here
+with a stand-in command; only CyberArk and Okta themselves need production.
 
 ## To check in production
 
@@ -115,6 +166,8 @@ its lifetime, instead of by hand.
   `@` reaches the gateway unchanged.
 - The key: its format, its lifetime, and what the gateway says when it has expired (so the tab can say "fetch a new
   key").
+- The fetch: that CyberArk's link and PIN prompt show in a terminal with `sftp -b`, that the link opens with Ctrl+click
+  on the Mac (where Ctrl+click is also a right-click) or else by copying it, and that a pasted PIN is taken.
 - The gateway's host key: one key for every target, so known_hosts gets a single entry for the gateway.
 - MFA or other keyboard-interactive prompts at the gateway, and whether the app's automatic password typing must stay
   out of them.
@@ -131,4 +184,5 @@ its lifetime, instead of by hand.
   profile's port; an override's own username connects to the Host; `{host_address}` without a profile Host refuses;
   a session with no host uses its profile's, at the profile's port; no host anywhere, or `{host_address}` with no
   session host, refuses with a message.
-- To do: this document's Mac key command, tried in production; then a section in a user guide.
+- To do: the Mac key command tried in production; then the built-in key fetch and its lifetime
+  ([Built in](#built-in-proposed-not-built)); then a section in a user guide.

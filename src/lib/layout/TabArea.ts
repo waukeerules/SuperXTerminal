@@ -7,6 +7,8 @@
 import {
   createDockview,
   type IHeaderActionsRenderer,
+  type IGroupHeaderProps,
+  type IDockviewGroupPanel,
   themeDark,
   themeLight,
   type DockviewApi,
@@ -100,22 +102,39 @@ class TabLabel implements ITabRenderer {
  * tabs, the active one ticked, and a click switches to one (App draws the list)
  */
 class TabListButton implements IHeaderActionsRenderer {
-  readonly element = document.createElement("button");
+  readonly element = document.createElement("div");
+  private group: IDockviewGroupPanel | null = null;
 
   constructor(private readonly tabs: TabArea) {
-    this.element.className = "tab-list-button";
-    this.element.textContent = "▾";
-    this.element.title = "Open tabs";
-    this.element.setAttribute("aria-label", "Open tabs");
-    this.element.addEventListener("click", (event) => {
+    this.element.className = "tab-actions";
+    // the close button for "Beside the tab list" (Settings > General > Tabs): it closes this group's active tab;
+    // shown only with that setting (App's .close-on-right)
+    const close = document.createElement("button");
+    close.className = "tab-list-button tab-close-button";
+    close.textContent = "✕";
+    close.title = "Close the active tab";
+    close.setAttribute("aria-label", "Close the active tab");
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.group?.activePanel?.api.close();
+    });
+    const list = document.createElement("button");
+    list.className = "tab-list-button";
+    list.textContent = "▾";
+    list.title = "Open tabs";
+    list.setAttribute("aria-label", "Open tabs");
+    list.addEventListener("click", (event) => {
       // not a click elsewhere, which closes menus
       event.stopPropagation();
-      const rect = this.element.getBoundingClientRect();
+      const rect = list.getBoundingClientRect();
       this.tabs.onTabList?.(rect.right, rect.bottom);
     });
+    this.element.append(close, list);
   }
 
-  init(): void {}
+  init(parameters: IGroupHeaderProps): void {
+    this.group = parameters.group;
+  }
 
   dispose(): void {}
 }

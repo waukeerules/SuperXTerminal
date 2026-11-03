@@ -86,6 +86,8 @@ pub struct AppSettings {
     /// FileZilla (external) gets the session's password on its sftp:// address, as SuperXPuTTY's "Allow plain-text
     /// password arguments": off, since any process can read a program's arguments
     pub filezilla_passwords: bool,
+    /// Where tabs' close button is: "tab" (on each tab) or "right" (one beside the tab list's ▾, closing the active tab)
+    pub tab_close: String,
 }
 
 impl Default for AppSettings {
@@ -126,6 +128,7 @@ impl Default for AppSettings {
             rdp_built_in: true,
             rdp_defaults: String::new(),
             filezilla_passwords: false,
+            tab_close: "tab".into(),
         }
     }
 }

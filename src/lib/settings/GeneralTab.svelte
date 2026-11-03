@@ -86,6 +86,19 @@
   </fieldset>
 
   <fieldset>
+    <legend>Tabs</legend>
+    <div class="row">
+      <label for="tab-close">Close button</label>
+      <select id="tab-close" value={settings.tabClose} onchange={(e) => void saveSettings({ tabClose: e.currentTarget.value as "tab" | "right" })}>
+        <option value="tab">On each tab</option>
+        <option value="right">Beside the tab list (▾), for the active tab</option>
+      </select>
+    </div>
+    <p class="hint">Beside the tab list, one ✕ stays in the same place at the right of the tab strip and closes the
+      tab that's showing; ⌘W and each tab's right-click menu close tabs either way.</p>
+  </fieldset>
+
+  <fieldset>
     <legend>Look</legend>
     <label>Theme
       <select value={settings.theme} onchange={(e) => void saveSettings({ theme: e.currentTarget.value })}>

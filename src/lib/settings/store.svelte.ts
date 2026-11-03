@@ -64,6 +64,8 @@ export interface AppSettings {
   rdpDefaults: string;
   /** FileZilla (external) gets the session's password on its address (off: it shows in the process list) */
   filezillaPasswords: boolean;
+  /** Tabs' close button: on each tab, or one beside the tab list's ▾ that closes the active tab */
+  tabClose: "tab" | "right";
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -102,6 +104,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   rdpBuiltIn: true,
   rdpDefaults: "",
   filezillaPasswords: false,
+  tabClose: "tab",
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

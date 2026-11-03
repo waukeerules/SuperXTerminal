@@ -693,7 +693,7 @@
       <div class="splitter" title="Drag to resize; double-click for the usual width" onpointerdown={startResize}
         ondblclick={() => void saveSettings({ sessionsPaneWidth: PANE_DEFAULT })}></div>
     </div>
-    <div class="tabs" bind:this={tabElement}></div>
+    <div class="tabs" class:close-on-right={settings.tabClose === "right"} bind:this={tabElement}></div>
   </div>
 
   {#if settings.showLogViewer}
@@ -903,7 +903,22 @@
     display: block;
   }
 
-  /* the tab strip's ▾ (TabArea's TabListButton) */
+  /* the tab strip's ▾, and the fixed ✕ beside it (TabArea's TabListButton) */
+  .tabs :global(.tab-actions) {
+    display: flex;
+    height: 100%;
+  }
+
+  /* Settings > General > Tabs: "Beside the tab list" swaps each tab's ✕ for one fixed ✕ by the ▾ */
+  .tabs:not(.close-on-right) :global(.tab-close-button),
+  .tabs.close-on-right :global(.session-tab .close) {
+    display: none;
+  }
+
+  .tabs :global(.tab-close-button) {
+    font-size: 13px;
+  }
+
   .tabs :global(.tab-list-button) {
     height: 100%;
     min-width: 30px;

@@ -1214,10 +1214,10 @@
 <div class="toolbar" role="toolbar" aria-label="Sessions">
   <button class="icon" title="New session (in the selected folder)" onclick={newSessionHere}><Icon key="newsession" size={toolSize} glyph /></button>
   <button class="icon" title="New folder (in the selected folder)" onclick={newFolderHere}><Icon key="newfolder" size={toolSize} glyph /></button>
-  <span class="gap"></span>
+  <span class="gap" role="separator" aria-orientation="vertical"></span>
   <button class="icon" title="Expand all" onclick={expandAll}><Icon key="expandall" size={toolSize} glyph /></button>
   <button class="icon" title="Collapse all" onclick={collapseAll}><Icon key="collapseall" size={toolSize} glyph /></button>
-  <span class="gap"></span>
+  <span class="gap" role="separator" aria-orientation="vertical"></span>
   <button class="icon" title={descending ? "Sorted Z to A: click for A to Z" : "Sorted A to Z: click for Z to A (until SuperXTerminal restarts)"}
     onclick={() => (descending = !descending)}><Icon key={descending ? "sortza" : "sortaz"} size={toolSize} glyph /></button>
 </div>
@@ -1337,8 +1337,14 @@
     margin: 0 8px 2px;
   }
 
+  /* a line between the toolbar's groups (new; expand and collapse; sort), as SuperXPuTTY's ToolStripSeparator */
   .toolbar .gap {
-    width: 6px;
+    align-self: stretch;
+    width: 1px;
+    margin: 4px 7px;
+    /* the muted text colour, faded: plain in both themes, where the border colour is faint on light */
+    background: var(--text-muted);
+    opacity: 0.45;
   }
 
   button.icon {

@@ -12,7 +12,7 @@
   import { context } from "../commands/sending.svelte";
   import { keyFetchExamples } from "./keyFetchExamples";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
-  import { DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, saveProfile, type Profile } from "./profiles";
+  import { coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, ownColoursChoice, saveProfile, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
   import { drawnTheme, pref } from "../terminal/prefs";
   import { highlighting } from "../terminal/highlighting";
@@ -46,6 +46,11 @@
   const isDefault = $derived(originalName.toLowerCase() === DEFAULT_PROFILE.toLowerCase());
   const defaultProfile = $derived(profiles.find((p) => p.name.toLowerCase() === DEFAULT_PROFILE.toLowerCase()));
 
+  /** The Colours box's choices (Settings > Terminal's theme is Follow the theme) */
+  const CHOICES: Record<string, string> = { theme: "Follow the theme (Settings > Terminal)", dark: "Dark", light: "Light", custom: "Custom" };
+  /** The same, short, for what Default Settings has */
+  const SHORT: Record<string, string> = { theme: "the theme", dark: "Dark", light: "Light", custom: "Custom" };
+
   /** The terminal colours a profile can have, over Default Settings', Settings > Terminal's and the theme's */
   const COLOURS: { field: "background" | "foreground" | "selection" | "cursorColor"; theme: string; label: string; pref: string; putty: string }[] = [
     { field: "background", theme: "background", label: "Background", pref: "colorBackground", putty: "#000000" },
@@ -54,6 +59,14 @@
     // a session's or folder's environment colour still wins for its cursor
     { field: "cursorColor", theme: "cursor", label: "Cursor colour", pref: "colorCursor", putty: "#00ff00" },
   ];
+
+  /** The Colours box's value: the profile's own choice, else "default" (Default Settings', which itself has "theme") */
+  function shownChoice(profile: Profile): string {
+    return ownColoursChoice(profile) || (isDefault ? "theme" : "default");
+  }
+
+  /** The choice the profile's tabs go by, the inherited one included: the colours can be set only when it's Custom */
+  const choice = $derived(coloursChoice(draft, isDefault ? undefined : defaultProfile));
 
   /** Each theme's colours, by name, for what a tab without its own colours draws with */
   let themeColours = $state<Record<string, Record<string, string>>>({});
@@ -74,7 +87,8 @@
     void settings.terminalPrefs;
     void settings.theme;
     const c = COLOURS.find((c) => c.field === field)!;
-    const theme = themeColours[drawnTheme()];
+    const theme = themeColours[choice === "dark" ? "Dark" : choice === "light" ? "Light" : drawnTheme()];
+    if (choice !== "custom") return theme?.[c.theme] || (field === "cursorColor" ? theme?.foreground : "") || c.putty;
     return (!isDefault && defaultProfile?.[field]) || pref(c.pref) || theme?.[c.theme]
       || (field === "cursorColor" ? (!isDefault && defaultProfile?.foreground) || pref("colorForeground") || theme?.foreground : "") || c.putty;
   }
@@ -94,6 +108,7 @@
     if (isDefault && field === "cursorBlink") return value ?? true;
     if (isDefault && field === "cursor") return value || "block";
     if (isDefault && field === "bell") return value || "visual";
+    if (field === "colours") return shownChoice(profile);
     return value ?? null;
   }
 
@@ -107,7 +122,7 @@
   const FIELDS: Field[] = [
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
-    "background", "foreground", "selection", "cursorColor",
+    "colours", "background", "foreground", "selection", "cursorColor",
   ];
   /** How many fields have changed since the profile was loaded or saved */
   const changes = $derived(FIELDS.filter(changed).length);
@@ -406,13 +421,19 @@
           <option value="sound">Sound</option>
           <option value="none">None</option>
         </select></label>
+      <label>{@render caption("Colours", "colours")}
+        <select value={shownChoice(draft)} onchange={(e) => (draft.colours = e.currentTarget.value)}>
+          {#if !isDefault}<option value="default">From Default Settings ({SHORT[coloursChoice(defaultProfile, undefined)]})</option>{/if}
+          {#each Object.entries(CHOICES) as [value, label] (value)}<option {value}>{label}</option>{/each}
+        </select></label>
       {#each COLOURS as c (c.field)}
-        <label>{@render caption(c.label, c.field)}
+        {@const off = choice !== "custom"}
+        <label class:off>{@render caption(c.label, c.field)}
           <span class="colour">
-            <input type="color" value={draft[c.field] || fallbackColour(c.field)} aria-label={c.label}
+            <input type="color" value={off ? fallbackColour(c.field) : draft[c.field] || fallbackColour(c.field)} aria-label={c.label} disabled={off}
               oninput={(e) => (draft[c.field] = e.currentTarget.value)} />
-            <span class="hint">{draft[c.field] || (isDefault ? "Settings > Terminal's" : defaultProfile?.[c.field] ? `From Default Settings (${defaultProfile[c.field]})` : "From Default Settings")}</span>
-            <button disabled={!draft[c.field]} onclick={(e) => { e.preventDefault(); draft[c.field] = ""; }}
+            <span class="hint">{off ? (choice === "theme" ? "the theme's" : `the ${CHOICES[choice]} theme's`) : draft[c.field] || (isDefault ? "Settings > Terminal's" : defaultProfile?.[c.field] ? `From Default Settings (${defaultProfile[c.field]})` : "From Default Settings")}</span>
+            <button disabled={off || !draft[c.field]} onclick={(e) => { e.preventDefault(); draft[c.field] = ""; }}
               title={isDefault ? "Use Settings > Terminal's colour" : "Use Default Settings' colour"}>{isDefault ? "Settings'" : "Default's"}</button>
           </span></label>
       {/each}
@@ -595,6 +616,10 @@
   .message.pending {
     color: var(--accent);
   }
+  label.off {
+    opacity: 0.5;
+  }
+
   .colour {
     display: flex;
     align-items: center;

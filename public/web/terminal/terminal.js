@@ -679,11 +679,13 @@
                 return { label: set.name, checked: tabRules === set.id, action: function () { chooseRules(set.id); } };
             }))
             .concat([{ label: 'None', checked: tabRules === 'none', action: function () { chooseRules('none'); } }]);
-        var following = loadPref('theme') === FOLLOW_LOOK;
+        var following = !profileTheme && loadPref('theme') === FOLLOW_LOOK;
         var themeItems = [{ label: "Follow the App's Look", checked: following, action: function () { savePref('theme', FOLLOW_LOOK); applyTheme(); } }, '-']
             .concat(themes.map(function (t) {
-                return { label: t.name, checked: !following && theme && theme.name === t.name, action: function () { savePref('theme', t.name); applyTheme(); } };
+                return { label: t.name, checked: !following && !profileTheme && theme && theme.name === t.name, action: function () { savePref('theme', t.name); applyTheme(); } };
             }));
+        // the profile's Colours name a theme (SuperXTerminal): it wins over the one chosen here
+        if (profileTheme) { themeItems.unshift({ label: 'From the profile: ' + profileTheme, checked: true, enabled: false }, '-'); }
         var chosenFamily = loadPref('fontFamily') || '';
         var setFamily = function (value) { return function () { savePref('fontFamily', value); applyFont(); }; };
         var fontItems = [
@@ -879,12 +881,14 @@
     /** The theme preference that follows the app's light or dark look (a theme file can't be named so) */
     var FOLLOW_LOOK = '@look';
 
-    /** The profile's own colours (background, foreground, selection), over the preferences' */
+    /** The profile's own colours (background, foreground, selection, cursor), over the preferences' */
     var profileColours = {};
+    /** The theme the profile names (its Colours: Dark or Light), over the preference's; null for the preference's */
+    var profileTheme = null;
 
     /** Apply the chosen theme (PuTTY's colours by default): terminal colours, font and the highlighting colours */
     function applyTheme() {
-        var wanted = loadPref('theme');
+        var wanted = profileTheme || loadPref('theme');
         // Follow the App's Look (SuperXTerminal's "@look"): its Light or Dark theme as the app is light or dark
         if (wanted === FOLLOW_LOOK) { wanted = darkDefault ? 'Dark' : 'Light'; }
         theme = themes.filter(function (t) { return t.name === wanted; })[0]
@@ -1150,6 +1154,7 @@
         applyCursor();
         cursorColor = config.cursorColor || null;
         profileColours = config.colors || {};
+        profileTheme = config.profileTheme || null;
         themes = config.themes || [];
         var compiled = SpRules.compile(config.ruleSets || []);
         ruleSets = compiled.sets;
@@ -1186,7 +1191,7 @@
             case 'look': darkDefault = !!message.dark; applyTheme(); break;
             case 'prefs': applyPrefs(message.prefs); break;
             // the profile was saved with other colours (SuperXTerminal)
-            case 'colors': profileColours = message.colors || {}; applyTheme(); break;
+            case 'colors': profileColours = message.colors || {}; profileTheme = message.theme || null; applyTheme(); break;
         }
     }
 

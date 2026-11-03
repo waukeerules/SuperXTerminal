@@ -37,7 +37,12 @@ export interface Profile {
   cursor: string;
   cursorBlink: boolean | null;
   bell: string;
-  /** The terminal's colours, "#rrggbb"; "" for Default Settings', else Settings > Terminal's or the theme's */
+  /**
+   * Which colours its tabs have: "" or "default" (Default Settings'), "theme" (Settings > Terminal's theme), "dark", "light" or
+   * "custom" (the colours below); a profile with colours and no choice is custom
+   */
+  colours: string;
+  /** The terminal's colours when custom, "#rrggbb"; "" for Default Settings', else Settings > Terminal's or the theme's */
   background: string;
   foreground: string;
   selection: string;
@@ -50,7 +55,7 @@ export interface Profile {
 export function emptyProfile(name: string): Profile {
   return {
     name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
-    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", background: "", foreground: "", selection: "", cursorColor: "", hasPassword: false,
+    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", hasPassword: false,
   };
 }
 
@@ -80,14 +85,35 @@ export async function deleteProfile(name: string): Promise<Profile[]> {
   return profiles;
 }
 
+/** A profile's own Colours choice: what it says, else "custom" when it has colours, else "" (Default Settings') */
+export function ownColoursChoice(profile: Profile | undefined): string {
+  if (!profile) return "";
+  const choice = profile.colours?.trim() ?? "";
+  // chosen in the editor over colours it still has
+  if (choice === "default") return "";
+  if (choice) return choice;
+  return [profile.background, profile.foreground, profile.selection, profile.cursorColor].some((c) => c?.trim()) ? "custom" : "";
+}
+
+/** The Colours choice a profile's tabs go by: its own, else Default Settings', else "theme" (`colours_choice` in launch.rs) */
+export function coloursChoice(profile: Profile | undefined, fallback: Profile | undefined): string {
+  return ownColoursChoice(profile) || ownColoursChoice(fallback) || "theme";
+}
+
 /**
- * A profile's terminal colours as a session's tab takes them (`look` in src-tauri/src/launch.rs): each one the
- * profile's, else Default Settings', when it's "#rrggbb"; "" for Settings > Terminal's or the theme's
+ * A profile's terminal look as a session's tab takes it (`look` in src-tauri/src/launch.rs): the theme its Colours
+ * choice names ("Dark", "Light" or "" for Settings > Terminal's), and when it's custom, each colour the profile's,
+ * else Default Settings', when it's "#rrggbb"; "" for Settings > Terminal's or the theme's
  */
-export function profileColours(profiles: Profile[], name: string): { background: string; foreground: string; selection: string; cursor: string } {
+export function profileColours(profiles: Profile[], name: string): { theme: string; background: string; foreground: string; selection: string; cursor: string } {
   const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
   const fallback = find(DEFAULT_PROFILE);
   const profile = find(name) ?? fallback;
-  const pick = (field: "background" | "foreground" | "selection" | "cursorColor") => hexColour(profile?.[field]) || hexColour(fallback?.[field]);
-  return { background: pick("background"), foreground: pick("foreground"), selection: pick("selection"), cursor: pick("cursorColor") };
+  const choice = coloursChoice(profile, fallback);
+  const pick = (field: "background" | "foreground" | "selection" | "cursorColor") =>
+    choice === "custom" ? hexColour(profile?.[field]) || hexColour(fallback?.[field]) : "";
+  return {
+    theme: choice === "dark" ? "Dark" : choice === "light" ? "Light" : "",
+    background: pick("background"), foreground: pick("foreground"), selection: pick("selection"), cursor: pick("cursorColor"),
+  };
 }

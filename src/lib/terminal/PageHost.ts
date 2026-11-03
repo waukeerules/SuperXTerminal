@@ -36,6 +36,8 @@ interface Look {
   rules: string;
   /** The profile the session uses; absent for a tab with none (a local shell's is Default Settings) */
   profile?: string;
+  /** The theme the profile's Colours choice names ("Dark" or "Light"); "" for Settings > Terminal's */
+  theme?: string;
   /** The profile's colours ("#rrggbb"); "" for Settings > Terminal's or the theme's */
   background?: string;
   foreground?: string;
@@ -218,7 +220,10 @@ export class PageHost implements ScriptTarget {
   private readonly onProfilesChanged = (): void => {
     const name = this.profile;
     if (name === null) return;
-    void listProfiles().then((profiles) => this.post({ type: "colors", colors: profileColours(profiles, name) })).catch(() => {});
+    void listProfiles().then((profiles) => {
+      const { theme, ...colors } = profileColours(profiles, name);
+      this.post({ type: "colors", colors, theme });
+    }).catch(() => {});
   };
 
   /** Close the pseudo terminal and stop listening; called when the tab closes */
@@ -519,6 +524,7 @@ export class PageHost implements ScriptTarget {
       sessionRules: look.rules,
       unlimitedScrollback: 1000000,
       cursorColor: this.cursorColor,
+      profileTheme: look.theme ?? "",
       colors: { background: look.background ?? "", foreground: look.foreground ?? "", selection: look.selection ?? "", cursor: look.cursorColor ?? "" },
     });
   }

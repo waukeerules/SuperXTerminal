@@ -62,7 +62,10 @@ pub struct Profile {
     pub cursor_blink: Option<bool>,
     /// The bell: "" (default), "visual", "sound" or "none"
     pub bell: String,
-    /// The terminal's colours, "#rrggbb", over the theme's and Settings > Terminal's; "" for the default's
+    /// Which colours its tabs have: "" or "default" (Default Settings'), "theme" (Settings > Terminal's theme), "dark" or "light"
+    /// (the Dark or Light theme), or "custom" (the colours below). A profile with colours and no choice is custom.
+    pub colours: String,
+    /// The terminal's colours when custom, "#rrggbb", over the theme's and Settings > Terminal's; "" for the default's
     pub background: String,
     pub foreground: String,
     pub selection: String,

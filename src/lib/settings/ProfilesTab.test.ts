@@ -145,18 +145,36 @@ describe("Settings > Profiles", () => {
     expect(remove.getAttribute("aria-disabled")).toBe("true");
   });
 
-  it("saves a profile's own background, and Default's puts it back to Default Settings'", async () => {
+  it("greys the colours until Colours is Custom, then saves the profile's own background", async () => {
     await open("root");
-    expect(screen.getAllByText("From Default Settings").length).toBeGreaterThanOrEqual(3);
-    await fireEvent.input(screen.getByLabelText("Background"), { target: { value: "#3a0000" } });
+    const background = () => screen.getByLabelText("Background") as HTMLInputElement;
+    const colours = screen.getByRole("combobox", { name: /^Colours/ }) as HTMLSelectElement;
+    expect(colours.value).toBe("default");
+    expect(background().disabled).toBe(true);
+    await userEvent.selectOptions(colours, "custom");
+    expect(background().disabled).toBe(false);
+    await fireEvent.input(background(), { target: { value: "#3a0000" } });
     expect(screen.getByText("#3a0000")).toBeTruthy();
-    expect(dots()).toHaveLength(1);
+    expect(dots()).toHaveLength(2);
     await userEvent.click(button("Save"));
     const save = calls.find((c) => c.cmd === "profiles_save");
-    expect((save?.args.profile as Profile).background).toBe("#3a0000");
+    expect(save?.args.profile).toMatchObject({ colours: "custom", background: "#3a0000" });
     await userEvent.click(screen.getAllByRole("button", { name: "Default's" })[0]);
     expect(dots()).toHaveLength(1);
-    expect((screen.getByLabelText("Background") as HTMLInputElement).value).toBe("#000000");
+    expect(background().value).toBe("#000000");
+  });
+
+  it("greys the colours again for Dark, and keeps them for later", async () => {
+    stored = stored.map((p) => (p.name === "root" ? { ...p, background: "#3a0000" } : p));
+    await open("root");
+    const colours = screen.getByRole("combobox", { name: /^Colours/ }) as HTMLSelectElement;
+    // colours from before there was a choice: Custom
+    expect(colours.value).toBe("custom");
+    await userEvent.selectOptions(colours, "dark");
+    expect((screen.getByLabelText("Background") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getAllByText("the Dark theme's").length).toBe(4);
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ colours: "dark", background: "#3a0000" });
   });
 
   it("lists Default Settings' terminal choices once each, its blank shown as the built-in one", async () => {

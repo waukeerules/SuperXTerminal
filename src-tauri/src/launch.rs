@@ -32,7 +32,10 @@ pub struct Look {
     pub rules: String,
     /// The profile the session uses, so its tab takes the profile's colours again when it's saved
     pub profile: String,
-    /// The profile's colours, "#rrggbb", else "Default Settings'"; "" for Settings > Terminal's or the theme's
+    /// The theme the profile's Colours choice names ("Dark" or "Light"); "" for Settings > Terminal's
+    pub theme: String,
+    /// The profile's colours when it's custom, "#rrggbb", else "Default Settings'"; "" for Settings > Terminal's or
+    /// the theme's
     pub background: String,
     pub foreground: String,
     pub selection: String,
@@ -439,17 +442,43 @@ fn look(profile: &Profile, default: &Profile) -> Look {
     let pick = |a: &str, b: &str, fallback: &str| {
         [a, b].into_iter().find(|v| !v.is_empty()).unwrap_or(fallback).to_string()
     };
+    // the colours only when the choice is Custom
+    let custom = colours_choice(profile, default) == "custom";
+    let own = |a: &str, b: &str| if custom { colour(a, b) } else { String::new() };
     Look {
         cursor: pick(&profile.cursor, &default.cursor, "block"),
         blink: profile.cursor_blink.or(default.cursor_blink).unwrap_or(true),
         bell: pick(&profile.bell, &default.bell, "visual"),
         rules: String::new(),
         profile: profile.name.clone(),
-        background: colour(&profile.background, &default.background),
-        foreground: colour(&profile.foreground, &default.foreground),
-        selection: colour(&profile.selection, &default.selection),
-        cursor_color: colour(&profile.cursor_color, &default.cursor_color),
+        theme: match colours_choice(profile, default) {
+            "dark" => "Dark".into(),
+            "light" => "Light".into(),
+            _ => String::new(),
+        },
+        background: own(&profile.background, &default.background),
+        foreground: own(&profile.foreground, &default.foreground),
+        selection: own(&profile.selection, &default.selection),
+        cursor_color: own(&profile.cursor_color, &default.cursor_color),
     }
+}
+
+/// A profile's Colours choice: its own, else "custom" when it has colours, else "Default Settings'", else "theme"
+fn colours_choice<'a>(profile: &'a Profile, default: &'a Profile) -> &'a str {
+    let own = |p: &'a Profile| -> &'a str {
+        let choice = p.colours.trim();
+        // chosen in the editor over colours it still has
+        if choice == "default" {
+            ""
+        } else if !choice.is_empty() {
+            choice
+        } else if [&p.background, &p.foreground, &p.selection, &p.cursor_color].iter().any(|c| !c.trim().is_empty()) {
+            "custom"
+        } else {
+            ""
+        }
+    };
+    [own(profile), own(default)].into_iter().find(|c| !c.is_empty()).unwrap_or("theme")
 }
 
 /// A profile's colour, else "Default Settings'", when it's "#rrggbb"; "" for none
@@ -890,11 +919,30 @@ mod tests {
     fn a_profiles_colours_win_over_default_settings_and_bad_ones_are_left_out() {
         let default = Profile { background: "#101010".into(), foreground: "#EEEEEE".into(), selection: "blue".into(), ..Profile::default() };
         let prod = Profile { background: "#3a0000".into(), cursor_color: "#00FF00".into(), ..Profile::default() };
-        let look = look(&prod, &default);
+        let look = super::look(&prod, &default);
         assert_eq!((look.background.as_str(), look.foreground.as_str(), look.selection.as_str()), ("#3a0000", "#eeeeee", ""));
         assert_eq!(look.cursor_color, "#00ff00");
         let look = super::look(&Profile::default(), &Profile::default());
         assert_eq!(look.background, "");
+    }
+
+    #[test]
+    fn a_profiles_colours_choice_names_a_theme_or_its_own_colours() {
+        let default = Profile { colours: "light".into(), background: "#101010".into(), ..Profile::default() };
+        // from Default Settings: the Light theme, and its colours left out though it has some
+        let look = super::look(&Profile::default(), &default);
+        assert_eq!((look.theme.as_str(), look.background.as_str()), ("Light", ""));
+        // its own Dark
+        let dark = Profile { colours: "dark".into(), background: "#3a0000".into(), ..Profile::default() };
+        let look = super::look(&dark, &default);
+        assert_eq!((look.theme.as_str(), look.background.as_str()), ("Dark", ""));
+        // custom: its colours over Settings > Terminal's theme
+        let custom = Profile { colours: "custom".into(), background: "#3a0000".into(), ..Profile::default() };
+        let look = super::look(&custom, &default);
+        assert_eq!((look.theme.as_str(), look.background.as_str()), ("", "#3a0000"));
+        // following the theme
+        let look = super::look(&Profile { colours: "theme".into(), ..Profile::default() }, &default);
+        assert_eq!((look.theme.as_str(), look.background.as_str()), ("", ""));
     }
 
     #[test]

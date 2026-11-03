@@ -179,3 +179,20 @@ test("the cursor: the session's environment colour, else the profile's, else Set
   await page.evaluate(() => (window as any).terminalDev.message({ type: "cursorColor", color: "#e5534b" }));
   await expect.poll(cursor).toBe("#e5534b");
 });
+
+test("a profile's Light or Dark wins over Settings > Terminal's theme, and its tab's menu says so", async ({ page }) => {
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  const themes = await page.evaluate(async () =>
+    Promise.all(["light", "dark", "putty"].map((n) => fetch(`/web/output/themes/${n}.theme.json`).then((r) => r.json()))),
+  );
+  const background = () => page.evaluate(() => (window as any).terminalDev.term.options.theme.background as string);
+  await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", themes, prefs: { theme: "PuTTY" }, profileTheme: "Light" }), themes);
+  await expect.poll(background).toBe(themes[0].colors.background);
+  // the profile saved as Dark
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "colors", colors: {}, theme: "Dark" }));
+  await expect.poll(background).toBe(themes[1].colors.background);
+  // and as following the theme: PuTTY's
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "colors", colors: {}, theme: "" }));
+  await expect.poll(background).toBe("#000000");
+});

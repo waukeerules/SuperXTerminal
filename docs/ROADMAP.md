@@ -17,7 +17,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 | [M3 Scripting and commands](#m3-scripting-and-commands) | ✅ |
 | [M4 Terminal extras](#m4-terminal-extras) | ✅ |
 | [M5 The rest](#m5-the-rest) | ✅ |
-| [M6 Distribution](#m6-distribution) | ⬜ |
+| [M6 Distribution](#m6-distribution) | 🚧 |
 | [Later](#later) | ⬜ |
 
 ---
@@ -185,6 +185,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Done when:** a download opens on any Mac without warnings.
 
+- 🚧 Local release build (`npm run tauri build`, APPLE_SIGNING_IDENTITY set to the Apple Development certificate): SuperXTerminal.app (11.8 MB) and a plain .dmg (6.4 MB), hardened runtime, the Apple Events entitlement (Connect external drives Terminal), macOS 12 or later, the permission messages for Terminal and the local network. Not yet run outside development
 - ⬜ Developer ID signing and notarisation
 - ⬜ `.dmg` (designed)
 - ⬜ `THIRD-PARTY-NOTICES` generated per release

@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Merged into the app's Info.plist by Tauri: the links SuperXTerminal opens (src-tauri/src/cli.rs). ssh:// and
+<!-- Merged into the app's Info.plist by Tauri: permission messages, and the links SuperXTerminal opens (src-tauri/src/cli.rs). ssh:// and
      telnet:// go to Terminal until the user makes SuperXTerminal their app for them (Settings > General). -->
 <plist version="1.0">
 <dict>
+  <!-- what macOS says when it asks the user: Connect external runs the session's ssh in Terminal (AppleScript), and
+       sessions reach devices on the local network -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>SuperXTerminal opens sessions in Terminal for Connect external.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>SuperXTerminal connects to the switches, servers and desktops in your sessions on the local network.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

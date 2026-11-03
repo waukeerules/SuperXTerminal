@@ -27,6 +27,10 @@
     ],
     "category": "DeveloperTool",
     "copyright": "Copyright (c) 2026 waukeerules",
-    "license": "MIT"
+    "license": "MIT",
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "entitlements": "Entitlements.plist"
+    }
   }
 }

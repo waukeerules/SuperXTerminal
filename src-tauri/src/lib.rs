@@ -1830,6 +1830,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>) ->
             &action("scriptEditor")?,
             &PredefinedMenuItem::separator(app)?,
             &plain("databaseSessions", "Database Sessions…")?,
+            &plain("profiles", "Profiles…")?,
             &plain("environmentVariables", "Environment Variables…")?,
             &plain("environmentColours", "Environment Colours…")?,
         ],

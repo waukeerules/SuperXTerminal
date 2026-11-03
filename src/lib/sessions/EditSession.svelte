@@ -34,7 +34,8 @@
     customs: ReadonlyMap<string, CustomIcon>;
     onSaved: (id: string) => void;
     onCancel: () => void;
-    onOpenProfiles: () => void;
+    /** Open Settings > Profiles, on the named profile (the session's) when there is one */
+    onOpenProfiles: (name?: string) => void;
     /** Database sessions: the columns locked in the table ("host,port"), shown greyed */
     lockedFields?: string;
     /** A free name in a folder: the name, else with -1, -2… added (`except` the session itself), as SuperXPuTTY's */
@@ -202,7 +203,7 @@
             disabled={locked("putty_profile")} title={locked("putty_profile") ? lockTip : ""} />
           <datalist id="profile-names">{#each profileNames as n}<option value={n}></option>{/each}</datalist>
         </label>
-        <button onclick={onOpenProfiles} title="Settings > Profiles">Profiles…</button>
+        <button onclick={() => onOpenProfiles(draft.profile.trim() || undefined)} title="Settings > Profiles, on this session's profile">Profiles…</button>
       </div>
       {#if reason}<p class="note">{reason}</p>{/if}
       {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}

@@ -4,7 +4,7 @@
 -->
 <script lang="ts">
   import Icon from "./lib/icons/Icon.svelte";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { TabArea } from "./lib/layout/TabArea";
   import SessionTree from "./lib/sessions/SessionTree.svelte";
   import Settings from "./lib/settings/Settings.svelte";
@@ -52,6 +52,16 @@
   let openSessions = $state<ReadonlySet<string>>(new Set());
   /** The Settings window's tab while it's open; null when closed */
   let settingsTab = $state<string | null>(null);
+  /** The profile Settings > Profiles shows first (Quick connect's Edit…, Edit Session's Profiles…) */
+  let settingsProfile = $state<string | null>(null);
+
+  /** Open Settings > Profiles on a profile (Default Settings when none), even if Settings is already open elsewhere */
+  async function openProfiles(name: string | null = null): Promise<void> {
+    settingsTab = null;
+    await tick();
+    settingsProfile = name;
+    settingsTab = "Profiles";
+  }
   /** This build's version, for the status bar (tauri.conf.json's) */
   let version = $state("");
   void getVersion().then((v) => (version = v), () => {});
@@ -90,6 +100,7 @@
     else if (id === "newLocalShell") newShell();
     else if (id === "newWindow") void invoke("window_new", { open: null });
     else if (id === "environmentVariables") variablesOpen = true;
+    else if (id === "profiles") void openProfiles();
     else if (id === "environmentColours") coloursOpen = true;
     else if (id === "openSession") quickOpen();
     else if (id === "switchSession") quickSwitch();
@@ -656,11 +667,11 @@
 {/if}
 
 {#if settingsTab}
-  <Settings tab={settingsTab} onClose={() => (settingsTab = null)} />
+  <Settings tab={settingsTab} profile={settingsProfile} onClose={() => (settingsTab = null)} />
 {/if}
 
 <div class="window">
-  <QuickConnect onProblem={(text) => (status = text)} onConnect={(quick, title, local) => {
+  <QuickConnect onProblem={(text) => (status = text)} onEditProfile={(name) => void openProfiles(name)} onConnect={(quick, title, local) => {
     tabs?.openQuickConnect(quick, title, local);
     status = `Opened session: ${title} [${quick.protocol}]`;
   }} />
@@ -692,7 +703,7 @@
             </svg>
           </button>
         </div>
-        <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsTab = "Profiles")} onLook={(_, icons) => {
+        <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={(name) => void openProfiles(name)} onLook={(_, icons) => {
           customs = icons;
           if (tabs) tabs.customs = icons;
         }} onSelected={(s) => (selectedSession = s)} onWantWidth={(w) => (searchWidth = w)} />

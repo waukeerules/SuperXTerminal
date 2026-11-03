@@ -67,7 +67,8 @@
     /** The icon size and custom icons, once read, so tabs can draw icons the same way */
     onLook: (iconSize: number, customs: ReadonlyMap<string, CustomIcon>) => void;
     /** Open Settings at Profiles (from Edit Session) */
-    onOpenProfiles: () => void;
+    /** Open Settings > Profiles, on the named profile when there is one */
+    onOpenProfiles: (name?: string) => void;
     /** The session selected now (a shortcut in Favorites or Recent counts), or null, for Session Detail */
     onSelected?: (session: SessionView | null) => void;
     /** While searching, the width the matches' names need (null: none, back to the user's width) */

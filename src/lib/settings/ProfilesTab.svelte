@@ -9,6 +9,13 @@
   import { DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, saveProfile, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
 
+  interface Props {
+    /** The profile to show first (Quick connect's Edit…, Edit Session's Profiles…); Default Settings when it's none */
+    initial?: string | null;
+  }
+
+  let { initial = null }: Props = $props();
+
   let profiles = $state<Profile[]>([]);
   let selected = $state(DEFAULT_PROFILE);
   /** The profile being edited, a copy until Save */
@@ -25,7 +32,9 @@
 
   onMount(async () => {
     profiles = await listProfiles();
-    select(DEFAULT_PROFILE);
+    // a session's profile is matched by name whatever its case, as the launch matches it
+    const wanted = initial ? profiles.find((p) => p.name.toLowerCase() === initial.trim().toLowerCase()) : undefined;
+    select(wanted?.name ?? DEFAULT_PROFILE);
   });
 
   /** Edit a profile from the list */

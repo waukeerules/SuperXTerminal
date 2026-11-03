@@ -22,9 +22,11 @@
     onClose: () => void;
     /** The tab to open on */
     tab?: string;
+    /** On the Profiles tab, the profile to show first */
+    profile?: string | null;
   }
 
-  let { onClose, tab = "General" }: Props = $props();
+  let { onClose, tab = "General", profile = null }: Props = $props();
 
   let current = $state(untrack(() => tab));
 
@@ -59,7 +61,7 @@
       <button class="close" onclick={onClose} aria-label="Close">✕</button>
     </header>
     <main>
-      {#if current === "General"}<GeneralTab />{:else if current === "Terminal"}<TerminalTab />{:else if current === "Remote Desktop"}<RemoteDesktopTab />{:else if current === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab />{/if}
+      {#if current === "General"}<GeneralTab />{:else if current === "Terminal"}<TerminalTab />{:else if current === "Remote Desktop"}<RemoteDesktopTab />{:else if current === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab initial={profile} />{/if}
     </main>
   </div>
 </div>

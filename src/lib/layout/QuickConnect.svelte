@@ -16,9 +16,11 @@
     onConnect: (quick: QuickConnect, title: string, local: boolean) => void;
     /** Shown in the status bar when something can't be opened */
     onProblem: (text: string) => void;
+    /** Edit… beside Profile: open Settings > Profiles on the profile chosen */
+    onEditProfile: (name: string) => void;
   }
 
-  let { onConnect, onProblem }: Props = $props();
+  let { onConnect, onProblem, onEditProfile }: Props = $props();
 
   let protocol = $state("SSH");
   let host = $state("");
@@ -86,6 +88,7 @@
     <select bind:value={profile} onkeydown={enter}>
       {#each profiles as p}<option value={p}>{p}</option>{/each}
     </select>
+    <button title="Edit this profile in Settings > Profiles" onclick={() => onEditProfile(profile)}>Edit…</button>
   </label>
   <button class="glyph" title="Connect" aria-label="Connect" onclick={connect}><Icon key="check" size={22} glyph /></button>
   <button class="glyph" title="Clear the fields" aria-label="Clear" onclick={clear}><Icon key="clear" size={22} glyph /></button>

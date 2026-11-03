@@ -5,3 +5,6 @@
 node_modules/
 /dist/
 *.local
+
+# Installers from local release builds, one folder per version (releases/0.1.0/...); kept out of git
+/releases/

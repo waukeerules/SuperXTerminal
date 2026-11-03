@@ -16,7 +16,7 @@
     "info": { "color": "#0550ae" },
     "address": { "color": "#0e7490" },
     "mac": { "color": "#8250df" },
-    "prompt": { "color": "#795e26", "bold": true },
+    "prompt": { "color": "#1f1f1f", "bold": true },
     "keyword": { "color": "#0000ff", "bold": true },
     "comment": { "color": "#008000", "italic": true }
   }

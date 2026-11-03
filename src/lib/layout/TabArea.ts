@@ -167,6 +167,7 @@ class OutputPanel implements IContentRenderer {
     this.host = new OutputHost(id, frame, logPath, title);
     this.tabs.outputs.set(source, this.host);
     frame.src = `/web/output/index.html?tab=${encodeURIComponent(id)}`;
+    this.tabs.watchFrame(frame, id);
     this.element.append(frame);
   }
 
@@ -273,6 +274,7 @@ class ComparePanel implements IContentRenderer {
     frame.className = "terminal-frame";
     frame.setAttribute("aria-label", parameters.api.title ?? "Compare Output");
     frame.src = `/web/compare/index.html?tab=${encodeURIComponent(this.id)}`;
+    this.tabs.watchFrame(frame, this.id);
     this.frame = frame;
     window.addEventListener("message", this.onMessage);
     this.element.append(frame);
@@ -368,6 +370,7 @@ class TerminalPanel implements IContentRenderer {
       if (this.host) this.host.title = e.title;
     });
     frame.src = `/web/terminal/index.html?tab=${encodeURIComponent(id)}`;
+    this.tabs.watchFrame(frame, id);
     this.element.append(frame);
   }
 
@@ -435,6 +438,20 @@ export class TabArea {
       this.changed();
     });
     this.api.onDidActivePanelChange(() => this.changed());
+    // after a tab is dragged to another group or split off, the keyboard was nowhere: put it in the active tab (the
+    // one moved, or after Join the one in front before), once the drop and its moves are done
+    let refocus: ReturnType<typeof setTimeout> | undefined;
+    this.api.onDidMovePanel(() => {
+      clearTimeout(refocus);
+      refocus = setTimeout(() => this.focusActive(), 0);
+    });
+    // the tab clicked or typed in is the active one, as clicking its tab makes it: clicks in a tab's content never
+    // reach dockview (renderer "always" puts it above the groups), so with splits the buttons and Send Commands went
+    // to the split last activated by its tab strip. Content in this page (Remote Desktop, file transfer) is followed
+    // here; pages in iframes (terminals, Highlighted Output, Compare) by watchFrame, as focus moving from one iframe
+    // to another never passes through this page.
+    document.addEventListener("focusin", (event) => this.activateHolder(event.target));
+    document.addEventListener("pointerdown", (event) => this.activateHolder(event.target), true);
     // as SuperXPuTTY, the watched tabs are looked at about once a second
     setInterval(() => this.checkAlerts(), 1000);
     this.api.onDidAddPanel(() => this.changed());
@@ -890,6 +907,32 @@ export class TabArea {
     this.refusing.clear();
     for (const id of [...this.hosts.keys(), ...this.rdpHosts.keys()]) if (!ids.has(id)) this.refusing.add(id);
     this.changed();
+  }
+
+  /** Make the tab whose content holds `target` (the focused or clicked element) the active one, if it isn't */
+  private activateHolder(target: EventTarget | null): void {
+    if (!(target instanceof Node)) return;
+    const panel = this.api.panels.find((p) => p.view.content.element.contains(target));
+    if (panel) this.activateIfNot(panel.id);
+  }
+
+  /** Make a tab the active one, if it isn't already (each click and focus calls it) */
+  private activateIfNot(id: string): void {
+    const panel = this.api.getPanel(id);
+    if (panel && this.api.activePanel !== panel) panel.api.setActive();
+  }
+
+  /**
+   * Make tab `id` the active one when its page (same origin, in `frame`) is clicked or gets the keyboard. Its events
+   * stay in its own document, so they're watched there, again each time it loads.
+   */
+  watchFrame(frame: HTMLIFrameElement, id: string): void {
+    frame.addEventListener("load", () => {
+      const page = frame.contentWindow;
+      if (!page) return;
+      page.addEventListener("focus", () => this.activateIfNot(id));
+      page.document.addEventListener("pointerdown", () => this.activateIfNot(id), true);
+    });
   }
 
   /** Put the keyboard back in the active tab, after a button or Send Commands */

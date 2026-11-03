@@ -66,6 +66,17 @@
   /** The serial devices plugged in (/dev/cu.*), for the Serial line list */
   let serialDevices = $state<string[]>([]);
 
+  /** A field as it counts for "changed": the port as a number, the rest as text */
+  const meaning = (f: SessionFields, field: keyof SessionFields) => (field === "port" ? Number(f[field]) || 0 : String(f[field] ?? ""));
+  /** Whether a field differs from the session as it was opened (or as a new one started) */
+  const changed = (field: keyof SessionFields) => meaning(draft, field) !== meaning(fields, field);
+  const FIELDS: (keyof SessionFields)[] = [
+    "name", "color", "icon", "protocol", "profile", "host", "port", "username", "highlightRules", "extraArgs", "rdpOptions",
+    "sshAlgorithms", "jumpHost", "script", "note", "localPath", "remotePath",
+  ];
+  /** How many fields have changed; a stored session saves only with changes, a new one (or a copy) any time */
+  const changes = $derived(FIELDS.filter(changed).length);
+
   const serial = $derived(draft.protocol.toUpperCase() === "SERIAL");
   const line = $derived(lineOf(draft.extraArgs));
 
@@ -163,11 +174,13 @@
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
     <header>{title}</header>
 
+    <!-- the fields scroll; the title above and Save below stay put -->
+    <div class="body">
     <fieldset>
       <legend>Connection details</legend>
       <div class="row">
-        <label class="grow">Session name: <input bind:value={draft.name} disabled={locked("name")} title={locked("name") ? lockTip : ""} /></label>
-        <span class="colour">Colour:
+        <label class="grow">{@render caption("Session name:", "name")}<input bind:value={draft.name} disabled={locked("name")} title={locked("name") ? lockTip : ""} /></label>
+        <span class="colour">{@render caption("Colour:", "color")}
           <button class="swatch" style:background={draft.color || "transparent"} title={locked("color") ? lockTip : draft.color || "None"}
             aria-label="Colour" disabled={locked("color")} onclick={() => (choosingColour = !choosingColour)}></button>
           {#if choosingColour}
@@ -183,7 +196,7 @@
             </div>
           {/if}
         </span>
-        <span>Icon:
+        <span>{@render caption("Icon:", "icon")}
           <button class="icon" title={locked("icon") ? lockTip : "Choose Icon"} aria-label="Choose Icon" disabled={locked("icon")}
             onclick={() => (choosingIcon = true)}>
             <Icon key={draft.icon} size={iconSize} {customs} />
@@ -192,13 +205,13 @@
       </div>
 
       <div class="row">
-        <label>Connection type:
+        <label>{@render caption("Connection type:", "protocol")}
           <select bind:value={draft.protocol} disabled={locked("protocol")} title={locked("protocol") ? lockTip : ""}
             onchange={() => protocolChanged()}>
             {#each PROTOCOLS as p}<option value={p}>{p}</option>{/each}
           </select>
         </label>
-        <label class="grow">Profile:
+        <label class="grow">{@render caption("Profile:", "profile")}
           <input list="profile-names" bind:value={draft.profile} placeholder={inherited("puttyProfile") || DEFAULT_PROFILE}
             disabled={locked("putty_profile")} title={locked("putty_profile") ? lockTip : ""} />
           <datalist id="profile-names">{#each profileNames as n}<option value={n}></option>{/each}</datalist>
@@ -211,7 +224,7 @@
 
       {#if serial}
         <div class="row">
-          <label class="grow">Serial line:
+          <label class="grow">{@render caption("Serial line:", "host")}
             <input list="serial-devices" bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""}
               placeholder={serialDevices[0] ?? (isMac ? "e.g. /dev/cu.usbserial-1, or COM1" : "e.g. COM1")} />
             <datalist id="serial-devices">{#each serialDevices as d}<option value={d}></option>{/each}</datalist>
@@ -226,16 +239,16 @@
         </div>
       {:else}
         <div class="row">
-          <label class="grow">Host address: <input bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""} /></label>
-          <label>TCP port: <input class="port" type="number" min="0" max="65535" bind:value={draft.port}
+          <label class="grow">{@render caption("Host address:", "host")}<input bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""} /></label>
+          <label>{@render caption("TCP port:", "port")}<input class="port" type="number" min="0" max="65535" bind:value={draft.port}
             placeholder={inherited("port")} disabled={locked("port")} title={locked("port") ? lockTip : ""} /></label>
         </div>
       {/if}
 
       <div class="row">
-        <label class="grow">Login username: <input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"}
+        <label class="grow">{@render caption("Login username:", "username")}<input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"}
           disabled={locked("username")} title={locked("username") ? lockTip : ""} /></label>
-        <label>Highlight:
+        <label>{@render caption("Highlight:", "highlightRules")}
           <select bind:value={draft.highlightRules} disabled={locked("highlight_rules")} title={locked("highlight_rules") ? lockTip : ""}>
             <option value="">{inherited("highlightRules") ? `From the folder (${inherited("highlightRules")})` : "Default (Settings)"}</option>
             <option value="auto">Auto (picked from the prompt)</option>
@@ -249,28 +262,28 @@
       </div>
 
       <div class="row">
-        <label class="grow">Extra arguments: <input bind:value={draft.extraArgs} placeholder="PuTTY-style, e.g. -pw secret -L 8080:localhost:80"
+        <label class="grow">{@render caption("Extra arguments:", "extraArgs")}<input bind:value={draft.extraArgs} placeholder="PuTTY-style, e.g. -pw secret -L 8080:localhost:80"
           disabled={locked("extra_args")} title={locked("extra_args") ? lockTip : ""} /></label>
         <button disabled={draft.protocol.toUpperCase() !== "RDP" || locked("rdp_options")}
           title={locked("rdp_options") ? lockTip : draft.protocol.toUpperCase() !== "RDP" ? "For RDP sessions" : draft.rdpOptions ? `Its own: ${draft.rdpOptions}` : "Using the defaults (Settings > Remote Desktop)"}
-          onclick={() => (rdpOptioning = true)}>RDP options…{draft.rdpOptions ? " ●" : ""}</button>
+          onclick={() => (rdpOptioning = true)}>RDP options…{draft.rdpOptions ? " (own)" : ""}{#if changed("rdpOptions")}<span class="dot" title="Changed: not saved yet"></span>{/if}</button>
         <button disabled={!["SSH", ""].includes(draft.protocol.toUpperCase()) || locked("ssh_algorithms")}
           title={locked("ssh_algorithms") ? lockTip : !["SSH", ""].includes(draft.protocol.toUpperCase()) ? "For SSH sessions" : draft.sshAlgorithms ? `Its own: ${draft.sshAlgorithms}` : "Its profile's algorithms"}
-          onclick={() => (algorithming = true)}>SSH algorithms…{draft.sshAlgorithms ? " ●" : ""}</button>
+          onclick={() => (algorithming = true)}>SSH algorithms…{draft.sshAlgorithms ? " (own)" : ""}{#if changed("sshAlgorithms")}<span class="dot" title="Changed: not saved yet"></span>{/if}</button>
       </div>
 
       <div class="row">
-        <label class="grow">Jump host: <input bind:value={draft.jumpHost} disabled={locked("jump_host")} title={locked("jump_host") ? lockTip : ""}
+        <label class="grow">{@render caption("Jump host:", "jumpHost")}<input bind:value={draft.jumpHost} disabled={locked("jump_host")} title={locked("jump_host") ? lockTip : ""}
           placeholder={inherited("jumpHost") || "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22"} /></label>
       </div>
 
       <div class="row">
-        <label class="grow">SPSL script: <input bind:value={draft.script} disabled={locked("spsl_script")} title={locked("spsl_script") ? lockTip : ""} /></label>
+        <label class="grow">{@render caption("SPSL script:", "script")}<input bind:value={draft.script} disabled={locked("spsl_script")} title={locked("spsl_script") ? lockTip : ""} /></label>
         <button onclick={() => (draft.script = "")}>Clear</button>
         <button onclick={browseScript}>Browse…</button>
       </div>
 
-      <label class="notes">Notes:
+      <label class="notes">{@render caption("Notes:", "note")}
         <textarea bind:value={draft.note} rows="5" disabled={locked("notes")} title={locked("notes") ? lockTip : ""}></textarea>
       </label>
     </fieldset>
@@ -278,23 +291,30 @@
     <fieldset>
       <legend>File transfer options</legend>
       <div class="row">
-        <label class="grow">Local path: <input bind:value={draft.localPath} /></label>
+        <label class="grow">{@render caption("Local path:", "localPath")}<input bind:value={draft.localPath} /></label>
         <button onclick={browseLocal}>Browse…</button>
       </div>
       <div class="row">
-        <label class="grow">Remote path: <input bind:value={draft.remotePath} /></label>
+        <label class="grow">{@render caption("Remote path:", "remotePath")}<input bind:value={draft.remotePath} /></label>
       </div>
     </fieldset>
+    </div>
 
     <footer>
       <button disabled={id === null} title={id === null ? "Save the session first" : "Your own values for this session, used when it opens; only you get them"}
         onclick={() => (overriding = true)}>Local overrides…</button>
-      <span class="error">{error}</span>
-      <button class="primary" onclick={save}>Save</button>
+      <span class="error" class:pending={!error && changes > 0}>{error || (changes > 0 ? `Unsaved changes (${changes})` : "")}</span>
+      <button class="primary" onclick={save} disabled={id !== null && changes === 0}
+        title={id !== null && changes === 0 ? "Nothing has changed" : ""}>Save</button>
       <button onclick={onCancel}>Cancel</button>
     </footer>
   </div>
 </div>
+
+<!-- a field's caption, with a dot while it differs from the session as opened -->
+{#snippet caption(text: string, field: keyof SessionFields)}
+  <span class="caption">{text}{#if changed(field)}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</span>
+{/snippet}
 
 {#if rdpOptioning}
   <RdpSessionOptions name={draft.name} text={draft.rdpOptions ?? ""} onCancel={() => (rdpOptioning = false)}
@@ -329,7 +349,7 @@
   .dialog {
     width: min(820px, 94vw);
     max-height: 94vh;
-    overflow: auto;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -342,6 +362,37 @@
 
   header {
     color: var(--text-muted);
+  }
+
+  .body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .caption {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
+  /* a field changed since the window opened */
+  .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-left: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    vertical-align: middle;
+  }
+
+  .caption .dot {
+    margin-left: 0;
   }
 
   fieldset {
@@ -466,6 +517,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  .error.pending {
+    color: var(--accent);
   }
 
   .error {

@@ -206,6 +206,57 @@
     return ms ? new Date(ms).toLocaleTimeString() : "";
   }
 
+  /** The transfer list's columns and default widths; dragged widths are kept for every file transfer tab */
+  const COLUMNS = [
+    { label: "Id", width: 34 }, { label: "Source", width: 260 }, { label: "Target", width: 260 }, { label: "Start", width: 86 },
+    { label: "End", width: 86 }, { label: "Progress", width: 170 }, { label: "Status", width: 76 }, { label: "Message", width: 300 },
+    { label: "", width: 58 },
+  ];
+  const WIDTHS_KEY = "sxt.transfer.columns";
+  let widths = $state<number[]>(savedWidths());
+
+  function savedWidths(): number[] {
+    try {
+      const saved = JSON.parse(localStorage.getItem(WIDTHS_KEY) ?? "null");
+      if (Array.isArray(saved) && saved.length === COLUMNS.length && saved.every((w) => typeof w === "number")) return saved;
+    } catch {
+      // no saved widths: the defaults
+    }
+    return COLUMNS.map((c) => c.width);
+  }
+
+  function saveWidths(): void {
+    try {
+      localStorage.setItem(WIDTHS_KEY, JSON.stringify(widths));
+    } catch {
+      // kept for this tab only
+    }
+  }
+
+  /** Drag a heading's right edge to resize its column */
+  function startResize(event: PointerEvent, i: number): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const grip = event.currentTarget as HTMLElement;
+    grip.setPointerCapture(event.pointerId);
+    const [startX, startWidth] = [event.clientX, widths[i]];
+    const move = (e: PointerEvent) => (widths[i] = Math.max(30, Math.round(startWidth + e.clientX - startX)));
+    const done = () => {
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", done);
+      grip.removeEventListener("pointercancel", done);
+      saveWidths();
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", done);
+    grip.addEventListener("pointercancel", done);
+  }
+
+  function resetWidth(i: number): void {
+    widths[i] = COLUMNS[i].width;
+    saveWidths();
+  }
+
   const percent = (job: Job) => (job.total ? Math.min(100, Math.round((job.done / job.total) * 100)) : job.status === "Done" ? 100 : 0);
   const describe = (paths: string[]) => (paths.length === 1 ? paths[0] : `${paths[0]} and ${paths.length - 1} more`);
 </script>
@@ -239,25 +290,36 @@
     </div>
 
     <div class="queue">
-      <table>
+      <table style:width="{widths.reduce((a, b) => a + b, 0)}px">
         <thead>
-          <tr><th class="id">Id</th><th>Source</th><th>Target</th><th class="t">Start</th><th class="t">End</th><th class="progress">Progress</th><th class="status">Status</th><th>Message</th><th class="act"></th></tr>
+          <tr>
+            {#each COLUMNS as column, i}
+              <th style:width="{widths[i]}px">
+                {column.label}
+                {#if column.label}
+                  <span class="grip" role="separator" aria-orientation="vertical" aria-label="Resize {column.label}"
+                    title="Drag to resize; double-click for the default width"
+                    onpointerdown={(e) => startResize(e, i)} ondblclick={() => resetWidth(i)}></span>
+                {/if}
+              </th>
+            {/each}
+          </tr>
         </thead>
         <tbody>
           {#each jobs as job (job.id)}
             <tr>
-              <td class="id">{job.id}</td>
+              <td>{job.id}</td>
               <td title={job.sources.join("\n")}>{describe(job.sources)}</td>
               <td title={job.target}>{job.target}</td>
-              <td class="t">{time(job.started)}</td>
-              <td class="t">{time(job.ended)}</td>
-              <td class="progress" title={job.file}>
+              <td title={job.started ? new Date(job.started).toLocaleString() : ""}>{time(job.started)}</td>
+              <td title={job.ended ? new Date(job.ended).toLocaleString() : ""}>{time(job.ended)}</td>
+              <td title={`${job.file ? `${job.file}\n` : ""}${formatSize(job.done)}${job.total ? ` of ${formatSize(job.total)}` : ""}`}>
                 <div class="bar"><div style:width="{percent(job)}%"></div></div>
                 <span>{percent(job)}%{job.total ? ` of ${formatSize(job.total)}` : ""}</span>
               </td>
-              <td class="status" class:bad={job.status === "Failed"}>{job.status}</td>
-              <td class="message" title={job.message}>{job.status === "Running" ? job.file : job.message}</td>
-              <td class="act">
+              <td class:bad={job.status === "Failed"}>{job.status}</td>
+              <td title={job.status === "Running" ? job.file : job.message}>{job.status === "Running" ? job.file : job.message}</td>
+              <td>
                 {#if job.status === "Running"}
                   <button title="Stop this transfer" onclick={() => void cancelTransfer(job.id)}>Stop</button>
                 {:else if job.status === "Waiting"}
@@ -333,8 +395,12 @@
     background: var(--bg-bar);
     text-align: left;
     font-weight: 500;
-    padding: 3px 6px;
+    padding: 3px 10px 3px 6px;
     border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    user-select: none;
   }
 
   td {
@@ -344,24 +410,18 @@
     text-overflow: ellipsis;
   }
 
-  .id {
-    width: 32px;
+  .grip {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+    border-right: 1px solid var(--border);
   }
 
-  .t {
-    width: 82px;
-  }
-
-  .progress {
-    width: 150px;
-  }
-
-  .status {
-    width: 70px;
-  }
-
-  .act {
-    width: 54px;
+  .grip:hover {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   .bad {

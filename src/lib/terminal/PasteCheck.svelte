@@ -3,6 +3,7 @@
   Paste (Cmd+Enter) and Cancel (Esc). What's in the box when Paste is pressed is what's typed.
 -->
 <script lang="ts">
+  import { MOD } from "../platform";
   import { pasteLineCount, pasting } from "./pasting.svelte";
 
   let text = $state("");
@@ -47,9 +48,9 @@
     <div class="dialog" role="dialog" aria-modal="true" aria-label="Paste">
       <header>Paste {lines} line{lines === 1 ? "" : "s"} into {pasting.current.session}? Check the text, and change it here if needed.</header>
       <textarea bind:this={box} bind:value={text} wrap="off" spellcheck="false"
-        title="Change the text here before pasting it; Return adds a line, Cmd+Return pastes"></textarea>
+        title="Change the text here before pasting it; Return adds a line, {MOD}+Return pastes"></textarea>
       <footer>
-        <button class="primary" disabled={!text} title="Type the text as it is in the box (Cmd+Return)" onclick={() => finish(true)}>Paste</button>
+        <button class="primary" disabled={!text} title="Type the text as it is in the box ({MOD}+Return)" onclick={() => finish(true)}>Paste</button>
         <button onclick={() => finish(false)}>Cancel</button>
       </footer>
     </div>

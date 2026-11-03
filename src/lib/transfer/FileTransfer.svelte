@@ -5,6 +5,7 @@
   menu, or dropping them from Finder onto the remote side. The connection is the session's own ssh (sftp.rs).
 -->
 <script lang="ts">
+  import { FILE_MANAGER } from "../platform";
   import { onDestroy, onMount } from "svelte";
   import { ask as confirm } from "@tauri-apps/plugin-dialog";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -287,7 +288,7 @@
               </td>
             </tr>
           {:else}
-            <tr><td colspan="9" class="empty">Drag files from one side to the other (or onto a folder), double-click a file, or drop files from Finder on the remote side.</td></tr>
+            <tr><td colspan="9" class="empty">Drag files from one side to the other (or onto a folder), double-click a file, or drop files from {FILE_MANAGER} on the remote side.</td></tr>
           {/each}
         </tbody>
       </table>

@@ -16,6 +16,8 @@ import type { ScriptTarget } from "../scripting/spsl";
 import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
 import { checkPaste } from "./pasting.svelte";
+import { THIS_COMPUTER } from "../platform";
+import { isMac } from "../shortcuts";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
 type PtyEvent =
@@ -278,7 +280,13 @@ export class PageHost implements ScriptTarget {
         await this.special(String(message.command ?? ""));
         break;
       case "openInPutty":
-        this.post({ type: "notice", text: "There's no PuTTY on the Mac: Connect external, in the session's menu in the Sessions tree, opens it in Terminal.", kind: "info" });
+        this.post({
+          type: "notice",
+          text: isMac
+            ? "There's no PuTTY on the Mac: Connect external, in the session's menu in the Sessions tree, opens it in Terminal."
+            : "Open in PuTTY isn't available in SuperXTerminal.",
+          kind: "info",
+        });
         break;
       case "cleared":
         // Windows' pseudo console keeps its own copy of the screen; the Mac's doesn't, so there's nothing to clear
@@ -602,7 +610,7 @@ export class PageHost implements ScriptTarget {
           await this.open();
           return;
         }
-        text = `${name} isn't matched to a serial device on this Mac yet. Press Enter to choose one.`;
+        text = `${name} isn't matched to a serial device on ${THIS_COMPUTER} yet. Press Enter to choose one.`;
       }
       // nothing started, so the page has had no settings yet
       if (!this.configured) await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
@@ -734,7 +742,7 @@ export class PageHost implements ScriptTarget {
       this.post({ type: "notice", text: `${name}: no serial device is plugged in (none in /dev/cu.*).`, kind: "error" });
       return false;
     }
-    const device = await askChoice(`Which serial device is ${name} on this Mac?`, `${name}:`, devices);
+    const device = await askChoice(`Which serial device is ${name} on ${THIS_COMPUTER}?`, `${name}:`, devices);
     if (!device) return false;
     await invoke("serial_device_set", { name, device });
     return true;

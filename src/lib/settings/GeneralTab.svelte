@@ -4,6 +4,7 @@
   (theme, session tree font, icon size) for the Mac; its Windows-only rows (PuTTY, plink, WinSCP...) aren't here.
 -->
 <script lang="ts">
+  import { SYSTEM, THIS_COMPUTER } from "../platform";
   import { chooseSettingsFolder, saveSettings, settings } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
@@ -72,7 +73,7 @@
     <label class="check"><input type="checkbox" checked={settings.filezillaPasswords}
       onchange={(e) => void saveSettings({ filezillaPasswords: e.currentTarget.checked })} /> Give FileZilla the session's password</label>
     <p class="hint">As SuperXPuTTY's "Allow plain-text password arguments". FileZilla (external) can only be given a
-      password on its sftp:// address, which any program on this Mac can read while FileZilla runs; off, FileZilla asks
+      password on its sftp:// address, which any program on {THIS_COMPUTER} can read while FileZilla runs; off, FileZilla asks
       for it. Connect external's Terminal window logs in by itself either way, without showing the password.</p>
   </fieldset>
 
@@ -103,7 +104,7 @@
     <legend>Look</legend>
     <label>Theme
       <select value={settings.theme} onchange={(e) => void saveSettings({ theme: e.currentTarget.value })}>
-        <option value="system">Follow macOS</option>
+        <option value="system">Follow {SYSTEM}</option>
         <option value="light">Light</option>
         <option value="dark">Dark</option>
       </select>

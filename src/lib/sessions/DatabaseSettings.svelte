@@ -6,6 +6,7 @@
   when Test connection finds something missing, makes the same table, triggers and folders table as SuperXPuTTY's.
 -->
 <script lang="ts">
+  import { SECRET_STORE } from "../platform";
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open, save } from "@tauri-apps/plugin-dialog";
@@ -168,7 +169,7 @@
         <span>Username:</span><input bind:value={s.user} />
         <span>Password:</span>
         <input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
-          placeholder={hasPassword ? "saved in the Keychain (type to replace)" : s.passwordPlaceholder || ""} />
+          placeholder={hasPassword ? `saved in ${SECRET_STORE} (type to replace)` : s.passwordPlaceholder || ""} />
         <span>Nickname:</span><input bind:value={s.nickname} placeholder="how others see who changed a session" />
         <span>SSL:</span>
         <select class="short" bind:value={s.sslMode}>

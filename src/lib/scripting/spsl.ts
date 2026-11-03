@@ -297,7 +297,7 @@ function checkArguments(command: string, args: string, sessionExists: (id: strin
     case "SENDBREAK":
       if (args) return "SENDBREAK takes no argument";
       // SuperXPuTTY lists SENDBREAK as unavailable: plink can't send a Break
-      return "!SENDBREAK works in Serial and Telnet tabs on the Mac; SuperXPuTTY on Windows skips it, and an SSH tab stops the script here.";
+      return "!SENDBREAK works in Serial and Telnet tabs in SuperXTerminal; SuperXPuTTY skips it, and an SSH tab stops the script here.";
     case "CLOSESESSION":
       return "CLOSESESSION isn't available: SPSL lists it but doesn't implement it, so the script would stop here.";
     default:

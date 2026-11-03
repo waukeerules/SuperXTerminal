@@ -3,6 +3,7 @@
   left, the document tabs, then the button bar and the status bar (with running scripts and their Stop).
 -->
 <script lang="ts">
+  import { THIS_COMPUTER } from "./lib/platform";
   import Icon from "./lib/icons/Icon.svelte";
   import { onMount, tick } from "svelte";
   import { TabArea } from "./lib/layout/TabArea";
@@ -332,7 +333,7 @@
     const found = await invoke<{ kind: string; text?: string; url?: string; path?: string }>("session_script", { store: session.store, id: session.id });
     let script = found.text ?? "";
     if (found.kind === "url" && found.url) script = await fetch(found.url).then((r) => (r.ok ? r.text() : "")).catch(() => "");
-    if (found.kind === "missing") status = `${session.name}'s script ${found.path} isn't on this Mac`;
+    if (found.kind === "missing") status = `${session.name}'s script ${found.path} isn't on ${THIS_COMPUTER}`;
     if (!script.startsWith("#!/bin/spsl")) return;
     const tab = tabs?.tabList().find((t) => t.id === tabId);
     if (!tab) return;

@@ -30,7 +30,8 @@ pub fn get(account: &str) -> Option<String> {
 
 /// Store a value for an account, or forget it when `value` is empty
 pub fn set(account: &str, value: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(SERVICE, account).map_err(|_| "The Keychain isn't available".to_string())?;
+    let store = if cfg!(target_os = "macos") { "The Keychain" } else { "Windows Credential Manager" };
+    let entry = keyring::Entry::new(SERVICE, account).map_err(|_| format!("{store} isn't available"))?;
     if value.is_empty() {
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => {}

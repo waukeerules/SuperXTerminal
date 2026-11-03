@@ -5,6 +5,7 @@
   folders) are copied there. Its right-click menu has the side's own actions.
 -->
 <script lang="ts">
+  import { FILE_MANAGER } from "../platform";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { formatSize, formatTime, joinPath, parentPath, type Entry, type Listing } from "./api";
   import { ResizableColumns } from "./columns.svelte";
@@ -173,7 +174,7 @@
         ...(onMkdir ? [{ label: "New Folder…", action: onMkdir } as MenuItem] : []),
         ...(onRename ? [{ label: "Rename…", disabled: picked.length !== 1 && "Select one file or folder", action: () => onRename(picked[0]) } as MenuItem] : []),
         ...(onDelete ? [{ label: "Delete…", disabled: !picked.length && "Select files or folders first", action: () => onDelete(picked) } as MenuItem] : []),
-        ...(onReveal ? [{ label: "Show in Finder", action: () => onReveal(picked[0] ?? { name: "", dir: true } as Entry) } as MenuItem] : []),
+        ...(onReveal ? [{ label: `Show in ${FILE_MANAGER}`, action: () => onReveal(picked[0] ?? { name: "", dir: true } as Entry) } as MenuItem] : []),
         { separator: true },
         { label: "Refresh", action: () => listing && onNavigate(listing.path) },
       ],

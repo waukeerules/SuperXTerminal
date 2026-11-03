@@ -8,6 +8,8 @@
   fills itself (which no variable can be named), and a preview of a template filled in, secrets as dots.
 -->
 <script lang="ts">
+  import { isMac } from "../shortcuts";
+  import { SECRET_STORE } from "../platform";
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
 
@@ -94,8 +96,8 @@
 
   /** What an empty secret field says */
   function secretHint(row: Variable): string {
-    if (row.hasValue) return "Stored in the Keychain (type to replace)";
-    if (row.fromWindows) return "Set on Windows: type it again here";
+    if (row.hasValue) return `Stored in ${SECRET_STORE} (type to replace)`;
+    if (row.fromWindows) return isMac ? "Set on Windows: type it again here" : "Set for another Windows account: type it again here";
     return "Type the value";
   }
 </script>

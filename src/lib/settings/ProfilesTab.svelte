@@ -4,6 +4,7 @@
   profile says how this user logs in. Empty fields fall back to Default Settings.
 -->
 <script lang="ts">
+  import { SECRET_STORE } from "../platform";
   import { onMount } from "svelte";
   import { ask, open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
@@ -274,7 +275,7 @@
       <label>{@render caption("Username", "username")}<input bind:value={draft.username} placeholder="e.g. admin" /></label>
       <label>{@render caption("Password", "password")}
         <input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
-          placeholder={draft.hasPassword ? "Stored in the Keychain" : "none"} />
+          placeholder={draft.hasPassword ? `Stored in ${SECRET_STORE}` : "none"} />
         {#if draft.hasPassword}<button onclick={() => (password = "")} title="Forget the stored password">Forget</button>{/if}
       </label>
       <label>{@render caption("Key file", "keyFile")}<input bind:value={draft.keyFile} placeholder="ssh's own keys and the agent" />

@@ -5,6 +5,7 @@
   folder holding a match; clearing it puts the tree back as it was.
 -->
 <script lang="ts">
+  import { MOD } from "../platform";
   import { untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import TreeFolder from "./TreeFolder.svelte";
@@ -983,7 +984,7 @@
     if (!target) return;
     clip = { store: target.store, sessions: target.sessions, folder: target.folder && { name: target.folder.name, path: target.folder.path } };
     const n = target.sessions.length;
-    context.status(target.folder ? `Copied folder ${target.folder.name} (${n} session${n === 1 ? "" : "s"}); Cmd+V pastes it in a folder` : `Copied ${n === 1 ? target.sessions[0].name : `${n} sessions`}; Cmd+V pastes in a folder`);
+    context.status(target.folder ? `Copied folder ${target.folder.name} (${n} session${n === 1 ? "" : "s"}); ${MOD}+V pastes it in a folder` : `Copied ${n === 1 ? target.sessions[0].name : `${n} sessions`}; ${MOD}+V pastes in a folder`);
   }
 
   /**

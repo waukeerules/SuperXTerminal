@@ -100,6 +100,9 @@ pub struct AppSettings {
     /// The Sessions search's Aa and .* buttons, as SuperXPuTTY's search mode: match case, and a regular expression
     pub tree_search_case: bool,
     pub tree_search_regex: bool,
+    /// Where the Sessions search looks (Search in…): "name", "host", "username", "folder", "note", "icon",
+    /// "protocol", "profile"; empty for the first five
+    pub tree_search_fields: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -147,6 +150,7 @@ impl Default for AppSettings {
             search_widens_pane: true,
             tree_search_case: false,
             tree_search_regex: false,
+            tree_search_fields: Vec::new(),
         }
     }
 }

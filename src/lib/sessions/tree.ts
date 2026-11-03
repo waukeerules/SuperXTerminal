@@ -2,6 +2,9 @@
  * Turns the flat session list into the Sessions tree: one root per store, folders from the session ids ("Lab/Core/sw1"
  * is in folder "Lab/Core"), session counts on folders, folders first, then sorted by name, as in SuperXPuTTY.
  */
+import { CUSTOM_PREFIX, parseKey } from "../icons/library";
+import { templates } from "../icons/templates";
+import { logos } from "../icons/brands";
 import type { SessionView, Store } from "./api";
 
 /** A folder in the tree (a root is a folder with an empty path) */
@@ -111,16 +114,44 @@ function finish(node: FolderNode, descending: boolean): number {
   return node.count;
 }
 
-/** How the Sessions search matches, as SuperXPuTTY's search mode: case, and a regular expression or plain text */
+/** A field the Sessions search can look in (Search in…, as SuperXPuTTY's) */
+export type SearchField = "name" | "host" | "username" | "folder" | "note" | "icon" | "protocol" | "profile";
+
+/** Every field, in Search in…'s order, with its label */
+export const SEARCH_FIELDS: [SearchField, string][] = [
+  ["name", "Name"], ["host", "Host"], ["username", "Username"], ["folder", "Folder"], ["note", "Notes"],
+  ["icon", "Icon"], ["protocol", "Protocol"], ["profile", "Profile"],
+];
+
+/** The fields searched unless the user picks others: those it always looked in */
+export const DEFAULT_SEARCH_FIELDS: SearchField[] = ["name", "host", "username", "folder", "note"];
+
+/** How the Sessions search matches, as SuperXPuTTY's search mode: case, a regular expression or plain text, and where */
 export interface SearchOptions {
   caseSensitive: boolean;
   regex: boolean;
+  /** Where to look; the defaults when missing or empty */
+  fields?: SearchField[];
 }
 
 const PLAIN: SearchOptions = { caseSensitive: false, regex: false };
 
-/** The fields a search looks in */
-const searched = (s: SessionView) => [s.name, s.host, s.username, s.folder, s.note];
+/** An icon as a search finds it: its key's name ("switch", without the colour) and its title ("Switch") */
+function iconText(key: string): string {
+  const name = (parseKey(key || "") ?? { name: key }).name.toLowerCase();
+  const title = templates[name]?.title ?? logos[name]?.title ?? (name.startsWith(CUSTOM_PREFIX) ? name.slice(CUSTOM_PREFIX.length) : "");
+  return title ? `${name} ${title}` : name;
+}
+
+/** One field of a session, as the search reads it */
+function fieldText(s: SessionView, field: SearchField): string {
+  switch (field) {
+    case "icon": return iconText(s.icon);
+    case "protocol": return s.protocol || "SSH";
+    case "note": return s.note;
+    default: return s[field];
+  }
+}
 
 /** Why a search can't be used as a regular expression, or "" when it can (or isn't one) */
 export function searchProblem(query: string, options: SearchOptions): string {
@@ -141,6 +172,8 @@ export function searchProblem(query: string, options: SearchOptions): string {
 export function searchTest(query: string, options: SearchOptions = PLAIN): ((session: SessionView) => boolean) | null {
   const text = query.trim();
   if (!text) return null;
+  const fields = options.fields?.length ? options.fields : DEFAULT_SEARCH_FIELDS;
+  const searched = (s: SessionView) => fields.map((f) => fieldText(s, f));
   if (options.regex) {
     let pattern: RegExp;
     try {

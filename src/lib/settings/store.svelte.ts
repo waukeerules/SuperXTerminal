@@ -77,6 +77,8 @@ export interface AppSettings {
   /** The Sessions search: match case, and a regular expression (its Aa and .* buttons) */
   treeSearchCase: boolean;
   treeSearchRegex: boolean;
+  /** Where the Sessions search looks (Search in…); empty for name, host, username, folder and note */
+  treeSearchFields: string[];
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -122,6 +124,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   searchWidensPane: true,
   treeSearchCase: false,
   treeSearchRegex: false,
+  treeSearchFields: [],
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

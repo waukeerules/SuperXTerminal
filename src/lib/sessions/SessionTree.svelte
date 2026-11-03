@@ -52,7 +52,10 @@
   import Prompt from "../ui/Prompt.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { PALETTE } from "../icons/palette";
-  import { buildGroup, buildTree, folderKeys, searchProblem, sessionsIn, type Dragged, type FolderNode, type Group } from "./tree";
+  import {
+    DEFAULT_SEARCH_FIELDS, SEARCH_FIELDS, buildGroup, buildTree, folderKeys, searchProblem, sessionsIn,
+    type Dragged, type FolderNode, type Group, type SearchField,
+  } from "./tree";
   import Icon from "../icons/Icon.svelte";
   import { context } from "../commands/sending.svelte";
   import { ask } from "@tauri-apps/plugin-dialog";
@@ -159,7 +162,28 @@
     ),
   );
   /** The search's Aa and .* (kept in the settings), and why a regular expression can't be used, if it can't */
-  const searchOptions = $derived({ caseSensitive: settings.treeSearchCase, regex: settings.treeSearchRegex });
+  /** Where the search looks (Search in…): the user's fields, else the defaults */
+  const searchFields = $derived<SearchField[]>(
+    settings.treeSearchFields.length ? (settings.treeSearchFields as SearchField[]) : DEFAULT_SEARCH_FIELDS,
+  );
+  const searchOptions = $derived({ caseSensitive: settings.treeSearchCase, regex: settings.treeSearchRegex, fields: searchFields });
+  /** Search in…'s list is open */
+  let searchingIn = $state(false);
+  /** How Search in… differs from the defaults, for its button: "+2", "-1", or "" when it doesn't */
+  const searchInBadge = $derived.by(() => {
+    const added = searchFields.filter((f) => !DEFAULT_SEARCH_FIELDS.includes(f)).length;
+    const dropped = DEFAULT_SEARCH_FIELDS.filter((f) => !searchFields.includes(f)).length;
+    return [added ? `+${added}` : "", dropped ? `-${dropped}` : ""].filter(Boolean).join(" ");
+  });
+
+  /** Tick or untick a field Search in… looks in; the last one stays, so the search always looks somewhere */
+  function toggleSearchField(field: SearchField): void {
+    const has = searchFields.includes(field);
+    if (has && searchFields.length === 1) return;
+    const next = SEARCH_FIELDS.map(([f]) => f).filter((f) => (f === field ? !has : searchFields.includes(f)));
+    const isDefault = next.length === DEFAULT_SEARCH_FIELDS.length && next.every((f) => DEFAULT_SEARCH_FIELDS.includes(f));
+    void saveSettings({ treeSearchFields: isDefault ? [] : next });
+  }
   const searchError = $derived(searchProblem(query, searchOptions));
   const saved = $derived(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending, searchOptions) : null);
   const privateRoot = $derived(
@@ -1215,7 +1239,23 @@
       onclick={() => void saveSettings({ treeSearchCase: !settings.treeSearchCase })}>Aa</button>
     <button class="toggle" aria-pressed={settings.treeSearchRegex} title={searchError ? `Not a regular expression: ${searchError}` : "Regular expression"}
       onclick={() => void saveSettings({ treeSearchRegex: !settings.treeSearchRegex })}>.*</button>
+    <button class="toggle" aria-haspopup="true" aria-expanded={searchingIn} aria-pressed={!!searchInBadge}
+      title={`Search in: ${searchFields.map((f) => SEARCH_FIELDS.find(([k]) => k === f)?.[1]).join(", ")}`}
+      onclick={(e) => { e.stopPropagation(); searchingIn = !searchingIn; }}>⋯{searchInBadge ? ` ${searchInBadge}` : ""}</button>
   </span>
+  {#if searchingIn}
+    <!-- a click inside it mustn't reach the window, which closes it -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+    <div class="search-in" role="group" aria-label="Search in" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+      <div class="search-in-title">Search in</div>
+      {#each SEARCH_FIELDS as [field, label] (field)}
+        <label><input type="checkbox" checked={searchFields.includes(field)}
+          disabled={searchFields.includes(field) && searchFields.length === 1}
+          onchange={() => toggleSearchField(field)} /> {label}</label>
+      {/each}
+      <button onclick={() => void saveSettings({ treeSearchFields: [] })} disabled={!searchInBadge}>Defaults</button>
+    </div>
+  {/if}
   <button class="icon" title="Search (the tree filters as you type)" onclick={() => (query = query.trim())}>
     <Icon key="search" size={toolSize} glyph />
   </button>
@@ -1322,7 +1362,8 @@
   <Prompt title={prompt.title} value={prompt.value} validate={prompt.validate} onOk={prompt.onOk} onCancel={() => (prompt = null)} />
 {/if}
 
-<svelte:window onclick={() => (menu = null)} />
+<!-- a click elsewhere closes the menu and Search in…'s list -->
+<svelte:window onclick={() => { menu = null; searchingIn = false; }} />
 
 <style>
   .search {
@@ -1375,6 +1416,37 @@
   .search .toggle[aria-pressed="true"] {
     background: var(--accent);
     color: #fff;
+  }
+
+  /* Search in…'s fields, under the search box */
+  .search {
+    position: relative;
+  }
+
+  .search-in {
+    position: absolute;
+    top: calc(100% + 2px);
+    right: 52px;
+    z-index: 20;
+    display: grid;
+    gap: 4px;
+    padding: 8px 10px;
+    min-width: 150px;
+    background: var(--bg-window);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+  }
+
+  .search-in-title {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .search-in label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
   .toolbar {

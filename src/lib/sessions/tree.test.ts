@@ -43,3 +43,28 @@ describe("the Sessions search", () => {
     expect(tree.folders[0].sessions.map((s) => s.name)).toEqual(["access-sw22"]);
   });
 });
+
+describe("Search in…", () => {
+  const router = session("edge-router", { icon: "router#1E63B4", protocol: "Telnet", profile: "CyberArk" });
+  const fields = (f: string[]) => ({ caseSensitive: false, regex: false, fields: f as never });
+
+  it("doesn't look at the icon, protocol or profile unless asked", () => {
+    expect(searchTest("telnet")!(router)).toBe(false);
+    expect(searchTest("cyberark")!(router)).toBe(false);
+  });
+
+  it("finds the icon by its key or its title, without its colour", () => {
+    expect(searchTest("router", fields(["icon"]))!(router)).toBe(true);
+    expect(searchTest("1E63B4", fields(["icon"]))!(router)).toBe(false);
+  });
+
+  it("finds the protocol (SSH when none is set) and the profile", () => {
+    expect(searchTest("telnet", fields(["protocol"]))!(router)).toBe(true);
+    expect(searchTest("ssh", fields(["protocol"]))!(session("plain", { protocol: "" }))).toBe(true);
+    expect(searchTest("cyberark", fields(["profile"]))!(router)).toBe(true);
+  });
+
+  it("looks only where it's told", () => {
+    expect(searchTest("edge", fields(["host"]))!(router)).toBe(false);
+  });
+});

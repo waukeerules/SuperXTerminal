@@ -22,6 +22,8 @@
   let draft = $state<Profile>(emptyProfile(DEFAULT_PROFILE));
   /** The draft's name when it was loaded; "" for a new profile */
   let originalName = $state(DEFAULT_PROFILE);
+  /** The profile as last loaded or saved (or as a new one starts), to tell which fields have changed */
+  let saved = $state<Profile>(emptyProfile(DEFAULT_PROFILE));
   /** A new password typed in; undefined keeps the stored one */
   let password = $state<string | undefined>(undefined);
   let message = $state("");
@@ -30,6 +32,33 @@
 
   const isDefault = $derived(originalName.toLowerCase() === DEFAULT_PROFILE.toLowerCase());
 
+  type Field = keyof Profile | "password";
+
+  /**
+   * A field's value as it counts: numbers as numbers, and on Default Settings a blank three-way choice as what it
+   * means there (keys offered, username not asked), so choosing that explicitly isn't a change
+   */
+  function meaning(profile: Profile, field: keyof Profile): unknown {
+    const value = profile[field];
+    if (field === "port" || field === "keepalive") return Number(value) || 0;
+    if (isDefault && field === "offerKeys") return value ?? true;
+    if (isDefault && field === "askUsername") return value ?? false;
+    return value ?? null;
+  }
+
+  /** Whether a field differs from the saved profile; the password when one was typed in or forgotten */
+  function changed(field: Field): boolean {
+    if (field === "password") return password !== undefined;
+    return meaning(draft, field) !== meaning(saved, field);
+  }
+
+  /** The fields the editor shows, for counting the changes */
+  const FIELDS: Field[] = [
+    "name", "username", "password", "keyFile", "offerKeys", "askUsername", "port", "jumpHost", "keepalive",
+    "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
+  ];
+  /** How many fields have changed since the profile was loaded or saved */
+  const changes = $derived(FIELDS.filter(changed).length);
   onMount(async () => {
     profiles = await listProfiles();
     // a session's profile is matched by name whatever its case, as the launch matches it
@@ -43,6 +72,7 @@
     if (!profile) return;
     selected = name;
     draft = { ...profile };
+    saved = { ...profile };
     originalName = profile.name;
     password = undefined;
     message = "";
@@ -52,6 +82,7 @@
   function add(): void {
     selected = "";
     draft = { ...emptyProfile(""), offerKeys: false };
+    saved = { ...draft };
     originalName = "";
     password = undefined;
     message = "Name it after the PuTTY profile your sessions use, e.g. root.";
@@ -66,6 +97,13 @@
     } catch (e) {
       message = String(e);
     }
+  }
+
+  /** Throw the changes away: the profile as it was loaded or saved (a new one, blank again) */
+  function revert(): void {
+    draft = { ...saved };
+    password = undefined;
+    message = "";
   }
 
   /** Remove the selected profile */
@@ -94,19 +132,34 @@
   <div class="list">
     <ul role="listbox" aria-label="Profiles">
       {#each profiles as profile (profile.name)}
-        <li role="option" aria-selected={profile.name === selected} class:selected={profile.name === selected}
-          onclick={() => select(profile.name)} onkeydown={(e) => e.key === "Enter" && select(profile.name)} tabindex="0">
+        <!-- another profile can't be opened over unsaved changes: Save or Revert first -->
+        <li role="option" aria-selected={profile.name === selected} aria-disabled={changes > 0}
+          class:selected={profile.name === selected} class:locked={changes > 0}
+          title={changes > 0 && profile.name !== selected ? "Save or revert the changes first" : undefined}
+          onclick={() => changes === 0 && select(profile.name)}
+          onkeydown={(e) => e.key === "Enter" && changes === 0 && select(profile.name)} tabindex="0">
           {profile.name}
         </li>
       {/each}
     </ul>
     <div class="list-buttons">
-      <button onclick={add}>New</button>
-      <button onclick={remove} disabled={isDefault || originalName === ""}>Remove</button>
+      <button onclick={add} disabled={changes > 0}>New</button>
+      <button onclick={remove} disabled={changes > 0 || isDefault || originalName === ""}>Remove</button>
     </div>
   </div>
 
   <div class="form">
+    <!-- stays put while the fields scroll -->
+    <div class="head">
+      <strong class="title">{originalName || draft.name.trim() || "New profile"}</strong>
+      <span class="message" class:pending={changes > 0}>
+        {changes > 0 ? `Unsaved changes (${changes})` : message}
+      </span>
+      <button onclick={revert} disabled={changes === 0} title="Put the fields back as they were">Revert</button>
+      <button class="primary" onclick={save} disabled={changes === 0}>Save</button>
+    </div>
+
+    <div class="fields">
     <p class="hint">
       A session's PuTTY profile is looked up here by name. The session's own fields win, then its folder's
       defaults, then the profile, then Default Settings.
@@ -114,21 +167,21 @@
 
     <fieldset>
       <legend>Profile</legend>
-      <label>Name <input bind:value={draft.name} disabled={isDefault} placeholder="e.g. root" /></label>
+      <label>{@render caption("Name", "name")}<input bind:value={draft.name} disabled={isDefault} placeholder="e.g. root" /></label>
     </fieldset>
 
     <fieldset>
       <legend>Login</legend>
-      <label>Username <input bind:value={draft.username} placeholder="e.g. admin" /></label>
-      <label>Password
+      <label>{@render caption("Username", "username")}<input bind:value={draft.username} placeholder="e.g. admin" /></label>
+      <label>{@render caption("Password", "password")}
         <input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
           placeholder={draft.hasPassword ? "Stored in the Keychain" : "none"} />
         {#if draft.hasPassword}<button onclick={() => (password = "")} title="Forget the stored password">Forget</button>{/if}
       </label>
-      <label>Key file <input bind:value={draft.keyFile} placeholder="ssh's own keys and the agent" />
+      <label>{@render caption("Key file", "keyFile")}<input bind:value={draft.keyFile} placeholder="ssh's own keys and the agent" />
         <button onclick={chooseKey}>Choose…</button></label>
       <!-- Default Settings has no default of its own to point at: its blank is the built-in behaviour -->
-      <label>SSH keys
+      <label>{@render caption("SSH keys", "offerKeys")}
         <select value={triToValue(isDefault ? (draft.offerKeys ?? true) : draft.offerKeys)}
           onchange={(e) => (draft.offerKeys = valueToTri(e.currentTarget.value))}>
           {#if !isDefault}<option value="">From Default Settings</option>{/if}
@@ -137,7 +190,7 @@
         </select></label>
       <p class="note under">A Cisco closes the connection after 3 failed attempts, and every key offered is one, so with
         no stored password its password prompt never comes. A key file above is always used.</p>
-      <label>No username
+      <label>{@render caption("No username", "askUsername")}
         <select value={triToValue(isDefault ? (draft.askUsername ?? false) : draft.askUsername)}
           onchange={(e) => (draft.askUsername = valueToTri(e.currentTarget.value))}>
           {#if !isDefault}<option value="">From Default Settings</option>{/if}
@@ -148,39 +201,39 @@
 
     <fieldset>
       <legend>Connection</legend>
-      <label>Port <input class="short" type="number" min="0" max="65535" bind:value={draft.port} /> <span class="note">0: not set</span></label>
-      <label>Jump host <input bind:value={draft.jumpHost} placeholder="a session, or admin@10.0.0.1:22" /></label>
-      <label>Keep-alive <input class="short" type="number" min="0" bind:value={draft.keepalive} /> <span class="note">seconds (0: none)</span></label>
-      <label>Older algorithms
+      <label>{@render caption("Port", "port")}<input class="short" type="number" min="0" max="65535" bind:value={draft.port} /> <span class="note">0: not set</span></label>
+      <label>{@render caption("Jump host", "jumpHost")}<input bind:value={draft.jumpHost} placeholder="a session, or admin@10.0.0.1:22" /></label>
+      <label>{@render caption("Keep-alive", "keepalive")}<input class="short" type="number" min="0" bind:value={draft.keepalive} /> <span class="note">seconds (0: none)</span></label>
+      <label>{@render caption("Older algorithms", "olderAlgorithms")}
         <select value={triToValue(draft.olderAlgorithms)} onchange={(e) => (draft.olderAlgorithms = valueToTri(e.currentTarget.value))}>
           {#if !isDefault}<option value="">From Default Settings</option>{/if}
           <option value="on">Allow (older Cisco and similar devices)</option>
           <option value="off">Don't allow</option>
         </select></label>
-      <label>SSH algorithms
+      <label>{@render caption("SSH algorithms", "algorithms")}
         <button onclick={() => (algorithming = true)} title={draft.algorithms ? `Its own: ${draft.algorithms}` : isDefault ? "ssh's own lists" : "From Default Settings"}>
-          Choose…{draft.algorithms ? " ●" : ""}</button>
+          Choose…</button>
         <span class="note">{draft.algorithms ? "its own lists" : isDefault ? "ssh's own lists" : "from Default Settings"}</span></label>
-      <label>SSH config host <input bind:value={draft.sshConfigHost} placeholder="a Host in ~/.ssh/config" /></label>
-      <label>More ssh options <input bind:value={draft.sshOptions} placeholder="e.g. -L 8080:localhost:80" /></label>
+      <label>{@render caption("SSH config host", "sshConfigHost")}<input bind:value={draft.sshConfigHost} placeholder="a Host in ~/.ssh/config" /></label>
+      <label>{@render caption("More ssh options", "sshOptions")}<input bind:value={draft.sshOptions} placeholder="e.g. -L 8080:localhost:80" /></label>
     </fieldset>
 
     <fieldset>
       <legend>Terminal</legend>
-      <label>Cursor
+      <label>{@render caption("Cursor", "cursor")}
         <select bind:value={draft.cursor}>
           <option value="">{isDefault ? "Block" : "From Default Settings"}</option>
           <option value="block">Block</option>
           <option value="underline">Underline</option>
           <option value="bar">Vertical line</option>
         </select></label>
-      <label>Cursor blinks
+      <label>{@render caption("Cursor blinks", "cursorBlink")}
         <select value={triToValue(draft.cursorBlink)} onchange={(e) => (draft.cursorBlink = valueToTri(e.currentTarget.value))}>
           <option value="">{isDefault ? "Yes" : "From Default Settings"}</option>
           <option value="on">Yes</option>
           <option value="off">No</option>
         </select></label>
-      <label>Bell
+      <label>{@render caption("Bell", "bell")}
         <select bind:value={draft.bell}>
           <option value="">{isDefault ? "Flash" : "From Default Settings"}</option>
           <option value="visual">Flash</option>
@@ -189,12 +242,14 @@
         </select></label>
     </fieldset>
 
-    <div class="actions">
-      <span class="message">{message}</span>
-      <button class="primary" onclick={save}>Save profile</button>
     </div>
   </div>
 </div>
+
+<!-- a field's caption, with a dot while it differs from the saved profile -->
+{#snippet caption(text: string, field: Field)}
+  <span class="caption">{text}{#if changed(field)}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</span>
+{/snippet}
 
 {#if algorithming}
   <AlgorithmsDialog title={`SSH algorithms: ${draft.name || "new profile"}`} text={draft.algorithms ?? ""}
@@ -238,18 +293,62 @@
   }
 
   .list-buttons,
-  .actions {
+  .head {
     display: flex;
     gap: 8px;
     align-items: center;
   }
 
+  /* the editor: its header fixed, the fields scrolling under it */
   .form {
     flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .head {
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 40%;
+  }
+
+  .fields {
+    flex: 1;
+    min-height: 0;
     overflow: auto;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    padding-right: 4px;
+  }
+
+  li.locked:not(.selected) {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .caption {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* a field changed since it was loaded or saved */
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex: none;
   }
 
   .hint,
@@ -293,11 +392,15 @@
     min-width: 0;
   }
 
-  .actions {
-    justify-content: flex-end;
-  }
-
   .message {
     flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .message.pending {
+    color: var(--accent);
   }
 </style>

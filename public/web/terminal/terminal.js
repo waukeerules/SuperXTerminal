@@ -229,6 +229,43 @@
     var numbersFrame = 0;
     /** The gutter's width as last set, in pixels */
     var gutterWidth = 0;
+    /**
+     * Where commands began, oldest first: a line marker (which moves as the scrollback does) and the colour of the
+     * button that sent it ("" for a command typed, or a button without one). A line's number takes the colour of
+     * the last command started on or above it.
+     */
+    var commandMarks = [];
+    /** Commands remembered, at most: older ones' lines have long left the scrollback */
+    var MAX_COMMAND_MARKS = 2000;
+
+    /** A command starts on the cursor's line: from there the numbers are its button's colour, or the usual one */
+    function markCommand(color) {
+        if (term.buffer.active.type !== 'normal') { return; }
+        var good = /^#[0-9a-f]{3,8}$/i.test(color || '') ? color : '';
+        var last = commandMarks[commandMarks.length - 1];
+        // nothing coloured yet, and nothing to stop colouring
+        if (!good && (!last || !last.color)) { return; }
+        var marker = term.registerMarker(0);
+        if (!marker) { return; }
+        // a second command on the same line takes it over
+        if (last && !last.marker.isDisposed && last.marker.line === marker.line) {
+            last.marker.dispose();
+            commandMarks.pop();
+        }
+        commandMarks.push({ marker: marker, color: good });
+        if (commandMarks.length > MAX_COMMAND_MARKS) { commandMarks.shift().marker.dispose(); }
+        scheduleNumbers();
+    }
+
+    /** The colour of a row's number: the last command's started on or above it; "" for the usual */
+    function commandColour(row) {
+        for (var i = commandMarks.length - 1; i >= 0; i--) {
+            var marker = commandMarks[i].marker;
+            // a marker whose line left the scrollback is above every row
+            if (marker.isDisposed || marker.line <= row) { return commandMarks[i].color; }
+        }
+        return '';
+    }
 
     /** Whether Line Numbers is on (off unless turned on) and the screen is the output's, not a full-screen program's */
     function numbering() {
@@ -322,6 +359,7 @@
         var top = buffer.viewportY;
         var first = droppedLines + linesAbove(buffer, top);
         var text = [];
+        var coloured = false;
         var n = first;
         var widest = droppedLines + linesAbove(buffer, last) + 1;
         for (var y = top; y < top + term.rows; y++) {
@@ -329,7 +367,10 @@
             if (!line || y > last) { text.push(''); continue; }
             if (line.isWrapped) { text.push(''); continue; }
             n++;
-            text.push(String(n));
+            var colour = commandMarks.length ? commandColour(y) : '';
+            // digits and a checked colour only
+            text.push(colour ? '<span style="color:' + colour + '">' + n + '</span>' : String(n));
+            coloured = coloured || !!colour;
         }
         // room for 4 digits at least, so the terminal doesn't narrow at every tenfold
         var width = Math.ceil(Math.max(4, String(widest).length) * dimensions.css.cell.width) + 10;
@@ -337,7 +378,7 @@
         style.fontFamily = term.options.fontFamily;
         style.fontSize = term.options.fontSize + 'px';
         style.lineHeight = dimensions.css.cell.height + 'px';
-        gutter.textContent = text.join('\n');
+        if (coloured) { gutter.innerHTML = text.join('\n'); } else { gutter.textContent = text.join('\n'); }
         if (!document.body.classList.contains('numbers') || width !== gutterWidth) {
             gutterWidth = width;
             document.documentElement.style.setProperty('--gutter', width + 'px');
@@ -1325,6 +1366,8 @@
             // the app went light or dark (SuperXTerminal): a theme that follows it changes with it
             case 'look': darkDefault = !!message.dark; applyTheme(); break;
             case 'prefs': applyPrefs(message.prefs); break;
+            // a button's command (SuperXTerminal): its lines' numbers in the button's colour
+            case 'commandColor': markCommand(message.color); break;
             // the profile was saved with other colours (SuperXTerminal)
             case 'colors': profileColours = message.colors || {}; profileTheme = message.theme || null; applyTheme(); break;
         }
@@ -1413,6 +1456,8 @@
         term.attachCustomKeyEventHandler(onKey);
         term.onData(function (data) {
             typedAt = Date.now();
+            // a command typed: the lines from here aren't a button's
+            if (data.indexOf('\r') >= 0) { markCommand(''); }
             followCursor();
             post({ type: 'input', data: data });
         });

@@ -250,3 +250,26 @@ test("Line Numbers with Wrap Lines off: the gutter stays put while the view pans
   const gutterLeft = await page.evaluate(() => document.getElementById("gutter")!.getBoundingClientRect().left);
   expect(gutterLeft).toBe(0);
 });
+
+test("Line Numbers take a button's colour for its command's lines, until a command is typed", async ({ page }) => {
+  await openTerminal(page, { lineNumbers: "true" });
+  /** Each numbered row's number and colour ("" for the usual) */
+  const coloured = () => page.evaluate(() => {
+    const gutter = document.getElementById("gutter")!;
+    const out: string[] = [];
+    gutter.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) node.textContent!.split("\n").filter(Boolean).forEach((n) => out.push(`${n}`));
+      else out.push(`${node.textContent}:${(node as HTMLElement).style.color}`);
+    });
+    return out;
+  });
+  await feed(page, "$ ");
+  // the button "ls -la", purple: its echo and output
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "commandColor", color: "#a371f7" }));
+  await feed(page, "ls -la\r\ntotal 8\r\nfile\r\n$ ");
+  await expect.poll(coloured).toEqual(["1:rgb(163, 113, 247)", "2:rgb(163, 113, 247)", "3:rgb(163, 113, 247)", "4:rgb(163, 113, 247)"]);
+  // the user types a command at the prompt: it and its output have the usual colour
+  await page.evaluate(() => (window as any).terminalDev.term.input("\r", true));
+  await feed(page, "\r\nuptime\r\n$ ");
+  await expect.poll(async () => (await coloured()).slice(3)).toEqual(["4", "5", "6"]);
+});

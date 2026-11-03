@@ -65,11 +65,15 @@ export async function fillPlaceholders(text: string): Promise<string | null> {
   return null;
 }
 
-/** Type a button's send string into tabs, step by step, as ButtonBarStrip's SendString */
-export async function sendString(text: string, targets: CommandTab[]): Promise<void> {
+/**
+ * Type a button's send string into tabs, step by step, as ButtonBarStrip's SendString; `color` is the button's, which
+ * the numbers of the lines it brings take (Line Numbers)
+ */
+export async function sendString(text: string, targets: CommandTab[], color = ""): Promise<void> {
   const steps = await parseSendString(text, () => navigator.clipboard.readText().catch(() => ""));
   await Promise.all(
     targets.map(async (tab) => {
+      tab.host.markCommand?.(color);
       for (const step of steps) {
         tab.host.markOutput(false);
         await tab.host.type(step.text);

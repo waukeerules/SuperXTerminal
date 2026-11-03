@@ -106,7 +106,7 @@
     if (button.action === "SpslScript") {
       for (const tab of targets) runScriptIn(tab, text, button.label, false, button.label);
     } else {
-      await sendString(text, targets);
+      await sendString(text, targets, button.color);
     }
     context.status(`Sent "${button.label}" to ${targets.length} session${targets.length === 1 ? "" : "s"}`);
     context.tabs?.focusActive();

@@ -303,6 +303,8 @@ class ComparePanel implements IContentRenderer {
 /** What Send Commands, the button bar and scripts type into: a terminal tab's PageHost or a Remote Desktop's RdpHost */
 export interface CommandTarget extends ScriptTarget {
   readonly canReceiveCommands: boolean;
+  /** A button's command starts here: its lines' numbers take the button's colour (a terminal's; Remote Desktop has none) */
+  markCommand?(color: string): void;
 }
 
 /** A tab that commands can go to: a terminal, or (`rdp`) a Remote Desktop */

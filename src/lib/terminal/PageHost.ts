@@ -397,6 +397,11 @@ export class PageHost implements ScriptTarget {
     return this.ptyId !== null && !this.ended;
   }
 
+  /** A button's command starts on the cursor's line: the page colours the numbers of its lines (none: "") */
+  markCommand(color: string): void {
+    this.post({ type: "commandColor", color });
+  }
+
   markOutput(atLineStart: boolean): void {
     this.mark = this.committedTotal + (atLineStart ? 0 : this.currentLine.length);
   }

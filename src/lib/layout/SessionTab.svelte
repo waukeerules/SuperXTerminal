@@ -134,6 +134,21 @@
     opacity: 1;
   }
 
+  /* A coloured tab's colour fills the whole tab, meeting the coloured frame below: dockview's own padding round the
+     label (which left a ring of the tab bar's colour) moves inside it */
+  :global(.dv-tab:has(.coloured)) {
+    padding: 0;
+  }
+
+  /* the label's wrapper (TabArea's TabLabel) fills the tab, so the colour reaches its bottom edge */
+  :global(.dv-tab:has(.coloured) .session-tab) {
+    height: 100%;
+  }
+
+  .tab.coloured {
+    padding: 0 14px 0 12px;
+  }
+
   /* SuperXPuTTY's TabIcons: the selected tab filled with the colour, the others tinted with a 3 px top stripe */
   :global(.dv-inactive-tab) .coloured {
     background: linear-gradient(var(--env), var(--env)) top / 100% 3px no-repeat,

@@ -74,6 +74,9 @@ export interface AppSettings {
   treeLines: boolean;
   /** While searching, the Sessions pane widens (up to a limit) so the matches' names fit */
   searchWidensPane: boolean;
+  /** The Sessions search: match case, and a regular expression (its Aa and .* buttons) */
+  treeSearchCase: boolean;
+  treeSearchRegex: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -117,6 +120,8 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   tabClose: "tab",
   treeLines: true,
   searchWidensPane: true,
+  treeSearchCase: false,
+  treeSearchRegex: false,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

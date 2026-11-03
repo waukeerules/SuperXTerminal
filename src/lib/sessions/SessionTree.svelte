@@ -52,13 +52,13 @@
   import Prompt from "../ui/Prompt.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { PALETTE } from "../icons/palette";
-  import { buildGroup, buildTree, folderKeys, sessionsIn, type Dragged, type FolderNode, type Group } from "./tree";
+  import { buildGroup, buildTree, folderKeys, searchProblem, sessionsIn, type Dragged, type FolderNode, type Group } from "./tree";
   import Icon from "../icons/Icon.svelte";
   import { context } from "../commands/sending.svelte";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { loadCustomIcons, type CustomIcon } from "../icons/custom";
   import { EnvironmentColors, parseRules } from "../icons/environment";
-  import { chooseSettingsFolder, databaseCheckSeconds, settings } from "../settings/store.svelte";
+  import { chooseSettingsFolder, databaseCheckSeconds, saveSettings, settings } from "../settings/store.svelte";
   import { DATABASE_SAVED, editSessionsExternally, exportCsv, exportXml as exportSessionsXml, type ImportKind } from "./api";
   import { commandLabel } from "../shortcuts";
 
@@ -158,15 +158,18 @@
         : s,
     ),
   );
-  const saved = $derived(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending) : null);
+  /** The search's Aa and .* (kept in the settings), and why a regular expression can't be used, if it can't */
+  const searchOptions = $derived({ caseSensitive: settings.treeSearchCase, regex: settings.treeSearchRegex });
+  const searchError = $derived(searchProblem(query, searchOptions));
+  const saved = $derived(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending, searchOptions) : null);
   const privateRoot = $derived(
-    loaded ? buildTree("private", "Private sessions", shown, query, newFolders.private, descending) : null,
+    loaded ? buildTree("private", "Private sessions", shown, query, newFolders.private, descending, searchOptions) : null,
   );
   const databaseRoot = $derived(
-    loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), shown, query, newFolders.database, descending) : null,
+    loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), shown, query, newFolders.database, descending, searchOptions) : null,
   );
-  const favorites = $derived(loaded ? buildGroup("favorites", "Favorites", shortcuts.Favorites, shown, query) : null);
-  const recent = $derived(loaded ? buildGroup("recent", "Recent", shortcuts.Recent, shown, query) : null);
+  const favorites = $derived(loaded ? buildGroup("favorites", "Favorites", shortcuts.Favorites, shown, query, searchOptions) : null);
+  const recent = $derived(loaded ? buildGroup("recent", "Recent", shortcuts.Recent, shown, query, searchOptions) : null);
   const roots = $derived([favorites, recent, saved, privateRoot, databaseRoot].filter((r): r is FolderNode => r !== null));
   const searching = $derived(query.trim() !== "");
   /** The roots as shown, for the tree lines (the first's line starts at it, the last's stops at it) */
@@ -1204,8 +1207,15 @@
 </script>
 
 <div class="search">
-  <input placeholder="Type to search..." bind:value={query}
-    onkeydown={(e) => { if (e.key === "Escape") query = ""; }} />
+  <span class="field" class:bad={!!searchError}>
+    <input placeholder="Type to search..." bind:value={query} aria-label="Search sessions" title={searchError}
+      onkeydown={(e) => { if (e.key === "Escape") query = ""; }} />
+    <!-- as the terminal's find bar: match case, and a regular expression -->
+    <button class="toggle" aria-pressed={settings.treeSearchCase} title="Match case"
+      onclick={() => void saveSettings({ treeSearchCase: !settings.treeSearchCase })}>Aa</button>
+    <button class="toggle" aria-pressed={settings.treeSearchRegex} title={searchError ? `Not a regular expression: ${searchError}` : "Regular expression"}
+      onclick={() => void saveSettings({ treeSearchRegex: !settings.treeSearchRegex })}>.*</button>
+  </span>
   <button class="icon" title="Search (the tree filters as you type)" onclick={() => (query = query.trim())}>
     <Icon key="search" size={toolSize} glyph />
   </button>
@@ -1321,13 +1331,50 @@
     margin: 0 8px 4px;
   }
 
-  .search input {
+  /* the search box: the text and its Aa and .* buttons in one border */
+  .search .field {
     flex: 1;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding-right: 2px;
     background: var(--bg-input);
     border: 1px solid var(--border);
     border-radius: 2px;
+  }
+
+  .search .field.bad {
+    border-color: #e5534b;
+  }
+
+  .search input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: 0;
     padding: 2px 4px;
+    outline: none;
+  }
+
+  .search .toggle {
+    flex: none;
+    min-width: 22px;
+    padding: 0 4px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    font: 12px/18px Menlo, Consolas, monospace;
+  }
+
+  .search .toggle:hover {
+    border-color: var(--border);
+  }
+
+  .search .toggle[aria-pressed="true"] {
+    background: var(--accent);
+    color: #fff;
   }
 
   .toolbar {

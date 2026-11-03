@@ -97,6 +97,9 @@ pub struct AppSettings {
     pub tree_lines: bool,
     /// While searching, the Sessions pane widens (up to a limit) so the matches' names fit
     pub search_widens_pane: bool,
+    /// The Sessions search's Aa and .* buttons, as SuperXPuTTY's search mode: match case, and a regular expression
+    pub tree_search_case: bool,
+    pub tree_search_regex: bool,
 }
 
 impl Default for AppSettings {
@@ -142,6 +145,8 @@ impl Default for AppSettings {
             tab_close: "tab".into(),
             tree_lines: true,
             search_widens_pane: true,
+            tree_search_case: false,
+            tree_search_regex: false,
         }
     }
 }

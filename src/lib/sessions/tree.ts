@@ -34,12 +34,13 @@ export function buildTree(
   query: string,
   extraFolders: string[] = [],
   descending = false,
+  options: SearchOptions = PLAIN,
 ): FolderNode {
   const root = folder(store, title, "");
-  const needle = query.trim().toLowerCase();
-  if (!needle) for (const path of extraFolders) place(root, store, path);
+  const test = searchTest(query, options);
+  if (!test) for (const path of extraFolders) place(root, store, path);
   for (const session of sessions) {
-    if (session.store !== store || (needle && !matches(session, needle))) continue;
+    if (session.store !== store || (test && !test(session))) continue;
     place(root, store, session.folder).sessions.push(session);
   }
   finish(root, descending);
@@ -50,12 +51,19 @@ export function buildTree(
  * Favorites or Recent: the sessions with these ids, in the list's order (ids of sessions that are gone are skipped),
  * those matching the search only; null when none is left to show, as SuperXPuTTY hides an empty group
  */
-export function buildGroup(group: Group, title: string, ids: string[], sessions: SessionView[], query: string): FolderNode | null {
-  const needle = query.trim().toLowerCase();
+export function buildGroup(
+  group: Group,
+  title: string,
+  ids: string[],
+  sessions: SessionView[],
+  query: string,
+  options: SearchOptions = PLAIN,
+): FolderNode | null {
+  const test = searchTest(query, options);
   const byId = new Map<string, SessionView>();
   // ids are unique across the roots; the first root wins if one isn't
   for (const s of sessions) if (!byId.has(s.id)) byId.set(s.id, s);
-  const shown = ids.map((id) => byId.get(id)).filter((s): s is SessionView => !!s && (!needle || matches(s, needle)));
+  const shown = ids.map((id) => byId.get(id)).filter((s): s is SessionView => !!s && (!test || test(s)));
   if (shown.length === 0) return null;
   return { kind: "folder", key: `${group}:`, store: "saved", name: title, path: "", folders: [], sessions: shown, count: shown.length, group };
 }
@@ -103,11 +111,53 @@ function finish(node: FolderNode, descending: boolean): number {
   return node.count;
 }
 
-/** Whether a session matches a search: its name, host, username, folder or note, ignoring case */
+/** How the Sessions search matches, as SuperXPuTTY's search mode: case, and a regular expression or plain text */
+export interface SearchOptions {
+  caseSensitive: boolean;
+  regex: boolean;
+}
+
+const PLAIN: SearchOptions = { caseSensitive: false, regex: false };
+
+/** The fields a search looks in */
+const searched = (s: SessionView) => [s.name, s.host, s.username, s.folder, s.note];
+
+/** Why a search can't be used as a regular expression, or "" when it can (or isn't one) */
+export function searchProblem(query: string, options: SearchOptions): string {
+  if (!options.regex || !query.trim()) return "";
+  try {
+    new RegExp(query.trim());
+    return "";
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
+/**
+ * The test a search makes of each session: its name, host, username, folder or note holding the text (or matching the
+ * regular expression), ignoring case unless told not to; null for no search. A regular expression that isn't one
+ * matches nothing (searchProblem says why).
+ */
+export function searchTest(query: string, options: SearchOptions = PLAIN): ((session: SessionView) => boolean) | null {
+  const text = query.trim();
+  if (!text) return null;
+  if (options.regex) {
+    let pattern: RegExp;
+    try {
+      pattern = new RegExp(text, options.caseSensitive ? "" : "i");
+    } catch {
+      return () => false;
+    }
+    return (s) => searched(s).some((field) => pattern.test(field));
+  }
+  if (options.caseSensitive) return (s) => searched(s).some((field) => field.includes(text));
+  const needle = text.toLowerCase();
+  return (s) => searched(s).some((field) => field.toLowerCase().includes(needle));
+}
+
+/** Whether a session matches a plain search, ignoring case */
 export function matches(session: SessionView, needle: string): boolean {
-  return [session.name, session.host, session.username, session.folder, session.note].some((field) =>
-    field.toLowerCase().includes(needle),
-  );
+  return searchTest(needle)?.(session) ?? true;
 }
 
 /** The drag data type for sessions and folders dragged within the tree */

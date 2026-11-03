@@ -29,9 +29,13 @@ const ROLL_AT: u64 = 5 * 1024 * 1024;
 
 static LOG: Mutex<(u64, VecDeque<Entry>)> = Mutex::new((0, VecDeque::new()));
 
-/// The log file
+/// The log file: in ~/Library/Logs on the Mac, %LOCALAPPDATA%\SuperXTerminal\logs on Windows
 pub fn file() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join("Library/Logs/SuperXTerminal/SuperXTerminal.log")
+    if cfg!(target_os = "macos") {
+        dirs::home_dir().unwrap_or_default().join("Library/Logs/SuperXTerminal/SuperXTerminal.log")
+    } else {
+        dirs::data_local_dir().unwrap_or_else(std::env::temp_dir).join("SuperXTerminal").join("logs").join("SuperXTerminal.log")
+    }
 }
 
 fn write(level: &'static str, text: &str) {

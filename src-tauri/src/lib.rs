@@ -1696,7 +1696,12 @@ const SETTINGS_CHANGED: &str = "settings-changed";
 fn open_notices<R: Runtime>(app: &AppHandle<R>) {
     let bundled = app.path().resource_dir().map(|d| d.join("THIRD-PARTY-NOTICES.txt")).ok().filter(|p| p.exists());
     let path = bundled.unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../THIRD-PARTY-NOTICES.txt"));
-    if let Err(e) = std::process::Command::new("open").arg("-t").arg(&path).status() {
+    // the Mac's text editor; on Windows, the app for .txt files
+    #[cfg(windows)]
+    let opened = open_in_app(&path).map_err(std::io::Error::other);
+    #[cfg(not(windows))]
+    let opened = std::process::Command::new("open").arg("-t").arg(&path).status().map(|_| ());
+    if let Err(e) = opened {
         applog::warn(format!("Couldn't open {}: {e}", path.display()));
     }
 }
@@ -1931,7 +1936,21 @@ fn applog_clear() {
 /// The Log Viewer's Show Log File: the file in Finder
 #[tauri::command]
 fn applog_reveal() -> Result<(), String> {
-    std::process::Command::new("open").arg("-R").arg(applog::file()).spawn().map(|_| ()).map_err(|e| e.to_string())
+    reveal(&applog::file())
+}
+
+/// Show a file in its folder, selected: Finder on the Mac (`open -R`), Explorer on Windows (`/select,`)
+pub fn reveal(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let mut select = std::ffi::OsString::from("/select,");
+        select.push(path.as_os_str());
+        std::process::Command::new("explorer").arg(select).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("open").arg("-R").arg(path).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
 }
 
 /// What's been asked to open from outside (the command line, a second start, a link), waiting for the window in

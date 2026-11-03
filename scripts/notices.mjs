@@ -3,11 +3,13 @@
 // packages the window uses (production dependencies), and the libraries bundled as files (public/web/licenses).
 // Packages with the same licence text share one copy of it. Run with `npm run notices`; the release build runs it
 // first (tauri.conf.json's beforeBuildCommand), and the file goes into the app (Help > Third-Party Notices).
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = join(dirname(new URL(import.meta.url).pathname), "..");
+// fileURLToPath, not the URL's pathname: on Windows that's "/C:/..."
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LICENSE_FILE = /^(LICEN[CS]E|COPYING|NOTICE|UNLICENSE)([-._].*)?$/i;
 
 /** The licence files in a package's folder, their text (NOTICE files are kept too, as Apache-2.0 asks) */
@@ -60,7 +62,8 @@ for (const id of shipped) {
 }
 
 // ---- npm: the window's packages ----
-const tree = JSON.parse(execFileSync("npm", ["ls", "--omit=dev", "--all", "--json", "--long"], { cwd: root, encoding: "utf8" }));
+// through the shell: npm is npm.cmd on Windows, which only a shell runs
+const tree = JSON.parse(execSync("npm ls --omit=dev --all --json --long", { cwd: root, encoding: "utf8" }));
 const seen = new Set();
 (function visit(deps) {
   for (const [name, node] of Object.entries(deps ?? {})) {

@@ -1,7 +1,7 @@
 // Fails when a package the app ships (npm dependencies, not dev tools) has a licence outside the allowed list.
 // The allowed list matches src-tauri/deny.toml, so the Rust and JavaScript sides follow one rule (docs/PLAN.md §1
 // Licensing). Run with `npm run licenses` before each release.
-import { execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -17,7 +17,8 @@ function allowed(expression) {
   );
 }
 
-const tree = JSON.parse(execFileSync("npm", ["ls", "--omit=dev", "--all", "--json", "--long"], { encoding: "utf8" }));
+// through the shell: npm is npm.cmd on Windows, which only a shell runs
+const tree = JSON.parse(execSync("npm ls --omit=dev --all --json --long", { encoding: "utf8" }));
 const problems = [];
 const seen = new Set();
 

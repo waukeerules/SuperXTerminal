@@ -1,7 +1,8 @@
 <!--
   The Log Viewer (View > Log Viewer), as SuperXPuTTY's Log4netLogViewer: SuperXTerminal's own log (src-tauri/src/applog.rs)
   under the tabs, read again every half second as SuperXPuTTY's timer pulls it; the newest at the bottom, followed
-  while the pane is scrolled to the end. The file itself is in ~/Library/Logs/SuperXTerminal.
+  while the pane is scrolled to the end. The file itself is in ~/Library/Logs/SuperXTerminal on the Mac,
+  %LOCALAPPDATA%\SuperXTerminal\logs on Windows.
 -->
 <script lang="ts">
   import { onMount, tick } from "svelte";
@@ -72,7 +73,7 @@
     <span class="gap"></span>
     <button onclick={copy} title="Copy what's shown">Copy</button>
     <button onclick={() => void clear()} title="Empty the pane (the file keeps it)">Clear</button>
-    <button onclick={() => void invoke("applog_reveal")} title="~/Library/Logs/SuperXTerminal/SuperXTerminal.log">Show Log File</button>
+    <button onclick={() => void invoke("applog_reveal")} title="Show SuperXTerminal.log in its folder">Show Log File</button>
     <button class="close" onclick={onClose} title="Hide the Log Viewer (View > Log Viewer)" aria-label="Hide the Log Viewer">×</button>
   </div>
   <div class="list" bind:this={list} role="log">

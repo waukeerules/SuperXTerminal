@@ -44,14 +44,30 @@ npm run tauri dev
 
 ## Release build
 
-Not tried yet. It should be:
-
 ```powershell
 npm run tauri build
 ```
 
-The release build should leave an `.msi` (WiX) and a setup `.exe` (NSIS) in `src-tauri\target\release\bundle\`. Signing
-is set with `bundle.windows.certificateThumbprint` (or a signing command) in `src-tauri/tauri.conf.json`.
+It leaves both installers in `src-tauri\target\release\bundle\`:
+
+| Package | File | Size |
+|---|---|---|
+| Windows Installer (WiX) | `msi\SuperXTerminal_0.1.0_x64_en-US.msi` | 7 MB |
+| Setup program (NSIS) | `nsis\SuperXTerminal_0.1.0_x64-setup.exe` | 5 MB |
+
+Both install `superxterminal.exe` (the pages are built into it) and `THIRD-PARTY-NOTICES.txt` in
+`Program Files\SuperXTerminal`; WebView2 comes with Windows. Notes:
+
+- **Time:** the first release build takes 15 to 20 minutes: every dependency is compiled again in release mode, and
+  the last step, with `lto = true` and `codegen-units = 1` (`src-tauri/Cargo.toml`), runs on one core. Later builds
+  redo only that step.
+- **Tools:** the first build downloads WiX 3 and NSIS (about 30 MB, from Tauri's GitHub releases) into the user's
+  Tauri cache.
+- **Notices:** `npm run notices` runs first and writes `THIRD-PARTY-NOTICES.txt` for the system building, so the
+  installer has Windows' crates. The copy in the repository is the Mac's: don't commit the Windows one over it
+  (`git checkout THIRD-PARTY-NOTICES.txt` after a build).
+- **Signing:** none yet, so SmartScreen warns on the first run. Signing is set with
+  `bundle.windows.certificateThumbprint` (or a signing command) in `src-tauri/tauri.conf.json`.
 
 The manual GitHub workflow (`.github/workflows/build.yml`, run by hand from Actions) builds Windows unsigned, for an
 occasional check that it still compiles.
@@ -115,12 +131,9 @@ Found by running it:
   tabs say they aren't supported yet); it needs COM port code (`CreateFile`, `SetCommState`, `SetCommTimeouts`,
   `SetCommBreak`). Serial names are already `COM1`… in shared sessions, so the "which `/dev/cu.*` is it" step isn't
   needed on Windows.
-- **Opening other apps:** `open` and `osascript` are run directly in `external.rs`, `lib.rs` (editing a file, showing
-  the log) and `sftp.rs` (showing a file). On Windows: Windows Terminal or a console window for Connect external, RDP
-  files in `mstsc.exe`, VNC in a Windows viewer, FileZilla's Windows path, `explorer /select,` to show a file and the
-  default app (or Notepad) to edit one.
-- **The app log:** `src-tauri/src/applog.rs` puts it in `~/Library/Logs/SuperXTerminal`, which on Windows makes a
-  `Library` folder in the user's home. Use `%LOCALAPPDATA%\SuperXTerminal\logs`.
+- **Opening other apps:** Connect external, RDP through Windows App and VNC still run the Mac's `open` and
+  `osascript` (`external.rs`). On Windows: Windows Terminal or a console window for Connect external, RDP files in
+  `mstsc.exe`, VNC in a Windows viewer, FileZilla's Windows path.
 - **PuTTY profiles:** a session's profile (PuttySession) is looked up in SuperXTerminal's own profiles (Settings >
   Profiles), so on Windows a profile that only exists in PuTTY or KiTTY gives "Profile … isn't set up on this PC".
   Reading PuTTY's saved sessions from the registry (and KiTTY's from its folder or `kitty.ini`) would bring them over.
@@ -140,11 +153,15 @@ Known from the code, not tried yet:
   the schemes registered (Tauri's deep-link plugin) and the URL read from the command line.
 - **The tray:** the menu bar icon becomes a notification area icon; check its menu and "keep running" behaviour.
 - **Paths:** the user folder is `%APPDATA%\SuperXTerminal` (`sessions::user_folder`).
-- **Third-party notices:** `scripts/notices.mjs` lists the crates for the system it runs on; run it on Windows for a
-  Windows build, as some crates differ by system.
 
 Fixed on the way:
 
+- **The release build's scripts:** `scripts/notices.mjs` found its folder from the script URL's pathname
+  (`/C:/Dev/...` on Windows), and both it and `check-licenses.mjs` ran `npm` directly, which is `npm.cmd` on Windows
+  and needs a shell. They use `fileURLToPath` and run npm through the shell now.
+- **The app log and showing files:** the log went to `~/Library/Logs` (a `Library` folder in a Windows user's home);
+  it's in `%LOCALAPPDATA%\SuperXTerminal\logs` now. Show Log File and file transfer's show in folder use Explorer
+  (`/select,`), and Third-Party Notices opens in the app for .txt files, instead of the Mac's `open`.
 - **Blank terminal tabs:** WebView2 puts its own `window.chrome.webview` in every frame, which replaced the stand-in
   from `public/web/host/webview.js`, so the pages' messages never reached the main window. The stand-in is now defined
   read-only, so it stays.

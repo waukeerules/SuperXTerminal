@@ -1079,10 +1079,10 @@ pub fn local_rename(from: String, to: String) -> Result<(), String> {
     std::fs::rename(&from, &to).map_err(|e| e.to_string())
 }
 
-/// Show a file or folder in Finder
+/// Show a file or folder in Finder, or Explorer on Windows
 #[tauri::command]
 pub fn local_reveal(path: String) -> Result<(), String> {
-    std::process::Command::new("open").args(["-R", &path]).status().map(|_| ()).map_err(|e| e.to_string())
+    crate::reveal(std::path::Path::new(&path))
 }
 
 #[cfg(test)]

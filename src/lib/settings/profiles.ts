@@ -2,6 +2,7 @@
  * The user's profiles, as the Rust core keeps them (`src-tauri/src/profiles.rs`). Passwords never come here: a
  * profile only says whether one is stored, and the UI sends a new one (or "" to forget it) when it changes.
  */
+import { hexColour } from "../terminal/prefs";
 import { invoke } from "@tauri-apps/api/core";
 
 /** The profile every session without one uses, and every profile falls back to */
@@ -75,4 +76,16 @@ export async function deleteProfile(name: string): Promise<Profile[]> {
   const profiles = await invoke<Profile[]>("profiles_delete", { name });
   window.dispatchEvent(new Event(PROFILES_CHANGED));
   return profiles;
+}
+
+/**
+ * A profile's terminal colours as a session's tab takes them (`look` in src-tauri/src/launch.rs): each one the
+ * profile's, else Default Settings', when it's "#rrggbb"; "" for Settings > Terminal's or the theme's
+ */
+export function profileColours(profiles: Profile[], name: string): { background: string; foreground: string; selection: string } {
+  const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
+  const fallback = find(DEFAULT_PROFILE);
+  const profile = find(name) ?? fallback;
+  const pick = (field: "background" | "foreground" | "selection") => hexColour(profile?.[field]) || hexColour(fallback?.[field]);
+  return { background: pick("background"), foreground: pick("foreground"), selection: pick("selection") };
 }

@@ -150,3 +150,17 @@ test("a profile's colours win over Settings > Terminal's", async ({ page }) => {
     return [t.background, t.foreground, document.documentElement.classList.contains("light-theme")];
   })).toEqual(["#3a0000", "#333333", false]);
 });
+
+test("an open tab takes its profile's new colours when the profile is saved", async ({ page }) => {
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  const themes = await page.evaluate(async () => [await fetch("/web/output/themes/light.theme.json").then((r) => r.json())]);
+  await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", themes, prefs: { theme: "Light" } }), themes);
+  const background = () => page.evaluate(() => (window as any).terminalDev.term.options.theme.background as string);
+  const light = await background();
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "colors", colors: { background: "#3a0000" } }));
+  await expect.poll(background).toBe("#3a0000");
+  // its colour taken away again: the theme's
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "colors", colors: { background: "" } }));
+  await expect.poll(background).toBe(light);
+});

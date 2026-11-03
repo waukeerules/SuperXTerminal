@@ -30,6 +30,8 @@ pub struct Look {
     pub bell: String,
     /// The session's highlighting rules (a rule set's id, "auto" or "none"), else its folder's; "" for the default
     pub rules: String,
+    /// The profile the session uses, so its tab takes the profile's colours again when it's saved
+    pub profile: String,
     /// The profile's colours, "#rrggbb", else "Default Settings'"; "" for Settings > Terminal's or the theme's
     pub background: String,
     pub foreground: String,
@@ -440,6 +442,7 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         blink: profile.cursor_blink.or(default.cursor_blink).unwrap_or(true),
         bell: pick(&profile.bell, &default.bell, "visual"),
         rules: String::new(),
+        profile: profile.name.clone(),
         background: colour(&profile.background, &default.background),
         foreground: colour(&profile.foreground, &default.foreground),
         selection: colour(&profile.selection, &default.selection),

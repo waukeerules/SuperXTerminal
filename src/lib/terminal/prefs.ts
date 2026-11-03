@@ -3,7 +3,7 @@
  * tab's page gets all of them (defaults filled in) in its config, and again whenever one changes, whether in
  * Settings > Terminal or from the page's own menu (font size, theme, copy on select...).
  */
-import { saveSettings, settings } from "../settings/store.svelte";
+import { isDark, saveSettings, settings } from "../settings/store.svelte";
 
 /** Every preference and its default */
 export const PREF_DEFAULTS: Record<string, string> = {
@@ -74,4 +74,16 @@ export async function setPrefs(changes: Record<string, string | null>): Promise<
   await saveSettings({ terminalPrefs: next });
   const all = allPrefs();
   for (const listener of listeners) listener(all);
+}
+
+/** The theme the terminal draws with: PuTTY's when none is chosen, Light or Dark when following the app's look */
+export function drawnTheme(): string {
+  const theme = pref("theme");
+  return theme === "@look" ? (isDark() ? "Dark" : "Light") : theme || "PuTTY";
+}
+
+/** A colour as "#rrggbb" in lower case, or "" when it isn't one */
+export function hexColour(value: string | undefined | null): string {
+  const c = (value ?? "").trim();
+  return /^#[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : "";
 }

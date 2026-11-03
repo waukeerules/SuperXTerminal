@@ -5,9 +5,9 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import { allPrefs, PREF_DEFAULTS, setPrefs } from "../terminal/prefs";
+  import { allPrefs, drawnTheme, PREF_DEFAULTS, setPrefs } from "../terminal/prefs";
   import { highlighting } from "../terminal/highlighting";
-  import { isDark, settings } from "./store.svelte";
+  import { settings } from "./store.svelte";
 
   interface ThemeColours {
     background?: string;
@@ -40,7 +40,10 @@
   });
 
   /** The colours of the theme the terminal draws with: PuTTY's when none is chosen, Light or Dark when following the app */
-  const shownTheme = $derived(themeColours[prefs.theme === "@look" ? (isDark() ? "Dark" : "Light") : prefs.theme || "PuTTY"] ?? {});
+  const shownTheme = $derived.by(() => {
+    void prefs;
+    return themeColours[drawnTheme()] ?? {};
+  });
 
   /** The terminal's own colours: the preference, its theme's colour, and what it's for */
   const COLOURS: { pref: string; theme: keyof ThemeColours; label: string }[] = [

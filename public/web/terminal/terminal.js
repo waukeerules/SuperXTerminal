@@ -1185,6 +1185,8 @@
             // the app went light or dark (SuperXTerminal): a theme that follows it changes with it
             case 'look': darkDefault = !!message.dark; applyTheme(); break;
             case 'prefs': applyPrefs(message.prefs); break;
+            // the profile was saved with other colours (SuperXTerminal)
+            case 'colors': profileColours = message.colors || {}; applyTheme(); break;
         }
     }
 

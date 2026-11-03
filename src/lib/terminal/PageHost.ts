@@ -15,6 +15,7 @@ import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
 import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
+import { listProfiles, profileColours, PROFILES_CHANGED } from "../settings/profiles";
 import { checkPaste } from "./pasting.svelte";
 import { THIS_COMPUTER } from "../platform";
 import { isMac } from "../shortcuts";
@@ -33,6 +34,8 @@ interface Look {
   bell: string;
   /** The session's or its folder's highlighting rules; "" for the default */
   rules: string;
+  /** The profile the session uses; absent for a tab with none (a local shell's is Default Settings) */
+  profile?: string;
   /** The profile's colours ("#rrggbb"); "" for Settings > Terminal's or the theme's */
   background?: string;
   foreground?: string;
@@ -202,14 +205,26 @@ export class PageHost implements ScriptTarget {
   ) {
     window.addEventListener("message", this.onWindowMessage);
     this.stopPrefs = onPrefsChanged((prefs) => this.post({ type: "prefs", prefs }));
+    window.addEventListener(PROFILES_CHANGED, this.onProfilesChanged);
   }
 
   private readonly stopPrefs: () => void;
+
+  /** The profile the session uses, once it has started; null for none */
+  private profile: string | null = null;
+
+  /** A profile was saved or removed: the tab takes its profile's colours again */
+  private readonly onProfilesChanged = (): void => {
+    const name = this.profile;
+    if (name === null) return;
+    void listProfiles().then((profiles) => this.post({ type: "colors", colors: profileColours(profiles, name) })).catch(() => {});
+  };
 
   /** Close the pseudo terminal and stop listening; called when the tab closes */
   dispose(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.stopPrefs();
+    window.removeEventListener(PROFILES_CHANGED, this.onProfilesChanged);
     if (this.log) void invoke("log_close", { id: this.log.id, temporary: this.log.temporary });
     this.log = null;
     window.removeEventListener("message", this.onWindowMessage);
@@ -479,6 +494,7 @@ export class PageHost implements ScriptTarget {
 
   /** The page's settings: the highlighting rules and themes, and the profile's cursor and bell */
   private async sendConfig(look: Look): Promise<void> {
+    if (look.profile !== undefined) this.profile = look.profile;
     const dark = isDark();
     const files = await highlighting();
     this.post({

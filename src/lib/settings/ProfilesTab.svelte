@@ -14,7 +14,9 @@
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, saveProfile, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
-  import { pref } from "../terminal/prefs";
+  import { drawnTheme, pref } from "../terminal/prefs";
+  import { highlighting } from "../terminal/highlighting";
+  import { settings } from "./store.svelte";
 
   interface Props {
     /** The profile to show first (Quick connect's Edit…, Edit Session's Profiles…); Default Settings when it's none */
@@ -51,10 +53,26 @@
     { field: "selection", label: "Selection", pref: "colorSelection", putty: "#264f78" },
   ];
 
-  /** The colour a profile without its own gets, to start the picker on: Default Settings', Settings', else PuTTY's */
+  /** Each theme's colours, by name, for what a tab without its own colours draws with */
+  let themeColours = $state<Record<string, Record<string, string>>>({});
+  onMount(() => {
+    void highlighting().then((files) => {
+      themeColours = Object.fromEntries(files.themes.map((t) => {
+        const theme = t as { name?: string; colors?: Record<string, string> };
+        return [String(theme.name ?? ""), theme.colors ?? {}];
+      }));
+    }).catch(() => {});
+  });
+
+  /**
+   * The colour a tab draws with when the profile has none of its own, to start the picker on: Default Settings',
+   * else Settings > Terminal's, else the theme's (the one chosen there, or Light or Dark as the app is)
+   */
   function fallbackColour(field: (typeof COLOURS)[number]["field"]): string {
+    void settings.terminalPrefs;
+    void settings.theme;
     const c = COLOURS.find((c) => c.field === field)!;
-    return (!isDefault && defaultProfile?.[field]) || pref(c.pref) || c.putty;
+    return (!isDefault && defaultProfile?.[field]) || pref(c.pref) || themeColours[drawnTheme()]?.[field] || c.putty;
   }
 
   type Field = keyof Profile | "password";

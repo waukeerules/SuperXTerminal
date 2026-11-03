@@ -910,6 +910,7 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
     if let Ok(bar) = menu(&app, &current.shortcuts, current.use_local_overrides) {
         let _ = app.set_menu(bar);
     }
+    apply_window_theme(&app, &current.theme);
     let saved = current.clone();
     drop(current);
     applog::info("Settings saved");
@@ -2164,6 +2165,28 @@ fn main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     window(app, "main", None)
 }
 
+/// A window's own light or dark for the app's theme (Settings > General > Theme); None follows the system. On
+/// Windows it's what Windows draws the window's menu bar and title bar in, which otherwise follow the system whatever
+/// the app's theme; on the Mac the menu bar is the system's, so windows are left to it.
+#[cfg(windows)]
+fn window_theme(theme: &str) -> Option<tauri::Theme> {
+    match theme {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    }
+}
+
+/// Windows: every window's menu bar and title bar in the app's theme (on the Mac nothing changes)
+fn apply_window_theme(app: &AppHandle, theme: &str) {
+    #[cfg(windows)]
+    for window in app.webview_windows().values() {
+        let _ = window.set_theme(window_theme(theme));
+    }
+    #[cfg(not(windows))]
+    let _ = (app, theme);
+}
+
 /// A SuperXTerminal window: the first ("main"), or another made by New Window ("window-2", ...) at `at` (logical)
 fn window(app: &tauri::AppHandle, label: &str, at: Option<(f64, f64)>) -> tauri::Result<()> {
     let builder = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::default())
@@ -2177,6 +2200,12 @@ fn window(app: &tauri::AppHandle, label: &str, at: Option<(f64, f64)>) -> tauri:
     };
     #[cfg(target_os = "macos")]
     let builder = builder.with_webview_configuration(writing_tools_off());
+    // Windows: its menu bar and title bar in the app's theme from the start
+    #[cfg(windows)]
+    let builder = {
+        let theme = app.try_state::<AppState>().map(|s| s.settings.lock().unwrap().theme.clone()).unwrap_or_default();
+        builder.theme(window_theme(&theme))
+    };
     builder.build()?;
     Ok(())
 }

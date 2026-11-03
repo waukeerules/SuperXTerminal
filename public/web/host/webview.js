@@ -40,8 +40,9 @@
         });
     }).observe(document, { childList: true, subtree: true });
 
-    window.chrome = window.chrome || {};
-    window.chrome.webview = {
+    // on Windows, WebView2 puts its own chrome.webview in every frame, which talks to the native host rather than the
+    // main window; pinned here (not just assigned) so it can't replace this one
+    var shim = {
         /** WebView2's postMessage: the page's message to the host */
         postMessage: function (message) {
             window.parent.postMessage({ channel: 'sxt-page', tab: tab, message: message }, '/');
@@ -54,4 +55,6 @@
             listeners = listeners.filter(function (l) { return l !== listener; });
         }
     };
+    window.chrome = window.chrome || {};
+    Object.defineProperty(window.chrome, 'webview', { value: shim, writable: false, configurable: false });
 })();

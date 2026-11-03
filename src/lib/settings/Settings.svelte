@@ -1,8 +1,17 @@
 <!--
   The Settings window (Cmd+,), SuperXPuTTY's Tools > Options for the Mac: General, Profiles, Terminal, Remote Desktop and Shortcuts.
 -->
+<script lang="ts" module>
+  let shown = $state(false);
+
+  /** Whether Settings is open, so a dialog it was opened over (Edit Session's Profiles…) leaves Escape to it */
+  export function settingsShown(): boolean {
+    return shown;
+  }
+</script>
+
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onMount, untrack } from "svelte";
   import ProfilesTab from "./ProfilesTab.svelte";
   import GeneralTab from "./GeneralTab.svelte";
   import TerminalTab from "./TerminalTab.svelte";
@@ -18,6 +27,11 @@
   let { onClose, tab = "General" }: Props = $props();
 
   let current = $state(untrack(() => tab));
+
+  onMount(() => {
+    shown = true;
+    return () => (shown = false);
+  });
 
   /** The tabs, with the milestone that brings each one still to come */
   const TABS: { name: string; later?: string }[] = [
@@ -58,7 +72,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 100;
+    /* above Edit Session (120), which opens it from Profiles…; below the dialogs Settings opens itself (140) */
+    z-index: 125;
   }
 
   .dialog {

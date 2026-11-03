@@ -13,7 +13,8 @@
   import type { CustomIcon } from "../icons/custom";
   import { PALETTE } from "../icons/palette";
   import { highlighting } from "../terminal/highlighting";
-  import { listProfiles, DEFAULT_PROFILE } from "../settings/profiles";
+  import { listProfiles, DEFAULT_PROFILE, PROFILES_CHANGED } from "../settings/profiles";
+  import { settingsShown } from "../settings/Settings.svelte";
   import SerialLineFields from "./SerialLineFields.svelte";
   import Overrides from "./Overrides.svelte";
   import RdpSessionOptions from "./RdpSessionOptions.svelte";
@@ -77,8 +78,18 @@
       !profileNames.some((n) => n.toLowerCase() === draft.profile.trim().toLowerCase()),
   );
 
-  onMount(async () => {
+  /** The profiles' names, again whenever Settings > Profiles changes them */
+  async function loadProfileNames(): Promise<void> {
     profileNames = (await listProfiles()).map((p) => p.name);
+  }
+
+  onMount(() => {
+    window.addEventListener(PROFILES_CHANGED, loadProfileNames);
+    return () => window.removeEventListener(PROFILES_CHANGED, loadProfileNames);
+  });
+
+  onMount(async () => {
+    await loadProfileNames();
     ruleSets = (await highlighting()).ruleSets.map((r) => ({ id: String(r.id ?? ""), name: String(r.name ?? r.id ?? "") }));
   });
 
@@ -144,7 +155,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && !overriding && !rdpOptioning && onCancel()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && !overriding && !rdpOptioning && !settingsShown() && onCancel()} />
 
 <div class="backdrop" role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>

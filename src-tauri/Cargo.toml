@@ -46,9 +46,11 @@ ironrdp-core = "0.2"
 russh-sftp = "3.0.1"
 futures-util = "0.3"
 
-# Ctrl+C for local shells, raised as the console signal (console.rs)
+# Ctrl+C for local shells (console.rs), and the login helper finding ssh (askpass.rs)
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp"] }
+# the login helper's tokens (askpass.rs)
+getrandom = "0.3"
 
 # the main window's WebKit settings (Writing Tools off), as Tauri itself uses them
 [target.'cfg(target_os = "macos")'.dependencies]

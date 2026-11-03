@@ -7,7 +7,9 @@
 //! external), else by the app in a dialog (file transfer).
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
+#[cfg(unix)]
+use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -32,7 +34,8 @@ struct Entry {
 
 static TOKENS: Mutex<Option<HashMap<String, Entry>>> = Mutex::new(None);
 
-/// The socket, in this user's own temporary folder
+/// The socket, in this user's own temporary folder (the Mac's and Linux's; Windows listens on 127.0.0.1)
+#[cfg(unix)]
 fn socket_path() -> std::path::PathBuf {
     std::env::temp_dir().join("SuperXTerminal").join("askpass.sock")
 }
@@ -68,9 +71,67 @@ fn add(entry: Entry) -> Result<String, String> {
     Ok(token)
 }
 
-#[cfg(not(unix))]
+/// On Windows the token starts with the port the app listens on (`port-hex`), so the helper knows where to ask
+/// without the callers setting anything more on ssh
+#[cfg(windows)]
+fn add(entry: Entry) -> Result<String, String> {
+    let port = listen_local()?;
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
+    let token = format!("{port}-{}", bytes.iter().map(|b| format!("{b:02x}")).collect::<String>());
+    let mut tokens = TOKENS.lock().unwrap();
+    let tokens = tokens.get_or_insert_with(HashMap::new);
+    tokens.retain(|_, e| e.asker.is_some() || e.made.elapsed() < LIFETIME);
+    tokens.insert(token.clone(), entry);
+    Ok(token)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn add(_entry: Entry) -> Result<String, String> {
     Err("Not on this system".into())
+}
+
+/// Answer one request on Windows: "token\nkind\nssh-pid\nprompt" (newlines in the prompt as \x01), the reply written
+/// back, as the Mac's socket does
+#[cfg(windows)]
+fn serve(mut stream: std::net::TcpStream) {
+    let mut request = String::new();
+    if stream.read_to_string(&mut request).is_err() {
+        return;
+    }
+    let mut parts = request.splitn(4, '\n');
+    let (token, kind) = (parts.next().unwrap_or(""), parts.next().unwrap_or("password"));
+    let pid = parts.next().and_then(|p| p.trim().parse().ok()).unwrap_or(0);
+    let prompt = parts.next().unwrap_or("");
+    let reply = answer(token.trim(), kind.trim(), pid, &prompt.replace('\x01', "\n"));
+    let _ = stream.write_all(reply.as_bytes());
+}
+
+/// Windows has no Unix socket to keep to this user, so the app listens on 127.0.0.1 (once per run, on a port Windows
+/// picks), never on the network: another local user could connect, but gets nothing without a token, which only
+/// reaches ssh through its environment. Returns the port.
+#[cfg(windows)]
+fn listen_local() -> Result<u16, String> {
+    static STARTED: std::sync::OnceLock<Result<u16, String>> = std::sync::OnceLock::new();
+    STARTED
+        .get_or_init(|| {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|e| format!("Couldn't start the login helper: {e}"))?;
+            let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+            std::thread::Builder::new()
+                .name("askpass".into())
+                .spawn(move || {
+                    for stream in listener.incoming().flatten() {
+                        // each on its own thread: a question can wait on the user
+                        std::thread::spawn(move || {
+                            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                            serve(stream);
+                        });
+                    }
+                })
+                .map_err(|e| e.to_string())?;
+            Ok(port)
+        })
+        .clone()
 }
 
 /// The answer to one request from the ssh `ssh_pid`: "password" gives the token's password (once to each ssh, and
@@ -160,9 +221,69 @@ pub fn helper() -> bool {
     true
 }
 
-#[cfg(not(unix))]
+/// Run as ssh's askpass on Windows: as on the Mac, but every question but the first password is asked by the app,
+/// as file transfer's ssh has no console to ask in
+#[cfg(windows)]
+pub fn helper() -> bool {
+    let Ok(token) = std::env::var(TOKEN_VAR) else { return false };
+    let prompt = std::env::args().nth(1).unwrap_or_default();
+    let lower = prompt.to_lowercase();
+    let mut answer = None;
+    if lower.contains("password") && !lower.contains("passphrase") {
+        answer = fetch_local(&token, "password", &prompt).filter(|p| !p.is_empty());
+    }
+    let answer = answer.or_else(|| fetch_local(&token, "ask", &prompt)).unwrap_or_default();
+    println!("{answer}");
+    true
+}
+
+#[cfg(not(any(unix, windows)))]
 pub fn helper() -> bool {
     false
+}
+
+/// Ask the running app on Windows, at the port the token starts with
+#[cfg(windows)]
+fn fetch_local(token: &str, kind: &str, prompt: &str) -> Option<String> {
+    let port: u16 = token.split_once('-')?.0.parse().ok()?;
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).ok()?;
+    // a question waits on the user
+    stream.set_read_timeout(Some(Duration::from_secs(if kind == "ask" { 600 } else { 5 }))).ok()?;
+    // ssh is this helper's parent: each ssh gets the password once
+    let ssh_pid = parent_pid().unwrap_or(0);
+    stream.write_all(format!("{token}\n{kind}\n{ssh_pid}\n{}", prompt.replace('\n', "\x01")).as_bytes()).ok()?;
+    stream.shutdown(std::net::Shutdown::Write).ok()?;
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).ok()?;
+    Some(reply)
+}
+
+/// This process's parent (ssh, for the helper): Windows has no getppid, so it's found in a snapshot of the processes
+#[cfg(windows)]
+fn parent_pid() -> Option<u32> {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS};
+    let me = std::process::id();
+    // SAFETY: a snapshot handle, walked with an entry of the size it says, and closed
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut found = None;
+        let mut more = Process32FirstW(snapshot, &mut entry) != 0;
+        while more {
+            if entry.th32ProcessID == me {
+                found = Some(entry.th32ParentProcessID);
+                break;
+            }
+            more = Process32NextW(snapshot, &mut entry) != 0;
+        }
+        CloseHandle(snapshot);
+        found
+    }
 }
 
 /// Ask the running app

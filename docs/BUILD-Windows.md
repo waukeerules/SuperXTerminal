@@ -79,7 +79,10 @@ Tried in `npm run tauri dev` on Windows 11:
 - **Shortcuts:** Windows' own defaults (Ctrl+Shift+T, Ctrl+Shift+W, Ctrl+Shift+D...), caught by the page, with the
   terminal keeping its Ctrl keys (Ctrl+C, Ctrl+D, Ctrl+K...); menus and Settings > Shortcuts show "Ctrl+Shift+T".
 
-Not tried yet: Telnet and Raw, file transfer, layouts, scripts, and the release build.
+- **File transfer:** over SCP to a Cisco switch (no SFTP there): logged in with the session's password through the
+  login helper, listed `flash:`, and downloaded a file.
+
+Not tried yet: file transfer over SFTP (a Linux server), Telnet and Raw, layouts, scripts, and the release build.
 
 ### Keys on Windows
 
@@ -111,9 +114,6 @@ Found by running it:
   tabs say they aren't supported yet); it needs COM port code (`CreateFile`, `SetCommState`, `SetCommTimeouts`,
   `SetCommBreak`). Serial names are already `COM1`… in shared sessions, so the "which `/dev/cu.*` is it" step isn't
   needed on Windows.
-- **ssh's askpass:** the login helper (`src-tauri/src/askpass.rs`) uses a Unix socket, so on Windows it refuses ("Not
-  on this system"): file transfer and Connect external can't be given a saved password. Windows needs a named pipe;
-  Windows' OpenSSH supports `SSH_ASKPASS`.
 - **Opening other apps:** `open` and `osascript` are run directly in `external.rs`, `lib.rs` (editing a file, showing
   the log) and `sftp.rs` (showing a file). On Windows: Windows Terminal or a console window for Connect external, RDP
   files in `mstsc.exe`, VNC in a Windows viewer, FileZilla's Windows path, `explorer /select,` to show a file and the
@@ -154,6 +154,11 @@ Fixed on the way:
   pseudo console raises for 0x03. The app clears the flag as it starts (`console.rs`), and never sets it.
 - **Shortcuts:** the Mac's defaults took the terminal's Ctrl keys, the menu's keys never fired, and labels showed ⌘
   (see Keys on Windows).
+- **File transfer on Windows:** it failed at once: the login helper that gives ssh the session's password
+  (`askpass.rs`) used a Unix socket only. On Windows it listens on 127.0.0.1 (a port Windows picks, never the
+  network), with the port in the token, and finds the asking ssh by its parent process. Then scp never started:
+  Windows' pseudo console asks where the cursor is (`ESC [6n`) as it starts and waits for the answer, which a tab's
+  page gives and file transfer's hidden one didn't; `run_scp` answers it now.
 - **PuTTY .ppk keys:** OpenSSH can't read them, so ssh gets a converted copy (`ppk.rs`), written in the user's folder
   (`keys\`) with the user's own access only: Windows' OpenSSH refuses a key with any other entry, even one inherited
   from the folder, and then quietly falls back to an agent or other keys. Keys with a passphrase still need

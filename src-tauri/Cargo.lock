@@ -5697,6 +5697,7 @@ dependencies = [
  "chrono",
  "dirs",
  "futures-util",
+ "getrandom 0.3.4",
  "ironrdp-client",
  "ironrdp-cliprdr",
  "ironrdp-core",

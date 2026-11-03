@@ -884,11 +884,18 @@ fn run_scp(words: &[String], token: &str, helper: &str, cancel: &AtomicBool, rep
     let mut child = pair.slave.spawn_command(command).map_err(|e| format!("Couldn't start scp: {e}"))?;
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     // the meter, read on its own thread: "name   45% 8192KB   1.2MB/s   00:10 ETA", redrawn after each \r
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
     std::thread::spawn(move || {
         let mut buffer = [0u8; 4096];
         while let Ok(n) = reader.read(&mut buffer) {
+            // Windows' pseudo console asks where the cursor is (ESC [6n) as it starts, and waits for the answer
+            // before the program runs; a terminal tab's page answers, here nothing would, and scp never started
+            if buffer[..n].windows(4).any(|w| w == b"\x1b[6n") {
+                use std::io::Write;
+                let _ = writer.write_all(b"\x1b[1;1R").and_then(|_| writer.flush());
+            }
             if n == 0 || tx.send(buffer[..n].to_vec()).is_err() {
                 break;
             }
@@ -912,7 +919,9 @@ fn run_scp(words: &[String], token: &str, helper: &str, cancel: &AtomicBool, rep
         }
         // keep only the end: the meter redraws without end
         if said.len() > 8192 {
-            said = said[said.len() - 4096..].to_string();
+            // at a character's start: a file name's accents are several bytes
+            let cut = (said.len() - 4096..said.len()).find(|&i| said.is_char_boundary(i)).unwrap_or(said.len());
+            said = said[cut..].to_string();
         }
         match child.try_wait() {
             Ok(Some(status)) => break status,

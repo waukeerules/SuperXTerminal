@@ -46,9 +46,9 @@ ironrdp-core = "0.2"
 russh-sftp = "3.0.1"
 futures-util = "0.3"
 
-# Ctrl+C for local shells (console.rs), the login helper finding ssh (askpass.rs), and COM ports (streams.rs)
+# Ctrl+C for local shells (console.rs), the login helper finding ssh (askpass.rs), COM ports (streams.rs), and the menus' theme (lib.rs)
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_Devices_Communication", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_Devices_Communication", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_LibraryLoader"] }
 # the login helper's tokens (askpass.rs)
 getrandom = "0.3"
 

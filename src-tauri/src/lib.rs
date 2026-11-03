@@ -2177,11 +2177,44 @@ fn window_theme(theme: &str) -> Option<tauri::Theme> {
     }
 }
 
-/// Windows: every window's menu bar and title bar in the app's theme (on the Mac nothing changes)
+/// Windows: the menus that drop down from the menu bar (and right-click menus) in the app's theme. They aren't the
+/// window's: Windows draws every popup menu in the app's one preferred mode, which Tauri leaves following the system,
+/// so a Light app had dark menus on a dark system. uxtheme's undocumented SetPreferredAppMode (ordinal 135, Windows 10
+/// 1903 and later) forces it, and FlushMenuThemes (136) has menus already made redrawn in it.
+#[cfg(windows)]
+fn apply_menu_theme(theme: &str) {
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+    // PreferredAppMode: AllowDark (follow the system), ForceDark, ForceLight
+    let mode: i32 = match theme {
+        "light" => 3,
+        "dark" => 2,
+        _ => 1,
+    };
+    let name: Vec<u16> = "uxtheme.dll\0".encode_utf16().collect();
+    unsafe {
+        let uxtheme = LoadLibraryW(name.as_ptr());
+        if uxtheme.is_null() {
+            return;
+        }
+        if let Some(set_preferred_app_mode) = GetProcAddress(uxtheme, 135 as *const u8) {
+            let set_preferred_app_mode: unsafe extern "system" fn(i32) -> i32 = std::mem::transmute(set_preferred_app_mode);
+            set_preferred_app_mode(mode);
+        }
+        if let Some(flush_menu_themes) = GetProcAddress(uxtheme, 136 as *const u8) {
+            let flush_menu_themes: unsafe extern "system" fn() = std::mem::transmute(flush_menu_themes);
+            flush_menu_themes();
+        }
+    }
+}
+
+/// Windows: every window's menu bar, menus and title bar in the app's theme (on the Mac nothing changes)
 fn apply_window_theme(app: &AppHandle, theme: &str) {
     #[cfg(windows)]
-    for window in app.webview_windows().values() {
-        let _ = window.set_theme(window_theme(theme));
+    {
+        apply_menu_theme(theme);
+        for window in app.webview_windows().values() {
+            let _ = window.set_theme(window_theme(theme));
+        }
     }
     #[cfg(not(windows))]
     let _ = (app, theme);
@@ -2200,10 +2233,11 @@ fn window(app: &tauri::AppHandle, label: &str, at: Option<(f64, f64)>) -> tauri:
     };
     #[cfg(target_os = "macos")]
     let builder = builder.with_webview_configuration(writing_tools_off());
-    // Windows: its menu bar and title bar in the app's theme from the start
+    // Windows: its menu bar, menus and title bar in the app's theme from the start
     #[cfg(windows)]
     let builder = {
         let theme = app.try_state::<AppState>().map(|s| s.settings.lock().unwrap().theme.clone()).unwrap_or_default();
+        apply_menu_theme(&theme);
         builder.theme(window_theme(&theme))
     };
     builder.build()?;

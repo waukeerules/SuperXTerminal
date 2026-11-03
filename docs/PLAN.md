@@ -190,9 +190,9 @@ All supported, against **the same table** (see [Sharing data](#3-sharing-data-wi
 | **SSH** | 🔁 | `ssh -tt` in a pseudo-terminal, inside the tab |
 | Host, port, username | ✅ | `-p`, `user@` |
 | **PuTTY profile** (`putty_profile`, `PuttySession`) | 🔁 | Resolved against SuperXTerminal's own **Profiles**, by name (see [Profiles](#profiles)). The shared value is never rewritten; each user's profile of that name decides the login |
-| Keys and agent (Pageant) | 🔁 | A key file in the [profile](#profiles), or `ssh-agent` and the macOS Keychain (`UseKeychain`, `AddKeysToAgent`). `.ppk` keys need converting (`puttygen key.ppk -O private-openssh`); Edit Session warns when `-i x.ppk` is in the extra args |
+| Keys and agent (Pageant) | 🔁 | A key file in the [profile](#profiles), or `ssh-agent` and the macOS Keychain (`UseKeychain`, `AddKeysToAgent`). `.ppk` keys without a passphrase are converted for ssh into the user's folder (`keys/`, readable by the user only); one with a passphrase needs converting (`puttygen key.ppk -O private-openssh`) |
 | Password (`-pw`, with "allow -pw") | 🔁 | From the session's `-pw` (when allowed) or its [profile](#profiles). **Typed once by the app at the first password prompt**, never put on the command line, in the environment or in logs. (Chosen over an `SSH_ASKPASS` helper, which would also have been asked host-key questions; this way they stay in the terminal.) Only the first prompt is answered, so a later `Password:` such as Cisco's `enable` never gets it. With a password, ssh tries it before keys (`PreferredAuthentications=keyboard-interactive,password,publickey`): Cisco closes the connection after 3 failed attempts, and ssh's keys from `~/.ssh` and the agent would use them up. Stored passwords go in the Keychain |
-| Extra arguments (PuTTY syntax) | 🔁 | Translated where `ssh` has an equivalent: `-L`, `-R`, `-D`, `-A`, `-X`, `-C`, `-4`/`-6`, `-v` as is; `-P n` → `-p n`; `-i file` as is (warns for `.ppk`); `-load` ignored. Anything else is shown in Edit Session as "not used on Mac" |
+| Extra arguments (PuTTY syntax) | 🔁 | Translated where `ssh` has an equivalent: `-L`, `-R`, `-D`, `-A`, `-X`, `-C`, `-4`/`-6`, `-v` as is; `-P n` → `-p n`; `-i file` as is (a `.ppk` converted, as a profile's key); `-load` ignored. Anything else is shown in Edit Session as "not used on Mac" |
 | PuTTY default parameters (Options) | 🔁 | The "Default Settings" [profile](#profiles)'s extra `ssh` options |
 | **Jump hosts** (session path or `user@host:port`, folder defaults) | 🔁 | `-J user@host:port` (OpenSSH ProxyJump); a saved session as the jump host is resolved to its address, as now. Chains work (`-J a,b`), which plink couldn't do |
 | **Telnet** | 🔁 | macOS has no `telnet` since 10.13: a small Telnet client in the Rust core (option negotiation, NAWS), drawn in the same terminal |
@@ -343,7 +343,7 @@ The file watcher's SHA-256 check works the same way, so each app reloads when th
 | Protocols `Mintty`, `Cygterm`, `Rlogin` | Greyed: dimmed icon, can't be opened, tooltip says why |
 | `PuttySession` / `putty_profile` | The user's SuperXTerminal profile of that name, else "Default Settings" (Edit Session says so); never rewritten |
 | `ExtraArgs` / `extra_args` | Translated per launch (§2); never rewritten |
-| `-i C:\keys\x.ppk` | Not found: warning, connects without it |
+| `-i C:\keys\x.ppk` | Not found: warning, connects without it; found (a shared drive), converted for ssh |
 | `SPSLFileName = C:\...` | Not found: warning; URLs and relative paths work |
 | `rdp_options` | Mapped to `.rdp` settings |
 | `LocalPath` / `RemotePath` (SCP browser) | Ignored until the SFTP browser exists |

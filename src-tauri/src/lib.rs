@@ -16,6 +16,7 @@ mod keys;
 mod launch;
 mod layouts;
 mod logs;
+mod ppk;
 mod profiles;
 mod pty;
 mod rdp;

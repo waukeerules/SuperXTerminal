@@ -373,12 +373,26 @@ fn ssh(
     }
     let key_file = first(&profile.key_file, &default.key_file);
     if !key_file.is_empty() {
-        let path = expand_home(key_file);
-        if !std::path::Path::new(&path).exists() {
+        let mut path = expand_home(key_file);
+        // OpenSSH can't read PuTTY's .ppk keys: ssh gets an OpenSSH copy of it (ppk.rs), when it has no passphrase
+        let usable = if !std::path::Path::new(&path).exists() {
             notices.push(format!("The key file {key_file} isn't there; connecting without it."));
+            false
         } else if path.to_ascii_lowercase().ends_with(".ppk") {
-            notices.push(format!("{key_file} is a PuTTY key; convert it with: puttygen key.ppk -O private-openssh"));
+            match crate::ppk::openssh_copy(std::path::Path::new(&path)) {
+                Ok(copy) => {
+                    path = copy.display().to_string();
+                    true
+                }
+                Err(e) => {
+                    notices.push(format!("{e}; connecting without it."));
+                    false
+                }
+            }
         } else {
+            true
+        };
+        if usable {
             login.key_file = path.clone();
             args.extend(["-i".into(), path, "-o".into(), "IdentitiesOnly=yes".into()]);
         }
@@ -505,7 +519,11 @@ fn translate_extra_args(extra: &str) -> Translated {
             "-l" | "-i" | "-L" | "-R" | "-D" => {
                 if let Some(v) = value {
                     if word == "-i" && v.to_ascii_lowercase().ends_with(".ppk") {
-                        out.notices.push(format!("{v} is a PuTTY key; convert it with: puttygen key.ppk -O private-openssh"));
+                        // ssh can't read a .ppk: its OpenSSH copy (ppk.rs), as for a profile's key file
+                        match crate::ppk::openssh_copy(std::path::Path::new(&expand_home(&v))) {
+                            Ok(copy) => out.args.extend([word.to_string(), copy.display().to_string()]),
+                            Err(e) => out.notices.push(format!("{e}; connecting without it.")),
+                        }
                     } else {
                         out.args.extend([word.to_string(), v]);
                     }

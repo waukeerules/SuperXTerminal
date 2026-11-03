@@ -151,7 +151,8 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Connections**
 - ✅ Jump hosts, as SuperXPuTTY's JumpHosts: a saved session (Saved, Private, or a Database session's path; its folders' username and port and its placeholders used) or user@host:port; not through itself; chains not followed. SSH uses ssh -J; Telnet and Raw go through ssh -W (the bastion must take a key)
-- ✅ Extra arguments translated from PuTTY syntax (-pw, -P, -l, -i (not .ppk), -L/-R/-D, -A, -X, -C, -4, -6, -v; -load and SSH-only switches dropped; the rest named in a notice); -sercfg for serial
+- ✅ Extra arguments translated from PuTTY syntax (-pw, -P, -l, -i, -L/-R/-D, -A, -X, -C, -4, -6, -v; -load and SSH-only switches dropped; the rest named in a notice); -sercfg for serial
+- ✅ PuTTY .ppk keys (a profile's key file or -i): converted for ssh, when they have no passphrase, into the user's folder (keys/, the user's alone: mode 600, or on Windows the user's own access only). Ed25519, RSA, ECDSA and DSA. Checked: keys converted from .ppk sign data that verifies against their public keys, and a real PuTTY key logged in to a server with the ssh agent turned off
 - ✅ Telnet: a client in the core that negotiates as PuTTY does (terminal type XTERM, window size, echo, suppress go-ahead; Return as a Telnet new line). Checked on the lab switch (login banner, Username:, echo)
 - ✅ Raw: a TCP connection in the core (a port is needed, as plink's -raw)
 - ✅ Serial: the device driven directly (termios; no MPL serialport crate), PuTTY's 9600 8N1 XON/XOFF unless -sercfg says otherwise; a COM name is asked once which /dev/cu.* it is (after Cancel, Enter asks again). Checked on the lab switch's console (/dev/cu.usbserial-AC01VPKF)

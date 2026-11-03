@@ -119,3 +119,21 @@ test("the find bar and menu follow the terminal's theme: light on Light, dark on
   await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs", prefs: { theme: "PuTTY" } }));
   await expect.poll(findBackground).toBe("rgb(43, 43, 43)");
 });
+
+test("the terminal's own colours go over the theme's, and a light background gets the light menu", async ({ page }) => {
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  const themes = await page.evaluate(async () => [await fetch("/web/output/themes/putty.theme.json").then((r) => r.json())]);
+  const colours = () => page.evaluate(() => {
+    const t = (window as any).terminalDev.term.options.theme;
+    return [t.background, t.foreground, t.selectionBackground, document.documentElement.classList.contains("light-theme")];
+  });
+  await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", prefs: { theme: "PuTTY" }, themes }), themes);
+  await expect.poll(colours).toEqual(["#000000", "#bbbbbb", "#264f78", false]);
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs",
+    prefs: { theme: "PuTTY", colorBackground: "#fdf6e3", colorForeground: "#333333", colorSelection: "#eee8d5" } }));
+  await expect.poll(colours).toEqual(["#fdf6e3", "#333333", "#eee8d5", true]);
+  // the theme's again
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs", prefs: { theme: "PuTTY" } }));
+  await expect.poll(colours).toEqual(["#000000", "#bbbbbb", "#264f78", false]);
+});

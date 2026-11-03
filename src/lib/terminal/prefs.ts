@@ -11,6 +11,10 @@ export const PREF_DEFAULTS: Record<string, string> = {
   ruleSet: "auto",
   /** A theme's name; "" for PuTTY's; "@look" for Light or Dark as the app is (Settings > General > Theme) */
   theme: "",
+  /** The terminal's own colours over the theme's, as "#rrggbb"; "" for the theme's */
+  colorBackground: "",
+  colorForeground: "",
+  colorSelection: "",
   /** "" for the theme's, "profile", or a font's name */
   fontFamily: "",
   /** Pixels; "0" for the theme's or profile's */

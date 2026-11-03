@@ -7,9 +7,17 @@
   import { onMount } from "svelte";
   import { allPrefs, PREF_DEFAULTS, setPrefs } from "../terminal/prefs";
   import { highlighting } from "../terminal/highlighting";
-  import { settings } from "./store.svelte";
+  import { isDark, settings } from "./store.svelte";
+
+  interface ThemeColours {
+    background?: string;
+    foreground?: string;
+    selection?: string;
+  }
 
   let themes = $state<string[]>([]);
+  /** Each theme's colours, by name, to show what "the theme's" is */
+  let themeColours = $state<Record<string, ThemeColours>>({});
   let ruleSets = $state<{ id: string; name: string }[]>([]);
 
   // re-read when a preference changes anywhere
@@ -21,11 +29,28 @@
   onMount(async () => {
     const files = await highlighting();
     themes = files.themes.map((t) => String((t as { name?: string }).name ?? "")).filter(Boolean);
+    themeColours = Object.fromEntries(files.themes.map((t) => {
+      const theme = t as { name?: string; colors?: ThemeColours };
+      return [String(theme.name ?? ""), theme.colors ?? {}];
+    }));
     ruleSets = files.ruleSets.map((r) => {
       const set = r as { id?: string; name?: string };
       return { id: String(set.id ?? ""), name: String(set.name ?? set.id ?? "") };
     }).filter((r) => r.id);
   });
+
+  /** The colours of the theme the terminal draws with: PuTTY's when none is chosen, Light or Dark when following the app */
+  const shownTheme = $derived(themeColours[prefs.theme === "@look" ? (isDark() ? "Dark" : "Light") : prefs.theme || "PuTTY"] ?? {});
+
+  /** The terminal's own colours: the preference, its theme's colour, and what it's for */
+  const COLOURS: { pref: string; theme: keyof ThemeColours; label: string }[] = [
+    { pref: "colorBackground", theme: "background", label: "Background" },
+    { pref: "colorForeground", theme: "foreground", label: "Text" },
+    { pref: "colorSelection", theme: "selection", label: "Selection" },
+  ];
+
+  /** A colour as it's drawn: the preference's, else the theme's */
+  const colour = (c: (typeof COLOURS)[number]) => prefs[c.pref] || shownTheme[c.theme] || "#000000";
 
   const FONTS = ["Menlo", "Monaco", "SF Mono", "Courier New", "Andale Mono", "PT Mono"];
 
@@ -50,6 +75,23 @@
         {#each themes as theme}<option value={theme}>{theme}</option>{/each}
       </select>
     </label>
+    <div class="colours" role="group" aria-label="Colours">
+      <span>Colours</span>
+      <div class="colour-rows">
+        {#each COLOURS as c (c.pref)}
+          <label class="colour">
+            <input type="color" value={colour(c)} aria-label={c.label} onchange={(e) => set(c.pref, e.currentTarget.value)} />
+            {c.label} <span class="hint">{prefs[c.pref] ? prefs[c.pref] : "the theme's"}</span>
+            <button disabled={!prefs[c.pref]} onclick={(e) => { e.preventDefault(); void setPrefs({ [c.pref]: null }); }}
+              title="Use the theme's colour again">Theme's</button>
+          </label>
+        {/each}
+        <span class="sample" style:background={colour(COLOURS[0])} style:color={colour(COLOURS[1])}>
+          admin@switch:~$ show version <span style:background={colour(COLOURS[2])}>selected text</span>
+        </span>
+        <span class="hint">Over the theme's, in every tab. Highlighting keeps the theme's colours, so pick a theme that suits the background.</span>
+      </div>
+    </div>
     <label>Font
       <select value={prefs.fontFamily} onchange={(e) => set("fontFamily", e.currentTarget.value)}>
         <option value="">The theme's</option>
@@ -151,6 +193,38 @@
     grid-template-columns: 150px 1fr;
     align-items: center;
     gap: 8px;
+  }
+
+  .colours {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 8px;
+  }
+
+  .colour-rows {
+    display: grid;
+    gap: 4px;
+  }
+
+  label.colour {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  label.colour input {
+    width: 36px;
+    height: 22px;
+    padding: 1px 2px;
+  }
+
+  .sample {
+    max-width: 420px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: Menlo, Consolas, monospace;
+    font-size: 12px;
   }
 
   label.check {

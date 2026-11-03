@@ -138,7 +138,10 @@ A new macOS app with SSH through `ssh`. It reads SuperXPuTTY's data files and Da
 | Sessions.xml reloaded when changed elsewhere (SHA-256, own saves ignored) | ✅ | `notify` crate |
 | Use Sessions.xml off (Private and Database only) | ✅ | |
 | **CSV export/import** (same columns as the Database table) | ✅ | Same columns, so a file moves between Mac and Windows |
-| Import from PuTTY (registry), KiTTY | ⬜ | "Windows only" |
+| Import from PuTTY (registry), KiTTY | ✅ | The registry (PuTTY's and KiTTY's) on Windows; PuTTY's `~/.putty/sessions` on the Mac |
+| Import from a SuperPuTTY XML file, a PuTTY CM export, PuTTY Portable's session folder | ✅ | Files, so the same everywhere |
+| Import from RDP (registry): Remote Desktop's recent computers | ✅ Windows | Greyed on the Mac |
+| Export sessions (one Sessions.xml), Edit sessions externally, Reload sessions file | ✅ | The editor is Notepad++ on Windows when it's installed, else the app for .xml files; the Mac's default text editor |
 | Import from MobaXterm (`.mxtsessions`) | ✅ | It's a file; SSH entries come in, others greyed |
 | Import `.rdp` files | 🔁 | Imported as RDP sessions, which open in Windows App (see RDP) |
 | **Import from `~/.ssh/config`** | 🔁 New | Each `Host` becomes a session |

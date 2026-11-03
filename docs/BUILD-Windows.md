@@ -72,6 +72,9 @@ Tried in `npm run tauri dev` on Windows 11:
   uses it: when it holds the session's key, ssh asks it to sign.
 - **RDP:** the built-in client (IronRDP), logged in to a Windows 10 desktop.
 - **Database sessions:** the PostgreSQL table, read and shown under Database sessions.
+- **File menu:** SuperXPuTTY's imports (SuperPuTTY XML, PuTTY/KiTTY from the registry, PuTTY Portable's folder,
+  PuTTY CM, RDP's recent computers from the registry), Export Sessions, Edit Sessions Externally (in Notepad++ when
+  it's installed) and Reload Sessions File. The registry is read through `reg.exe`.
 - **Shortcuts:** Windows' own defaults (Ctrl+Shift+T, Ctrl+Shift+W, Ctrl+Shift+D...), caught by the page, with the
   terminal keeping its Ctrl keys (Ctrl+C, Ctrl+D, Ctrl+K...); menus and Settings > Shortcuts show "Ctrl+Shift+T".
 

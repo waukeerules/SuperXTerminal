@@ -121,6 +121,9 @@
     else if (id === "toggleSessionsAutoHide") setAutoHide(!settings.sessionsAutoHide);
     else if (id.startsWith("import:")) tree?.importSessions(id.slice(7) as ImportKind);
     else if (id === "exportCsv") void tree?.exportSessions(null, "Sessions.csv");
+    else if (id === "exportXml") void tree?.exportXml();
+    else if (id === "editSessionsExternally") void tree?.editExternally();
+    else if (id === "reloadSessions") void tree?.reloadSessions();
   }
 
   void loadSettings();

@@ -334,8 +334,22 @@ export function overriddenFields(o: Override | undefined): string[] {
   return out;
 }
 
-/** Where sessions come from: "csv" (a spreadsheet), "mobaxterm", "rdp" (Remote Desktop files) or "ssh" (~/.ssh/config) */
-export type ImportKind = "csv" | "mobaxterm" | "rdp" | "ssh";
+/**
+ * Where sessions come from: "csv" (a spreadsheet), "mobaxterm", "rdp" (Remote Desktop files), "ssh" (~/.ssh/config),
+ * "superputty" (another Sessions.xml), "puttycm" (a PuTTY Connection Manager export), "puttyFolder" (a folder of
+ * PuTTY session files), "putty" (PuTTY's and KiTTY's saved sessions) or "rdpRegistry" (Remote Desktop's recent
+ * computers, Windows only)
+ */
+export type ImportKind = "csv" | "mobaxterm" | "rdp" | "ssh" | "superputty" | "puttycm" | "puttyFolder" | "putty" | "rdpRegistry";
+
+/**
+ * A file's name from its path, with Windows' or the Mac's separators
+ * @param path A full path
+ * @returns The last part of it
+ */
+export function fileNameOf(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
 
 /** What an import will do, before anything changes */
 export interface ImportSummary {
@@ -367,6 +381,36 @@ export function sshConfigPath(): Promise<string> {
 }
 
 /**
+ * Where an import that asks for no file reads: ssh config, PuTTY's saved sessions, Remote Desktop's recent computers
+ * @param kind The import
+ * @returns Its source, to show; null for an import that asks for a file
+ */
+export function importSource(kind: ImportKind): Promise<string | null> {
+  return invoke("sessions_import_source", { kind });
+}
+
+/**
+ * Export every session to a Sessions.xml, as SuperXPuTTY's File > Export sessions: asks where, then says how it went
+ * (for the status bar); null when cancelled
+ */
+export async function exportXml(): Promise<string | null> {
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ title: "Export sessions", defaultPath: "Sessions.xml", filters: [{ name: "XML files", extensions: ["xml"] }] });
+  if (!path) return null;
+  const count = await invoke<number>("sessions_export_xml", { path });
+  return `Exported ${count} session${count === 1 ? "" : "s"} to ${fileNameOf(path)}`;
+}
+
+/**
+ * Open the sessions file in an editor (Notepad++ on Windows when it's installed), as SuperXPuTTY's File > Edit
+ * sessions externally; the tree reads it again when it's saved
+ * @returns What to say in the status bar
+ */
+export function editSessionsExternally(): Promise<string> {
+  return invoke("sessions_edit_externally");
+}
+
+/**
  * Export sessions to a CSV file, as SuperXPuTTY's Export sessions to CSV: asks where, then says how it went (for the
  * status bar); null when cancelled. `items` null exports every session.
  */
@@ -375,6 +419,6 @@ export async function exportCsv(items: [Store, string][] | null, fileName: strin
   const path = await save({ title: "Export sessions to CSV", defaultPath: fileName.replace(/[/:\\]/g, "_"), filters: [{ name: "CSV files", extensions: ["csv"] }] });
   if (!path) return null;
   const [count, masked] = await invoke<[number, number]>("sessions_export_csv", { items, path });
-  const file = path.split("/").pop();
+  const file = fileNameOf(path);
   return `Exported ${count} session${count === 1 ? "" : "s"} to ${file}${masked ? ` (${masked} -pw password${masked === 1 ? "" : "s"} written as ********)` : ""}`;
 }

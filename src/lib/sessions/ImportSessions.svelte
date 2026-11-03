@@ -1,13 +1,15 @@
 <!--
   File > Import Sessions, as SuperXPuTTY's: from a CSV file (its SessionCsv: rows matched by Source, Folder and Name,
-  existing Saved and Private sessions updated, the rest added), a MobaXterm sessions file, Remote Desktop (.rdp)
-  files, or ~/.ssh/config, the last three into a folder of their own ("ImportedFromMobaXterm", ...). Asks for the file,
-  then shows what importing it will do before anything changes, as SuperXPuTTY's confirmation.
+  existing Saved and Private sessions updated, the rest added), another Sessions.xml, a PuTTY CM export, a folder of
+  PuTTY portable sessions, PuTTY's and KiTTY's saved sessions, Remote Desktop's recent computers (Windows), a
+  MobaXterm sessions file, Remote Desktop (.rdp) files, or ~/.ssh/config, all but CSV into a folder of their own
+  ("Imported", "ImportedFromPuTTY", ...). Asks for the file when there's one to choose, then shows what importing will
+  do before anything changes, as SuperXPuTTY's confirmation.
 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { applyImport, planImport, sshConfigPath, type ImportKind, type ImportSummary, type Store } from "./api";
+  import { applyImport, fileNameOf, importSource, planImport, type ImportKind, type ImportSummary, type Store } from "./api";
 
   interface Props {
     kind: ImportKind;
@@ -25,8 +27,18 @@
     mobaxterm: "Import sessions from MobaXterm",
     rdp: "Import Remote Desktop (.rdp) files",
     ssh: "Import hosts from ssh config",
+    superputty: "Import sessions from a SuperPuTTY XML file",
+    puttycm: "Import sessions from a PuTTY CM export",
+    puttyFolder: "Import PuTTY portable sessions",
+    putty: "Import PuTTY's saved sessions",
+    rdpRegistry: "Import Remote Desktop's recent computers",
   };
-  const FOLDERS: Record<ImportKind, string> = { csv: "", mobaxterm: "ImportedFromMobaXterm", rdp: "ImportedFromRDP", ssh: "ImportedFromSshConfig" };
+  const FOLDERS: Record<ImportKind, string> = {
+    csv: "", mobaxterm: "ImportedFromMobaXterm", rdp: "ImportedFromRDP", ssh: "ImportedFromSshConfig", superputty: "Imported",
+    puttycm: "ImportedFromPuTTYCM", puttyFolder: "ImportedFromPortablePuTTY", putty: "ImportedFromPuTTY", rdpRegistry: "ImportedFromRDPRecent",
+  };
+  /** Imports with nothing to choose: they read where the system keeps them */
+  const FIXED: ImportKind[] = ["putty", "rdpRegistry"];
 
   let paths = $state<string[]>([]);
   // sessions from another app go to Private sessions unless chosen otherwise: Sessions.xml is usually the team's
@@ -35,27 +47,43 @@
   let error = $state("");
   let busy = $state(false);
 
-  const fileName = (p: string) => p.split("/").pop() ?? p;
-  const what = $derived(paths.length === 1 ? fileName(paths[0]) : `${paths.length} files`);
+  const fileName = fileNameOf;
+  const what = $derived(
+    kind === "putty" ? "PuTTY's saved sessions" : kind === "rdpRegistry" ? "Remote Desktop's recent computers"
+      : paths.length === 1 ? fileName(paths[0]) : `${paths.length} files`,
+  );
 
   onMount(async () => {
-    if (untrack(() => kind) === "ssh") {
-      paths = [await sshConfigPath()];
+    const start = untrack(() => kind);
+    // ssh config, PuTTY's saved sessions and Remote Desktop's recent computers are read where they are
+    const source = await importSource(start).catch(() => null);
+    if (source !== null || FIXED.includes(start)) {
+      paths = [source ?? ""];
       await plan();
     } else if (!(await choose())) {
       onCancel();
     }
   });
 
-  /** Ask for the file (or .rdp files); false if cancelled */
+  /** Ask for the file (or .rdp files, or a folder of PuTTY sessions); false if cancelled */
   async function choose(): Promise<boolean> {
     const filters = {
       csv: [{ name: "CSV files", extensions: ["csv", "txt"] }],
       mobaxterm: [{ name: "MobaXterm sessions", extensions: ["mxtsessions"] }],
       rdp: [{ name: "Remote Desktop files", extensions: ["rdp"] }],
+      superputty: [{ name: "XML files", extensions: ["xml"] }],
+      puttycm: [{ name: "XML files", extensions: ["xml"] }],
       ssh: [],
+      puttyFolder: [],
+      putty: [],
+      rdpRegistry: [],
     }[kind];
-    const chosen = await open({ title: TITLES[kind], multiple: kind === "rdp", filters: filters.length ? [...filters, { name: "All files", extensions: ["*"] }] : undefined });
+    const chosen = await open({
+      title: kind === "puttyFolder" ? "Choose the portable Sessions folder" : TITLES[kind],
+      directory: kind === "puttyFolder",
+      multiple: kind === "rdp",
+      filters: filters.length ? [...filters, { name: "All files", extensions: ["*"] }] : undefined,
+    });
     if (!chosen) return false;
     paths = Array.isArray(chosen) ? chosen : [chosen];
     await plan();
@@ -96,7 +124,7 @@
 
     <div class="file">
       <span class="path" title={paths.join("\n")}>{paths.length ? (paths.length === 1 ? paths[0] : `${paths.length} files: ${paths.map(fileName).join(", ")}`) : "Choosing…"}</span>
-      <button onclick={() => void choose()}>Choose…</button>
+      {#if !FIXED.includes(kind)}<button onclick={() => void choose()}>Choose…</button>{/if}
     </div>
 
     {#if kind === "csv"}
@@ -111,6 +139,15 @@
         </select>
         in the folder {FOLDERS[kind]}
       </label>
+      {#if kind === "superputty"}
+        <p class="note">Every session in the file, with all its settings, under Imported in its own folders. Names already
+          taken get -1, -2... added.</p>
+      {:else if kind === "putty" || kind === "puttyFolder" || kind === "puttycm"}
+        <p class="note">Each session's host, port, protocol and username, with the PuTTY session it uses as its profile
+          (PuttySession), as SuperXPuTTY imports them.{kind === "putty" ? " KiTTY's go in a KiTTY folder." : ""}</p>
+      {:else if kind === "rdpRegistry"}
+        <p class="note">One RDP session for each computer in Remote Desktop Connection's recent list.</p>
+      {/if}
       {#if kind === "ssh"}
         <p class="note">One session per Host name without wildcards: its HostName, Port, User and ProxyJump, with
           IdentityFile and forwards as extra arguments. Host * and Match settings still apply, as ssh reads the file when

@@ -525,7 +525,96 @@ fn highlighting_user_folder(state: State<'_, AppState>) -> Result<PathBuf, Strin
 /// Open a file in its own app (Search Output's Open log)
 #[tauri::command]
 fn open_path(path: PathBuf) -> Result<(), String> {
-    std::process::Command::new("open").arg(path).spawn().map(|_| ()).map_err(|e| e.to_string())
+    open_in_app(&path)
+}
+
+/// Open a file or folder in the app the system uses for it: `open` on the Mac, Explorer's "start" on Windows
+fn open_in_app(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        // start's first quoted argument is a window title, hence the empty one
+        std::process::Command::new("cmd").args(["/c", "start", ""]).arg(path).creation_flags(CREATE_NO_WINDOW).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("open").arg(path).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
+}
+
+/// Notepad++, where its installer puts it, for editing the sessions file on Windows
+#[cfg(windows)]
+fn notepad_plus_plus() -> Option<PathBuf> {
+    ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+        .iter()
+        .filter_map(|var| std::env::var_os(var))
+        .map(|root| PathBuf::from(root).join("Notepad++").join("notepad++.exe"))
+        .chain(std::env::var_os("LOCALAPPDATA").map(|root| PathBuf::from(root).join("Programs").join("Notepad++").join("notepad++.exe")))
+        .find(|p| p.exists())
+}
+
+/// File > Edit Sessions Externally, as SuperXPuTTY's: the sessions file (Sessions.xml, or PrivateSessions.xml when
+/// Saved sessions are turned off) in Notepad++ on Windows when it's installed, else the system's app for it; the
+/// Mac's default text editor there. The file is made first if there isn't one yet. The tree reads it again when it's
+/// saved (`sessions_files_changed`). Returns what to say in the status bar.
+#[tauri::command]
+fn sessions_edit_externally(state: State<'_, AppState>) -> Result<String, String> {
+    let saved_on = state.settings.lock().unwrap().use_sessions_xml;
+    let store = if saved_on { sessions::Store::Saved } else { sessions::Store::Private };
+    let path = store_file(&state, store)?;
+    if !path.exists() {
+        if let Some(folder) = path.parent() {
+            std::fs::create_dir_all(folder).map_err(|e| format!("Couldn't make {}: {e}", folder.display()))?;
+        }
+        let list = {
+            let sessions = state.sessions.lock().unwrap();
+            if saved_on { sessions.saved.clone() } else { sessions.private.clone() }
+        };
+        std::fs::write(&path, sessions::write_sessions(&list)).map_err(|e| format!("Couldn't make {}: {e}", path.display()))?;
+    }
+    #[cfg(windows)]
+    {
+        if let Some(editor) = notepad_plus_plus() {
+            std::process::Command::new(editor).arg(&path).spawn().map_err(|e| format!("Couldn't start Notepad++: {e}"))?;
+            return Ok(format!("Editing {} in Notepad++; the sessions are read again when it's saved", path.display()));
+        }
+        open_in_app(&path)?;
+    }
+    // -t: the default text editor, whatever app .xml files open in
+    #[cfg(not(windows))]
+    std::process::Command::new("open").arg("-t").arg(&path).spawn().map_err(|e| e.to_string())?;
+    Ok(format!("Editing {}; the sessions are read again when it's saved", path.display()))
+}
+
+/// File > Export Sessions…, as SuperXPuTTY's: every session (Saved, Private and Database) in one Sessions.xml, which
+/// SuperXPuTTY and File > Import Sessions > From SuperPuTTY XML File read. Database sessions go as plain sessions, in
+/// their folders, without the table's id, version or locks. Returns how many were written.
+#[tauri::command]
+fn sessions_export_xml(state: State<'_, AppState>, path: PathBuf) -> Result<usize, String> {
+    let list: Vec<sessions::StoredSession> = {
+        let sessions = state.sessions.lock().unwrap();
+        let database = sessions.database.iter().map(|s| {
+            let mut plain = sessions::StoredSession {
+                attributes: s.attributes.iter().filter(|(name, _)| !name.starts_with("Database")).cloned().collect(),
+            };
+            let id = s.id().strip_prefix("@db/").unwrap_or(s.id()).to_string();
+            plain.set("SessionId", &id);
+            plain
+        });
+        let mut all: Vec<sessions::StoredSession> = sessions.saved.iter().chain(sessions.private.iter()).cloned().chain(database).collect();
+        all.sort_by_key(|s| s.id().to_lowercase());
+        all
+    };
+    std::fs::write(&path, sessions::write_sessions(&list)).map_err(|e| format!("Couldn't write {}: {e}", path.display()))?;
+    Ok(list.len())
+}
+
+/// Where an import that reads no chosen file reads (ssh config, PuTTY's and KiTTY's saved sessions, Remote Desktop's
+/// recent computers), for the import window; None for imports that ask for a file
+#[tauri::command]
+fn sessions_import_source(kind: String) -> Option<String> {
+    importing::source_of_import(&kind)
 }
 
 /// Open a session in another app: "open" for RDP (Windows App) and VNC (Screen Sharing), "terminal" for Connect
@@ -1641,19 +1730,30 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>) ->
             // SuperXPuTTY's File > Open session… (its Quick Selector)
             &action("openSession")?,
             &PredefinedMenuItem::separator(app)?,
-            // SuperXPuTTY's File > Import sessions and Export sessions to CSV
+            // SuperXPuTTY's File > Import sessions, Export sessions and Export sessions to CSV, in its order
             &Submenu::with_items(
                 app,
                 "Import Sessions",
                 true,
                 &[
-                    &plain("import:csv", "From CSV File…")?,
-                    &plain("import:mobaxterm", "From MobaXterm File…")?,
+                    &plain("import:superputty", "From SuperPuTTY XML File…")?,
+                    &plain("import:putty", if cfg!(windows) { "From PuTTY/KiTTY (Registry)…" } else { "From PuTTY (~/.putty)…" })?,
+                    &plain("import:puttyFolder", "From PuTTY Portable Settings…")?,
+                    &plain("import:puttycm", "From PuTTY CM Export…")?,
+                    // Remote Desktop Connection's recent computers are Windows' only: shown, greyed, on the Mac
+                    &MenuItem::with_id(app, "import:rdpRegistry", "From RDP (Registry)…", cfg!(windows), None::<&str>)?,
                     &plain("import:rdp", "From Remote Desktop (.rdp) Files…")?,
+                    &plain("import:mobaxterm", "From MobaXterm File…")?,
+                    &plain("import:csv", "From CSV File…")?,
                     &plain("import:ssh", "From ssh config…")?,
                 ],
             )?,
+            &plain("exportXml", "Export Sessions…")?,
             &plain("exportCsv", "Export Sessions to CSV…")?,
+            &PredefinedMenuItem::separator(app)?,
+            // SuperXPuTTY's File > Edit sessions externally and Reload sessions file
+            &plain("editSessionsExternally", "Edit Sessions Externally…")?,
+            &plain("reloadSessions", "Reload Sessions File")?,
             &PredefinedMenuItem::separator(app)?,
             // SuperXPuTTY's File > Save layout and Save layout as...
             &action("saveLayout")?,
@@ -2154,6 +2254,9 @@ pub fn run() {
             sessions_import_plan,
             sessions_import_apply,
             ssh_config_path,
+            sessions_import_source,
+            sessions_export_xml,
+            sessions_edit_externally,
             overrides_set,
             pty::pty_serial_get,
             pty::pty_serial_set,

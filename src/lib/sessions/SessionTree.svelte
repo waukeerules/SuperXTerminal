@@ -56,7 +56,7 @@
   import { loadCustomIcons, type CustomIcon } from "../icons/custom";
   import { EnvironmentColors, parseRules } from "../icons/environment";
   import { chooseSettingsFolder, databaseCheckSeconds, settings } from "../settings/store.svelte";
-  import { DATABASE_SAVED, exportCsv, type ImportKind } from "./api";
+  import { DATABASE_SAVED, editSessionsExternally, exportCsv, exportXml as exportSessionsXml, type ImportKind } from "./api";
   import { commandLabel } from "../shortcuts";
 
   interface Props {
@@ -1048,6 +1048,31 @@
     } catch (e) {
       error = `Couldn't export the sessions: ${e}`;
     }
+  }
+
+  /** File > Export Sessions…: every session to one Sessions.xml, as SuperXPuTTY's */
+  export async function exportXml(): Promise<void> {
+    try {
+      const text = await exportSessionsXml();
+      if (text) context.status(text);
+    } catch (e) {
+      error = `Couldn't export the sessions: ${e}`;
+    }
+  }
+
+  /** File > Edit Sessions Externally…: the sessions file in an editor; the tree reads it again once it's saved */
+  export async function editExternally(): Promise<void> {
+    try {
+      context.status(await editSessionsExternally());
+    } catch (e) {
+      error = `Couldn't open the sessions file: ${e}`;
+    }
+  }
+
+  /** File > Reload Sessions File: read the sessions files again now, as SuperXPuTTY's */
+  export async function reloadSessions(): Promise<void> {
+    await reload();
+    if (!error) context.status("Read the sessions again");
   }
 
   /** Edit Session for a session (Session Detail's double-click) */

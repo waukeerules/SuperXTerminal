@@ -13,6 +13,10 @@ export interface Profile {
   username: string;
   port: number;
   keyFile: string;
+  /** A command that gets a new key into the key file ({key_file}), run in the tab when it's missing or too old */
+  keyFetch: string;
+  /** Minutes a fetched key is good for; 0: fetched only when there's none */
+  keyLifetime: number;
   /** Whether ssh offers its keys (~/.ssh and the agent) when there's no key file; null: Default Settings', else yes */
   offerKeys: boolean | null;
   /** A session with no username asks for one in the tab ("login as:"); null: Default Settings', else no */
@@ -38,7 +42,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, username: "", port: 0, keyFile: "", offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
+    name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", hasPassword: false,
   };
 }

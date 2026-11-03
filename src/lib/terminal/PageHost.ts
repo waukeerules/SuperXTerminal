@@ -37,6 +37,8 @@ interface Look {
 export type Target =
   | { kind: "localShell" }
   | { kind: "session"; store: "saved" | "private" | "database"; id: string }
+  /** A profile's key fetch, run in a session's tab before it connects (never a tab of its own) */
+  | { kind: "keyFetch"; profile: string }
   | ({ kind: "quickConnect" } & QuickConnect);
 
 /** Quick connect's toolbar fields (`QuickConnect` in `src-tauri/src/launch.rs`) */
@@ -103,6 +105,15 @@ const SERIAL_DEVICE_NEEDED = "SERIAL_DEVICE:";
 /** What it starts with when an SSH session has no username and its profile asks for one (launch::USERNAME_NEEDED) */
 const USERNAME_NEEDED = "USERNAME:";
 
+/** What it starts with when the profile's key must be fetched first, then the profile and why (launch::KEY_FETCH_NEEDED) */
+const KEY_FETCH_NEEDED = "KEY_FETCH:";
+
+/**
+ * Key fetches running in this window, by profile: tabs opening together with one profile share its fetch (one sign-in),
+ * each waiting for whether it worked
+ */
+const keyFetches = new Map<string, Promise<boolean>>();
+
 /** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
 const STABLE_AFTER_MS = 60_000;
 
@@ -144,6 +155,10 @@ export class PageHost implements ScriptTarget {
   private loginAs: string | null = null;
   /** What's been typed at "login as:" so far, while the tab asks; null when it isn't asking */
   private typingLogin: string | null = null;
+  /** The key fetch running in this tab: told how it ended (its exit code), instead of the tab ending */
+  private fetching: ((code: number | null) => void) | null = null;
+  /** A key fetch just finished for this open, so a key still wanting one is a problem, not a reason to fetch again */
+  private fetchedKey = false;
   /** Move to New Window: the running session this tab takes over instead of starting one */
   private adoptId: number | null = null;
   /** The session went to another window's tab: closing this one leaves it running */
@@ -503,6 +518,13 @@ export class PageHost implements ScriptTarget {
       } else if (event.type === "notice") {
         this.post({ type: "notice", text: event.text, kind: event.kind });
       } else if (event.type === "exit") {
+        // a key fetch ending isn't the session ending: the tab goes on to connect (or says why it can't)
+        if (this.fetching) {
+          const done = this.fetching;
+          this.fetching = null;
+          done(event.code ?? null);
+          return;
+        }
         this.ended = true;
         // a clean end (a logout) or a local shell closes the tab, as PuTTY's window would
         if (this.local || event.code === 0) this.onExit();
@@ -538,12 +560,25 @@ export class PageHost implements ScriptTarget {
     }
     try {
       this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel, loginAs: this.loginAs });
+      this.fetchedKey = false;
       this.startedAt = Date.now();
       // one log for the tab, kept across reconnects, as SuperXPuTTY's
       if (!this.log) this.log = await invoke<{ id: number; path: string; temporary: boolean }>("log_open", { name: this.title }).catch(() => null);
       this.markStarted();
     } catch (error) {
       let text = String(error);
+      // the profile's key is missing or too old: fetch it in this tab (its sign-in shows here), then connect
+      if (text.startsWith(KEY_FETCH_NEEDED)) {
+        const [profile, ...why] = text.slice(KEY_FETCH_NEEDED.length).split("\n");
+        const reason = why.join(" ");
+        if (!this.fetchedKey) {
+          await this.fetchKey(profile, reason);
+          return;
+        }
+        // fetched, and still not good: say so rather than fetch again and again
+        this.fetchedKey = false;
+        text = `The key fetch finished, but ${reason.replace(/: fetching a new one\.$/, "").replace(/^./, (c) => c.toLowerCase())}. Check profile "${profile}"'s Fetch command and Key file. Press Enter to try again.`;
+      }
       // an SSH session with no username, whose profile asks for one: "login as:" in the tab, as PuTTY and SecureCRT
       if (text.startsWith(USERNAME_NEEDED)) {
         // kept as configured, as output (the prompt) waits for it; notices are posted straight to the page
@@ -568,6 +603,64 @@ export class PageHost implements ScriptTarget {
       this.ended = true;
       this.onState();
     }
+  }
+
+  /**
+   * Fetch a profile's key in this tab, then open the session: the fetch's own output and prompts (CyberArk's link to
+   * Okta, the PIN) show here, and what's typed goes to it. Another tab already fetching for the profile is waited for.
+   */
+  private async fetchKey(profile: string, reason: string): Promise<void> {
+    if (!this.configured) this.configured = this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
+    await this.configured;
+    this.post({ type: "notice", text: reason, kind: "info" });
+    const key = profile.toLowerCase();
+    let ok: boolean;
+    const running = keyFetches.get(key);
+    if (running) {
+      this.post({ type: "notice", text: `Waiting for the key fetch in another tab (profile "${profile}")…`, kind: "info" });
+      ok = await running;
+    } else {
+      const fetch = this.runKeyFetch(profile);
+      keyFetches.set(key, fetch);
+      try {
+        ok = await fetch;
+      } finally {
+        keyFetches.delete(key);
+      }
+    }
+    if (ok) {
+      this.fetchedKey = true;
+      await this.open();
+    } else {
+      this.ended = true;
+      this.onState();
+    }
+  }
+
+  /** Run the profile's key fetch here; whether it ended well (exit code 0) */
+  private async runKeyFetch(profile: string): Promise<boolean> {
+    const code = new Promise<number | null>((resolve) => (this.fetching = resolve));
+    try {
+      this.ptyId = await invoke<number>("pty_open", {
+        target: { kind: "keyFetch", profile } satisfies Target, ...this.size, onEvent: this.outputChannel(), loginAs: null,
+      });
+    } catch (error) {
+      this.fetching = null;
+      this.post({ type: "notice", text: `${String(error)} Press Enter to try again.`, kind: "error" });
+      return false;
+    }
+    const exit = await code;
+    // the fetch's pseudo terminal is done with; the session gets its own
+    if (this.ptyId !== null) {
+      const id = this.ptyId;
+      this.ptyId = null;
+      await invoke("pty_close", { id }).catch(() => {});
+    }
+    if (exit !== 0) {
+      this.post({ type: "notice", text: `The key fetch didn't finish${exit === null ? "" : ` (exit code ${exit})`}. Press Enter to try again.`, kind: "error" });
+      return false;
+    }
+    return true;
   }
 
   /** Show "login as:" and read the username from what's typed in the tab (typeLogin) */

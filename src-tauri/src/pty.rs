@@ -33,6 +33,8 @@ pub enum Target {
     Session { store: Store, id: String },
     /// Quick connect's one-off session
     QuickConnect(launch::QuickConnect),
+    /// A profile's key fetch (launch::KEY_FETCH_NEEDED), run in the session's tab before it connects
+    KeyFetch { profile: String },
 }
 
 /// What a pseudo terminal sends its tab
@@ -170,6 +172,7 @@ pub fn pty_open(
         Target::LocalShell => "a Local Shell".to_string(),
         Target::Session { id, .. } => format!("session {id}"),
         Target::QuickConnect(quick) => format!("Quick connect {} {}", quick.protocol, quick.host),
+        Target::KeyFetch { profile } => format!("the key fetch of profile {profile}"),
     };
     let launch = match target {
         Target::LocalShell => Ok(launch::local_shell(&profiles)),
@@ -188,6 +191,7 @@ pub fn pty_open(
             let sessions = state.sessions.lock().unwrap();
             quick.session().and_then(|s| launch::launch(&sessions, &profiles, &values, &serial_devices, Store::Saved, &with_login(s)))
         }
+        Target::KeyFetch { profile } => launch::key_fetch(&profiles, &values, &profile),
     };
     let launch = launch.inspect_err(|e| crate::applog::warn(format!("Couldn't open {what}: {e}")));
     let Launch { mut command, password, local, mut notices, look, stream, .. } = launch?;

@@ -145,46 +145,54 @@ function pam() {
 uses Windows' own OpenSSH, so the macOS function's `sftp` and `ssh` lines work in PowerShell as they are, with the
 key kept in OpenSSH's format; no conversion. (A `.ppk` works anyway: SuperXTerminal converts any profile's `.ppk`.)
 
-### Built in (proposed, not built)
+### Built in: a profile's key fetch
 
-A profile gets a **Key fetch** section, used only when it has a Key file:
+Not CyberArk's alone: anything that issues SSH keys or certificates for a short time from a command fits, such as
+HashiCorp Vault (`vault ssh`, signed certificates), Teleport (`tsh login`), Smallstep (`step ssh login`), Okta
+Advanced Server Access (`sft`) or Azure (`az ssh cert`). A certificate written beside the key as `<key>-cert.pub` is
+picked up by OpenSSH by itself.
+
+Settings > Profiles > Login, under Key file:
 
 | Field | What it's for |
 |---|---|
-| Fetch command | The command that gets a new key, e.g. the function's `sftp` line, with `{key_file}` for where to write it and the usual `{placeholders}` (each user's `{email}` and so on). One per system if they differ: macOS, Windows. |
-| Lifetime | How long a key is good for, in minutes (240 here: CyberArk's 4 hours). |
+| Fetch command | The command that gets a new key into the Key file, with `{key_file}` for that path and the usual `{placeholders}` (each user's `{email}` and so on). Profiles are per computer, so each machine has its own. |
+| Lifetime | How long a key is good for, in minutes (240 here: CyberArk's 4 hours); 0 fetches only when there's none. |
 
-When a session using the profile opens:
+Below them the editor says how the next session will find the key: "Key: 37 min old, good for 4 h.", "The key is
+5 h old, past its 4 h: the next session fetches a new one.", or "No key yet".
+
+When a session using the profile opens (`launch.rs` and `PageHost.ts`):
 
 1. **The key is checked first.** No key file, or one older than the lifetime (by the file's modified time), and the
-   key is fetched before connecting. The tab says why: "The CyberArk key is 4 h 12 min old (good for 4 h):
-   fetching a new one." That's the "why can't I connect" answer, before ssh even starts.
-2. **The fetch runs in the session's own tab**, as an ordinary terminal program, so CyberArk's link and its PIN
-   prompt are right there. The link opens with Ctrl+click (or copy it), Okta signs in and shows the PIN, and the PIN
-   is pasted into the tab. The app types nothing itself here: no stored password goes into a fetch.
-3. **When the fetch ends**, and the key file is new, the tab goes on to connect with it. If the fetch fails or the
-   file didn't change, the tab says so, and Enter tries again.
-4. **One fetch at a time.** Several sessions opening together (Connect all, a layout) share it: the first tab
-   fetches, and the others wait for it, saying so, then connect.
+   key is fetched before connecting. The tab says why: "The key is 4 h 12 min old (good for 4 h): fetching a new
+   one." That's the "why can't I connect" answer, before ssh even starts.
+2. **The fetch runs in the session's own tab** through the user's shell, its `~/.zshrc` read (`-i`) so a shell
+   function works, or PowerShell on Windows. CyberArk's link and its PIN prompt show there; the link opens with
+   Ctrl+click (or copy it), Okta signs in and shows the PIN, and the PIN is pasted into the tab. The app types
+   nothing itself here: no stored password goes into a fetch.
+3. **When the fetch ends well** (exit code 0), the tab goes on to connect, the key made the user's own (mode 600 on
+   the Mac, the user's own access on Windows), as ssh refuses a key others can read. If the fetch fails, or ends well
+   but the key is still missing or old, the tab says so (naming the profile's Fetch command and Key file) rather
+   than fetch again and again; Enter tries again.
+4. **One fetch at a time.** Tabs in a window opening together with one profile (Connect all, a layout) share it:
+   the first fetches, the others say they're waiting, then connect.
 5. **Expired while open.** A key only matters at login, so open sessions carry on. A reconnect after the lifetime
    fetches again first.
-6. **When the gateway refuses the key anyway** (revoked early, or the lifetime is set longer than CyberArk's), the
-   tab adds a hint after ssh's "Permission denied (publickey)": the key's age, and that deleting it or Fetch now
-   gets a new one. The profile's editor has **Fetch now** and shows the key's age.
 
-The key is a credential, so:
+For a command like the macOS `pam` function above, the Fetch command is its `sftp` line (or a function of its own
+that runs it), and the Key file the path it writes, e.g. `~/.ssh/cyberark_key`.
 
-- It lives in the user's own folder (`keys/cyberark-<profile>.key`, readable by the user alone: mode 600 on the
-  Mac, the user's own access on Windows, as `.ppk` copies are kept today), never in the settings folder, the
-  Database table or anything shared.
-- It's deleted once it's past its lifetime and a fetch has replaced it, or by **Forget key** in the profile.
-- The fetch command and lifetime are profile fields, which are per user; a team shares the command by writing it
-  into its own setup notes.
+Not built yet:
 
-What's needed: profile fields (`key_fetch_mac`, `key_fetch_windows`, `key_lifetime_minutes`), the age check and
-the fetch-then-connect step in the tab (`PageHost.ts`, a pseudo terminal running the fetch, then the session), the
-one-at-a-time lock, and the hint after "Permission denied (publickey)". All of it can be built and unit tested here
-with a stand-in command; only CyberArk and Okta themselves need production.
+- A hint after ssh's "Permission denied (publickey)" when the gateway refuses the key anyway (revoked early, or the
+  lifetime set longer than the issuer's), with the key's age.
+- **Fetch now** and **Forget key** in the profile editor.
+- Tabs in different windows share nothing: each window fetches on its own.
+
+The key is a credential, so it's kept only where the profile's Key file says, in the user's own folders (never the
+settings folder, the Database table or anything shared), and the fetch command and lifetime are profile fields,
+which are per user.
 
 ## To check in production
 
@@ -211,6 +219,9 @@ with a stand-in command; only CyberArk and Okta themselves need production.
   profile's port; an override's own username connects to the Host; `{host_address}` without a profile Host refuses;
   a session with no host uses its profile's, at the profile's port; no host anywhere, or `{host_address}` with no
   session host, refuses with a message.
-- To do: the macOS function tried in a session tab in production (it's the Mac's counterpart of the `.bat`, for
-  Terminal); then the built-in key fetch and its lifetime
-  ([Built in](#built-in-proposed-not-built)); then a section in a user guide.
+- ✅ The built-in key fetch and its lifetime ([Built in](#built-in-a-profiles-key-fetch)). Tests: a missing or old
+  key is fetched first, saying why; a fresh one connects, made the user's own; lifetime 0 fetches only when
+  there's none; no Fetch command is as before; the command gets `{key_file}` and the variables filled in, and an
+  undefined one says so; the editor's key state.
+- To do: tried in production with CyberArk; the hint after "Permission denied (publickey)", Fetch now and Forget key;
+  then a section in a user guide.

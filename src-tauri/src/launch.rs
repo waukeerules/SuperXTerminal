@@ -220,6 +220,100 @@ fn windows_shell(profiles: &Profiles, proto: &str, #[cfg_attr(windows, allow(unu
 /// which `/dev/cu.*` it is, remembers it, and tries again (SERIAL_DEVICE:COM6)
 pub const SERIAL_DEVICE_NEEDED: &str = "SERIAL_DEVICE:";
 
+/// What a launch's error starts with when its profile's key must be fetched first: then the profile's name, a line
+/// break, and why (no key yet, or how old it is); the tab runs the fetch (pty_open's KeyFetch) and opens it again
+pub const KEY_FETCH_NEEDED: &str = "KEY_FETCH:";
+
+/// A duration in minutes as "37 min" or "4 h 12 min"
+fn minutes_text(minutes: u64) -> String {
+    match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} h"),
+        (h, m) => format!("{h} h {m} min"),
+    }
+}
+
+/// How old a key file is, in seconds, by its modified time; None when there's none
+pub fn key_age(path: &str) -> Option<u64> {
+    let modified = std::fs::metadata(expand_home(path)).ok()?.modified().ok()?;
+    Some(std::time::SystemTime::now().duration_since(modified).map(|d| d.as_secs()).unwrap_or(0))
+}
+
+/// Why a profile's key needs fetching, or None when it's there and young enough (`lifetime` minutes, 0 for any age)
+fn key_fetch_reason(key_file: &str, lifetime: u32) -> Option<String> {
+    match key_age(key_file) {
+        None => Some(format!("There's no key yet ({key_file})")),
+        Some(age) if lifetime > 0 && age > u64::from(lifetime) * 60 => Some(format!(
+            "The key is {} old (good for {})",
+            minutes_text(age / 60),
+            minutes_text(u64::from(lifetime))
+        )),
+        Some(_) => None,
+    }
+}
+
+/// Let only the user read a fetched key (ssh refuses one others can): mode 600 on the Mac, the user's own access on
+/// Windows, as .ppk copies are kept
+fn private_key(path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    crate::ppk::owner_only(path)
+}
+
+/// The program that fetches a profile's key, in the session's tab (KEY_FETCH_NEEDED): its command through the user's
+/// shell, its rc file read so a shell function (`pam`, say) works, or PowerShell on Windows
+pub fn key_fetch(profiles: &Profiles, values: &HashMap<String, String>, profile_name: &str) -> Result<Launch, String> {
+    let default = profiles.default_profile();
+    let profile = if profiles::is_default(profile_name) { default } else { profiles.get(profile_name).unwrap_or(default) };
+    let key_file = expand_home(&profile.key_file);
+    if profile.key_fetch.trim().is_empty() || profile.key_file.trim().is_empty() {
+        return Err(format!("Profile \"{}\" has no key fetch: set its Fetch command and Key file in Settings > Profiles.", profile.name));
+    }
+    let mut with_file = values.clone();
+    with_file.insert("key_file".into(), key_file.clone());
+    let missing = variables::missing(&profile.key_fetch, &with_file);
+    if !missing.is_empty() {
+        return Err(format!(
+            "The key fetch uses placeholders that have no value yet: {}. Define them in Tools > Environment Variables.",
+            missing.join(", ")
+        ));
+    }
+    let text = variables::substitute(profile.key_fetch.trim(), &with_file);
+    if let Some(folder) = std::path::Path::new(&key_file).parent() {
+        let _ = std::fs::create_dir_all(folder);
+    }
+    #[cfg(windows)]
+    let command = {
+        let mut command = CommandBuilder::new("powershell.exe");
+        command.args(["-NoLogo", "-Command", &text]);
+        command
+    };
+    #[cfg(not(windows))]
+    let command = {
+        let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
+        let mut command = CommandBuilder::new(shell);
+        // -i reads the rc file (~/.zshrc), where a function like pam lives
+        command.args(["-i", "-c", &text]);
+        command
+    };
+    let mut command = command;
+    if let Some(home) = dirs::home_dir() {
+        command.cwd(home);
+    }
+    Ok(Launch {
+        command,
+        password: None,
+        local: true,
+        notices: vec![format!("Fetching a new key for profile \"{}\" into {key_file}.", profile.name)],
+        look: look(profile, default),
+        stream: None,
+        login: None,
+    })
+}
+
 /// The built-in placeholder for the session's own host (its target), for a username that names it; `host_port` is
 /// its port (docs/CYBERARK.md)
 pub const HOST_ADDRESS: &str = "host_address";
@@ -502,6 +596,14 @@ fn ssh(
         args.extend(["-l".into(), username]);
     }
     let key_file = first(&profile.key_file, &default.key_file);
+    // a key fetched for a short time (the key file's own profile's fetch): missing or too old, it's fetched first
+    let key_owner = if profile.key_file.is_empty() { default } else { profile };
+    if !key_file.is_empty() && !key_owner.key_fetch.trim().is_empty() {
+        if let Some(reason) = key_fetch_reason(key_file, key_owner.key_lifetime) {
+            return Err(format!("{KEY_FETCH_NEEDED}{}\n{reason}: fetching a new one.", key_owner.name));
+        }
+        let _ = private_key(std::path::Path::new(&expand_home(key_file)));
+    }
     if !key_file.is_empty() {
         let mut path = expand_home(key_file);
         // OpenSSH can't read PuTTY's .ppk keys: ssh gets an OpenSSH copy of it (ppk.rs), when it has no passphrase
@@ -803,6 +905,69 @@ mod tests {
         profiles.profiles[2].host.clear();
         let error = launched(&profiles, &CYBERARK_VALUES, &session(&[("PuttySession", "CyberArk")])).unwrap_err();
         assert!(error.contains("has no Host"), "{error}");
+    }
+
+    /// A profile "Vault" with a key fetch for `key` (a path), good for `lifetime` minutes
+    fn fetching(key: &std::path::Path, lifetime: u32) -> Profiles {
+        let mut profiles = profiles();
+        profiles.profiles.push(Profile {
+            name: "Vault".into(),
+            key_file: key.display().to_string(),
+            key_fetch: "get-key --to {key_file} --as {who}".into(),
+            key_lifetime: lifetime,
+            ..Profile::default()
+        });
+        profiles
+    }
+
+    #[test]
+    fn a_missing_or_old_key_is_fetched_first() {
+        let folder = std::env::temp_dir().join(format!("sxt-keyfetch-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let key = folder.join("key");
+        let sw = at("10.0.0.7", &[("PuttySession", "Vault"), ("Username", "me")]);
+
+        // no key yet: the tab is told to fetch, with the profile and why
+        let error = launched(&fetching(&key, 240), &[], &sw).unwrap_err();
+        assert!(error.starts_with(&format!("{KEY_FETCH_NEEDED}Vault\n")), "{error}");
+        assert!(error.contains("There's no key yet"), "{error}");
+
+        // a fresh key: connects with it, made the user's own
+        std::fs::write(&key, "key").unwrap();
+        let args = launched(&fetching(&key, 240), &[], &sw).unwrap();
+        assert!(args.contains(&key.display().to_string()), "{args:?}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&key).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+
+        // older than its lifetime: fetched again, saying how old
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(5 * 3600);
+        std::fs::File::options().write(true).open(&key).unwrap().set_modified(old).unwrap();
+        let error = launched(&fetching(&key, 240), &[], &sw).unwrap_err();
+        assert!(error.contains("The key is 5 h old (good for 4 h)"), "{error}");
+        // a lifetime of 0: any age will do
+        assert!(launched(&fetching(&key, 0), &[], &sw).is_ok());
+        // and a profile with no fetch command is as before: the key file is just used
+        let mut no_fetch = fetching(&key, 240);
+        no_fetch.profiles[2].key_fetch.clear();
+        assert!(launched(&no_fetch, &[], &sw).is_ok());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn the_fetch_runs_its_command_with_the_key_file_filled_in() {
+        let key = std::env::temp_dir().join(format!("sxt-keyfetch-cmd-{}", std::process::id())).join("key");
+        let values: HashMap<String, String> = [("who".to_string(), "me@example.test".to_string())].into();
+        let launch = key_fetch(&fetching(&key, 240), &values, "Vault").unwrap();
+        let argv: Vec<String> = launch.command.get_argv().iter().map(|a| a.to_string_lossy().to_string()).collect();
+        assert!(argv.last().unwrap().contains(&format!("--to {} --as me@example.test", key.display())), "{argv:?}");
+        assert!(launch.password.is_none());
+        // an undefined placeholder says so instead of running
+        let error = key_fetch(&fetching(&key, 240), &HashMap::new(), "Vault").err().unwrap();
+        assert!(error.contains("{who}"), "{error}");
+        let _ = std::fs::remove_dir_all(key.parent().unwrap());
     }
 
     #[test]

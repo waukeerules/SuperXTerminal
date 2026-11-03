@@ -57,7 +57,7 @@ fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
 /// the folder is enough: "UNPROTECTED PRIVATE KEY FILE"), and ssh then quietly tries other keys, so the file's
 /// inherited entries are removed and the user alone is given access, with icacls.
 #[cfg(windows)]
-fn owner_only(path: &Path) -> std::io::Result<()> {
+pub(crate) fn owner_only(path: &Path) -> std::io::Result<()> {
     use std::os::windows::process::CommandExt;
     let user = match (std::env::var("USERDOMAIN"), std::env::var("USERNAME")) {
         (Ok(domain), Ok(name)) if !domain.is_empty() => format!("{domain}\\{name}"),
@@ -79,7 +79,7 @@ fn owner_only(path: &Path) -> std::io::Result<()> {
 
 /// On the Mac the file is written with mode 600 (`write_private`); nothing more to do
 #[cfg(not(windows))]
-fn owner_only(_path: &Path) -> std::io::Result<()> {
+pub(crate) fn owner_only(_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 

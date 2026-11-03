@@ -6,6 +6,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { ask, open } from "@tauri-apps/plugin-dialog";
+  import { invoke } from "@tauri-apps/api/core";
+  import { isMac } from "../shortcuts";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, saveProfile, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
@@ -43,7 +45,7 @@
    */
   function meaning(profile: Profile, field: keyof Profile): unknown {
     const value = profile[field];
-    if (field === "port" || field === "keepalive") return Number(value) || 0;
+    if (field === "port" || field === "keepalive" || field === "keyLifetime") return Number(value) || 0;
     if (isDefault && field === "offerKeys") return value ?? true;
     if (isDefault && field === "askUsername") return value ?? false;
     return value ?? null;
@@ -57,7 +59,7 @@
 
   /** The fields the editor shows, for counting the changes */
   const FIELDS: Field[] = [
-    "name", "username", "password", "keyFile", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
+    "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
   ];
   /** How many fields have changed since the profile was loaded or saved */
@@ -94,7 +96,10 @@
   /** Save the draft */
   async function save(): Promise<void> {
     try {
-      profiles = await saveProfile({ ...draft, port: Number(draft.port) || 0, keepalive: Number(draft.keepalive) || 0 }, originalName, password);
+      profiles = await saveProfile(
+        { ...draft, port: Number(draft.port) || 0, keepalive: Number(draft.keepalive) || 0, keyLifetime: Math.max(0, Number(draft.keyLifetime) || 0) },
+        originalName, password,
+      );
       select(draft.name.trim());
       message = "Saved.";
     } catch (e) {
@@ -167,6 +172,29 @@
     if (typeof path === "string") draft.keyFile = path;
   }
 
+  /** The key file's age, for the key fetch's note: seconds, or null when there's none (or no key file) */
+  let keyAge = $state<number | null>(null);
+  $effect(() => {
+    const file = draft.keyFile.trim();
+    keyAge = null;
+    if (file) void invoke<number | null>("profile_key_age", { keyFile: file }).then((age) => (keyAge = age ?? null), () => {});
+  });
+
+  /** "37 min" or "4 h 12 min" */
+  const duration = (minutes: number) => {
+    const h = Math.floor(minutes / 60), m = Math.round(minutes % 60);
+    return h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${m} min`;
+  };
+
+  /** The key's state, as the next session will find it */
+  const keyState = $derived.by(() => {
+    if (!draft.keyFile.trim()) return "Set the Key file it writes to.";
+    if (keyAge === null) return "No key yet: the next session fetches one.";
+    const age = Math.floor(keyAge / 60), life = Number(draft.keyLifetime) || 0;
+    if (life > 0 && age > life) return `The key is ${duration(age)} old, past its ${duration(life)}: the next session fetches a new one.`;
+    return life > 0 ? `Key: ${duration(age)} old, good for ${duration(life)}.` : `Key: ${duration(age)} old.`;
+  });
+
   /** A three-way choice (default / on / off) as a select's value, and back */
   const triToValue = (v: boolean | null) => (v === null ? "" : v ? "on" : "off");
   const valueToTri = (v: string) => (v === "" ? null : v === "on");
@@ -225,6 +253,14 @@
       </label>
       <label>{@render caption("Key file", "keyFile")}<input bind:value={draft.keyFile} placeholder="ssh's own keys and the agent" />
         <button onclick={chooseKey}>Choose…</button></label>
+      <label>{@render caption("Fetch command", "keyFetch")}<input bind:value={draft.keyFetch}
+        placeholder="none; e.g. pam-key {'{'}key_file{'}'}, for keys issued for a short time" /></label>
+      <label>{@render caption("Lifetime", "keyLifetime")}<input class="short" type="number" min="0" bind:value={draft.keyLifetime} />
+        <span class="note">minutes a fetched key is good for (0: fetched only when there's none)</span></label>
+      {#if draft.keyFetch.trim()}
+        <p class="note under">{keyState} The fetch runs in the session's tab, through {isMac ? "your shell (its ~/.zshrc read, so a function works)" : "PowerShell"},
+          so its sign-in (a link, a PIN) happens there; {"{key_file}"} and your Environment Variables are filled in. See docs/CYBERARK.md.</p>
+      {/if}
       <!-- Default Settings has no default of its own to point at: its blank is the built-in behaviour -->
       <label>{@render caption("SSH keys", "offerKeys")}
         <select value={triToValue(isDefault ? (draft.offerKeys ?? true) : draft.offerKeys)}

@@ -747,6 +747,12 @@ fn overrides_set(state: State<'_, AppState>, changes: Vec<(String, overrides::Ov
     overrides::set(&state.user_folder, changes)
 }
 
+/// How old a profile's key file is, in seconds; None when there's none (the profile editor's key fetch)
+#[tauri::command]
+fn profile_key_age(key_file: String) -> Option<u64> {
+    launch::key_age(&key_file)
+}
+
 /// The user's override presets, by name
 #[tauri::command]
 fn override_presets_get(state: State<'_, AppState>) -> BTreeMap<String, overrides::Override> {
@@ -2305,6 +2311,7 @@ pub fn run() {
             sessions_edit_externally,
             overrides_set,
             override_presets_get,
+            profile_key_age,
             override_presets_set,
             pty::pty_serial_get,
             pty::pty_serial_set,

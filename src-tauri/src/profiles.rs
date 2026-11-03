@@ -25,6 +25,13 @@ pub struct Profile {
     pub port: u16,
     /// A private key file (OpenSSH format); empty: ssh's own keys and the agent
     pub key_file: String,
+    /// A command that gets a new key into the key file, for keys issued for a short time (CyberArk's, Vault's, a
+    /// Teleport certificate…), run in the session's tab when the key is missing or older than `key_lifetime`: its
+    /// sign-in (a link, a PIN) happens there. `{key_file}` and the Environment Variables' placeholders are filled in.
+    /// Run through the user's shell (its rc file read, so a shell function works) or PowerShell on Windows.
+    pub key_fetch: String,
+    /// Minutes a fetched key is good for, by the file's modified time; 0: fetched only when there's none
+    pub key_lifetime: u32,
     /// Whether ssh offers its keys (~/.ssh and the agent) when there's no key file; None: the default's, else yes.
     /// Off for network devices: Cisco closes the connection after 3 failed attempts (ip ssh authentication-retries),
     /// and each key ssh offers is one, so with no stored password the password prompt never came

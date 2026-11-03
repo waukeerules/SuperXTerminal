@@ -15,6 +15,7 @@ beforeEach(() => {
   stored = [
     { ...emptyProfile(DEFAULT_PROFILE), olderAlgorithms: true },
     { ...emptyProfile("root"), username: "root", port: 2222 },
+    { ...emptyProfile("CyberArk"), keyFile: "~/.ssh/cyberark_key", keyFetch: "pam-key {key_file}", keyLifetime: 240 },
   ];
   calls = [];
   mockIPC((cmd, args) => {
@@ -33,6 +34,8 @@ beforeEach(() => {
     }
     // the dialog plugin's "Are you sure?": yes
     if (cmd === "plugin:dialog|ask") return true;
+    // the key fetch's key file: 37 minutes old, or 5 hours for the "old" one
+    if (cmd === "profile_key_age") return String(payload.keyFile).includes("old") ? 5 * 3600 : 37 * 60;
     return null;
   });
 });
@@ -112,6 +115,15 @@ describe("Settings > Profiles", () => {
     expect(save?.args.previousName).toBe("");
     expect(save?.args.password).toBeNull();
     expect(await screen.findByRole("option", { name: "root-1" })).toBeTruthy();
+  });
+
+  it("shows how old a fetched key is, and when the next session will fetch another", async () => {
+    await open("CyberArk");
+    expect(await screen.findByText(/Key: 37 min old, good for 4 h\./)).toBeTruthy();
+    const keyFile = screen.getByLabelText("Key file") as HTMLInputElement;
+    await userEvent.clear(keyFile);
+    await userEvent.type(keyFile, "~/.ssh/old_key");
+    expect(await screen.findByText(/The key is 5 h old, past its 4 h: the next session fetches a new one\./)).toBeTruthy();
   });
 
   it("can't delete Default Settings from the menu", async () => {

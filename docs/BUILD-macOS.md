@@ -196,6 +196,18 @@ the same. To redraw it after changing the script:
 swift scripts/dmg-background.swift && tiffutil -cathidpicheck src-tauri/dmg/background.png src-tauri/dmg/background@2x.png -out src-tauri/dmg/background.tiff && rm src-tauri/dmg/background*.png
 ```
 
+## The app icon
+
+`src-tauri/icons/app-icon.png` (1024 × 1024) is drawn by `scripts/app-icon.swift`; every size the app needs
+(`icon.icns`, `icon.ico`, the PNGs) is made from it. To change it, edit the script, then:
+
+```bash
+swift scripts/app-icon.swift && npx tauri icon src-tauri/icons/app-icon.png && rm -rf src-tauri/icons/android src-tauri/icons/ios
+```
+
+The menu bar icon is separate: `src-tauri/icons/tray-template@2x.png`, black on transparent, which macOS tints.
+Finder and the Dock cache icons, so a new one can take a restart of the Dock (`killall Dock`) to show.
+
 ## Intel and universal builds
 
 A build runs on the kind of Mac it was made on (`aarch64` on Apple silicon). For one `.dmg` that runs on both:

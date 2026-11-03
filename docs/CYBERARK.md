@@ -159,6 +159,12 @@ Settings > Profiles > Login, under Key file:
 | Fetch command | The command that gets a new key into the Key file, with `{key_file}` for that path and the usual `{placeholders}` (each user's `{email}` and so on). Profiles are per computer, so each machine has its own. |
 | Lifetime | How long a key is good for, in minutes (240 here: CyberArk's 4 hours); 0 fetches only when there's none. |
 
+**Examples…** beside the Fetch command fills it from a list for the system it's on (`keyFetchExamples.ts`): CyberArk
+(`sftp "{ad_username}@{domain}#{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`, 4 hours), a shell or
+PowerShell function of your own, Teleport (`tsh login … --out`), Smallstep (`step ssh certificate`), and a test that
+makes a throwaway key every minute. Picking one also sets the Lifetime, and the Key file when there's none, and says
+what to set (its Environment Variables), for editing from there.
+
 Below them the editor says how the next session will find the key: "Key: 37 min old, good for 4 h.", "The key is
 5 h old, past its 4 h: the next session fetches a new one.", or "No key yet".
 
@@ -180,7 +186,8 @@ When a session using the profile opens (`launch.rs` and `PageHost.ts`):
 5. **Expired while open.** A key only matters at login, so open sessions carry on. A reconnect after the lifetime
    fetches again first.
 
-**Log in & cache key**, under the fetch's fields, runs the fetch now in a tab of its own ("Key fetch: CyberArk"),
+**Log in & cache key**, under the fetch's fields (always shown; greyed with the reason until there's a saved Fetch
+command and Key file), runs the fetch now in a tab of its own ("Key fetch: CyberArk"),
 Settings closing so its sign-in shows: sign in at the start of the day, and sessions then log in with the key. The
 tab stays when it ends, saying the key is cached or why not; Enter runs it again. It's greyed while the profile has
 unsaved changes, as it runs the saved command, and layouts leave such tabs out, so opening one never starts a

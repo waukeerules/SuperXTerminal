@@ -126,6 +126,18 @@ describe("Settings > Profiles", () => {
     expect(await screen.findByText(/The key is 5 h old, past its 4 h: the next session fetches a new one\./)).toBeTruthy();
   });
 
+  it("fills the key fetch from an example, and says what Log in & cache key needs", async () => {
+    await open("root");
+    expect(screen.getByText("Set a Fetch command first (Examples has some)")).toBeTruthy();
+    expect(button("Log in & cache key").disabled).toBe(true);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Fetch command examples" }), "CyberArk (MFA caching)");
+    expect((screen.getByRole("textbox", { name: /^Fetch command/ }) as HTMLInputElement).value).toContain("@key@{cyberark_gateway}:/key");
+    expect((screen.getByLabelText(/^Lifetime/) as HTMLInputElement).value).toBe("240");
+    expect((screen.getByLabelText("Key file") as HTMLInputElement).value).toBe("~/.ssh/cyberark_key");
+    // changed, so the button waits for Save
+    expect(screen.getByText("Save the profile first: the fetch runs its saved command")).toBeTruthy();
+  });
+
   it("can't delete Default Settings from the menu", async () => {
     await open();
     await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("option", { name: DEFAULT_PROFILE }) });

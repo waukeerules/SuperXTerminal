@@ -9,6 +9,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { isMac } from "../shortcuts";
   import { context } from "../commands/sending.svelte";
+  import { keyFetchExamples } from "./keyFetchExamples";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, saveProfile, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
@@ -175,6 +176,28 @@
     if (typeof path === "string") draft.keyFile = path;
   }
 
+  /** Examples for the Fetch command, for this system; the one last picked, for its note */
+  const examples = keyFetchExamples(isMac);
+  let example = $state<(typeof examples)[number] | null>(null);
+
+  /** Fill the fetch from an example: its command and lifetime, and a key file when there's none */
+  function useExample(name: string): void {
+    const picked = examples.find((e) => e.name === name);
+    if (!picked) return;
+    draft.keyFetch = picked.command;
+    draft.keyLifetime = picked.lifetime;
+    if (!draft.keyFile.trim()) draft.keyFile = picked.keyFile;
+    example = picked;
+  }
+
+  /** Why Log in & cache key can't run now, or "" when it can */
+  const loginBlocked = $derived(
+    !draft.keyFetch.trim() ? "Set a Fetch command first (Examples has some)"
+      : !draft.keyFile.trim() ? "Set the Key file the fetch writes to"
+      : changes > 0 || !originalName ? "Save the profile first: the fetch runs its saved command"
+      : "",
+  );
+
   /** The key file's age, for the key fetch's note: seconds, or null when there's none (or no key file) */
   let keyAge = $state<number | null>(null);
   $effect(() => {
@@ -257,18 +280,24 @@
       <label>{@render caption("Key file", "keyFile")}<input bind:value={draft.keyFile} placeholder="ssh's own keys and the agent" />
         <button onclick={chooseKey}>Choose…</button></label>
       <label>{@render caption("Fetch command", "keyFetch")}<input bind:value={draft.keyFetch}
-        placeholder="none; e.g. pam-key {'{'}key_file{'}'}, for keys issued for a short time" /></label>
+        placeholder="none; for keys issued for a short time (CyberArk, Teleport…): pick from Examples" />
+        <select class="examples" aria-label="Fetch command examples" value=""
+          onchange={(e) => { useExample(e.currentTarget.value); e.currentTarget.value = ""; }}>
+          <option value="">Examples…</option>
+          {#each examples as e (e.name)}<option value={e.name}>{e.name}</option>{/each}
+        </select></label>
+      {#if example}<p class="note under">{example.name}: {example.note}</p>{/if}
       <label>{@render caption("Lifetime", "keyLifetime")}<input class="short" type="number" min="0" bind:value={draft.keyLifetime} />
         <span class="note">minutes a fetched key is good for (0: fetched only when there's none)</span></label>
       {#if draft.keyFetch.trim()}
         <p class="note under">{keyState} The fetch runs in the session's tab, through {isMac ? "your shell (its ~/.zshrc read, so a function works)" : "PowerShell"},
           so its sign-in (a link, a PIN) happens there; {"{key_file}"} and your Environment Variables are filled in. See docs/CYBERARK.md.</p>
-        <p class="under">
-          <button disabled={changes > 0 || !originalName || !draft.keyFile.trim()}
-            title={changes > 0 ? "Save the profile first: the fetch runs its saved command" : "Run the fetch now in a tab of its own, so sessions log in with the key"}
-            onclick={() => { context.tabs?.openKeyFetch(originalName); onLeave(); }}>Log in & cache key</button>
-        </p>
       {/if}
+      <p class="under">
+        <button disabled={!!loginBlocked} title={loginBlocked || "Run the fetch now in a tab of its own, so sessions log in with the key"}
+          onclick={() => { context.tabs?.openKeyFetch(originalName); onLeave(); }}>Log in & cache key</button>
+        {#if loginBlocked}<span class="note">{loginBlocked}</span>{/if}
+      </p>
       <!-- Default Settings has no default of its own to point at: its blank is the built-in behaviour -->
       <label>{@render caption("SSH keys", "offerKeys")}
         <select value={triToValue(isDefault ? (draft.offerKeys ?? true) : draft.offerKeys)}
@@ -464,6 +493,13 @@
 
   p.under:not(.note) {
     margin: 0 0 0 138px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .examples {
+    max-width: 150px;
   }
 
   fieldset {

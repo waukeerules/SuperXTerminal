@@ -220,6 +220,10 @@ fn windows_shell(profiles: &Profiles, proto: &str, #[cfg_attr(windows, allow(unu
 /// which `/dev/cu.*` it is, remembers it, and tries again (SERIAL_DEVICE:COM6)
 pub const SERIAL_DEVICE_NEEDED: &str = "SERIAL_DEVICE:";
 
+/// The built-in placeholder for the session's own host (its target), for a username that names it; `host_port` is
+/// its port (docs/CYBERARK.md)
+pub const HOST_ADDRESS: &str = "host_address";
+
 /// What a launch's error starts with when an SSH session has no username and its profile asks for one; the tab asks
 /// ("login as:") and opens it again with that username (pty_open's login_as), followed by the host
 pub const USERNAME_NEEDED: &str = "USERNAME:";
@@ -401,6 +405,13 @@ fn ssh(
         jump_host = first(&profile.jump_host, &default.jump_host).to_string();
     }
 
+    // the built-in placeholders: the session's own target, for a username that names it (a CyberArk gateway's,
+    // docs/CYBERARK.md); they win over Environment Variables of the same name, so none can redirect a session
+    let mut with_builtins = values.clone();
+    with_builtins.insert(HOST_ADDRESS.into(), variables::substitute(session.get("Host").trim(), values));
+    with_builtins.insert("host_port".into(), (if port != 0 { port } else { 22 }).to_string());
+    let values = &with_builtins;
+
     // {key} placeholders, after the folder and profile defaults (a folder's "{user}" counts), as SessionVariables
     let raw_extra = session.get("ExtraArgs");
     let mut missing = Vec::new();
@@ -417,11 +428,27 @@ fn ssh(
             missing.join(", ")
         ));
     }
-    let host = variables::substitute(session.get("Host").trim(), values);
+    let mut host = variables::substitute(session.get("Host").trim(), values);
+    // a username naming the target ({host_address}) is a gateway's: ssh connects to the profile's gateway host, at the
+    // profile's port, and the target travels in the username; any other username connects to the host as usual, so a
+    // local override's own username (and profile) goes straight there
+    let through_gateway = username.to_ascii_lowercase().contains(&format!("{{{HOST_ADDRESS}}}"));
     let username = variables::substitute(&username, values);
     let jump_host = variables::substitute(&jump_host, values);
     if host.is_empty() {
         return Err("This session has no host.".into());
+    }
+    if through_gateway {
+        let gateway = variables::substitute(first(&profile.gateway_host, &default.gateway_host).trim(), values);
+        if gateway.is_empty() {
+            return Err(format!(
+                "This session's username names its target ({{{HOST_ADDRESS}}}), so it connects through a gateway, but profile \"{}\" has no Gateway host. Set one in Settings > Profiles.",
+                profile.name
+            ));
+        }
+        notices.push(format!("Connecting to {host} through the gateway {gateway}."));
+        host = gateway;
+        port = [profile.port, default.port].into_iter().find(|p| *p != 0).unwrap_or(22);
     }
     let mut login = Login { host: host.clone(), port, username: username.clone(), key_file: String::new() };
 
@@ -695,6 +722,75 @@ mod tests {
                 Profile { name: "root".into(), username: "root".into(), port: 2222, ..Profile::default() },
             ],
         }
+    }
+
+    /// ssh's arguments for a session with these variables, or why it can't start
+    fn launched(profiles: &Profiles, values: &[(&str, &str)], session: &StoredSession) -> Result<Vec<String>, String> {
+        let values: HashMap<String, String> = values.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let launch = launch(&Sessions::default(), profiles, &values, &BTreeMap::new(), Store::Saved, session)?;
+        Ok(launch.command.get_argv().iter().skip(1).map(|a| a.to_string_lossy().to_string()).collect())
+    }
+
+    /// Profiles with a "CyberArk" one: its connection string as the username, and a gateway
+    fn cyberark() -> Profiles {
+        let mut profiles = profiles();
+        profiles.profiles.push(Profile {
+            name: "CyberArk".into(),
+            username: "{ad_user}#{region}@{target_user}#{vault}@{host_address}#{connector}".into(),
+            gateway_host: "gw.example.test".into(),
+            ..Profile::default()
+        });
+        profiles
+    }
+
+    /// A session at `host` (the helper's own is 10.0.0.1) with these attributes
+    fn at(host: &str, attributes: &[(&str, &str)]) -> StoredSession {
+        let mut sw = session(attributes);
+        sw.set("Host", host);
+        sw
+    }
+
+    const CYBERARK_VALUES: [(&str, &str); 5] =
+        [("ad_user", "me"), ("region", "r1"), ("target_user", "admin"), ("vault", "v1"), ("connector", "c1")];
+
+    #[test]
+    fn a_username_naming_the_target_connects_through_the_gateway() {
+        let sw = at("192.168.0.50", &[("PuttySession", "CyberArk")]);
+        let args = launched(&cyberark(), &CYBERARK_VALUES, &sw).unwrap();
+        // the target travels in the username (with -l, so its @ and # stay as they are); ssh connects to the gateway
+        let user = args.windows(2).find(|w| w[0] == "-l").map(|w| w[1].clone()).unwrap();
+        assert_eq!(user, "me#r1@admin#v1@192.168.0.50#c1");
+        assert_eq!(args.last().unwrap(), "gw.example.test");
+        assert!(!args.contains(&"192.168.0.50".to_string()), "{args:?}");
+
+        // the profile's port is the gateway's; the session's (the target's) isn't used for it
+        let mut profiles = cyberark();
+        profiles.profiles[2].port = 2222;
+        let args = launched(&profiles, &CYBERARK_VALUES, &at("10.0.0.9", &[("Port", "2200"), ("PuttySession", "CyberArk")])).unwrap();
+        assert!(args.windows(2).any(|w| w == ["-p", "2222"]), "{args:?}");
+    }
+
+    #[test]
+    fn host_address_is_built_in_and_wins_over_a_variable() {
+        // a variable of the same name can't redirect the session: {host_address} is always its own host
+        let mut values = CYBERARK_VALUES.to_vec();
+        values.push(("host_address", "evil.example.test"));
+        let args = launched(&cyberark(), &values, &at("10.0.0.7", &[("PuttySession", "CyberArk")])).unwrap();
+        assert!(args.iter().any(|a| a.contains("@10.0.0.7#")), "{args:?}");
+    }
+
+    #[test]
+    fn an_own_username_connects_to_the_host_and_no_gateway_refuses() {
+        // a local override's username (and the profile kept): no {host_address}, so straight to the host
+        let own = at("10.0.0.7", &[("PuttySession", "CyberArk"), ("Username", "me")]);
+        let args = launched(&cyberark(), &CYBERARK_VALUES, &own).unwrap();
+        assert_eq!(args.last().unwrap(), "10.0.0.7");
+
+        // naming the target with no gateway to go through: it says so rather than sending that username to the host
+        let mut profiles = cyberark();
+        profiles.profiles[2].gateway_host.clear();
+        let error = launched(&profiles, &CYBERARK_VALUES, &session(&[("PuttySession", "CyberArk")])).unwrap_err();
+        assert!(error.contains("Gateway host"), "{error}");
     }
 
     #[test]

@@ -33,6 +33,9 @@ pub struct Profile {
     /// before connecting; None: the default's, else no (ssh then uses this computer's user name)
     pub ask_username: Option<bool>,
     pub jump_host: String,
+    /// Where ssh connects when the username names the target as {host_address} (a CyberArk SSH gateway, say), at the
+    /// profile's port; ignored otherwise (docs/CYBERARK.md)
+    pub gateway_host: String,
     /// Seconds between keep-alives (ssh's ServerAliveInterval); 0 for not set
     pub keepalive: u32,
     /// More ssh arguments, e.g. "-L 8080:localhost:80 -o Compression=yes"

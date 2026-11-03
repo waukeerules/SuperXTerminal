@@ -879,6 +879,9 @@
     /** The theme preference that follows the app's light or dark look (a theme file can't be named so) */
     var FOLLOW_LOOK = '@look';
 
+    /** The profile's own colours (background, foreground, selection), over the preferences' */
+    var profileColours = {};
+
     /** Apply the chosen theme (PuTTY's colours by default): terminal colours, font and the highlighting colours */
     function applyTheme() {
         var wanted = loadPref('theme');
@@ -905,20 +908,28 @@
         applyFont();
         document.documentElement.style.setProperty('--bg', colors.background || '#000000');
         // the menu and the find bar follow the theme: light ones for a light theme (Monaco's base "vs")
-        document.documentElement.classList.toggle('light-theme', loadPref('colorBackground') ? !isDarkColour(colors.background) : theme.base === 'vs');
+        document.documentElement.classList.toggle('light-theme', ownBackground() ? !isDarkColour(colors.background) : theme.base === 'vs');
         window.setTimeout(fit, 0);
         highlight(true);
     }
 
-    /** The theme's colours with the preferences' own background, text and selection colours over them */
+    /**
+     * The theme's colours with the own background, text and selection colours over them: the profile's (SuperXTerminal
+     * sends them in config.colors), else the preferences' (Settings > Terminal)
+     */
     function ownColours(colors) {
         var own = {};
         Object.keys(colors).forEach(function (k) { own[k] = colors[k]; });
         [['colorBackground', 'background'], ['colorForeground', 'foreground'], ['colorSelection', 'selection']].forEach(function (pair) {
-            var value = loadPref(pair[0]);
+            var value = profileColours[pair[1]] || loadPref(pair[0]);
             if (value && /^#[0-9a-f]{6}$/i.test(value)) { own[pair[1]] = value; }
         });
         return own;
+    }
+
+    /** Whether the background isn't the theme's: then the menu and find bar go by how dark it is */
+    function ownBackground() {
+        return /^#[0-9a-f]{6}$/i.test(profileColours.background || loadPref('colorBackground') || '');
     }
 
     /** Whether a "#rrggbb" colour is dark, so the menu and find bar on it are drawn dark */
@@ -1138,6 +1149,7 @@
         if (config.unlimitedScrollback) { unlimitedScrollback = config.unlimitedScrollback; }
         applyCursor();
         cursorColor = config.cursorColor || null;
+        profileColours = config.colors || {};
         themes = config.themes || [];
         var compiled = SpRules.compile(config.ruleSets || []);
         ruleSets = compiled.sets;

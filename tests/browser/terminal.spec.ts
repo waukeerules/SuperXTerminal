@@ -137,3 +137,16 @@ test("the terminal's own colours go over the theme's, and a light background get
   await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs", prefs: { theme: "PuTTY" } }));
   await expect.poll(colours).toEqual(["#000000", "#bbbbbb", "#264f78", false]);
 });
+
+test("a profile's colours win over Settings > Terminal's", async ({ page }) => {
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  const themes = await page.evaluate(async () => [await fetch("/web/output/themes/putty.theme.json").then((r) => r.json())]);
+  await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", themes,
+    prefs: { theme: "PuTTY", colorBackground: "#fdf6e3", colorForeground: "#333333" },
+    colors: { background: "#3a0000", foreground: "", selection: "" } }), themes);
+  await expect.poll(() => page.evaluate(() => {
+    const t = (window as any).terminalDev.term.options.theme;
+    return [t.background, t.foreground, document.documentElement.classList.contains("light-theme")];
+  })).toEqual(["#3a0000", "#333333", false]);
+});

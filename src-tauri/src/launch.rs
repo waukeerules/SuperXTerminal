@@ -30,6 +30,10 @@ pub struct Look {
     pub bell: String,
     /// The session's highlighting rules (a rule set's id, "auto" or "none"), else its folder's; "" for the default
     pub rules: String,
+    /// The profile's colours, "#rrggbb", else "Default Settings'"; "" for Settings > Terminal's or the theme's
+    pub background: String,
+    pub foreground: String,
+    pub selection: String,
 }
 
 /// A session ready to start
@@ -436,7 +440,16 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         blink: profile.cursor_blink.or(default.cursor_blink).unwrap_or(true),
         bell: pick(&profile.bell, &default.bell, "visual"),
         rules: String::new(),
+        background: colour(&profile.background, &default.background),
+        foreground: colour(&profile.foreground, &default.foreground),
+        selection: colour(&profile.selection, &default.selection),
     }
+}
+
+/// A profile's colour, else "Default Settings'", when it's "#rrggbb"; "" for none
+fn colour(profile: &str, default: &str) -> String {
+    let good = |c: &str| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|d| d.is_ascii_hexdigit());
+    [profile.trim(), default.trim()].into_iter().find(|c| good(c)).map(|c| c.to_ascii_lowercase()).unwrap_or_default()
 }
 
 /// The first value that's set: the profile's, else "Default Settings"'
@@ -866,6 +879,16 @@ mod tests {
 
     const CYBERARK_VALUES: [(&str, &str); 5] =
         [("ad_user", "me"), ("region", "r1"), ("target_user", "admin"), ("vault", "v1"), ("connector", "c1")];
+
+    #[test]
+    fn a_profiles_colours_win_over_default_settings_and_bad_ones_are_left_out() {
+        let default = Profile { background: "#101010".into(), foreground: "#EEEEEE".into(), selection: "blue".into(), ..Profile::default() };
+        let prod = Profile { background: "#3a0000".into(), ..Profile::default() };
+        let look = look(&prod, &default);
+        assert_eq!((look.background.as_str(), look.foreground.as_str(), look.selection.as_str()), ("#3a0000", "#eeeeee", ""));
+        let look = super::look(&Profile::default(), &Profile::default());
+        assert_eq!(look.background, "");
+    }
 
     #[test]
     fn a_username_naming_the_target_connects_through_the_gateway() {

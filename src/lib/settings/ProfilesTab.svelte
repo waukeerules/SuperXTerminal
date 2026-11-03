@@ -14,6 +14,7 @@
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, saveProfile, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
+  import { pref } from "../terminal/prefs";
 
   interface Props {
     /** The profile to show first (Quick connect's Edit…, Edit Session's Profiles…); Default Settings when it's none */
@@ -41,6 +42,20 @@
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
   const isDefault = $derived(originalName.toLowerCase() === DEFAULT_PROFILE.toLowerCase());
+  const defaultProfile = $derived(profiles.find((p) => p.name.toLowerCase() === DEFAULT_PROFILE.toLowerCase()));
+
+  /** The terminal colours a profile can have, over Default Settings', Settings > Terminal's and the theme's */
+  const COLOURS: { field: "background" | "foreground" | "selection"; label: string; pref: string; putty: string }[] = [
+    { field: "background", label: "Background", pref: "colorBackground", putty: "#000000" },
+    { field: "foreground", label: "Text", pref: "colorForeground", putty: "#bbbbbb" },
+    { field: "selection", label: "Selection", pref: "colorSelection", putty: "#264f78" },
+  ];
+
+  /** The colour a profile without its own gets, to start the picker on: Default Settings', Settings', else PuTTY's */
+  function fallbackColour(field: (typeof COLOURS)[number]["field"]): string {
+    const c = COLOURS.find((c) => c.field === field)!;
+    return (!isDefault && defaultProfile?.[field]) || pref(c.pref) || c.putty;
+  }
 
   type Field = keyof Profile | "password";
 
@@ -66,6 +81,7 @@
   const FIELDS: Field[] = [
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
+    "background", "foreground", "selection",
   ];
   /** How many fields have changed since the profile was loaded or saved */
   const changes = $derived(FIELDS.filter(changed).length);
@@ -363,6 +379,16 @@
           <option value="sound">Sound</option>
           <option value="none">None</option>
         </select></label>
+      {#each COLOURS as c (c.field)}
+        <label>{@render caption(c.label, c.field)}
+          <span class="colour">
+            <input type="color" value={draft[c.field] || fallbackColour(c.field)} aria-label={c.label}
+              oninput={(e) => (draft[c.field] = e.currentTarget.value)} />
+            <span class="hint">{draft[c.field] || (isDefault ? "Settings > Terminal's" : defaultProfile?.[c.field] ? `From Default Settings (${defaultProfile[c.field]})` : "From Default Settings")}</span>
+            <button disabled={!draft[c.field]} onclick={(e) => { e.preventDefault(); draft[c.field] = ""; }}
+              title={isDefault ? "Use Settings > Terminal's colour" : "Use Default Settings' colour"}>{isDefault ? "Settings'" : "Default's"}</button>
+          </span></label>
+      {/each}
     </fieldset>
 
     </div>
@@ -541,5 +567,16 @@
 
   .message.pending {
     color: var(--accent);
+  }
+  .colour {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .colour input[type="color"] {
+    width: 36px;
+    height: 22px;
+    padding: 1px 2px;
   }
 </style>

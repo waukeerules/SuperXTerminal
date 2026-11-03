@@ -36,6 +36,10 @@ export interface Profile {
   cursor: string;
   cursorBlink: boolean | null;
   bell: string;
+  /** The terminal's colours, "#rrggbb"; "" for Default Settings', else Settings > Terminal's or the theme's */
+  background: string;
+  foreground: string;
+  selection: string;
   hasPassword: boolean;
 }
 
@@ -43,7 +47,7 @@ export interface Profile {
 export function emptyProfile(name: string): Profile {
   return {
     name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
-    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", hasPassword: false,
+    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", background: "", foreground: "", selection: "", hasPassword: false,
   };
 }
 

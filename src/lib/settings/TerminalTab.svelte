@@ -89,7 +89,7 @@
         <span class="sample" style:background={colour(COLOURS[0])} style:color={colour(COLOURS[1])}>
           admin@switch:~$ show version <span style:background={colour(COLOURS[2])}>selected text</span>
         </span>
-        <span class="hint">Over the theme's, in every tab. Highlighting keeps the theme's colours, so pick a theme that suits the background.</span>
+        <span class="hint">Over the theme's, in every tab; a profile's own colours (Settings &gt; Profiles &gt; Terminal) win. Highlighting keeps the theme's colours, so pick a theme that suits the background.</span>
       </div>
     </div>
     <label>Font

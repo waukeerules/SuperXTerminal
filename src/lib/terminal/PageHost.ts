@@ -33,6 +33,10 @@ interface Look {
   bell: string;
   /** The session's or its folder's highlighting rules; "" for the default */
   rules: string;
+  /** The profile's colours ("#rrggbb"); "" for Settings > Terminal's or the theme's */
+  background?: string;
+  foreground?: string;
+  selection?: string;
 }
 
 /** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
@@ -498,6 +502,7 @@ export class PageHost implements ScriptTarget {
       sessionRules: look.rules,
       unlimitedScrollback: 1000000,
       cursorColor: this.cursorColor,
+      colors: { background: look.background ?? "", foreground: look.foreground ?? "", selection: look.selection ?? "" },
     });
   }
 

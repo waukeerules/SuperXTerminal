@@ -62,6 +62,10 @@ pub struct Profile {
     pub cursor_blink: Option<bool>,
     /// The bell: "" (default), "visual", "sound" or "none"
     pub bell: String,
+    /// The terminal's colours, "#rrggbb", over the theme's and Settings > Terminal's; "" for the default's
+    pub background: String,
+    pub foreground: String,
+    pub selection: String,
     /// Whether a password is stored for it (the password itself stays in the Keychain)
     #[serde(skip_deserializing)]
     pub has_password: bool,

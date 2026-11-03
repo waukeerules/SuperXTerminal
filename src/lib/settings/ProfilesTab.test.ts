@@ -2,7 +2,7 @@
 // list's Duplicate. The Rust side is stood in for by mockIPC: the profiles live in `stored`, and every save and delete
 // is recorded in `calls`.
 import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import ProfilesTab from "./ProfilesTab.svelte";
@@ -143,5 +143,19 @@ describe("Settings > Profiles", () => {
     await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("option", { name: DEFAULT_PROFILE }) });
     const remove = within(screen.getByRole("menu")).getByRole("menuitem", { name: "Delete…" });
     expect(remove.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("saves a profile's own background, and Default's puts it back to Default Settings'", async () => {
+    await open("root");
+    expect(screen.getAllByText("From Default Settings").length).toBeGreaterThanOrEqual(3);
+    await fireEvent.input(screen.getByLabelText("Background"), { target: { value: "#3a0000" } });
+    expect(screen.getByText("#3a0000")).toBeTruthy();
+    expect(dots()).toHaveLength(1);
+    await userEvent.click(button("Save"));
+    const save = calls.find((c) => c.cmd === "profiles_save");
+    expect((save?.args.profile as Profile).background).toBe("#3a0000");
+    await userEvent.click(screen.getAllByRole("button", { name: "Default's" })[0]);
+    expect(dots()).toHaveLength(1);
+    expect((screen.getByLabelText("Background") as HTMLInputElement).value).toBe("#000000");
   });
 });

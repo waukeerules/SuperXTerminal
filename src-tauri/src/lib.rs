@@ -39,7 +39,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use profiles::{Profile, Profiles};
@@ -907,7 +907,7 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
     current.shortcuts = keys::cleaned(&current.shortcuts);
     current.save(&state.user_folder)?;
     // the menu bar's keys follow Settings > Shortcuts
-    if let Ok(bar) = menu(&app, &current.shortcuts) {
+    if let Ok(bar) = menu(&app, &current.shortcuts, current.use_local_overrides) {
         let _ = app.set_menu(bar);
     }
     let saved = current.clone();
@@ -1781,7 +1781,9 @@ fn open_notices<R: Runtime>(app: &AppHandle<R>) {
 /// The menu bar: the app menu (with Settings..., Cmd+,), File (New Local Shell, Cmd+T), Edit (which WebKit needs for
 /// Cmd+C/V), Tools (Environment Variables...) and Window.
 /// SuperXPuTTY's File, View and Tools menus join it as their features arrive.
-fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>) -> tauri::Result<Menu<R>> {
+/// `overrides_on` ticks Tools > Use Local Overrides (the menu is made again whenever the settings are saved, so it
+/// follows them however they change: the item itself, or the status bar's "Local overrides off").
+fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>, overrides_on: bool) -> tauri::Result<Menu<R>> {
     // an action's item, with its key now (keys.rs: the user's, else the Mac default)
     let action = |id: &str| MenuItem::with_id(app, id, keys::label(id), true, keys::key(shortcuts, id).as_deref());
     let plain = |id: &str, label: &str| MenuItem::with_id(app, id, label, true, None::<&str>);
@@ -1906,7 +1908,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>) ->
             &plain("environmentVariables", "Environment Variables…")?,
             &plain("environmentColours", "Environment Colours…")?,
             &PredefinedMenuItem::separator(app)?,
-            &plain("toggleLocalOverrides", "Use Local Overrides")?,
+            &CheckMenuItem::with_id(app, "toggleLocalOverrides", "Use Local Overrides", true, overrides_on, None::<&str>)?,
         ],
     )?;
     // shown or hidden, as SuperXPuTTY's View > Send Commands and View > Button Bar
@@ -2247,7 +2249,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .menu({
             let shortcuts = settings.shortcuts.clone();
-            move |app| menu(app, &shortcuts)
+            let overrides_on = settings.use_local_overrides;
+            move |app| menu(app, &shortcuts, overrides_on)
         })
         // menu items the UI handles arrive there as a "menu" event with the item's id
         .on_menu_event(|app, event| {

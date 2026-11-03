@@ -69,9 +69,11 @@
     onOpenProfiles: () => void;
     /** The session selected now (a shortcut in Favorites or Recent counts), or null, for Session Detail */
     onSelected?: (session: SessionView | null) => void;
+    /** While searching, the width the matches' names need (null: none, back to the user's width) */
+    onWantWidth?: (width: number | null) => void;
   }
 
-  let { openSessions, onOpen, onLook, onOpenProfiles, onSelected = () => {} }: Props = $props();
+  let { openSessions, onOpen, onLook, onOpenProfiles, onSelected = () => {}, onWantWidth = () => {} }: Props = $props();
 
   let selected = $state("");
 
@@ -151,6 +153,31 @@
   const recent = $derived(loaded ? buildGroup("recent", "Recent", shortcuts.Recent, shown, query) : null);
   const roots = $derived([favorites, recent, saved, privateRoot, databaseRoot].filter((r): r is FolderNode => r !== null));
   const searching = $derived(query.trim() !== "");
+  /** The roots as shown, for the tree lines (the first's line starts at it, the last's stops at it) */
+  const shownRoots = $derived(
+    [favorites, recent, loaded && !loaded.savedOff && loaded.savedFile !== null ? saved : null, privateRoot, databaseRoot].filter((r) => r !== null),
+  );
+  const rootPlace = (node: FolderNode) => ({ first: shownRoots[0] === node, last: shownRoots.at(-1) === node });
+
+  let treeElement = $state<HTMLElement | undefined>();
+  // while searching, the width the matches' names need, for App to widen the pane (Settings > General)
+  $effect(() => {
+    void shownExpanded;
+    void roots;
+    if (!searching || !settings.searchWidensPane) {
+      untrack(() => onWantWidth(null));
+      return;
+    }
+    requestAnimationFrame(() => {
+      if (!treeElement) return;
+      let need = 0;
+      for (const label of treeElement.querySelectorAll<HTMLElement>(".row .label")) {
+        need = Math.max(need, label.offsetLeft + label.scrollWidth);
+      }
+      // the tree's padding, the scroll bar and a little room
+      onWantWidth(need ? need + 34 : null);
+    });
+  });
   /** What's open: while searching every folder holding a match (but those closed since), else as the user left it */
   const shownExpanded = $derived(
     searching ? new Set(roots.flatMap(folderKeys).filter((k) => !closedInSearch.has(k))) : expanded,
@@ -1147,7 +1174,7 @@
 
 <!-- the tree's own copy and paste (Cmd+C, Cmd+V), not the Mac's clipboard; the menu bar's Copy and Paste reach it as
      copy and paste events, which are stopped here so nothing is written to the clipboard -->
-<div class="tree" role="tree" tabindex="-1" style:font-size="{settings.treeFontSize}px" onkeydown={treeKey}
+<div class="tree" role="tree" tabindex="-1" bind:this={treeElement} style:font-size="{settings.treeFontSize}px" onkeydown={treeKey}
   oncopy={(e) => { e.preventDefault(); copySelection(); }} onpaste={(e) => { e.preventDefault(); void pasteHere(); }}>
   {#if error}
     <p class="message">{error}</p>
@@ -1157,11 +1184,11 @@
       <p class="message">Skipped: {problem}</p>
     {/each}
     {#if favorites}
-      <TreeFolder node={favorites} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+      <TreeFolder node={favorites} depth={0} {...rootPlace(favorites)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
         onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if recent}
-      <TreeFolder node={recent} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+      <TreeFolder node={recent} depth={0} {...rootPlace(recent)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
         onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if loaded.savedOff}
@@ -1170,16 +1197,16 @@
       <p class="message">Choose the settings folder: the folder that holds the team's Sessions.xml.</p>
       <button onclick={choose}>Choose Settings Folder...</button>
     {:else if saved}
-      <TreeFolder node={saved} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+      <TreeFolder node={saved} depth={0} {...rootPlace(saved)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
         onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if privateRoot}
-      <TreeFolder node={privateRoot} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+      <TreeFolder node={privateRoot} depth={0} {...rootPlace(privateRoot)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
         onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
     {#if databaseRoot}
       <div class="db-root" title={db?.error ? `Showing the last read: ${db.error}` : `${db?.source}${db?.writable ? "" : " (read only)"}`}>
-        <TreeFolder node={databaseRoot} depth={0} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+        <TreeFolder node={databaseRoot} depth={0} {...rootPlace(databaseRoot)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
           onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
       </div>
     {/if}

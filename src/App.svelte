@@ -197,6 +197,9 @@
 
   /** The Sessions pane's width while its edge is dragged; the setting otherwise */
   let paneWidth = $state<number | null>(null);
+  /** While searching, the width the Sessions tree's matches need (Settings > General: widen while searching) */
+  let searchWidth = $state<number | null>(null);
+  const SEARCH_MAX = 600;
   const PANE_DEFAULT = 280;
   const clampWidth = (w: number) => Math.round(Math.max(160, Math.min(w, window.innerWidth - 320)));
 
@@ -664,7 +667,8 @@
     {/if}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="side" class:out={slid} onmouseenter={() => clearTimeout(hideTimer)} onmouseleave={scheduleHide}>
-      <aside class="sessions" style:width="{paneWidth ?? clampWidth(settings.sessionsPaneWidth || PANE_DEFAULT)}px">
+      <aside class="sessions"
+        style:width="{paneWidth ?? clampWidth(Math.max(settings.sessionsPaneWidth || PANE_DEFAULT, Math.min(searchWidth ?? 0, SEARCH_MAX)))}px">
         <div class="pane-title">
           <span>Sessions</span>
           <button class="pin" class:unpinned={settings.sessionsAutoHide} onclick={() => setAutoHide(!settings.sessionsAutoHide)}
@@ -678,7 +682,7 @@
         <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={() => (settingsTab = "Profiles")} onLook={(_, icons) => {
           customs = icons;
           if (tabs) tabs.customs = icons;
-        }} onSelected={(s) => (selectedSession = s)} />
+        }} onSelected={(s) => (selectedSession = s)} onWantWidth={(w) => (searchWidth = w)} />
         {#if settings.showLayouts}
           <LayoutsList current={currentLayout} onLoad={(name) => void openLayout(name)} onRename={askLayoutRename}
             onLoadInNewWindow={(name) => void invoke("window_new", { open: null, adopt: null, layout: name })}
@@ -852,7 +856,13 @@
     rotate: 90deg;
   }
 
+  /* no easing while the edge is dragged */
+  :global(body.resizing-pane) .sessions {
+    transition: none;
+  }
+
   .sessions {
+    transition: width 0.15s ease-out;
     flex: none;
     display: flex;
     flex-direction: column;

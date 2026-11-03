@@ -66,6 +66,10 @@ export interface AppSettings {
   filezillaPasswords: boolean;
   /** Tabs' close button: on each tab, or one beside the tab list's ▾ that closes the active tab */
   tabClose: "tab" | "right";
+  /** The Sessions tree's dotted lines, as SuperXPuTTY's */
+  treeLines: boolean;
+  /** While searching, the Sessions pane widens (up to a limit) so the matches' names fit */
+  searchWidensPane: boolean;
 }
 
 export const settings = $state<AppSettings & { loaded: boolean }>({
@@ -105,6 +109,8 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   rdpDefaults: "",
   filezillaPasswords: false,
   tabClose: "tab",
+  treeLines: true,
+  searchWidensPane: true,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

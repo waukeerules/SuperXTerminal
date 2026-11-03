@@ -10,6 +10,7 @@
   import type { EnvironmentColors } from "../icons/environment";
   import { DRAG_TYPE, type Dragged, type FolderNode, type Group } from "./tree";
   import { overriddenFields, unavailableReason, type Override, type SessionView } from "./api";
+  import { settings } from "../settings/store.svelte";
 
   interface Props {
     node: FolderNode;
@@ -34,9 +35,22 @@
     onMenu: (event: MouseEvent, target: { session: SessionView; group?: Group } | { folder: FolderNode }) => void;
     /** Something dragged in the tree was dropped on a folder */
     onDrop: (folder: FolderNode, dragged: Dragged) => void;
+    /** Tree lines (SuperXPuTTY's ShowLines): for each level above, whether its line carries on down past this folder */
+    guides?: boolean[];
+    /** The last item in its folder (or the last root): its line stops at it */
+    last?: boolean;
+    /** The first root: its line starts at it */
+    first?: boolean;
   }
 
-  let { node, depth, expanded, colors, iconSize, customs, openSessions, selected, multi, overrides, onToggle, onOpen, onSelect, onMenu, onDrop }: Props = $props();
+  let { node, depth, expanded, colors, iconSize, customs, openSessions, selected, multi, overrides, onToggle, onOpen, onSelect, onMenu, onDrop, guides = [], last = true, first = false }: Props = $props();
+
+  /** Each level's line runs down the middle of its arrow's column */
+  const STEP = 18;
+  const lineX = (level: number) => level * STEP + 9;
+  const lines = $derived(settings.treeLines);
+  /** This folder's line carries on for its children's rows when it isn't the last in its own folder */
+  const childGuides = $derived([...guides, !last]);
 
   let over = $state(false);
 
@@ -87,6 +101,16 @@
   }
 </script>
 
+<!-- SuperXPuTTY's tree lines (TreeView.ShowLines): the levels above that carry on, and this row's own elbow, a
+     line down from above (and on down, unless it's the last) and across to its icon -->
+{#snippet connectors(level: number, above: boolean[], isLast: boolean, isFirst: boolean, across: number)}
+  {#each above as carries, k}
+    {#if carries}<span class="guide down" style:left="{lineX(k)}px"></span>{/if}
+  {/each}
+  <span class="guide elbow" class:last={isLast} class:first={isFirst} style:left="{lineX(level)}px"></span>
+  <span class="guide across" style:left="{lineX(level)}px" style:width="{across}px"></span>
+{/snippet}
+
 <!-- as SuperXPuTTY's tree: a click selects a folder, a double-click (or its arrow) opens or closes it -->
 <div class="row folder" class:root={isRoot} class:selected={selected === folderKey} class:over
   draggable={!isRoot} ondragstart={(e) => drag(e, { kind: "folder", store: node.store, path: node.path })}
@@ -95,6 +119,7 @@
   role="treeitem" aria-expanded={open} aria-selected="false" tabindex="-1"
   onclick={() => onSelect(folderKey)} ondblclick={() => onToggle(node.key)}
   onkeydown={(e) => (e.key === "Enter" || e.key === "ArrowRight" || e.key === "ArrowLeft") && onToggle(node.key)}>
+  {#if lines}{@render connectors(depth, guides, last, first, 13)}{/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <span class="twisty" onclick={(e) => { e.stopPropagation(); onToggle(node.key); }} ondblclick={(e) => e.stopPropagation()}>{open ? "▾" : "▸"}</span>
   <Icon key={isRoot ? ROOT_ICONS[node.group ?? node.store] : "folder"} size={iconSize} environment={isRoot ? null : colors.forFolder(node.store, node.path)} {customs} />
@@ -102,22 +127,23 @@
 </div>
 
 {#if open}
-  {#each node.folders as child (child.key)}
+  {#each node.folders as child, i (child.key)}
     <TreeFolder node={child} depth={depth + 1} {expanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
-      {onToggle} {onOpen} {onSelect} {onMenu} {onDrop} />
+      {onToggle} {onOpen} {onSelect} {onMenu} {onDrop} guides={childGuides} last={i === node.folders.length - 1 && node.sessions.length === 0} />
   {/each}
-  {#each node.sessions as session (session.store + ":" + session.id)}
+  {#each node.sessions as session, i (session.store + ":" + session.id)}
     {@const reason = unavailableReason(session.protocol)}
     {@const key = node.group ? `${node.group}:${session.store}:${session.id}` : `${session.store}:${session.id}`}
     <div class="row session" class:dimmed={reason !== null} class:pending={session.pending} class:selected={selected === key || multi.has(key)}
       onclick={(e) => onSelect(key, e)} draggable={!session.locked && !node.group}
       ondragstart={(e) => drag(e, { kind: "session", store: session.store, id: session.id })}
       ondragover={dragOver} ondragleave={() => (over = false)} ondrop={drop}
-      oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session, group: node.group }); }} style:padding-left="{(depth + 1) * 18 + 14}px"
+      oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session, group: node.group }); }} style:padding-left="{(depth + 1) * 18 + (lines ? 22 : 14)}px"
       style:height="{Math.round(iconSize * 1.36) + 4}px"
       title={tooltip(session)} role="treeitem" aria-selected="false" aria-disabled={reason !== null} tabindex="-1"
       ondblclick={() => reason === null && onOpen(session)}
       onkeydown={(e) => e.key === "Enter" && reason === null && onOpen(session)}>
+      {#if lines}{@render connectors(depth + 1, childGuides, i === node.sessions.length - 1, false, 13)}{/if}
       <Icon key={session.icon} size={iconSize} environment={colors.forSession(session)} {customs}
         open={openSessions.has(session.store + ":" + session.id)} />
       <span class="label">{session.name}</span>
@@ -132,6 +158,7 @@
   }
 
   .row {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -156,7 +183,44 @@
     font-weight: 600;
   }
 
+  /* tree lines: dotted, under the arrows and icons */
+  .guide {
+    position: absolute;
+    pointer-events: none;
+    border-color: var(--text-muted);
+    border-style: dotted;
+    border-width: 0;
+  }
+
+  .guide.down,
+  .guide.elbow {
+    top: 0;
+    bottom: 0;
+    border-left-width: 1px;
+  }
+
+  .guide.elbow.last {
+    bottom: 50%;
+  }
+
+  .guide.elbow.first {
+    top: 50%;
+  }
+
+  .guide.elbow.first.last {
+    display: none;
+  }
+
+  .guide.across {
+    top: 50%;
+    border-top-width: 1px;
+  }
+
   .twisty {
+    position: relative;
+    z-index: 1;
+    background: var(--bg-pane);
+    border-radius: 2px;
     width: 14px;
     text-align: center;
     color: var(--text-muted);

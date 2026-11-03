@@ -120,6 +120,10 @@
         {#each [12, 13, 14, 15, 16, 18] as size}<option value={String(size)}>{size} px{size === 14 ? " (default)" : ""}</option>{/each}
       </select>
     </label>
+    <label class="check"><input type="checkbox" checked={settings.treeLines}
+      onchange={(e) => void saveSettings({ treeLines: e.currentTarget.checked })} /> Show lines in the Sessions tree</label>
+    <label class="check"><input type="checkbox" checked={settings.searchWidensPane}
+      onchange={(e) => void saveSettings({ searchWidensPane: e.currentTarget.checked })} /> Widen the Sessions pane while searching, so names fit (up to 600 px)</label>
   </fieldset>
 
   <fieldset>

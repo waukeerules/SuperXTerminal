@@ -88,6 +88,10 @@ pub struct AppSettings {
     pub filezilla_passwords: bool,
     /// Where tabs' close button is: "tab" (on each tab) or "right" (one beside the tab list's ▾, closing the active tab)
     pub tab_close: String,
+    /// The Sessions tree's dotted lines, as SuperXPuTTY's (its TreeView's ShowLines)
+    pub tree_lines: bool,
+    /// While searching, the Sessions pane widens (up to a limit) so the matches' names fit
+    pub search_widens_pane: bool,
 }
 
 impl Default for AppSettings {
@@ -129,6 +133,8 @@ impl Default for AppSettings {
             rdp_defaults: String::new(),
             filezilla_passwords: false,
             tab_close: "tab".into(),
+            tree_lines: true,
+            search_widens_pane: true,
         }
     }
 }

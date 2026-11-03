@@ -136,7 +136,10 @@ pub struct Ptys {
 
 /// Start a tab's program (`target`) in a new pseudo terminal of the given size, sending its output on `on_event`
 ///
-/// Returns the id the tab uses for the other calls; Err when the session can't start on this Mac.
+/// Returns the id the tab uses for the other calls; Err when the session can't start on this Mac. `login_as` is the
+/// username typed at the tab's "login as:", when the launch asked for one (launch::USERNAME_NEEDED).
+// each of the page's arguments is a parameter of its own, as Tauri passes them
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn pty_open(
     window: tauri::WebviewWindow,
@@ -146,8 +149,17 @@ pub fn pty_open(
     cols: u16,
     rows: u16,
     on_event: Channel<PtyEvent>,
+    login_as: Option<String>,
 ) -> Result<u32, String> {
     let profiles = state.profiles.lock().unwrap().clone();
+    // the username typed at the tab's "login as:" (launch::USERNAME_NEEDED), for this connection and its reconnects
+    let login_as = login_as.map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
+    let with_login = |mut session: crate::sessions::StoredSession| {
+        if let Some(user) = &login_as {
+            session.set("Username", user);
+        }
+        session
+    };
     let values = crate::variables::values(&state.user_folder);
     let serial_devices = state.settings.lock().unwrap().serial_devices.clone();
     // what's opening, for the app's log (never a password: Quick connect's host and user only)
@@ -164,14 +176,14 @@ pub fn pty_open(
                 None => Err(format!("The session {id} is gone.")),
                 // the user's local overrides beat the session's values and its folders'
                 Some(session) => {
-                    let session = crate::overrides::applied(&state.user_folder, session);
+                    let session = with_login(crate::overrides::applied(&state.user_folder, session));
                     launch::launch(&sessions, &profiles, &values, &serial_devices, store, &session)
                 }
             }
         }
         Target::QuickConnect(quick) => {
             let sessions = state.sessions.lock().unwrap();
-            quick.session().and_then(|s| launch::launch(&sessions, &profiles, &values, &serial_devices, Store::Saved, &s))
+            quick.session().and_then(|s| launch::launch(&sessions, &profiles, &values, &serial_devices, Store::Saved, &with_login(s)))
         }
     };
     let launch = launch.inspect_err(|e| crate::applog::warn(format!("Couldn't open {what}: {e}")));

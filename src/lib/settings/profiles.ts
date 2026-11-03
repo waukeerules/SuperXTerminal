@@ -13,6 +13,10 @@ export interface Profile {
   username: string;
   port: number;
   keyFile: string;
+  /** Whether ssh offers its keys (~/.ssh and the agent) when there's no key file; null: Default Settings', else yes */
+  offerKeys: boolean | null;
+  /** A session with no username asks for one in the tab ("login as:"); null: Default Settings', else no */
+  askUsername: boolean | null;
   jumpHost: string;
   keepalive: number;
   sshOptions: string;
@@ -29,7 +33,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, username: "", port: 0, keyFile: "", jumpHost: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
+    name, username: "", port: 0, keyFile: "", offerKeys: null, askUsername: null, jumpHost: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", hasPassword: false,
   };
 }

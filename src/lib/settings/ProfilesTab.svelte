@@ -118,6 +118,23 @@
       </label>
       <label>Key file <input bind:value={draft.keyFile} placeholder="ssh's own keys and the agent" />
         <button onclick={chooseKey}>Choose…</button></label>
+      <!-- Default Settings has no default of its own to point at: its blank is the built-in behaviour -->
+      <label>SSH keys
+        <select value={triToValue(isDefault ? (draft.offerKeys ?? true) : draft.offerKeys)}
+          onchange={(e) => (draft.offerKeys = valueToTri(e.currentTarget.value))}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          <option value="on">Offer ~/.ssh keys and the agent's</option>
+          <option value="off">Don't offer them: ask for the password (switches, routers)</option>
+        </select></label>
+      <p class="note under">A Cisco closes the connection after 3 failed attempts, and every key offered is one, so with
+        no stored password its password prompt never comes. A key file above is always used.</p>
+      <label>No username
+        <select value={triToValue(isDefault ? (draft.askUsername ?? false) : draft.askUsername)}
+          onchange={(e) => (draft.askUsername = valueToTri(e.currentTarget.value))}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          <option value="off">Use this computer's user name (ssh's own)</option>
+          <option value="on">Ask in the tab ("login as:")</option>
+        </select></label>
     </fieldset>
 
     <fieldset>
@@ -231,6 +248,12 @@
   .message {
     color: var(--text-muted);
     margin: 0;
+  }
+
+  /* a note for the row above, lined up with its control (label's first column and gap) */
+  .note.under {
+    margin-left: 138px;
+    font-size: 12px;
   }
 
   fieldset {

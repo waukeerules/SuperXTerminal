@@ -220,6 +220,10 @@ fn windows_shell(profiles: &Profiles, proto: &str, #[cfg_attr(windows, allow(unu
 /// which `/dev/cu.*` it is, remembers it, and tries again (SERIAL_DEVICE:COM6)
 pub const SERIAL_DEVICE_NEEDED: &str = "SERIAL_DEVICE:";
 
+/// What a launch's error starts with when an SSH session has no username and its profile asks for one; the tab asks
+/// ("login as:") and opens it again with that username (pty_open's login_as), followed by the host
+pub const USERNAME_NEEDED: &str = "USERNAME:";
+
 /// A Telnet, Raw or Serial session, as plink's -telnet, -raw and -serial: folder defaults, the profile's look, the
 /// port (Telnet's default 23), and for serial the device (a COM name asked once) and -sercfg's line settings
 fn stream(
@@ -437,6 +441,15 @@ fn ssh(
     args.extend(crate::algorithms::args(&own));
     let extra = translate_extra_args(&variables::substitute(raw_extra, values));
     notices.extend(extra.notices);
+    // no username from the session, its folders, the profile, -l or an ~/.ssh/config Host: ask, when the profile says
+    let config_host = first(&profile.ssh_config_host, &default.ssh_config_host);
+    if username.is_empty()
+        && config_host.is_empty()
+        && !extra.args.iter().any(|a| a == "-l")
+        && profile.ask_username.or(default.ask_username).unwrap_or(false)
+    {
+        return Err(format!("{USERNAME_NEEDED}{host}"));
+    }
     // Quick connect's password (never stored), else the session's own -pw, else its profile's, else Default Settings'
     let password = Some(session.get(QUICK_PASSWORD).to_string())
         .filter(|p| !p.is_empty())
@@ -475,6 +488,11 @@ fn ssh(
             args.extend(["-i".into(), path, "-o".into(), "IdentitiesOnly=yes".into()]);
         }
     }
+    // Offer SSH keys off, with no key file of its own: straight to the password (each key offered is a failed
+    // attempt to a Cisco, which closes after 3); a -i in the extra arguments is still a key to offer
+    if login.key_file.is_empty() && !extra.args.iter().any(|a| a == "-i") && !profile.offer_keys.or(default.offer_keys).unwrap_or(true) {
+        args.extend(["-o".into(), "PubkeyAuthentication=no".into()]);
+    }
     let keepalive = if profile.keepalive != 0 { profile.keepalive } else { default.keepalive };
     if keepalive != 0 {
         args.extend(["-o".into(), format!("ServerAliveInterval={keepalive}")]);
@@ -489,7 +507,6 @@ fn ssh(
     }
     args.extend(split_words(first(&profile.ssh_options, &default.ssh_options)));
     args.extend(extra.args);
-    let config_host = first(&profile.ssh_config_host, &default.ssh_config_host);
     if config_host.is_empty() {
         args.push(host);
     } else {
@@ -677,6 +694,43 @@ mod tests {
                 Profile { name: profiles::DEFAULT_PROFILE.into(), older_algorithms: Some(false), keepalive: 30, ..Profile::default() },
                 Profile { name: "root".into(), username: "root".into(), port: 2222, ..Profile::default() },
             ],
+        }
+    }
+
+    #[test]
+    fn offer_ssh_keys_off_goes_straight_to_the_password() {
+        let mut profiles = profiles();
+        let sw = session(&[("Username", "admin")]);
+        let (args, _) = args_of(&Sessions::default(), &profiles, &sw);
+        assert!(!args.contains(&"PubkeyAuthentication=no".to_string()), "{args:?}");
+
+        // off in Default Settings: no keys offered, so a Cisco's 3 attempts aren't spent on them
+        profiles.profiles[0].offer_keys = Some(false);
+        let (args, _) = args_of(&Sessions::default(), &profiles, &sw);
+        assert!(args.contains(&"PubkeyAuthentication=no".to_string()), "{args:?}");
+
+        // a profile of its own can still offer them, and a key file of the session's own is always offered
+        profiles.profiles[1].offer_keys = Some(true);
+        let (args, _) = args_of(&Sessions::default(), &profiles, &session(&[("PuttySession", "root")]));
+        assert!(!args.contains(&"PubkeyAuthentication=no".to_string()), "{args:?}");
+        let with_key = session(&[("Username", "admin"), ("ExtraArgs", "-i /tmp/key")]);
+        let (args, _) = args_of(&Sessions::default(), &profiles, &with_key);
+        assert!(!args.contains(&"PubkeyAuthentication=no".to_string()), "{args:?}");
+    }
+
+    #[test]
+    fn ask_for_the_username_only_when_there_is_none() {
+        let mut profiles = profiles();
+        let no_user = session(&[]);
+        // off (the default): ssh uses this computer's user name, as before
+        assert!(launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &no_user).is_ok());
+
+        profiles.profiles[0].ask_username = Some(true);
+        let error = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &no_user).err().unwrap();
+        assert_eq!(error, format!("{USERNAME_NEEDED}10.0.0.1"));
+        // a username from the session, the profile or -l needs no asking
+        for sw in [session(&[("Username", "admin")]), session(&[("PuttySession", "root")]), session(&[("ExtraArgs", "-l admin")])] {
+            assert!(launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).is_ok());
         }
     }
 

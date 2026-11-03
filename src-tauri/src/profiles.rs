@@ -25,6 +25,13 @@ pub struct Profile {
     pub port: u16,
     /// A private key file (OpenSSH format); empty: ssh's own keys and the agent
     pub key_file: String,
+    /// Whether ssh offers its keys (~/.ssh and the agent) when there's no key file; None: the default's, else yes.
+    /// Off for network devices: Cisco closes the connection after 3 failed attempts (ip ssh authentication-retries),
+    /// and each key ssh offers is one, so with no stored password the password prompt never came
+    pub offer_keys: Option<bool>,
+    /// When a session has no username from anywhere, the tab asks for one ("login as:", as PuTTY and SecureCRT do)
+    /// before connecting; None: the default's, else no (ssh then uses this computer's user name)
+    pub ask_username: Option<bool>,
     pub jump_host: String,
     /// Seconds between keep-alives (ssh's ServerAliveInterval); 0 for not set
     pub keepalive: u32,

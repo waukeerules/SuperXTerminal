@@ -100,6 +100,9 @@ export function specialCommands(link: string): { label: string; command: string 
 /** What the core's error starts with when a serial session's COM name needs a device (launch::SERIAL_DEVICE_NEEDED) */
 const SERIAL_DEVICE_NEEDED = "SERIAL_DEVICE:";
 
+/** What it starts with when an SSH session has no username and its profile asks for one (launch::USERNAME_NEEDED) */
+const USERNAME_NEEDED = "USERNAME:";
+
 /** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
 const STABLE_AFTER_MS = 60_000;
 
@@ -137,6 +140,10 @@ export class PageHost implements ScriptTarget {
   readonly started = new Promise<void>((resolve) => (this.markStarted = resolve));
   /** The pseudo terminal's id, once it's open */
   private ptyId: number | null = null;
+  /** The username typed at "login as:", for this tab's connection and its reconnects; null until asked */
+  private loginAs: string | null = null;
+  /** What's been typed at "login as:" so far, while the tab asks; null when it isn't asking */
+  private typingLogin: string | null = null;
   /** Move to New Window: the running session this tab takes over instead of starting one */
   private adoptId: number | null = null;
   /** The session went to another window's tab: closing this one leaves it running */
@@ -216,6 +223,11 @@ export class PageHost implements ScriptTarget {
         if (this.ptyId !== null) await invoke("pty_resize", { id: this.ptyId, ...this.size });
         break;
       case "input":
+        // the tab asking for a username, before ssh starts
+        if (this.typingLogin !== null) {
+          this.typeLogin(String(message.data));
+          break;
+        }
         // while the session is down, Enter reconnects (TerminalControl.OnInput)
         if (this.ended) {
           if (String(message.data).includes("\r")) await this.reconnect();
@@ -525,13 +537,19 @@ export class PageHost implements ScriptTarget {
       return;
     }
     try {
-      this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel });
+      this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel, loginAs: this.loginAs });
       this.startedAt = Date.now();
       // one log for the tab, kept across reconnects, as SuperXPuTTY's
       if (!this.log) this.log = await invoke<{ id: number; path: string; temporary: boolean }>("log_open", { name: this.title }).catch(() => null);
       this.markStarted();
     } catch (error) {
       let text = String(error);
+      // an SSH session with no username, whose profile asks for one: "login as:" in the tab, as PuTTY and SecureCRT
+      if (text.startsWith(USERNAME_NEEDED)) {
+        if (!this.configured) await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
+        this.askLogin();
+        return;
+      }
       // a serial session's COM name with no device yet: asked once, remembered, and tried again
       if (text.startsWith(SERIAL_DEVICE_NEEDED)) {
         const name = text.slice(SERIAL_DEVICE_NEEDED.length);
@@ -548,6 +566,62 @@ export class PageHost implements ScriptTarget {
       this.ended = true;
       this.onState();
     }
+  }
+
+  /** Show "login as:" and read the username from what's typed in the tab (typeLogin) */
+  private askLogin(): void {
+    this.typingLogin = "";
+    this.ended = false;
+    this.show("login as: ");
+  }
+
+  /**
+   * Typing at "login as:": letters are shown as typed, Backspace and Ctrl+U take them back, Enter connects as that
+   * user (an empty line asks again), Ctrl+C gives up until Enter; keys that send sequences (arrows) are ignored
+   */
+  private typeLogin(data: string): void {
+    if (data.startsWith("\x1b")) return;
+    for (const ch of data) {
+      const typed = this.typingLogin ?? "";
+      if (ch === "\r" || ch === "\n") {
+        this.show("\r\n");
+        const name = typed.trim();
+        if (!name) {
+          this.askLogin();
+          return;
+        }
+        this.typingLogin = null;
+        this.loginAs = name;
+        void this.open().then(() => this.onState());
+        return;
+      } else if (ch === "\x7f" || ch === "\b") {
+        if (typed) {
+          this.typingLogin = [...typed].slice(0, -1).join("");
+          this.show("\b \b");
+        }
+      } else if (ch === "\x15") {
+        this.show("\b \b".repeat([...typed].length));
+        this.typingLogin = "";
+      } else if (ch === "\x03") {
+        this.typingLogin = null;
+        this.show("^C\r\n");
+        this.post({ type: "notice", text: "Not connected. Press Enter to try again.", kind: "info" });
+        this.ended = true;
+        this.onState();
+        return;
+      } else if (ch >= " ") {
+        this.typingLogin = typed + ch;
+        this.show(ch);
+      }
+    }
+  }
+
+  /** Show text in the terminal as if the program had written it (the "login as:" prompt and what's typed at it) */
+  private show(text: string): void {
+    let binary = "";
+    for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+    this.queue.push(btoa(binary));
+    this.flush();
   }
 
   /** Ask which /dev/cu.* device a COM name is on this Mac, and remember it; false if there's none or it's cancelled */

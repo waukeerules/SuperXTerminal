@@ -7,7 +7,7 @@
 //! Windows ships OpenSSH too, so this carries over to a Windows build.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -855,16 +855,39 @@ async fn scp_transfer(
         let mut words = vec!["-O".to_string()];
         words.extend(args.iter().cloned());
         words.extend([from, to.clone()]);
-        let (token, helper, cancel, progress, file, before) = (token.to_string(), helper.clone(), cancel.clone(), on_progress.clone(), name.clone(), done);
+        // how far the file has got, only ever forward: scp's meter (every percentage on the Mac; Windows' pseudo console
+        // sends only the characters that change, so few whole percentages get through) and, for a download, the
+        // file's size as scp writes it, once it's this run's file (not one already there from before)
+        let best = Arc::new(AtomicU64::new(0));
+        let watching = Arc::new(AtomicBool::new(true));
+        if !upload && size > 0 {
+            let (best, watching, progress, file, path, started, before) =
+                (best.clone(), watching.clone(), on_progress.clone(), name.clone(), to.clone(), std::time::SystemTime::now(), done);
+            tokio::spawn(async move {
+                while watching.load(Ordering::Relaxed) {
+                    if let Ok(meta) = tokio::fs::metadata(&path).await {
+                        let fresh = meta.modified().map(|m| m >= started).unwrap_or(false);
+                        let got = meta.len().min(size);
+                        if fresh && got > best.fetch_max(got, Ordering::Relaxed) {
+                            let _ = progress.send(Progress::Done { bytes: before + got, file: file.clone() });
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+            });
+        }
+        let (token, helper, cancel, progress, file, before, meter_best) = (token.to_string(), helper.clone(), cancel.clone(), on_progress.clone(), name.clone(), done, best.clone());
         let result = tokio::task::spawn_blocking(move || {
             run_scp(&words, &token, &helper, &cancel, |percent| {
-                if size > 0 {
-                    let _ = progress.send(Progress::Done { bytes: before + size * percent / 100, file: file.clone() });
+                let got = size * percent / 100;
+                if size > 0 && got > meter_best.fetch_max(got, Ordering::Relaxed) {
+                    let _ = progress.send(Progress::Done { bytes: before + got, file: file.clone() });
                 }
             })
         })
         .await
         .map_err(|e| e.to_string())?;
+        watching.store(false, Ordering::Relaxed);
         if let Err(said) = result {
             return Err(if said == "Cancelled" { said } else { format!("{name}: {}", privilege_hint(&said)) });
         }

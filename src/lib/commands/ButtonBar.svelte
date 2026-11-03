@@ -13,7 +13,7 @@
   import Prompt from "../ui/Prompt.svelte";
   import EditButton from "./EditButton.svelte";
   import TabIcons from "./TabIcons.svelte";
-  import { exportBar, importBars, loadBars, saveBars, type Bar, type BarButton } from "./bars";
+  import { buttonColour, exportBar, importBars, loadBars, saveBars, type Bar, type BarButton } from "./bars";
   import { activeTarget, context, fillPlaceholders, runScriptIn, running, selectedTargets, sendString } from "./sending.svelte";
   import { resolveSnippet } from "../scripting/asking.svelte";
   import { saveSettings, settings } from "../settings/store.svelte";
@@ -106,7 +106,7 @@
     if (button.action === "SpslScript") {
       for (const tab of targets) runScriptIn(tab, text, button.label, false, button.label);
     } else {
-      await sendString(text, targets, button.color);
+      await sendString(text, targets, buttonColour(button));
     }
     context.status(`Sent "${button.label}" to ${targets.length} session${targets.length === 1 ? "" : "s"}`);
     context.tabs?.focusActive();

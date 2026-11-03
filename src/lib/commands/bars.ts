@@ -3,6 +3,7 @@
  * folder), and the calls that read and write them.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { CUSTOM_PREFIX, parseKey, resolveIcon } from "../icons/library";
 
 export interface BarButton {
   label: string;
@@ -21,6 +22,21 @@ export interface Bar {
   buttons: BarButton[];
   /** Session icons whose tabs show this bar */
   tabIcons: string[];
+}
+
+/**
+ * The colour a button shows, which its command's line numbers take: its icon's (the colour chosen for it, else the
+ * icon's own; none for a custom picture without one), else its circle's; "" for none
+ */
+export function buttonColour(button: BarButton): string {
+  if (button.icon) {
+    const key = parseKey(button.icon);
+    if (key?.color) return key.color;
+    // a custom picture has its own colours, none to take
+    if (!key || key.name.toLowerCase().startsWith(CUSTOM_PREFIX)) return "";
+    return resolveIcon(button.icon, new Set()).color ?? "";
+  }
+  return button.color;
 }
 
 /** Read ButtonBars.xml again (a missing file is one empty "Default" bar) */

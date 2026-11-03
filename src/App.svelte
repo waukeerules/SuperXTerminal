@@ -40,6 +40,7 @@
   import SessionDetail from "./lib/sessions/SessionDetail.svelte";
   import { AUTO_RESTORE, LAYOUTS_CHANGED, listLayouts, readLayout, renameLayout, saveLayout, type Layout } from "./lib/layout/layouts";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
+  import { getVersion } from "@tauri-apps/api/app";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { catchShortcuts } from "./lib/shortcuts";
   import { ask } from "@tauri-apps/plugin-dialog";
@@ -51,6 +52,9 @@
   let openSessions = $state<ReadonlySet<string>>(new Set());
   /** The Settings window's tab while it's open; null when closed */
   let settingsTab = $state<string | null>(null);
+  /** This build's version, for the status bar (tauri.conf.json's) */
+  let version = $state("");
+  void getVersion().then((v) => (version = v), () => {});
   let variablesOpen = $state(false);
   let coloursOpen = $state(false);
   /** The Quick Selector open: its title and entries, and what choosing one does */
@@ -719,7 +723,7 @@
     <span class="status">{status}</span>
     <ScriptStatus />
     {#if currentLayout}<span class="layout" title="The layout open now">{currentLayout}</span>{/if}
-    <span class="version">0.1.0</span>
+    <span class="version">{version}</span>
   </div>
 </div>
 

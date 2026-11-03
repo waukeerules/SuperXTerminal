@@ -546,7 +546,9 @@ export class PageHost implements ScriptTarget {
       let text = String(error);
       // an SSH session with no username, whose profile asks for one: "login as:" in the tab, as PuTTY and SecureCRT
       if (text.startsWith(USERNAME_NEEDED)) {
-        if (!this.configured) await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
+        // kept as configured, as output (the prompt) waits for it; notices are posted straight to the page
+        if (!this.configured) this.configured = this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
+        await this.configured;
         this.askLogin();
         return;
       }

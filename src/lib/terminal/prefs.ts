@@ -15,6 +15,8 @@ export const PREF_DEFAULTS: Record<string, string> = {
   colorBackground: "",
   colorForeground: "",
   colorSelection: "",
+  /** The cursor's; a session's or folder's environment colour wins over it */
+  colorCursor: "",
   /** "" for the theme's, "profile", or a font's name */
   fontFamily: "",
   /** Pixels; "0" for the theme's or profile's */

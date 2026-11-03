@@ -164,3 +164,18 @@ test("an open tab takes its profile's new colours when the profile is saved", as
   await page.evaluate(() => (window as any).terminalDev.message({ type: "colors", colors: { background: "" } }));
   await expect.poll(background).toBe(light);
 });
+
+test("the cursor: the session's environment colour, else the profile's, else Settings > Terminal's", async ({ page }) => {
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  const themes = await page.evaluate(async () => [await fetch("/web/output/themes/putty.theme.json").then((r) => r.json())]);
+  const cursor = () => page.evaluate(() => (window as any).terminalDev.term.options.theme.cursor as string);
+  await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", themes,
+    prefs: { theme: "PuTTY", colorCursor: "#ffcc00" }, colors: { cursor: "#ff00ff" } }), themes);
+  await expect.poll(cursor).toBe("#ff00ff");
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "colors", colors: {} }));
+  await expect.poll(cursor).toBe("#ffcc00");
+  // a production session's red wins over both
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "cursorColor", color: "#e5534b" }));
+  await expect.poll(cursor).toBe("#e5534b");
+});

@@ -36,6 +36,8 @@ pub struct Look {
     pub background: String,
     pub foreground: String,
     pub selection: String,
+    /// The profile's cursor colour, else "Default Settings'"; the session's environment colour wins over it
+    pub cursor_color: String,
 }
 
 /// A session ready to start
@@ -446,6 +448,7 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         background: colour(&profile.background, &default.background),
         foreground: colour(&profile.foreground, &default.foreground),
         selection: colour(&profile.selection, &default.selection),
+        cursor_color: colour(&profile.cursor_color, &default.cursor_color),
     }
 }
 
@@ -886,9 +889,10 @@ mod tests {
     #[test]
     fn a_profiles_colours_win_over_default_settings_and_bad_ones_are_left_out() {
         let default = Profile { background: "#101010".into(), foreground: "#EEEEEE".into(), selection: "blue".into(), ..Profile::default() };
-        let prod = Profile { background: "#3a0000".into(), ..Profile::default() };
+        let prod = Profile { background: "#3a0000".into(), cursor_color: "#00FF00".into(), ..Profile::default() };
         let look = look(&prod, &default);
         assert_eq!((look.background.as_str(), look.foreground.as_str(), look.selection.as_str()), ("#3a0000", "#eeeeee", ""));
+        assert_eq!(look.cursor_color, "#00ff00");
         let look = super::look(&Profile::default(), &Profile::default());
         assert_eq!(look.background, "");
     }

@@ -66,6 +66,8 @@ pub struct Profile {
     pub background: String,
     pub foreground: String,
     pub selection: String,
+    /// The cursor's colour; a session's or folder's environment colour still wins
+    pub cursor_color: String,
     /// Whether a password is stored for it (the password itself stays in the Keychain)
     #[serde(skip_deserializing)]
     pub has_password: bool,

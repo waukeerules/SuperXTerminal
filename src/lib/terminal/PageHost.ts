@@ -40,6 +40,7 @@ interface Look {
   background?: string;
   foreground?: string;
   selection?: string;
+  cursorColor?: string;
 }
 
 /** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
@@ -518,7 +519,7 @@ export class PageHost implements ScriptTarget {
       sessionRules: look.rules,
       unlimitedScrollback: 1000000,
       cursorColor: this.cursorColor,
-      colors: { background: look.background ?? "", foreground: look.foreground ?? "", selection: look.selection ?? "" },
+      colors: { background: look.background ?? "", foreground: look.foreground ?? "", selection: look.selection ?? "", cursor: look.cursorColor ?? "" },
     });
   }
 

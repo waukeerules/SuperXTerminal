@@ -914,13 +914,13 @@
     }
 
     /**
-     * The theme's colours with the own background, text and selection colours over them: the profile's (SuperXTerminal
+     * The theme's colours with the own background, text, selection and cursor colours over them: the profile's (SuperXTerminal
      * sends them in config.colors), else the preferences' (Settings > Terminal)
      */
     function ownColours(colors) {
         var own = {};
         Object.keys(colors).forEach(function (k) { own[k] = colors[k]; });
-        [['colorBackground', 'background'], ['colorForeground', 'foreground'], ['colorSelection', 'selection']].forEach(function (pair) {
+        [['colorBackground', 'background'], ['colorForeground', 'foreground'], ['colorSelection', 'selection'], ['colorCursor', 'cursor']].forEach(function (pair) {
             var value = profileColours[pair[1]] || loadPref(pair[0]);
             if (value && /^#[0-9a-f]{6}$/i.test(value)) { own[pair[1]] = value; }
         });

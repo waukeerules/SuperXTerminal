@@ -41,6 +41,8 @@ export interface Profile {
   background: string;
   foreground: string;
   selection: string;
+  /** The cursor's colour; a session's or folder's environment colour wins over it */
+  cursorColor: string;
   hasPassword: boolean;
 }
 
@@ -48,7 +50,7 @@ export interface Profile {
 export function emptyProfile(name: string): Profile {
   return {
     name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
-    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", background: "", foreground: "", selection: "", hasPassword: false,
+    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", background: "", foreground: "", selection: "", cursorColor: "", hasPassword: false,
   };
 }
 
@@ -82,10 +84,10 @@ export async function deleteProfile(name: string): Promise<Profile[]> {
  * A profile's terminal colours as a session's tab takes them (`look` in src-tauri/src/launch.rs): each one the
  * profile's, else Default Settings', when it's "#rrggbb"; "" for Settings > Terminal's or the theme's
  */
-export function profileColours(profiles: Profile[], name: string): { background: string; foreground: string; selection: string } {
+export function profileColours(profiles: Profile[], name: string): { background: string; foreground: string; selection: string; cursor: string } {
   const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
   const fallback = find(DEFAULT_PROFILE);
   const profile = find(name) ?? fallback;
-  const pick = (field: "background" | "foreground" | "selection") => hexColour(profile?.[field]) || hexColour(fallback?.[field]);
-  return { background: pick("background"), foreground: pick("foreground"), selection: pick("selection") };
+  const pick = (field: "background" | "foreground" | "selection" | "cursorColor") => hexColour(profile?.[field]) || hexColour(fallback?.[field]);
+  return { background: pick("background"), foreground: pick("foreground"), selection: pick("selection"), cursor: pick("cursorColor") };
 }

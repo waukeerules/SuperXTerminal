@@ -47,10 +47,12 @@
   const defaultProfile = $derived(profiles.find((p) => p.name.toLowerCase() === DEFAULT_PROFILE.toLowerCase()));
 
   /** The terminal colours a profile can have, over Default Settings', Settings > Terminal's and the theme's */
-  const COLOURS: { field: "background" | "foreground" | "selection"; label: string; pref: string; putty: string }[] = [
-    { field: "background", label: "Background", pref: "colorBackground", putty: "#000000" },
-    { field: "foreground", label: "Text", pref: "colorForeground", putty: "#bbbbbb" },
-    { field: "selection", label: "Selection", pref: "colorSelection", putty: "#264f78" },
+  const COLOURS: { field: "background" | "foreground" | "selection" | "cursorColor"; theme: string; label: string; pref: string; putty: string }[] = [
+    { field: "background", theme: "background", label: "Background", pref: "colorBackground", putty: "#000000" },
+    { field: "foreground", theme: "foreground", label: "Text", pref: "colorForeground", putty: "#bbbbbb" },
+    { field: "selection", theme: "selection", label: "Selection", pref: "colorSelection", putty: "#264f78" },
+    // a session's or folder's environment colour still wins for its cursor
+    { field: "cursorColor", theme: "cursor", label: "Cursor colour", pref: "colorCursor", putty: "#00ff00" },
   ];
 
   /** Each theme's colours, by name, for what a tab without its own colours draws with */
@@ -72,7 +74,9 @@
     void settings.terminalPrefs;
     void settings.theme;
     const c = COLOURS.find((c) => c.field === field)!;
-    return (!isDefault && defaultProfile?.[field]) || pref(c.pref) || themeColours[drawnTheme()]?.[field] || c.putty;
+    const theme = themeColours[drawnTheme()];
+    return (!isDefault && defaultProfile?.[field]) || pref(c.pref) || theme?.[c.theme]
+      || (field === "cursorColor" ? (!isDefault && defaultProfile?.foreground) || pref("colorForeground") || theme?.foreground : "") || c.putty;
   }
 
   type Field = keyof Profile | "password";
@@ -103,7 +107,7 @@
   const FIELDS: Field[] = [
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
-    "background", "foreground", "selection",
+    "background", "foreground", "selection", "cursorColor",
   ];
   /** How many fields have changed since the profile was loaded or saved */
   const changes = $derived(FIELDS.filter(changed).length);

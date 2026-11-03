@@ -13,6 +13,7 @@
     background?: string;
     foreground?: string;
     selection?: string;
+    cursor?: string;
   }
 
   let themes = $state<string[]>([]);
@@ -50,10 +51,12 @@
     { pref: "colorBackground", theme: "background", label: "Background" },
     { pref: "colorForeground", theme: "foreground", label: "Text" },
     { pref: "colorSelection", theme: "selection", label: "Selection" },
+    { pref: "colorCursor", theme: "cursor", label: "Cursor colour" },
   ];
 
   /** A colour as it's drawn: the preference's, else the theme's */
-  const colour = (c: (typeof COLOURS)[number]) => prefs[c.pref] || shownTheme[c.theme] || "#000000";
+  const colour = (c: (typeof COLOURS)[number]) =>
+    prefs[c.pref] || shownTheme[c.theme] || (c.theme === "cursor" ? shownTheme.foreground : "") || "#000000";
 
   const FONTS = ["Menlo", "Monaco", "SF Mono", "Courier New", "Andale Mono", "PT Mono"];
 
@@ -90,9 +93,9 @@
           </label>
         {/each}
         <span class="sample" style:background={colour(COLOURS[0])} style:color={colour(COLOURS[1])}>
-          admin@switch:~$ show version <span style:background={colour(COLOURS[2])}>selected text</span>
+          admin@switch:~$ show version <span style:background={colour(COLOURS[2])}>selected text</span><span class="block" style:background={colour(COLOURS[3])}>&nbsp;</span>
         </span>
-        <span class="hint">Over the theme's, in every tab; a profile's own colours (Settings &gt; Profiles &gt; Terminal) win. Highlighting keeps the theme's colours, so pick a theme that suits the background.</span>
+        <span class="hint">Over the theme's, in every tab; a profile's own colours (Settings &gt; Profiles &gt; Terminal) win. A session's or folder's environment colour still colours its cursor. Highlighting keeps the theme's colours, so pick a theme that suits the background.</span>
       </div>
     </div>
     <label>Font
@@ -228,6 +231,12 @@
     border-radius: 4px;
     font-family: Menlo, Consolas, monospace;
     font-size: 12px;
+  }
+
+  .block {
+    display: inline-block;
+    width: 0.6em;
+    margin-left: 4px;
   }
 
   label.check {

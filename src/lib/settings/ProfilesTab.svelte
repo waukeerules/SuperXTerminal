@@ -68,6 +68,10 @@
     if (field === "port" || field === "keepalive" || field === "keyLifetime") return Number(value) || 0;
     if (isDefault && field === "offerKeys") return value ?? true;
     if (isDefault && field === "askUsername") return value ?? false;
+    // Default Settings' blank is the built-in look, the same as choosing it
+    if (isDefault && field === "cursorBlink") return value ?? true;
+    if (isDefault && field === "cursor") return value || "block";
+    if (isDefault && field === "bell") return value || "visual";
     return value ?? null;
   }
 
@@ -360,21 +364,22 @@
     <fieldset>
       <legend>Terminal</legend>
       <label>{@render caption("Cursor", "cursor")}
-        <select bind:value={draft.cursor}>
-          <option value="">{isDefault ? "Block" : "From Default Settings"}</option>
+        <select value={isDefault ? draft.cursor || "block" : draft.cursor} onchange={(e) => (draft.cursor = e.currentTarget.value)}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
           <option value="block">Block</option>
           <option value="underline">Underline</option>
           <option value="bar">Vertical line</option>
         </select></label>
       <label>{@render caption("Cursor blinks", "cursorBlink")}
-        <select value={triToValue(draft.cursorBlink)} onchange={(e) => (draft.cursorBlink = valueToTri(e.currentTarget.value))}>
-          <option value="">{isDefault ? "Yes" : "From Default Settings"}</option>
+        <select value={triToValue(isDefault ? (draft.cursorBlink ?? true) : draft.cursorBlink)}
+          onchange={(e) => (draft.cursorBlink = valueToTri(e.currentTarget.value))}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
           <option value="on">Yes</option>
           <option value="off">No</option>
         </select></label>
       <label>{@render caption("Bell", "bell")}
-        <select bind:value={draft.bell}>
-          <option value="">{isDefault ? "Flash" : "From Default Settings"}</option>
+        <select value={isDefault ? draft.bell || "visual" : draft.bell} onchange={(e) => (draft.bell = e.currentTarget.value)}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
           <option value="visual">Flash</option>
           <option value="sound">Sound</option>
           <option value="none">None</option>

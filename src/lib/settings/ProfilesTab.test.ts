@@ -158,4 +158,14 @@ describe("Settings > Profiles", () => {
     expect(dots()).toHaveLength(1);
     expect((screen.getByLabelText("Background") as HTMLInputElement).value).toBe("#000000");
   });
+
+  it("lists Default Settings' terminal choices once each, its blank shown as the built-in one", async () => {
+    await open(DEFAULT_PROFILE);
+    const blinks = screen.getByRole("combobox", { name: /^Cursor blinks/ }) as HTMLSelectElement;
+    expect([...blinks.options].map((o) => o.text)).toEqual(["Yes", "No"]);
+    expect(blinks.value).toBe("on");
+    expect([...(screen.getByRole("combobox", { name: /^Bell/ }) as HTMLSelectElement).options].map((o) => o.text)).toEqual(["Flash", "Sound", "None"]);
+    expect([...(screen.getByRole("combobox", { name: /^Cursor$/ }) as HTMLSelectElement).options].map((o) => o.text)).toEqual(["Block", "Underline", "Vertical line"]);
+    expect(dots()).toHaveLength(0);
+  });
 });

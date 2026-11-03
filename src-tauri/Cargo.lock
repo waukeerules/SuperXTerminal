@@ -5723,6 +5723,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "tokio-postgres",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

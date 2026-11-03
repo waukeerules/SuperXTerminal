@@ -5,6 +5,7 @@ mod askpass;
 mod buttonbars;
 mod cli;
 mod command_tap;
+mod console;
 mod db;
 mod editing;
 mod external;
@@ -2064,6 +2065,7 @@ pub fn run() {
             _ => {}
         })
         .setup(|app| {
+            console::allow_ctrl_c();
             logs::sweep_temp();
             #[cfg(target_os = "macos")]
             no_siri_badge();

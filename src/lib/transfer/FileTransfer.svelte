@@ -9,6 +9,7 @@
   import { ask as confirm } from "@tauri-apps/plugin-dialog";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import FilePane from "./FilePane.svelte";
+  import { ResizableColumns } from "./columns.svelte";
   import { askName } from "../scripting/asking.svelte";
   import type { Store } from "../sessions/api";
   import {
@@ -212,50 +213,7 @@
     { label: "End", width: 86 }, { label: "Progress", width: 170 }, { label: "Status", width: 76 }, { label: "Message", width: 300 },
     { label: "", width: 58 },
   ];
-  const WIDTHS_KEY = "sxt.transfer.columns";
-  let widths = $state<number[]>(savedWidths());
-
-  function savedWidths(): number[] {
-    try {
-      const saved = JSON.parse(localStorage.getItem(WIDTHS_KEY) ?? "null");
-      if (Array.isArray(saved) && saved.length === COLUMNS.length && saved.every((w) => typeof w === "number")) return saved;
-    } catch {
-      // no saved widths: the defaults
-    }
-    return COLUMNS.map((c) => c.width);
-  }
-
-  function saveWidths(): void {
-    try {
-      localStorage.setItem(WIDTHS_KEY, JSON.stringify(widths));
-    } catch {
-      // kept for this tab only
-    }
-  }
-
-  /** Drag a heading's right edge to resize its column */
-  function startResize(event: PointerEvent, i: number): void {
-    event.preventDefault();
-    event.stopPropagation();
-    const grip = event.currentTarget as HTMLElement;
-    grip.setPointerCapture(event.pointerId);
-    const [startX, startWidth] = [event.clientX, widths[i]];
-    const move = (e: PointerEvent) => (widths[i] = Math.max(30, Math.round(startWidth + e.clientX - startX)));
-    const done = () => {
-      grip.removeEventListener("pointermove", move);
-      grip.removeEventListener("pointerup", done);
-      grip.removeEventListener("pointercancel", done);
-      saveWidths();
-    };
-    grip.addEventListener("pointermove", move);
-    grip.addEventListener("pointerup", done);
-    grip.addEventListener("pointercancel", done);
-  }
-
-  function resetWidth(i: number): void {
-    widths[i] = COLUMNS[i].width;
-    saveWidths();
-  }
+  const columns = new ResizableColumns("columns", COLUMNS.map((c) => c.width));
 
   const percent = (job: Job) => (job.total ? Math.min(100, Math.round((job.done / job.total) * 100)) : job.status === "Done" ? 100 : 0);
   const describe = (paths: string[]) => (paths.length === 1 ? paths[0] : `${paths[0]} and ${paths.length - 1} more`);
@@ -290,16 +248,16 @@
     </div>
 
     <div class="queue">
-      <table style:width="{widths.reduce((a, b) => a + b, 0)}px">
+      <table style:width="{columns.total}px">
         <thead>
           <tr>
             {#each COLUMNS as column, i}
-              <th style:width="{widths[i]}px">
+              <th style:width="{columns.widths[i]}px">
                 {column.label}
                 {#if column.label}
                   <span class="grip" role="separator" aria-orientation="vertical" aria-label="Resize {column.label}"
                     title="Drag to resize; double-click for the default width"
-                    onpointerdown={(e) => startResize(e, i)} ondblclick={() => resetWidth(i)}></span>
+                    onpointerdown={(e) => columns.startResize(e, i)} ondblclick={() => columns.reset(i)}></span>
                 {/if}
               </th>
             {/each}
@@ -357,7 +315,8 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* half each, however wide their columns: a pane's list scrolls sideways instead */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 6px;
   }
 
@@ -380,6 +339,12 @@
     background: var(--bg-pane);
     border: 1px solid var(--border);
     position: relative;
+  }
+
+  /* a column's width includes its padding, so the widths add up to what's shown */
+  th,
+  td {
+    box-sizing: border-box;
   }
 
   table {

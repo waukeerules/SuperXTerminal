@@ -7,6 +7,7 @@
 <script lang="ts">
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { formatSize, formatTime, joinPath, parentPath, type Entry, type Listing } from "./api";
+  import { ResizableColumns } from "./columns.svelte";
 
   interface Props {
     side: "local" | "remote";
@@ -31,6 +32,14 @@
   let { side, title, home, listing, loading, error, onNavigate, onCopy, onDrop, onMkdir, onRename, onDelete, onReveal }: Props = $props();
 
   type Column = "name" | "size" | "modified" | "permissions" | "owner" | "group";
+  const HEADINGS: [Column, string][] = [["name", "Name"], ["size", "Size"], ["modified", "Last Mod"], ["permissions", "Perm"], ["owner", "Owner"], ["group", "Group"]];
+  /** Each side's widths are its own; Name fills what the others leave (at least its own width) */
+  // svelte-ignore state_referenced_locally
+  const columns = new ResizableColumns(side, [120, 64, 124, 82, 64, 56]);
+  /** The list's width: Name takes what the other columns leave of it, and at least its own width */
+  let listWidth = $state(0);
+  const others = $derived(columns.widths.slice(1).reduce((a, b) => a + b, 0));
+  const nameWidth = $derived(Math.max(columns.widths[0], listWidth - others));
   let sort = $state<{ by: Column; up: boolean }>({ by: "name", up: true });
   let selected = $state<Set<string>>(new Set());
   /** Where a shift-click selects from */
@@ -69,6 +78,11 @@
 
   const full = (entry: Entry) => joinPath(listing?.path ?? "", entry.name);
   const chosen = () => entries.filter((e) => selected.has(e.name));
+
+  /** A click on a heading sorts by it; one on its resize grip (the end of a drag) doesn't */
+  function sortClick(event: MouseEvent, by: Column): void {
+    if (!(event.target as HTMLElement).classList.contains("grip")) setSort(by);
+  }
 
   function setSort(by: Column): void {
     sort = sort.by === by ? { by, up: !sort.up } : { by, up: true };
@@ -180,17 +194,31 @@
     <input bind:value={typed} spellcheck="false" aria-label="{title} folder" />
   </form>
 
-  <div class="list" class:drop={dropTarget === listing?.path} role="grid" tabindex="0" aria-label="{title} files"
+  <div class="list" class:drop={dropTarget === listing?.path} role="grid" tabindex="0" aria-label="{title} files" bind:clientWidth={listWidth}
     onkeydown={key}
     ondragover={(e) => listing && over(e, listing.path)}
     ondragleave={() => (dropTarget = null)}
     ondrop={(e) => listing && drop(e, listing.path)}
     oncontextmenu={(e) => showMenu(e, null)}>
-    <table>
+    <table style:width="{nameWidth + others}px">
       <thead>
         <tr>
-          {#each [["name", "Name"], ["size", "Size"], ["modified", "Last Mod"], ["permissions", "Perm"], ["owner", "Owner"], ["group", "Group"]] as [by, label]}
-            <th class={by} onclick={() => setSort(by as Column)}>{label}{sort.by === by ? (sort.up ? " ▲" : " ▼") : ""}</th>
+          {#each HEADINGS as [by, label], i}
+            {#if by === "name"}
+              <th class={by} style:width="{nameWidth}px" onclick={(e) => sortClick(e, by)}>
+                {label}{sort.by === by ? (sort.up ? " ▲" : " ▼") : ""}
+                <span class="grip" role="separator" aria-orientation="vertical" aria-label="Resize {label}" title="Drag to resize; double-click for the default width"
+                  ondblclick={() => columns.reset(i)}
+                  onpointerdown={(e) => columns.startResize(e, i, nameWidth)}></span>
+              </th>
+            {:else}
+              <th class={by} style:width="{columns.widths[i]}px" onclick={(e) => sortClick(e, by)}>
+                {label}{sort.by === by ? (sort.up ? " ▲" : " ▼") : ""}
+                <span class="grip" role="separator" aria-orientation="vertical" aria-label="Resize {label}" title="Drag to resize; double-click for the default width"
+                  ondblclick={() => columns.reset(i)}
+                  onpointerdown={(e) => columns.startResize(e, i)}></span>
+              </th>
+            {/if}
           {/each}
         </tr>
       </thead>
@@ -304,6 +332,12 @@
     background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
 
+  /* a column's width includes its padding, so the widths add up to what's shown */
+  th,
+  td {
+    box-sizing: border-box;
+  }
+
   table {
     width: 100%;
     border-collapse: collapse;
@@ -332,28 +366,29 @@
     user-select: none;
   }
 
-  th.size {
-    width: 64px;
-  }
-
   td.size {
     text-align: right;
   }
 
-  th.modified {
-    width: 124px;
+  th {
+    position: sticky;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 10px;
   }
 
-  th.permissions {
-    width: 82px;
+  .grip {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+    border-right: 1px solid var(--border);
   }
 
-  th.owner {
-    width: 64px;
-  }
-
-  th.group {
-    width: 56px;
+  .grip:hover {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   td.permissions,

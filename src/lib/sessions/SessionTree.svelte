@@ -147,6 +147,8 @@
   let expanded = $state(new Set<string>(["saved:", "private:"]));
   /** Folders the user closed during the current search (a search opens everything that holds a match) */
   let closedInSearch = $state(new Set<string>());
+  /** Folders opened during a search that matches too many sessions to open them all (SEARCH_OPEN_LIMIT) */
+  let openedInSearch = $state(new Set<string>());
   /** Names Z to A (the toolbar's sort button); not saved, so A to Z returns on restart, as in SuperXPuTTY */
   let descending = $state(false);
   /** Favorites and Recent */
@@ -215,15 +217,31 @@
       onWantWidth(need ? need + 34 : null);
     });
   });
-  /** What's open: while searching every folder holding a match (but those closed since), else as the user left it */
+  /**
+   * A search matching more sessions than this opens only the roots: drawing every match (10,000 rows, each with its
+   * icon) made typing lag. Folders the user opens then stay open; a narrower search opens all again.
+   */
+  const SEARCH_OPEN_LIMIT = 1000;
+  /** How many sessions the search matches (Favorites and Recent hold the same ones again, so they don't count) */
+  const matchCount = $derived([saved, privateRoot, databaseRoot].reduce((n, r) => n + (r?.count ?? 0), 0));
+  const broadSearch = $derived(searching && matchCount > SEARCH_OPEN_LIMIT);
+  /**
+   * What's open: while searching every folder holding a match (but those closed since), or for a broad search only the
+   * roots and what's been opened; else as the user left it
+   */
   const shownExpanded = $derived(
-    searching ? new Set(roots.flatMap(folderKeys).filter((k) => !closedInSearch.has(k))) : expanded,
+    !searching
+      ? expanded
+      : broadSearch
+        ? new Set([...roots.map((r) => r.key), ...openedInSearch])
+        : new Set(roots.flatMap(folderKeys).filter((k) => !closedInSearch.has(k))),
   );
 
   // a new search starts with everything open again
   $effect(() => {
     void query;
     closedInSearch = new Set();
+    openedInSearch = new Set();
   });
 
   // Favorites and Recent open as the user last left them (closed at first)
@@ -319,8 +337,30 @@
     return parts.length ? `Database sessions (${parts.join(", ")})` : "Database sessions";
   }
 
-  /** Read the settings, custom icons and session files again */
-  async function reload(): Promise<void> {
+  /** The reload running, and whether another was asked for meanwhile */
+  let reloading: Promise<void> | null = null;
+  let reloadAgain = false;
+
+  /**
+   * Read the settings, custom icons and session files again. Asked for again while one runs (a settings save, a file
+   * changing and the Database at once), it waits for that one and one more runs after it, rather than one each:
+   * with 10,000 sessions each read sends them all and builds the tree again
+   */
+  function reload(): Promise<void> {
+    if (reloading) {
+      reloadAgain = true;
+      return reloading;
+    }
+    reloading = (async () => {
+      do {
+        reloadAgain = false;
+        await reloadOnce();
+      } while (reloadAgain);
+    })().finally(() => (reloading = null));
+    return reloading;
+  }
+
+  async function reloadOnce(): Promise<void> {
     try {
       customs = await loadCustomIcons();
       onLook(settings.iconSize, customs);
@@ -1164,10 +1204,11 @@
   function toggle(key: string): void {
     if (searching) {
       // during a search only that search's view changes; clearing it puts the tree back as it was
-      const next = new Set(closedInSearch);
+      const next = new Set(broadSearch ? openedInSearch : closedInSearch);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      closedInSearch = next;
+      if (broadSearch) openedInSearch = next;
+      else closedInSearch = next;
       return;
     }
     const next = new Set(expanded);
@@ -1275,6 +1316,9 @@
   oncopy={(e) => { e.preventDefault(); copySelection(); }} onpaste={(e) => { e.preventDefault(); void pasteHere(); }}>
   {#if error}
     <p class="message">{error}</p>
+  {/if}
+  {#if broadSearch}
+    <p class="message">{matchCount.toLocaleString()} matches: open a folder to see them, or narrow the search.</p>
   {/if}
   {#if loaded}
     {#each loaded.problems as problem}

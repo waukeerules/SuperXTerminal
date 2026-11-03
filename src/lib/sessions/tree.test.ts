@@ -89,3 +89,15 @@ describe("Search in…'s choices", () => {
     expect(searchFieldsOf(["icon", "bogus"])).toEqual(["icon"]);
   });
 });
+
+describe("building the tree", () => {
+  it("sorts names by number and without case, and keeps folders of one name whatever their case", () => {
+    const tree = buildTree("saved", "Saved sessions", [
+      session("sw10", { folder: "Lab" }), session("SW2", { folder: "lab" }), session("sw1", { folder: "Lab/Core" }),
+    ], "");
+    expect(tree.folders.map((f) => f.name)).toEqual(["Lab"]);
+    expect(tree.folders[0].sessions.map((s) => s.name)).toEqual(["SW2", "sw10"]);
+    expect(tree.folders[0].folders[0].sessions.map((s) => s.name)).toEqual(["sw1"]);
+    expect(tree.count).toBe(3);
+  });
+});

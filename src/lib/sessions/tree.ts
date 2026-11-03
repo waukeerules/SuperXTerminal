@@ -71,17 +71,28 @@ export function buildGroup(
   return { kind: "folder", key: `${group}:`, store: "saved", name: title, path: "", folders: [], sessions: shown, count: shown.length, group };
 }
 
+/** Each folder's subfolders by name in lower case, while a tree is built: a lookup instead of a search per session */
+const childrenByName = new WeakMap<FolderNode, Map<string, FolderNode>>();
+
 /** The node for a folder path, made (with the folders above it) if it isn't there yet */
 function place(root: FolderNode, store: Store, folderPath: string): FolderNode {
   let node = root;
   let path = "";
-  for (const part of folderPath.split("/").filter(Boolean)) {
+  for (const part of folderPath.split("/")) {
+    if (!part) continue;
     path = path ? `${path}/${part}` : part;
     // "test" and "Test" are one folder, as SuperXPuTTY's tree (the first spelling is shown)
-    let child = node.folders.find((f) => f.name.toLowerCase() === part.toLowerCase());
+    let byName = childrenByName.get(node);
+    if (!byName) {
+      byName = new Map(node.folders.map((f) => [f.name.toLowerCase(), f]));
+      childrenByName.set(node, byName);
+    }
+    const key = part.toLowerCase();
+    let child = byName.get(key);
     if (!child) {
       child = folder(store, part, path);
       node.folders.push(child);
+      byName.set(key, child);
     }
     node = child;
     path = child.path;
@@ -104,10 +115,15 @@ function folder(store: Store, name: string, path: string): FolderNode {
   return { kind: "folder", key: `${store}:${path}`, store, name, path, folders: [], sessions: [], count: 0 };
 }
 
+/**
+ * Names compared as the tree sorts them: ignoring case and accents, numbers by value ("sw2" before "sw10"). One
+ * collator, made once: localeCompare with options makes one per call, which was most of building a 10,000-session tree
+ */
+const NAME_ORDER = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
 /** Sort a folder's contents (folders first; Z to A reverses names only) and count its sessions, all the way down */
 function finish(node: FolderNode, descending: boolean): number {
-  const byName = (a: { name: string }, b: { name: string }) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }) * (descending ? -1 : 1);
+  const byName = (a: { name: string }, b: { name: string }) => NAME_ORDER.compare(a.name, b.name) * (descending ? -1 : 1);
   node.folders.sort(byName);
   node.sessions.sort(byName);
   node.count = node.sessions.length + node.folders.reduce((sum, f) => sum + finish(f, descending), 0);

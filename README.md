@@ -23,7 +23,9 @@ Mac first; the code stays buildable on Windows and Linux. Builds and releases ar
 - **[docs/BUILD-macOS.md](docs/BUILD-macOS.md):** what you need, the signing certificate, running it while developing,
   the checks, the release build and its `.dmg`, notarisation, and publishing a release.
 - **[docs/BUILD-Windows.md](docs/BUILD-Windows.md):** building and running it on Windows (it runs in development), what
-  works there and what's still Mac-only.
+  works there and what's still Mac-only, and its MSI and setup `.exe`.
+- **[docs/RELEASE.md](docs/RELEASE.md):** making a release: the version, building on both systems into `releases/`,
+  and publishing the installers on GitHub.
 
 The short version, on a Mac with Rust and Node:
 

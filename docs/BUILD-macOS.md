@@ -168,14 +168,9 @@ It should say "accepted, source=Notarized Developer ID".
 
 ## 8. Publish a release
 
-Releases are made locally and pushed to GitHub (`waukeerules/SuperXTerminal`):
-
-1. Set the new version (section 6), build, check, and commit.
-2. Tag it (`git tag v0.2.0`) and push the commit and the tag.
-3. Make a GitHub release for the tag and attach the `.dmg`, for example with
-   `gh release create v0.2.0 src-tauri/target/release/bundle/dmg/*.dmg --notes "..."`.
-
-The app's update check (Settings → General → Updates) looks at the repository's latest release and offers its page.
+See [RELEASE.md](RELEASE.md): setting the version, collecting the Mac and Windows installers in `releases/`,
+tagging, and the GitHub release. The app's update check (Settings → General → Updates) offers the repository's
+latest release.
 
 ## 9. Installing and running a build
 

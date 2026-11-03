@@ -3,7 +3,8 @@
 > **Early.** SuperXTerminal is built and released on the Mac first ([BUILD-macOS.md](BUILD-macOS.md)). The Windows
 > build compiles and runs in development (`npm run tauri dev`, first tried on Windows 11 in November 2026), but a lot
 > is still Mac-only: see [What works](#what-works-so-far) and [What still has to be done](#what-still-has-to-be-done-for-windows).
-> No Windows release has been made.
+> The release build makes an MSI and a setup `.exe` ([Release build](#release-build)); a release is made as in
+> [RELEASE.md](RELEASE.md).
 
 On Windows, SuperXPuTTY remains the main application. Whether a Windows SuperXTerminal should ever replace it, or stay a
 lighter option beside it, is an open question ([PLAN.md](PLAN.md), section 6).
@@ -68,6 +69,7 @@ Both install `superxterminal.exe` (the pages are built into it) and `THIRD-PARTY
   (`git checkout THIRD-PARTY-NOTICES.txt` after a build).
 - **Signing:** none yet, so SmartScreen warns on the first run. Signing is set with
   `bundle.windows.certificateThumbprint` (or a signing command) in `src-tauri/tauri.conf.json`.
+- **Releasing:** copy both installers into `releases\<version>\` and publish them as in [RELEASE.md](RELEASE.md).
 
 The manual GitHub workflow (`.github/workflows/build.yml`, run by hand from Actions) builds Windows unsigned, for an
 occasional check that it still compiles.
@@ -99,7 +101,7 @@ Tried in `npm run tauri dev` on Windows 11:
 - **File transfer:** over SCP to a Cisco switch (no SFTP there): logged in with the session's password through the
   login helper, listed `flash:`, and downloaded a file.
 
-Not tried yet: file transfer over SFTP (a Linux server), Telnet and Raw, layouts, scripts, and the release build.
+Not tried yet: file transfer over SFTP (a Linux server), Telnet and Raw, layouts, and scripts.
 
 ### Keys on Windows
 

@@ -120,7 +120,10 @@ impl QuickConnect {
     }
 }
 
-/// Build the start of a stored session, or say why it can't start on this Mac yet
+/// The computer the app runs on, as messages name it: "this Mac", or "this PC" on Windows
+pub const THIS_COMPUTER: &str = if cfg!(target_os = "macos") { "this Mac" } else { "this PC" };
+
+/// Build the start of a stored session, or say why it can't start on this computer yet
 pub fn launch(
     sessions: &Sessions,
     profiles: &Profiles,
@@ -132,23 +135,46 @@ pub fn launch(
     match session.get("Proto").to_ascii_uppercase().as_str() {
         "SSH" | "" => ssh(sessions, profiles, values, store, session),
         proto @ ("TELNET" | "RAW" | "SERIAL") => stream(sessions, profiles, values, serial_devices, store, session, proto),
-        "PS" => {
-            // PowerShell sessions run pwsh, if it's installed (brew install powershell)
+        proto @ ("PS" | "WINCMD" | "WSL") => windows_shell(profiles, proto, session.get("Proto")),
+        other => Err(format!("{other} sessions can't be opened yet.")),
+    }
+}
+
+/// cmd, PowerShell and WSL sessions, as SuperXPuTTY starts them: on Windows the system's own cmd.exe, Windows
+/// PowerShell (powershell.exe) and wsl.exe, in the user's folder. On the Mac, PowerShell sessions run pwsh when it's
+/// installed (brew install powershell), and cmd and WSL ones open the user's shell, saying so.
+/// `proto` is the protocol in capitals, `named` as the session writes it.
+fn windows_shell(profiles: &Profiles, proto: &str, #[cfg_attr(windows, allow(unused_variables))] named: &str) -> Result<Launch, String> {
+    let mut launch = local_shell(profiles);
+    #[cfg(windows)]
+    {
+        let system = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into())).join("System32");
+        let program = match proto {
+            "PS" => system.join("WindowsPowerShell").join("v1.0").join("powershell.exe"),
+            "WSL" => system.join("wsl.exe"),
+            _ => system.join("cmd.exe"),
+        };
+        if !program.exists() {
+            return Err(match proto {
+                "WSL" => "WSL sessions need the Windows Subsystem for Linux, which isn't installed on this PC (wsl --install).".into(),
+                _ => format!("{} isn't on this PC.", program.display()),
+            });
+        }
+        launch.command = CommandBuilder::new(program);
+    }
+    #[cfg(not(windows))]
+    {
+        if proto == "PS" {
             let pwsh = ["/opt/homebrew/bin/pwsh", "/usr/local/bin/pwsh", "/usr/local/microsoft/powershell/7/pwsh"]
                 .into_iter()
                 .find(|p| std::path::Path::new(p).exists())
                 .ok_or("PowerShell sessions need pwsh, which isn't installed on this Mac (brew install powershell).")?;
-            let mut launch = local_shell(profiles);
             launch.command = CommandBuilder::new(pwsh);
-            Ok(launch)
+        } else {
+            launch.notices.push(format!("{named} session opened as a Local Shell on this Mac."));
         }
-        "WINCMD" | "WSL" => {
-            let mut launch = local_shell(profiles);
-            launch.notices.push(format!("{} session opened as a Local Shell on this Mac.", session.get("Proto")));
-            Ok(launch)
-        }
-        other => Err(format!("{other} sessions can't be opened yet.")),
     }
+    Ok(launch)
 }
 
 /// What an error from `launch` starts with when a serial session's COM name has no device yet: the window then asks
@@ -226,7 +252,7 @@ fn stream(
                 line.apply(words.get(i + 1).map(String::as_str).unwrap_or(""))?;
             }
             if host != device {
-                notices.push(format!("{host} is {device} on this Mac."));
+                notices.push(format!("{host} is {device} on {THIS_COMPUTER}."));
             }
             crate::streams::Target::Serial { device, line }
         }
@@ -315,7 +341,7 @@ fn ssh(
         profile
     } else {
         notices.push(format!(
-            "Profile \"{profile_name}\" isn't set up on this Mac, so Default Settings is used. Add it in Settings > Profiles."
+            "Profile \"{profile_name}\" isn't set up on {THIS_COMPUTER}, so Default Settings is used. Add it in Settings > Profiles."
         ));
         default
     };
@@ -538,7 +564,7 @@ fn translate_extra_args(extra: &str) -> Translated {
         i += 1;
     }
     if !skipped.is_empty() {
-        out.notices.push(format!("Not used on this Mac: {}", skipped.join(" ")));
+        out.notices.push(format!("Not used on {THIS_COMPUTER}: {}", skipped.join(" ")));
     }
     out
 }
@@ -617,7 +643,7 @@ mod tests {
     fn a_missing_profile_falls_back_to_default_settings_and_says_so() {
         let (args, notices) = args_of(&Sessions::default(), &profiles(), &session(&[("PuttySession", "netops")]));
         assert_eq!(args, ["-tt", "-o", "ServerAliveInterval=30", "10.0.0.1"]);
-        assert!(notices[0].contains("\"netops\" isn't set up on this Mac"));
+        assert!(notices[0].contains(&format!("\"netops\" isn't set up on {THIS_COMPUTER}")));
     }
 
     #[test]
@@ -625,7 +651,7 @@ mod tests {
         let t = translate_extra_args("-pw secret -P 2222 -A -load profile -sercfg 9600");
         assert_eq!(t.password.as_deref(), Some("secret"));
         assert_eq!(t.args, ["-p", "2222", "-A"]);
-        assert_eq!(t.notices, ["Not used on this Mac: -sercfg 9600"]);
+        assert_eq!(t.notices, [format!("Not used on {THIS_COMPUTER}: -sercfg 9600")]);
     }
 
     #[test]

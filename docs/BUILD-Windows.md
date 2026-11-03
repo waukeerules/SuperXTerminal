@@ -65,8 +65,9 @@ Tried in `npm run tauri dev` on Windows 11:
   The app menu (SuperXTerminal, File, Edit, View, Tools, Window) becomes a menu bar in the window.
 - **Sessions:** a SuperXPuTTY settings folder (Sessions.xml, button bars, icons, highlighting) is read as it is: the
   tree, icons, environment colours on the tree and tabs, Recent and the button bar.
-- **Local Shell and cmd sessions:** cmd.exe in a ConPTY through `portable-pty`, with typing and output, and Ctrl+C
-  stopping a running command (`ping -t`).
+- **Local Shell, cmd and PowerShell sessions:** cmd.exe in a ConPTY through `portable-pty`, with typing and output,
+  and Ctrl+C stopping a running command (`ping -t`). As SuperXPuTTY: cmd sessions run cmd.exe, PowerShell sessions
+  Windows PowerShell (powershell.exe) and WSL sessions wsl.exe, from System32, in the user's folder.
 - **SSH:** Windows' own OpenSSH (`%SystemRoot%\System32\OpenSSH`), logging in with a password (a Cisco switch) or a
   key, a PuTTY .ppk key included (converted, below). An SSH agent (1Password's, Windows' ssh-agent) is used as ssh
   uses it: when it holds the session's key, ssh asks it to sign.
@@ -110,10 +111,6 @@ Found by running it:
   tabs say they aren't supported yet); it needs COM port code (`CreateFile`, `SetCommState`, `SetCommTimeouts`,
   `SetCommBreak`). Serial names are already `COM1`… in shared sessions, so the "which `/dev/cu.*` is it" step isn't
   needed on Windows.
-- **PowerShell sessions:** `launch.rs` only looks for pwsh where Homebrew puts it, and says to install it with brew.
-  Use `pwsh.exe`, else `powershell.exe`.
-- **WSL and cmd sessions:** both open the default shell (cmd.exe) with the notice "opened as a Local Shell on this Mac".
-  WSL should run `wsl.exe` (with the session's distribution), and cmd needs no notice.
 - **ssh's askpass:** the login helper (`src-tauri/src/askpass.rs`) uses a Unix socket, so on Windows it refuses ("Not
   on this system"): file transfer and Connect external can't be given a saved password. Windows needs a named pipe;
   Windows' OpenSSH supports `SSH_ASKPASS`.
@@ -124,9 +121,10 @@ Found by running it:
 - **The app log:** `src-tauri/src/applog.rs` puts it in `~/Library/Logs/SuperXTerminal`, which on Windows makes a
   `Library` folder in the user's home. Use `%LOCALAPPDATA%\SuperXTerminal\logs`.
 - **PuTTY profiles:** a session's profile (PuttySession) is looked up in SuperXTerminal's own profiles (Settings >
-  Profiles), so on Windows a profile that only exists in PuTTY or KiTTY gives "Profile … isn't set up on this Mac".
+  Profiles), so on Windows a profile that only exists in PuTTY or KiTTY gives "Profile … isn't set up on this PC".
   Reading PuTTY's saved sessions from the registry (and KiTTY's from its folder or `kitty.ini`) would bring them over.
-- **"this Mac":** messages in the Rust core say "on this Mac"; they should name the system they're on.
+- **"this Mac":** the session launch messages say "this PC" on Windows; a few others (file transfer, Connect
+  external) still say "this Mac", in code that's Mac-only today.
 
 Known from the code, not tried yet:
 

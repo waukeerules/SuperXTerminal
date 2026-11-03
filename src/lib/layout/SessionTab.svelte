@@ -35,7 +35,8 @@
     </span>
   {:else}
     <span class="icon" class:down={disconnected} title={disconnected ? "Disconnected" : undefined}>
-      <Icon key={icon} size={Math.round(iconSize * 0.75)} {customs} />
+      <!-- on its environment circle, outlined, as in the Sessions tree -->
+      <Icon key={icon} size={Math.round(iconSize * 0.75)} {environment} {customs} />
       {#if disconnected}<span class="badge" aria-label="Disconnected">✕</span>
       {:else if alert === "activity"}<span class="badge activity" title="New output" aria-label="New output"></span>
       {:else if alert === "silence"}<span class="badge silence" title="Quiet" aria-label="Quiet">❚❚</span>{/if}

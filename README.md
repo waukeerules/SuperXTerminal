@@ -119,7 +119,9 @@ npm run tauri dev
 
 ## Licence
 
-To be decided. SuperPuTTY is MIT.
+MIT, as SuperPuTTY is: you're free to use, copy, change and share it, as long as the copyright notice comes with it.
+See [LICENSE](LICENSE). The components it uses keep their own licences, listed in
+[THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
 
 ## Thanks
 

@@ -466,4 +466,4 @@ Sizes are rough, for one developer working with an AI assistant. "w" means weeks
    - **Where releases live:** the repository is private, so the app's update check can't see its releases (no token), and an auto updater couldn't either. Make the repository public, publish releases somewhere public (a public repository or a web server), or keep updating by hand. Tauri's updater also needs its own signing key (free, separate from Apple's); without notarisation, an update on another Mac still meets the warning.
    - **Also deferred:** a universal (Intel and Apple silicon) build, documented in BUILD-macOS.md but not tried.
 9. **Mac hardware:** decided: development happens on a Mac.
-10. **Repository:** name `SuperXTerminal` under `waukeerules`, public or private, and MIT licence like SuperXPuTTY?
+10. **Repository:** decided: `SuperXTerminal` under `waukeerules`, MIT licensed as SuperPuTTY is (`LICENSE`, November 2026). Still open: making it public (it's private).

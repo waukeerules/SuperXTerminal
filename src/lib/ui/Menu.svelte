@@ -100,6 +100,8 @@
     min-width: 210px;
     padding: 4px 0;
     background: var(--bg-pane);
+    /* its own, so a submenu doesn't take the highlighted row's white */
+    color: var(--text);
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);

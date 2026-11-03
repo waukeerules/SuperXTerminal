@@ -193,7 +193,7 @@ export class PageHost implements ScriptTarget {
 
   /** Send a message to the page */
   private post(message: PageMessage): void {
-    this.frame.contentWindow?.postMessage({ channel: "sxt-host", tab: this.tab, message }, window.location.origin);
+    this.frame.contentWindow?.postMessage({ channel: "sxt-host", tab: this.tab, message }, "/");
   }
 
   /** Handle a window message if it's this tab's page talking */

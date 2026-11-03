@@ -14,7 +14,7 @@
     function $(id) { return document.getElementById(id); }
 
     function ask() {
-        window.parent.postMessage({ channel: 'sxt-compare-page', tab: tab, type: 'refresh' }, location.origin);
+        window.parent.postMessage({ channel: 'sxt-compare-page', tab: tab, type: 'refresh' }, '/');
     }
 
     /** The output as compared: the log's time stamp lines left out (they'd differ every time) */

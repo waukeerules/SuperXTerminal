@@ -44,7 +44,7 @@
     window.chrome.webview = {
         /** WebView2's postMessage: the page's message to the host */
         postMessage: function (message) {
-            window.parent.postMessage({ channel: 'sxt-page', tab: tab, message: message }, window.location.origin);
+            window.parent.postMessage({ channel: 'sxt-page', tab: tab, message: message }, '/');
         },
         /** WebView2's addEventListener: only "message" is used by the pages */
         addEventListener: function (type, listener) {

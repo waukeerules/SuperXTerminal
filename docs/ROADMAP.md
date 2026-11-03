@@ -185,7 +185,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Done when:** a download opens on any Mac without warnings.
 
-- 🚧 Local release build (`npm run tauri build`, APPLE_SIGNING_IDENTITY set to the Apple Development certificate): SuperXTerminal.app (11.8 MB) and a plain .dmg (6.4 MB), hardened runtime, the Apple Events entitlement (Connect external drives Terminal), macOS 12 or later, the permission messages for Terminal and the local network. Not yet run outside development
+- 🚧 Local release build (`npm run tauri build`, APPLE_SIGNING_IDENTITY set to the Apple Development certificate): SuperXTerminal.app (11.8 MB) and a plain .dmg (6.4 MB), hardened runtime, the Apple Events entitlement (Connect external drives Terminal), macOS 12 or later, the permission messages for Terminal and the local network. Checked running from the bundle: Local Shell, an SSH session (Media Server, key login) and File transfer (SFTP). Fixed for it: the tab pages' messages named the main window's origin, which under Tauri's tauri:// scheme isn't one postMessage accepts, so terminal tabs stayed blank; they now send to "/" (the same origin)
 - ⬜ Developer ID signing and notarisation
 - ⬜ `.dmg` (designed)
 - ⬜ `THIRD-PARTY-NOTICES` generated per release

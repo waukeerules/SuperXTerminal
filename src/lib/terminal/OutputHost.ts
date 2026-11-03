@@ -52,7 +52,7 @@ export class OutputHost {
   }
 
   private post(message: PageMessage): void {
-    this.frame.contentWindow?.postMessage({ channel: "sxt-host", tab: this.id, message }, window.location.origin);
+    this.frame.contentWindow?.postMessage({ channel: "sxt-host", tab: this.id, message }, "/");
   }
 
   private receive(event: MessageEvent): void {

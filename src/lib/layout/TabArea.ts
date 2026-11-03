@@ -289,7 +289,7 @@ class ComparePanel implements IContentRenderer {
     const [left, right] = await Promise.all([read(this.params.left, "left"), read(this.params.right, "right")]);
     this.frame.contentWindow.postMessage(
       { channel: "sxt-compare", left: { title: this.params.leftTitle, text: left }, right: { title: this.params.rightTitle, text: right } },
-      window.location.origin,
+      "/",
     );
   }
 
@@ -902,7 +902,7 @@ export class TabArea {
     }
     const frame = panel?.view.content.element.querySelector("iframe");
     frame?.contentWindow?.focus();
-    frame?.contentWindow?.postMessage({ channel: "sxt-host", tab: panel?.id, message: { type: "focus" } }, window.location.origin);
+    frame?.contentWindow?.postMessage({ channel: "sxt-host", tab: panel?.id, message: { type: "focus" } }, "/");
   }
 
   /** Follow the app's light or dark look (App calls this when it changes) */

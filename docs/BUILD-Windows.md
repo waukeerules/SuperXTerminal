@@ -65,20 +65,44 @@ Tried in `npm run tauri dev` on Windows 11:
   The app menu (SuperXTerminal, File, Edit, View, Tools, Window) becomes a menu bar in the window.
 - **Sessions:** a SuperXPuTTY settings folder (Sessions.xml, button bars, icons, highlighting) is read as it is: the
   tree, icons, environment colours on the tree and tabs, Recent and the button bar.
-- **Local Shell and cmd sessions:** cmd.exe in a ConPTY through `portable-pty`, with typing and output.
-- **SSH:** starts ssh in a tab and gets as far as the host key prompt (see the PATH problem below).
-- **RDP:** the built-in client (IronRDP) opens its tab and asks for the login.
+- **Local Shell and cmd sessions:** cmd.exe in a ConPTY through `portable-pty`, with typing and output, and Ctrl+C
+  stopping a running command (`ping -t`).
+- **SSH:** Windows' own OpenSSH (`%SystemRoot%\System32\OpenSSH`), logging in with a password (a Cisco switch) or a
+  key, a PuTTY .ppk key included (converted, below). An SSH agent (1Password's, Windows' ssh-agent) is used as ssh
+  uses it: when it holds the session's key, ssh asks it to sign.
+- **RDP:** the built-in client (IronRDP), logged in to a Windows 10 desktop.
+- **Database sessions:** the PostgreSQL table, read and shown under Database sessions.
+- **Shortcuts:** Windows' own defaults (Ctrl+Shift+T, Ctrl+Shift+W, Ctrl+Shift+D...), caught by the page, with the
+  terminal keeping its Ctrl keys (Ctrl+C, Ctrl+D, Ctrl+K...); menus and Settings > Shortcuts show "Ctrl+Shift+T".
 
-Not tried yet: logging in over SSH or RDP, Telnet and Raw, Database sessions, file transfer, layouts, scripts, and the
-release build.
+Not tried yet: Telnet and Raw, file transfer, layouts, scripts, and the release build.
+
+### Keys on Windows
+
+The Mac's shortcuts are ⌘ keys, which a terminal never needs. On Windows the same keys with Ctrl are the terminal's
+(Ctrl+D ends input, Ctrl+W deletes a word, Ctrl+K kills a line), so Windows has its own defaults, as Windows Terminal's
+(`src-tauri/src/keys.rs`, `other`):
+
+| Action | Mac | Windows |
+|---|---|---|
+| New Window / New Local Shell | ⌘N / ⌘T | Ctrl+Shift+N / Ctrl+Shift+T |
+| Open Session / Switch Session | ⌘O / ⇧⌘O | Ctrl+Shift+O / Ctrl+Shift+P |
+| Close Tab | ⌘W | Ctrl+Shift+W |
+| Next / Previous Tab | ⇧⌘] / ⇧⌘[ | Ctrl+Tab / Ctrl+Shift+Tab |
+| Split Right / Split Down | ⌘D / ⇧⌘D | Ctrl+Shift+D / Ctrl+Shift+E |
+| Find / Clear Scrollback | ⌘F / ⌘K | Ctrl+Shift+F / Ctrl+Shift+K |
+| Full Screen / Settings | ⌃⌘F / ⌘, | F11 / Ctrl+, |
+
+Windows keeps Alt+F4, and the terminal page keeps Ctrl+Shift+C/V and Ctrl/Shift+Insert for copy and paste; Settings >
+Shortcuts won't give them to an action. On Windows a menu's keys don't fire while the page has the keyboard, so
+`src/lib/shortcuts.ts` catches them in the window and in each tab's page. In RDP tabs the Windows key goes to the
+remote computer as itself, and Ctrl+Alt+End is Ctrl+Alt+Delete (Windows keeps that one), as in Remote Desktop
+Connection.
 
 ## What still has to be done for Windows
 
 Found by running it:
 
-- **ssh from the PATH:** SSH tabs, file transfer and Connect external run `ssh` (and `scp`) by name, so whichever comes
-  first on the PATH runs: on a PC with MSYS2, Git for Windows or Cygwin that may not be Windows' own OpenSSH. Prefer
-  `%SystemRoot%\System32\OpenSSH\ssh.exe` when it's there.
 - **Serial:** the device code in `src-tauri/src/streams.rs` is termios, Unix only. On Windows it's stubbed out (serial
   tabs say they aren't supported yet); it needs COM port code (`CreateFile`, `SetCommState`, `SetCommTimeouts`,
   `SetCommBreak`). Serial names are already `COM1`… in shared sessions, so the "which `/dev/cu.*` is it" step isn't
@@ -122,6 +146,17 @@ Fixed on the way:
 - **Blank terminal tabs:** WebView2 puts its own `window.chrome.webview` in every frame, which replaced the stand-in
   from `public/web/host/webview.js`, so the pages' messages never reached the main window. The stand-in is now defined
   read-only, so it stays.
+- **ssh from the PATH:** `ssh`, `scp` and sftp were run by name, so on a PC with MSYS2, Git for Windows or Cygwin
+  another ssh.exe could come first. Windows' own OpenSSH is used when it's installed (`launch::openssh`).
+- **Ctrl+C didn't stop `ping -t`:** a process started with "ignore Ctrl+C" (some terminals and launchers start
+  programs that way) passes it on to every program it starts, so the shells in its tabs ignored the Ctrl+C that the
+  pseudo console raises for 0x03. The app clears the flag as it starts (`console.rs`), and never sets it.
+- **Shortcuts:** the Mac's defaults took the terminal's Ctrl keys, the menu's keys never fired, and labels showed ⌘
+  (see Keys on Windows).
+- **PuTTY .ppk keys:** OpenSSH can't read them, so ssh gets a converted copy (`ppk.rs`), written in the user's folder
+  (`keys\`) with the user's own access only: Windows' OpenSSH refuses a key with any other entry, even one inherited
+  from the folder, and then quietly falls back to an agent or other keys. Keys with a passphrase still need
+  converting with puttygen.
 
 ## Checks
 

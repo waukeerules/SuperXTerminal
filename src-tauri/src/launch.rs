@@ -60,15 +60,54 @@ pub struct Login {
     pub key_file: String,
 }
 
-/// Algorithms older devices offer and OpenSSH 10 no longer accepts by default; added for each connection only.
-/// They're the "Allow older algorithms" profile option (docs/PLAN.md §2 Profiles), on in "Default Settings".
-/// Checked against an IOS lab switch.
-const OLDER_ALGORITHMS: [&str; 8] = [
-    "-o", "KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1",
-    "-o", "HostKeyAlgorithms=+ssh-rsa",
-    "-o", "PubkeyAcceptedAlgorithms=+ssh-rsa",
-    "-o", "Ciphers=+aes256-cbc,aes192-cbc,aes128-cbc",
+/// Algorithms older devices offer that OpenSSH no longer accepts by default, but PuTTY does (some below its "warn
+/// below here" line): ssh's option, `ssh -Q` query and the algorithms. Added for each connection only, as the "Allow
+/// older algorithms" profile option (docs/PLAN.md §2 Profiles), on in "Default Settings". Windows' OpenSSH also
+/// leaves hmac-sha1 out of its defaults, which an IOS switch offering only hmac-sha1 and hmac-md5 needs.
+const OLDER_ALGORITHMS: [(&str, &str, &[&str]); 5] = [
+    ("KexAlgorithms", "kex", &["diffie-hellman-group14-sha1", "diffie-hellman-group-exchange-sha1", "diffie-hellman-group1-sha1"]),
+    ("HostKeyAlgorithms", "key", &["ssh-rsa", "ssh-dss"]),
+    ("PubkeyAcceptedAlgorithms", "key", &["ssh-rsa", "ssh-dss"]),
+    ("Ciphers", "cipher", &["aes256-cbc", "aes192-cbc", "aes128-cbc", "3des-cbc"]),
+    ("MACs", "mac", &["hmac-sha1", "hmac-sha1-96", "hmac-md5", "hmac-md5-96"]),
 ];
+
+/// ssh's options for [`OLDER_ALGORITHMS`], with only the algorithms this computer's ssh has (`ssh -Q kex`, ...): ssh
+/// refuses to start at all when an option names one it doesn't know, and newer builds drop some (DSA). Asked once
+/// per run; when ssh can't be asked, the ones every OpenSSH 9 and 10 still has.
+fn older_algorithm_args() -> Vec<String> {
+    static ARGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    ARGS.get_or_init(|| {
+        let mut args = Vec::new();
+        for (option, query, wanted) in OLDER_ALGORITHMS {
+            let known = ssh_query(query);
+            let have: Vec<&str> = match &known {
+                Some(list) => wanted.iter().copied().filter(|w| list.iter().any(|k| k == w)).collect(),
+                // the safe ones: in every OpenSSH 9 and 10 build
+                None => wanted.iter().copied().filter(|w| !w.contains("dss") && !w.contains("group1-") && !w.contains("3des") && !w.contains("md5")).collect(),
+            };
+            if !have.is_empty() {
+                args.extend(["-o".to_string(), format!("{option}=+{}", have.join(","))]);
+            }
+        }
+        args
+    })
+    .clone()
+}
+
+/// The algorithms of one kind this computer's ssh has (`ssh -Q kex`, `key`, `cipher`, `mac`); None if it can't say
+fn ssh_query(kind: &str) -> Option<Vec<String>> {
+    let mut command = std::process::Command::new(openssh("ssh"));
+    command.args(["-Q", kind]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let output = command.output().ok().filter(|o| o.status.success())?;
+    let list: Vec<String> = String::from_utf8_lossy(&output.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+    (!list.is_empty()).then_some(list)
+}
 
 /// An in-memory attribute only Quick connect sets: the password typed in its toolbar, never written to a file
 pub const QUICK_PASSWORD: &str = "__QuickConnectPassword";
@@ -381,7 +420,7 @@ fn ssh(
 
     let mut args: Vec<String> = vec!["-tt".into()];
     if profile.older_algorithms.or(default.older_algorithms).unwrap_or(true) {
-        args.extend(OLDER_ALGORITHMS.iter().map(|s| s.to_string()));
+        args.extend(older_algorithm_args());
     }
     let extra = translate_extra_args(&variables::substitute(raw_extra, values));
     notices.extend(extra.notices);
@@ -673,6 +712,21 @@ mod tests {
         );
         let telnet = QuickConnect { host: "telnet://10.0.0.1".into(), ..quick };
         assert_eq!(telnet.session().unwrap().get("Proto"), "TELNET");
+    }
+
+    #[test]
+    fn older_algorithms_are_ones_this_ssh_takes() {
+        // ssh -G reads the options without connecting, and fails on an algorithm it doesn't know
+        let args = older_algorithm_args();
+        let Ok(output) = std::process::Command::new(openssh("ssh")).args(&args).args(["-G", "example.invalid"]).output() else {
+            return; // no ssh here to ask
+        };
+        assert!(output.status.success(), "ssh refused {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+        let config = String::from_utf8_lossy(&output.stdout).to_string();
+        let macs = config.lines().find(|l| l.starts_with("macs ")).unwrap_or_default();
+        if ssh_query("mac").is_some_and(|m| m.iter().any(|a| a == "hmac-sha1")) {
+            assert!(macs.split([' ', ',']).any(|m| m == "hmac-sha1"), "{macs}");
+        }
     }
 
     #[test]

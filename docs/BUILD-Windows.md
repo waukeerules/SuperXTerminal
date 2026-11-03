@@ -194,5 +194,6 @@ Fixed on the way:
 
 ## Checks
 
-The same as the Mac's ([BUILD-macOS.md](BUILD-macOS.md), section 5): `npm run check`, `cargo test`, `cargo deny check`
-and `npm run licenses`.
+The same as the Mac's ([BUILD-macOS.md](BUILD-macOS.md), section 5): `npm run check`, `npm test`,
+`npm run test:browser`, `cargo test`, `cargo deny check` and `npm run licenses`. The browser tests' Chromium is
+WebView2's engine, so they're the ones that speak for Windows.

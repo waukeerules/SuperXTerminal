@@ -8,3 +8,7 @@ node_modules/
 
 # Installers from local release builds, one folder per version (releases/0.1.0/...); kept out of git
 /releases/
+
+# Playwright's results and report (npm run test:browser)
+/test-results/
+/playwright-report/

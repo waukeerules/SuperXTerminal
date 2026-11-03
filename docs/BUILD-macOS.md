@@ -74,6 +74,14 @@ npm run check
 ```
 
 ```bash
+npm test
+```
+
+```bash
+npm run test:browser
+```
+
+```bash
 cd src-tauri && cargo test
 ```
 
@@ -86,7 +94,10 @@ npm run licenses
 ```
 
 - **`npm run check`:** Svelte and TypeScript.
-- **`cargo test`:** the Rust unit tests.
+- **`npm test`:** the front end's unit and component tests (Vitest), a few seconds.
+- **`npm run test:browser`:** the terminal page in WebKit and Chromium (Playwright). The first time, install the
+  browsers: `npx playwright install webkit chromium`.
+- **`cargo test`:** the Rust unit tests. See [TESTING.md](TESTING.md) for where each kind of test lives.
 - **`cargo deny check`:** Rust licences against the allowed list in `src-tauri/deny.toml` (permissive only), known
   vulnerabilities and sources.
 - **`npm run licenses`:** the same licence rule for the npm packages the app ships.

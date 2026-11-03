@@ -215,6 +215,11 @@ export class PageHost implements ScriptTarget {
     }
   }
 
+  /** The app went light or dark: the page's theme follows it when it's set to (Follow the App's Look) */
+  setDark(dark: boolean): void {
+    this.post({ type: "look", dark });
+  }
+
   /** Send a message to the page */
   private post(message: PageMessage): void {
     this.frame.contentWindow?.postMessage({ channel: "sxt-host", tab: this.tab, message }, "/");

@@ -46,6 +46,7 @@
     <label>Theme
       <select value={prefs.theme} onchange={(e) => set("theme", e.currentTarget.value)}>
         <option value="">PuTTY's (the profile's colours)</option>
+        <option value="@look">Follow the app's look (Settings &gt; General &gt; Theme: Light or Dark)</option>
         {#each themes as theme}<option value={theme}>{theme}</option>{/each}
       </select>
     </label>

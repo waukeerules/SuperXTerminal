@@ -961,6 +961,8 @@ export class TabArea {
   /** Follow the app's light or dark look (App calls this when it changes) */
   setDark(dark: boolean): void {
     this.api.updateOptions({ theme: dark ? themeDark : themeLight });
+    // terminals whose theme follows the app's look
+    for (const host of this.hosts.values()) host.setDark(dark);
   }
 
   /** The tab menu's commands, from a tab's page: close it, the others, those to its right, or all */

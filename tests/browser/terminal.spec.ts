@@ -90,3 +90,19 @@ test("Wrap Lines on fits the tab, with no scroll bar", async ({ page }) => {
   await expect(page.locator("body")).not.toHaveClass(/nowrap/);
   await expect(page.locator("#hscroll")).toBeHidden();
 });
+
+test("Follow the App's Look is Light while the app is light, and Dark once it goes dark", async ({ page }) => {
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  // the real theme files, as the app gives them
+  const themes = await page.evaluate(async () =>
+    Promise.all(["light", "dark", "putty"].map((n) => fetch(`/web/output/themes/${n}.theme.json`).then((r) => r.json()))),
+  );
+  await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", prefs: { theme: "@look" }, themes, dark: false }), themes);
+  const background = () => page.evaluate(() => (window as any).terminalDev.term.options.theme.background as string);
+  await expect.poll(background).toBe("#ffffff");
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "look", dark: true }));
+  await expect.poll(background).not.toBe("#ffffff");
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "look", dark: false }));
+  await expect.poll(background).toBe("#ffffff");
+});

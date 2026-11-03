@@ -679,9 +679,11 @@
                 return { label: set.name, checked: tabRules === set.id, action: function () { chooseRules(set.id); } };
             }))
             .concat([{ label: 'None', checked: tabRules === 'none', action: function () { chooseRules('none'); } }]);
-        var themeItems = themes.map(function (t) {
-            return { label: t.name, checked: theme && theme.name === t.name, action: function () { savePref('theme', t.name); applyTheme(); } };
-        });
+        var following = loadPref('theme') === FOLLOW_LOOK;
+        var themeItems = [{ label: "Follow the App's Look", checked: following, action: function () { savePref('theme', FOLLOW_LOOK); applyTheme(); } }, '-']
+            .concat(themes.map(function (t) {
+                return { label: t.name, checked: !following && theme && theme.name === t.name, action: function () { savePref('theme', t.name); applyTheme(); } };
+            }));
         var chosenFamily = loadPref('fontFamily') || '';
         var setFamily = function (value) { return function () { savePref('fontFamily', value); applyFont(); }; };
         var fontItems = [
@@ -874,9 +876,14 @@
 
     // ---- theme ----------------------------------------------------------------------------------------------------
 
+    /** The theme preference that follows the app's light or dark look (a theme file can't be named so) */
+    var FOLLOW_LOOK = '@look';
+
     /** Apply the chosen theme (PuTTY's colours by default): terminal colours, font and the highlighting colours */
     function applyTheme() {
         var wanted = loadPref('theme');
+        // Follow the App's Look (SuperXTerminal's "@look"): its Light or Dark theme as the app is light or dark
+        if (wanted === FOLLOW_LOOK) { wanted = darkDefault ? 'Dark' : 'Light'; }
         theme = themes.filter(function (t) { return t.name === wanted; })[0]
             || themes.filter(function (t) { return t.name === 'PuTTY'; })[0]
             || themes.filter(function (t) { return (t.base === 'vs-dark') === darkDefault; })[0]
@@ -1143,6 +1150,8 @@
             case 'focus': term.focus(); break;
             case 'action': runAction(message.name); break;
             case 'cursorColor': cursorColor = message.color || null; applyTheme(); break;
+            // the app went light or dark (SuperXTerminal): a theme that follows it changes with it
+            case 'look': darkDefault = !!message.dark; applyTheme(); break;
             case 'prefs': applyPrefs(message.prefs); break;
         }
     }

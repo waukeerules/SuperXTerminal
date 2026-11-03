@@ -9,7 +9,7 @@ import { saveSettings, settings } from "../settings/store.svelte";
 export const PREF_DEFAULTS: Record<string, string> = {
   /** "auto", "none" or a rule set's id */
   ruleSet: "auto",
-  /** A theme's name; "" for PuTTY's */
+  /** A theme's name; "" for PuTTY's; "@look" for Light or Dark as the app is (Settings > General > Theme) */
   theme: "",
   /** "" for the theme's, "profile", or a font's name */
   fontFamily: "",

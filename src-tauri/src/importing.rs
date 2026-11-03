@@ -740,8 +740,9 @@ fn plan_stored(found: Vec<StoredSession>, folder: &str, store: Store) -> Plan {
             row.skip = Some("no SessionId".into());
         } else {
             row.id = format!("{folder}/{id}");
-            // the id and name come from where it goes; the rest is the session as it was
-            row.values = session.attributes.into_iter().filter(|(name, _)| name != "SessionId" && name != "SessionName").collect();
+            // the id comes from where it goes; the name and the rest are the session's as they were (its name can be
+            // more than its id's last part: "sw1 - C9300 - 10.0.0.1" kept whole)
+            row.values = session.attributes.into_iter().filter(|(name, _)| name != "SessionId").collect();
         }
         plan.rows.push(row);
     }
@@ -1134,7 +1135,15 @@ pub fn apply(plan: &Plan, file_of: impl Fn(Store) -> Result<PathBuf, String>, id
                     let value = if name == "ExtraArgs" { keep_password(value, "") } else { value.clone() };
                     session.set(name, &value);
                 }
-                session.set("SessionName", id.rsplit('/').next().unwrap_or(&id));
+                // the name the import gives (a Sessions.xml's own, a CSV's), else the id's last part; with the "-1" the
+                // id was given to be unique, so the two copies' names differ too
+                let suffix = &id[row.id.len()..];
+                let given = row.values.iter().find(|(name, value)| name == "SessionName" && !value.trim().is_empty());
+                let name = match given {
+                    Some((_, given)) => format!("{}{suffix}", given.trim()),
+                    None => id.rsplit('/').next().unwrap_or(&id).to_string(),
+                };
+                session.set("SessionName", &name);
                 sessions::insert_sorted(list, session);
                 added += 1;
             }
@@ -1302,5 +1311,22 @@ mod tests {
         assert_eq!(plan.rows[0].id, "Imported/Lab/sw1");
         let values: Vec<&str> = plan.rows[0].values.iter().map(|(name, _)| name.as_str()).collect();
         assert!(values.contains(&"ImageKey") && values.contains(&"Color") && !values.contains(&"SessionId"));
+    }
+
+    #[test]
+    fn an_imported_sessions_name_is_kept_whole_and_made_unique_with_its_id() {
+        let dir = std::env::temp_dir().join(format!("sxt-import-names-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("PrivateSessions.xml");
+        std::fs::write(&path, sessions::write_sessions(&[])).unwrap();
+        // a name that's more than its id's last part, dashes and all
+        let others = || vec![session("test", &[("SessionName", "test - model example - 10.10.10.10"), ("Host", "192.168.3.2")])];
+        let file = |_: Store| Ok(path.clone());
+        apply(&plan_stored(others(), "Imported", Store::Private), file, |_| Vec::new()).unwrap();
+        apply(&plan_stored(others(), "Imported", Store::Private), file, |_| Vec::new()).unwrap();
+        let read = sessions::read_sessions_file(&path, &mut Vec::new());
+        let names: Vec<(&str, &str)> = read.iter().map(|s| (s.id(), s.get("SessionName"))).collect();
+        assert_eq!(names, [("Imported/test", "test - model example - 10.10.10.10"), ("Imported/test-1", "test - model example - 10.10.10.10-1")]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

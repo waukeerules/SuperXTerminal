@@ -106,3 +106,16 @@ test("Follow the App's Look is Light while the app is light, and Dark once it go
   await page.evaluate(() => (window as any).terminalDev.message({ type: "look", dark: false }));
   await expect.poll(background).toBe("#ffffff");
 });
+
+test("the find bar and menu follow the terminal's theme: light on Light, dark on PuTTY's", async ({ page }) => {
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  const themes = await page.evaluate(async () =>
+    Promise.all(["light", "dark", "putty"].map((n) => fetch(`/web/output/themes/${n}.theme.json`).then((r) => r.json()))),
+  );
+  const findBackground = () => page.evaluate(() => getComputedStyle(document.getElementById("find")!).backgroundColor);
+  await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", prefs: { theme: "Light" }, themes }), themes);
+  await expect.poll(findBackground).toBe("rgb(243, 243, 243)");
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs", prefs: { theme: "PuTTY" } }));
+  await expect.poll(findBackground).toBe("rgb(43, 43, 43)");
+});

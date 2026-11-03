@@ -32,6 +32,8 @@
     id: number;
     upload: boolean;
     sources: string[];
+    /** A download's sizes, from the remote listing when queued */
+    sizes?: number[];
     target: string;
     status: "Waiting" | "Running" | "Done" | "Failed" | "Cancelled";
     total: number;
@@ -106,7 +108,10 @@
       }
     }
     if (!sources.length) return;
-    jobs = [...jobs, { id: nextJob++, upload, sources, target, status: "Waiting", total: 0, done: 0, file: "", started: 0, ended: 0, message: "" }];
+    // a download's sizes from what the remote side shows (for SCP's progress)
+    const shown = new Map((sides.remote.listing?.entries ?? []).map((e) => [joinPath(sides.remote.listing!.path, e.name), e.size]));
+    const sizes = upload ? undefined : sources.map((s) => shown.get(s) ?? 0);
+    jobs = [...jobs, { id: nextJob++, upload, sources, sizes, target, status: "Waiting", total: 0, done: 0, file: "", started: 0, ended: 0, message: "" }];
     void run();
   }
 
@@ -126,7 +131,7 @@
               current.done = p.bytes;
               current.file = p.file;
             }
-          });
+          }, current.sizes);
           current.status = "Done";
           current.message = current.total ? `${formatSize(current.total)} in ${seconds(Date.now() - current.started)}` : "";
         } catch (e) {

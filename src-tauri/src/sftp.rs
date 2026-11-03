@@ -440,6 +440,8 @@ pub async fn sftp_transfer(
     transfer: u32,
     upload: bool,
     sources: Vec<String>,
+    // a download's sizes, from the remote listing (SCP can't tell them)
+    sizes: Option<Vec<u64>>,
     target: String,
     on_progress: Channel<Progress>,
 ) -> Result<(), String> {
@@ -447,7 +449,7 @@ pub async fn sftp_transfer(
     let cancel = Arc::new(AtomicBool::new(false));
     sftps.cancels.lock().unwrap().insert(transfer, cancel.clone());
     let result = match &conn.scp {
-        Some(base) => scp_transfer(base, &conn.token, upload, &sources, &target, &cancel, &on_progress).await,
+        Some(base) => scp_transfer(base, &conn.token, upload, &sources, &sizes.unwrap_or_default(), &target, &cancel, &on_progress).await,
         None => run_transfer(conn.raw()?, upload, &sources, &target, &cancel, &on_progress).await,
     };
     sftps.cancels.lock().unwrap().remove(&transfer);
@@ -806,33 +808,38 @@ fn scp_args(base: &[String]) -> (Vec<String>, String) {
     (args, host)
 }
 
-/// Copy files with scp (-O: the SCP protocol, as network devices speak it), one at a time
+/// Copy files with scp (-O: the SCP protocol, as network devices speak it), one at a time. scp prints its progress
+/// meter only to a terminal, so it runs in a pseudo terminal and the meter's percentage is read as it goes.
+/// `sizes`: a download's file sizes, from the remote listing (an upload's are read here)
+#[allow(clippy::too_many_arguments)]
 async fn scp_transfer(
     base: &[String],
     token: &str,
     upload: bool,
     sources: &[String],
+    sizes: &[u64],
     target: &str,
-    cancel: &AtomicBool,
+    cancel: &Arc<AtomicBool>,
     on_progress: &Channel<Progress>,
 ) -> Result<(), String> {
     let (args, host) = scp_args(base);
-    let mut sizes = Vec::new();
-    for source in sources {
+    let mut file_sizes = Vec::new();
+    for (i, source) in sources.iter().enumerate() {
         if upload {
             let meta = std::fs::metadata(source).map_err(|e| format!("{source}: {e}"))?;
             if meta.is_dir() {
                 return Err(format!("{source} is a folder: over SCP, copy the files in it instead."));
             }
-            sizes.push(meta.len());
+            file_sizes.push(meta.len());
         } else {
-            sizes.push(0);
+            file_sizes.push(sizes.get(i).copied().unwrap_or(0));
         }
     }
-    let total: u64 = sizes.iter().sum();
+    let total: u64 = file_sizes.iter().sum();
     let _ = on_progress.send(Progress::Total { bytes: total, files: sources.len() as u64 });
+    let helper = std::env::current_exe().map_err(|e| e.to_string())?.to_string_lossy().to_string();
     let mut done = 0u64;
-    for (source, size) in sources.iter().zip(sizes) {
+    for (source, size) in sources.iter().zip(file_sizes) {
         let name = source.trim_end_matches('/').rsplit(['/', std::path::MAIN_SEPARATOR]).next().unwrap_or(source).to_string();
         let (from, to) = if upload {
             (source.clone(), format!("{host}:{}", join(target, &name)))
@@ -840,33 +847,95 @@ async fn scp_transfer(
             (format!("{host}:{source}"), std::path::Path::new(target).join(&name).to_string_lossy().to_string())
         };
         let _ = on_progress.send(Progress::Done { bytes: done, file: name.clone() });
-        let mut command = with_login("scp", token)?;
-        command.arg("-O").args(&args).arg(&from).arg(&to);
-        let mut child = command.spawn().map_err(|e| format!("Couldn't start scp: {e}"))?;
-        let mut stderr = child.stderr.take();
-        let status = loop {
-            if cancel.load(Ordering::Relaxed) {
-                let _ = child.kill().await;
-                return Err("Cancelled".into());
-            }
-            match tokio::time::timeout(Duration::from_millis(200), child.wait()).await {
-                Ok(status) => break status.map_err(|e| e.to_string())?,
-                Err(_) => continue,
-            }
-        };
-        if !status.success() {
-            let mut said = String::new();
-            if let Some(stderr) = stderr.as_mut() {
-                use tokio::io::AsyncReadExt;
-                let _ = stderr.read_to_string(&mut said).await;
-            }
-            let said = said.trim();
-            return Err(format!("{name}: {}", privilege_hint(if said.is_empty() { "scp failed" } else { said })));
+        let mut words = vec!["-O".to_string()];
+        words.extend(args.iter().cloned());
+        words.extend([from, to.clone()]);
+        let (token, helper, cancel, progress, file, before) = (token.to_string(), helper.clone(), cancel.clone(), on_progress.clone(), name.clone(), done);
+        let result = tokio::task::spawn_blocking(move || {
+            run_scp(&words, &token, &helper, &cancel, |percent| {
+                if size > 0 {
+                    let _ = progress.send(Progress::Done { bytes: before + size * percent / 100, file: file.clone() });
+                }
+            })
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        if let Err(said) = result {
+            return Err(if said == "Cancelled" { said } else { format!("{name}: {}", privilege_hint(&said)) });
         }
-        done += if upload { size } else { std::fs::metadata(&to).map(|m| m.len()).unwrap_or(0) };
+        done += if upload || size > 0 { size } else { std::fs::metadata(&to).map(|m| m.len()).unwrap_or(0) };
         let _ = on_progress.send(Progress::Done { bytes: done, file: name });
     }
     Ok(())
+}
+
+/// One scp in a pseudo terminal: its meter's percentages to `report`; on failure, what it said
+fn run_scp(words: &[String], token: &str, helper: &str, cancel: &AtomicBool, report: impl Fn(u64)) -> Result<(), String> {
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use std::io::Read;
+    let pair = native_pty_system()
+        .openpty(PtySize { rows: 24, cols: 200, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| e.to_string())?;
+    let mut command = CommandBuilder::new("scp");
+    command.args(words);
+    command.env("SSH_ASKPASS", helper);
+    command.env("SSH_ASKPASS_REQUIRE", "force");
+    command.env(crate::askpass::TOKEN_VAR, token);
+    let mut child = pair.slave.spawn_command(command).map_err(|e| format!("Couldn't start scp: {e}"))?;
+    drop(pair.slave);
+    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    // the meter, read on its own thread: "name   45% 8192KB   1.2MB/s   00:10 ETA", redrawn after each \r
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    std::thread::spawn(move || {
+        let mut buffer = [0u8; 4096];
+        while let Ok(n) = reader.read(&mut buffer) {
+            if n == 0 || tx.send(buffer[..n].to_vec()).is_err() {
+                break;
+            }
+        }
+    });
+    let mut said = String::new();
+    let mut last = None;
+    let status = loop {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            return Err("Cancelled".into());
+        }
+        while let Ok(bytes) = rx.try_recv() {
+            said.push_str(&String::from_utf8_lossy(&bytes));
+        }
+        if let Some(percent) = meter_percent(&said) {
+            if last != Some(percent) {
+                last = Some(percent);
+                report(percent);
+            }
+        }
+        // keep only the end: the meter redraws without end
+        if said.len() > 8192 {
+            said = said[said.len() - 4096..].to_string();
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => std::thread::sleep(Duration::from_millis(200)),
+            Err(e) => return Err(e.to_string()),
+        }
+    };
+    std::thread::sleep(Duration::from_millis(100));
+    while let Ok(bytes) = rx.try_recv() {
+        said.push_str(&String::from_utf8_lossy(&bytes));
+    }
+    if status.success() {
+        return Ok(());
+    }
+    // what it said, without its meter
+    let text: Vec<&str> = said.split(['\r', '\n']).map(str::trim).filter(|l| !l.is_empty() && meter_percent(l).is_none()).collect();
+    Err(if text.is_empty() { "scp failed".into() } else { text.join(" ") })
+}
+
+/// The last percentage scp's meter shows in some output
+fn meter_percent(text: &str) -> Option<u64> {
+    let last = text.split(['\r', '\n']).rev().find(|l| l.contains('%'))?;
+    last.split_whitespace().find_map(|w| w.strip_suffix('%').and_then(|n| n.parse::<u64>().ok())).filter(|p| *p <= 100)
 }
 
 // ---- this Mac's side ----
@@ -979,6 +1048,13 @@ mod tests {
     fn explains_privilege_refusals() {
         assert!(privilege_hint("Line has invalid autocommand \"delete /force flash:x\"").contains("privilege 15"));
         assert_eq!(privilege_hint("%Error deleting flash:/x (No such file or directory)"), "%Error deleting flash:/x (No such file or directory)");
+    }
+
+    #[test]
+    fn reads_scps_meter() {
+        assert_eq!(meter_percent("c3560.bin                45%   8192KB   1.2MB/s   00:10 ETA"), Some(45));
+        assert_eq!(meter_percent("a 10% x\rc3560.bin   100%   18MB   1.1MB/s   00:16    \r\n"), Some(100));
+        assert_eq!(meter_percent("Password:"), None);
     }
 
     #[test]

@@ -48,11 +48,14 @@ export const localRename = (from: string, to: string) => invoke("local_rename", 
 export const revealLocal = (path: string) => invoke("local_reveal", { path });
 export const cancelTransfer = (transfer: number) => invoke("sftp_cancel", { transfer });
 
-/** Copy files and folders into a folder; resolves when done, throws with the reason (or "Cancelled") */
-export function transfer(id: number, transferId: number, upload: boolean, sources: string[], target: string, onProgress: (p: Progress) => void): Promise<void> {
+/**
+ * Copy files and folders into a folder; resolves when done, throws with the reason (or "Cancelled"). `sizes`: a
+ * download's sizes from the listing, for SCP's progress (it can't tell them)
+ */
+export function transfer(id: number, transferId: number, upload: boolean, sources: string[], target: string, onProgress: (p: Progress) => void, sizes?: number[]): Promise<void> {
   const channel = new Channel<Progress>();
   channel.onmessage = onProgress;
-  return invoke("sftp_transfer", { id, transfer: transferId, upload, sources, target, onProgress: channel });
+  return invoke("sftp_transfer", { id, transfer: transferId, upload, sources, sizes: sizes ?? null, target, onProgress: channel });
 }
 
 /** A path joined to a name, with the side's separator */

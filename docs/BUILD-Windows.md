@@ -73,6 +73,7 @@ Tried in `npm run tauri dev` on Windows 11:
   uses it: when it holds the session's key, ssh asks it to sign.
 - **RDP:** the built-in client (IronRDP), logged in to a Windows 10 desktop.
 - **Database sessions:** the PostgreSQL table, read and shown under Database sessions.
+- **SSH algorithms:** per profile and per session (SSH algorithms…), listing what Windows' OpenSSH has.
 - **File menu:** SuperXPuTTY's imports (SuperPuTTY XML, PuTTY/KiTTY from the registry, PuTTY Portable's folder,
   PuTTY CM, RDP's recent computers from the registry), Export Sessions, Edit Sessions Externally (in Notepad++ when
   it's installed) and Reload Sessions File. The registry is read through `reg.exe`.

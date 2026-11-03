@@ -255,6 +255,7 @@ pub async fn fetch_all(settings: &DbSettings, user_folder: &Path) -> Result<Fetc
         or("color", "''"),
         or("jump_host", "''"),
         or("highlight_rules", "''"),
+        or("ssh_algorithms", "''"),
     ])
     .map(|c| format!("coalesce({c}, '')"))
     .collect::<Vec<_>>()
@@ -291,7 +292,7 @@ pub async fn fetch_all(settings: &DbSettings, user_folder: &Path) -> Result<Fetc
         for row in &rows {
             let text = |i: usize| row.get::<_, String>(i);
             last = Some((text(1), text(2), text(0)));
-            sessions.push(to_session(&(0..23).map(text).collect::<Vec<_>>()));
+            sessions.push(to_session(&(0..24).map(text).collect::<Vec<_>>()));
         }
         if read < PAGE_SIZE {
             break;
@@ -299,7 +300,7 @@ pub async fn fetch_all(settings: &DbSettings, user_folder: &Path) -> Result<Fetc
     }
 
     let folders = fetch_folders(&client, settings).await;
-    let optional_columns = ["color", "jump_host", "highlight_rules"].iter().filter(|c| has(c)).map(|c| c.to_string()).collect();
+    let optional_columns = OPTIONAL_COLUMNS.iter().filter(|c| has(c)).map(|c| c.to_string()).collect();
     Ok(Fetched { sessions, folders, writable, token, optional_columns })
 }
 
@@ -355,6 +356,7 @@ fn to_session(c: &[String]) -> StoredSession {
     s.set("ExtraArgs", &c[8]);
     s.set("SPSLFileName", &c[11]);
     s.set("RdpOptions", &c[12]);
+    s.set("SshAlgorithms", &c[23]);
     s.set("LocalPath", &c[13]);
     s.set("RemotePath", &c[14]);
     s
@@ -381,6 +383,7 @@ pub fn session_of(row: &Row, id: &str, version: &str) -> StoredSession {
     s.set("ExtraArgs", &row.extra_args);
     s.set("SPSLFileName", &row.spsl_script);
     s.set("RdpOptions", &row.rdp_options);
+    s.set("SshAlgorithms", &row.ssh_algorithms);
     s.set("LocalPath", &row.local_path);
     s.set("RemotePath", &row.remote_path);
     s
@@ -778,6 +781,9 @@ pub struct Row {
     pub color: String,
     pub jump_host: String,
     pub highlight_rules: String,
+    /// SuperXTerminal's own: its SSH algorithm lists (algorithms.rs); changes queued before it existed read as ""
+    #[serde(default)]
+    pub ssh_algorithms: String,
 }
 
 impl Row {
@@ -805,6 +811,7 @@ impl Row {
             color: session.get("Color").to_string(),
             jump_host: session.get("JumpHost").to_string(),
             highlight_rules: session.get("HighlightRules").to_string(),
+            ssh_algorithms: session.get("SshAlgorithms").to_string(),
         }
     }
 }
@@ -829,9 +836,14 @@ pub fn column_of(row: &Row, column: &str) -> String {
         "color" => row.color.clone(),
         "jump_host" => row.jump_host.clone(),
         "highlight_rules" => row.highlight_rules.clone(),
+        "ssh_algorithms" => row.ssh_algorithms.clone(),
         _ => String::new(),
     }
 }
+
+/// Columns added after the first schema: read and written only when the table has them (Create / upgrade schema
+/// adds them); ssh_algorithms is SuperXTerminal's own, which SuperXPuTTY leaves as it is
+const OPTIONAL_COLUMNS: [&str; 4] = ["color", "jump_host", "highlight_rules", "ssh_algorithms"];
 
 /// The columns written, and the optional ones the table has
 fn write_columns(optional: &[String]) -> Vec<&'static str> {
@@ -839,7 +851,7 @@ fn write_columns(optional: &[String]) -> Vec<&'static str> {
         "folder", "name", "protocol", "host", "port", "username", "putty_profile", "extra_args", "icon", "notes",
         "spsl_script", "rdp_options", "local_path", "remote_path",
     ];
-    for c in ["color", "jump_host", "highlight_rules"] {
+    for c in OPTIONAL_COLUMNS {
         if optional.iter().any(|o| o == c) {
             columns.push(c);
         }
@@ -870,6 +882,7 @@ fn values(row: &Row, columns: &[&str]) -> Vec<Box<dyn tokio_postgres::types::ToS
                 "remote_path" => Box::new(null_if_empty(&row.remote_path)),
                 "color" => Box::new(null_if_empty(&row.color)),
                 "jump_host" => Box::new(null_if_empty(&row.jump_host)),
+                "ssh_algorithms" => Box::new(null_if_empty(&row.ssh_algorithms)),
                 _ => Box::new(null_if_empty(&row.highlight_rules)),
             }
         })
@@ -1056,7 +1069,7 @@ pub async fn set_folder(settings: &DbSettings, user_folder: &Path, f: &FolderSet
 }
 
 /// The sessions table's columns, as SuperXPuTTY's Columns (Create / upgrade schema adds any that are missing)
-const COLUMNS: [(&str, &str); 26] = [
+const COLUMNS: [(&str, &str); 27] = [
     ("id", "uuid PRIMARY KEY DEFAULT gen_random_uuid()"),
     ("folder", "text NOT NULL DEFAULT ''"),
     ("name", "text NOT NULL"),
@@ -1075,6 +1088,7 @@ const COLUMNS: [(&str, &str); 26] = [
     ("color", "text"),
     ("jump_host", "text"),
     ("highlight_rules", "text"),
+    ("ssh_algorithms", "text"),
     ("locked", "boolean NOT NULL DEFAULT false"),
     ("locked_fields", "text[] NOT NULL DEFAULT '{}'"),
     ("managed_by", "text"),

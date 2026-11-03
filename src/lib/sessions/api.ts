@@ -118,6 +118,8 @@ export interface SessionFields {
   remotePath: string;
   /** Its own RDP options, as SuperXPuTTY's RdpOptions ("" for the defaults) */
   rdpOptions: string;
+  /** Its own SSH algorithm lists ("kex=a,b;mac=c"; "" for its profile's), SuperXTerminal's own */
+  sshAlgorithms: string;
 }
 
 /** A session's fields for editing */

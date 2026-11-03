@@ -17,6 +17,8 @@ export interface Profile {
   keepalive: number;
   sshOptions: string;
   olderAlgorithms: boolean | null;
+  /** Its own SSH algorithm lists ("kex=a,b;mac=c"; "" for Default Settings' or ssh's own) */
+  algorithms: string;
   sshConfigHost: string;
   cursor: string;
   cursorBlink: boolean | null;
@@ -27,7 +29,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, username: "", port: 0, keyFile: "", jumpHost: "", keepalive: 0, sshOptions: "", olderAlgorithms: null,
+    name, username: "", port: 0, keyFile: "", jumpHost: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", hasPassword: false,
   };
 }

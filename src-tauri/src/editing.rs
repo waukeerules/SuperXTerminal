@@ -32,6 +32,8 @@ pub struct SessionFields {
     pub remote_path: String,
     /// Its own RDP options, as SuperXPuTTY's RdpOptions ("" for the defaults)
     pub rdp_options: String,
+    /// Its own SSH algorithm lists (algorithms.rs; "" for its profile's)
+    pub ssh_algorithms: String,
 }
 
 impl SessionFields {
@@ -59,6 +61,7 @@ impl SessionFields {
             local_path: session.get("LocalPath").to_string(),
             remote_path: session.get("RemotePath").to_string(),
             rdp_options: session.get("RdpOptions").to_string(),
+            ssh_algorithms: session.get("SshAlgorithms").to_string(),
         }
     }
 
@@ -88,6 +91,7 @@ impl SessionFields {
         session.set("LocalPath", self.local_path.trim());
         session.set("RemotePath", self.remote_path.trim());
         session.set("RdpOptions", self.rdp_options.trim());
+        session.set("SshAlgorithms", &crate::algorithms::normalize(&self.ssh_algorithms));
     }
 }
 
@@ -112,6 +116,7 @@ pub fn to_row(fields: &SessionFields, stored: Option<&StoredSession>) -> crate::
         color: fields.color.trim().to_string(),
         jump_host: fields.jump_host.trim().to_string(),
         highlight_rules: fields.highlight_rules.trim().to_string(),
+        ssh_algorithms: crate::algorithms::normalize(&fields.ssh_algorithms),
     }
 }
 

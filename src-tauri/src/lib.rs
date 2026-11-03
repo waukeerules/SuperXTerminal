@@ -1,5 +1,6 @@
 //! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
 
+mod algorithms;
 mod applog;
 mod askpass;
 mod buttonbars;
@@ -608,6 +609,13 @@ fn sessions_export_xml(state: State<'_, AppState>, path: PathBuf) -> Result<usiz
     };
     std::fs::write(&path, sessions::write_sessions(&list)).map_err(|e| format!("Couldn't write {}: {e}", path.display()))?;
     Ok(list.len())
+}
+
+/// What this computer's ssh has for each kind of algorithm, and its default order, for the algorithm lists in
+/// Settings > Profiles and Edit Session (algorithms.rs)
+#[tauri::command]
+fn ssh_algorithms_available() -> Vec<algorithms::Available> {
+    algorithms::available()
 }
 
 /// Where an import that reads no chosen file reads (ssh config, PuTTY's and KiTTY's saved sessions, Remote Desktop's
@@ -2255,6 +2263,7 @@ pub fn run() {
             sessions_import_apply,
             ssh_config_path,
             sessions_import_source,
+            ssh_algorithms_available,
             sessions_export_xml,
             sessions_edit_externally,
             overrides_set,

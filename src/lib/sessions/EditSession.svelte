@@ -17,6 +17,7 @@
   import SerialLineFields from "./SerialLineFields.svelte";
   import Overrides from "./Overrides.svelte";
   import RdpSessionOptions from "./RdpSessionOptions.svelte";
+  import AlgorithmsDialog from "./AlgorithmsDialog.svelte";
   import { lineOf, withLine } from "./serial";
   import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
@@ -57,6 +58,8 @@
   let overriding = $state(false);
   /** RDP options… open over this window */
   let rdpOptioning = $state(false);
+  /** SSH algorithms… open over this window */
+  let algorithming = $state(false);
   /** The serial devices plugged in (/dev/cu.*), for the Serial line list */
   let serialDevices = $state<string[]>([]);
 
@@ -237,6 +240,9 @@
         <button disabled={draft.protocol.toUpperCase() !== "RDP" || locked("rdp_options")}
           title={locked("rdp_options") ? lockTip : draft.protocol.toUpperCase() !== "RDP" ? "For RDP sessions" : draft.rdpOptions ? `Its own: ${draft.rdpOptions}` : "Using the defaults (Settings > Remote Desktop)"}
           onclick={() => (rdpOptioning = true)}>RDP options…{draft.rdpOptions ? " ●" : ""}</button>
+        <button disabled={!["SSH", ""].includes(draft.protocol.toUpperCase()) || locked("ssh_algorithms")}
+          title={locked("ssh_algorithms") ? lockTip : !["SSH", ""].includes(draft.protocol.toUpperCase()) ? "For SSH sessions" : draft.sshAlgorithms ? `Its own: ${draft.sshAlgorithms}` : "Its profile's algorithms"}
+          onclick={() => (algorithming = true)}>SSH algorithms…{draft.sshAlgorithms ? " ●" : ""}</button>
       </div>
 
       <div class="row">
@@ -279,6 +285,11 @@
 {#if rdpOptioning}
   <RdpSessionOptions name={draft.name} text={draft.rdpOptions ?? ""} onCancel={() => (rdpOptioning = false)}
     onDone={(text) => { draft.rdpOptions = text; rdpOptioning = false; }} />
+{/if}
+{#if algorithming}
+  <AlgorithmsDialog title={`SSH algorithms: ${draft.name || "new session"}`} text={draft.sshAlgorithms ?? ""}
+    otherwise={`its profile's list (${draft.profile || "Default Settings"})`} onCancel={() => (algorithming = false)}
+    onDone={(text) => { draft.sshAlgorithms = text; algorithming = false; }} />
 {/if}
 
 {#if overriding && id !== null}

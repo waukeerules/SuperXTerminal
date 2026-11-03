@@ -7,6 +7,7 @@
   import { onMount } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, saveProfile, type Profile } from "./profiles";
+  import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
 
   let profiles = $state<Profile[]>([]);
   let selected = $state(DEFAULT_PROFILE);
@@ -17,6 +18,8 @@
   /** A new password typed in; undefined keeps the stored one */
   let password = $state<string | undefined>(undefined);
   let message = $state("");
+  /** SSH algorithms… open over the tab */
+  let algorithming = $state(false);
 
   const isDefault = $derived(originalName.toLowerCase() === DEFAULT_PROFILE.toLowerCase());
 
@@ -128,6 +131,10 @@
           <option value="on">Allow (older Cisco and similar devices)</option>
           <option value="off">Don't allow</option>
         </select></label>
+      <label>SSH algorithms
+        <button onclick={() => (algorithming = true)} title={draft.algorithms ? `Its own: ${draft.algorithms}` : isDefault ? "ssh's own lists" : "From Default Settings"}>
+          Choose…{draft.algorithms ? " ●" : ""}</button>
+        <span class="note">{draft.algorithms ? "its own lists" : isDefault ? "ssh's own lists" : "from Default Settings"}</span></label>
       <label>SSH config host <input bind:value={draft.sshConfigHost} placeholder="a Host in ~/.ssh/config" /></label>
       <label>More ssh options <input bind:value={draft.sshOptions} placeholder="e.g. -L 8080:localhost:80" /></label>
     </fieldset>
@@ -162,6 +169,12 @@
     </div>
   </div>
 </div>
+
+{#if algorithming}
+  <AlgorithmsDialog title={`SSH algorithms: ${draft.name || "new profile"}`} text={draft.algorithms ?? ""}
+    otherwise={isDefault ? "ssh's own list (with the older algorithms, if allowed)" : "Default Settings' list"}
+    onCancel={() => (algorithming = false)} onDone={(text) => { draft.algorithms = text; algorithming = false; }} />
+{/if}
 
 <style>
   .profiles {

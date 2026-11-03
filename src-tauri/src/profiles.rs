@@ -32,6 +32,9 @@ pub struct Profile {
     pub ssh_options: String,
     /// Accept the older algorithms older devices offer (SHA-1 key exchange, ssh-rsa, CBC ciphers); None: the default's
     pub older_algorithms: Option<bool>,
+    /// Its own algorithm lists, as PuTTY's Kex, Host keys and Cipher panels ("kex=a,b;mac=c", algorithms.rs); a kind it
+    /// doesn't set comes from Default Settings, else ssh's own list
+    pub algorithms: String,
     /// A Host from ~/.ssh/config, used for anything this profile doesn't set
     pub ssh_config_host: String,
     /// The terminal's cursor: "" (default), "block", "underline" or "bar"

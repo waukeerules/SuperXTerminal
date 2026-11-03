@@ -307,7 +307,7 @@
   function blank(folder: string): SessionFields {
     return {
       name: "", folder, protocol: "SSH", host: "", port: 22, username: "", profile: "Default Settings", color: "",
-      icon: "computer", highlightRules: "", extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "", rdpOptions: "",
+      icon: "computer", highlightRules: "", extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "", rdpOptions: "", sshAlgorithms: "",
     };
   }
 

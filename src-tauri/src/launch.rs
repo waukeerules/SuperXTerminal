@@ -96,7 +96,7 @@ fn older_algorithm_args() -> Vec<String> {
 }
 
 /// The algorithms of one kind this computer's ssh has (`ssh -Q kex`, `key`, `cipher`, `mac`); None if it can't say
-fn ssh_query(kind: &str) -> Option<Vec<String>> {
+pub fn ssh_query(kind: &str) -> Option<Vec<String>> {
     let mut command = std::process::Command::new(openssh("ssh"));
     command.args(["-Q", kind]);
     #[cfg(windows)]
@@ -419,9 +419,19 @@ fn ssh(
     let mut login = Login { host: host.clone(), port, username: username.clone(), key_file: String::new() };
 
     let mut args: Vec<String> = vec!["-tt".into()];
+    // the session's own algorithm lists, else its profile's, else Default Settings', each kind on its own
+    // (algorithms.rs); a kind set there is that exact list, so the older ones aren't added to it
+    let own = crate::algorithms::chosen(&[session.get("SshAlgorithms"), &profile.algorithms, &default.algorithms]);
     if profile.older_algorithms.or(default.older_algorithms).unwrap_or(true) {
-        args.extend(older_algorithm_args());
+        let older = older_algorithm_args();
+        for pair in older.chunks(2) {
+            let option = pair.get(1).and_then(|o| o.split_once('=')).map(|(name, _)| name).unwrap_or("");
+            if !own.iter().any(|(set, _)| *set == option) {
+                args.extend(pair.iter().cloned());
+            }
+        }
     }
+    args.extend(crate::algorithms::args(&own));
     let extra = translate_extra_args(&variables::substitute(raw_extra, values));
     notices.extend(extra.notices);
     // Quick connect's password (never stored), else the session's own -pw, else its profile's, else Default Settings'
@@ -665,6 +675,27 @@ mod tests {
                 Profile { name: "root".into(), username: "root".into(), port: 2222, ..Profile::default() },
             ],
         }
+    }
+
+    #[test]
+    fn algorithm_lists_come_from_the_session_then_its_profile() {
+        let mut profiles = profiles();
+        profiles.profiles[1].algorithms = "kex=diffie-hellman-group14-sha1;mac=hmac-sha2-256".into();
+        let mut session = StoredSession::new("sw");
+        session.set("Host", "sw1");
+        session.set("PuttySession", "root");
+        session.set("SshAlgorithms", "mac=hmac-sha1,hmac-md5");
+        let (args, _) = args_of(&Sessions::default(), &profiles, &session);
+        let options: Vec<&str> = args.windows(2).filter(|w| w[0] == "-o").map(|w| w[1].as_str()).collect();
+        assert!(options.contains(&"KexAlgorithms=diffie-hellman-group14-sha1"), "{options:?}");
+        assert!(options.contains(&"MACs=hmac-sha1,hmac-md5"), "{options:?}");
+        assert!(!options.iter().any(|o| o.starts_with("MACs=hmac-sha2")), "{options:?}");
+
+        // with the older algorithms allowed, a kind with its own list isn't added to; the others still are
+        profiles.profiles[0].older_algorithms = Some(true);
+        let (args, _) = args_of(&Sessions::default(), &profiles, &session);
+        let options: Vec<&str> = args.windows(2).filter(|w| w[0] == "-o").map(|w| w[1].as_str()).collect();
+        assert!(!options.iter().any(|o| o.starts_with("MACs=+") || o.starts_with("KexAlgorithms=+")), "{options:?}");
     }
 
     #[test]

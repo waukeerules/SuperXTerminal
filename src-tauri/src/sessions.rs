@@ -350,15 +350,16 @@ mod tests {
 }
 
 /// SuperXPuTTY's attribute order (SessionData's XmlAttribute order), for placing attributes a session didn't have
-const ATTRIBUTE_ORDER: [&str; 25] = [
+const ATTRIBUTE_ORDER: [&str; 26] = [
     "SessionId", "DatabaseId", "DatabaseVersion", "DatabaseLocked", "DatabaseLockedFields", "DatabaseManagedBy",
     "DatabaseUpdatedBy", "Color", "JumpHost", "HighlightRules", "SessionName", "ImageKey", "Host", "Note", "Port",
-    "Proto", "PuttySession", "Username", "ExtraArgs", "SPSLFileName", "RdpOptions", "CollectionID",
+    "Proto", "PuttySession", "Username", "ExtraArgs", "SPSLFileName", "RdpOptions", "SshAlgorithms", "CollectionID",
     "CollectionLocation", "RemotePath", "LocalPath",
 ];
 
-/// Attributes XmlSerializer only writes when they're set (SessionData's ShouldSerialize methods)
-const WRITTEN_ONLY_WHEN_SET: [&str; 5] = ["DatabaseLocked", "Color", "JumpHost", "HighlightRules", "RdpOptions"];
+/// Attributes XmlSerializer only writes when they're set (SessionData's ShouldSerialize methods), and
+/// SuperXTerminal's own SshAlgorithms (algorithms.rs), which SuperXPuTTY doesn't know
+const WRITTEN_ONLY_WHEN_SET: [&str; 6] = ["DatabaseLocked", "Color", "JumpHost", "HighlightRules", "RdpOptions", "SshAlgorithms"];
 
 impl StoredSession {
     /// A new session with SuperXPuTTY's attributes, as XmlSerializer writes a new SessionData

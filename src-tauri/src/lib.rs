@@ -1592,6 +1592,16 @@ fn settings_set_folder(app: AppHandle, state: State<'_, AppState>, path: String)
 /// The event every window gets when the settings are saved
 const SETTINGS_CHANGED: &str = "settings-changed";
 
+/// SuperXTerminal > Third-Party Notices: the components it ships and their licences (scripts/notices.mjs), in the
+/// Mac's text editor. The app has the file among its resources; a development build reads the project's.
+fn open_notices<R: Runtime>(app: &AppHandle<R>) {
+    let bundled = app.path().resource_dir().map(|d| d.join("THIRD-PARTY-NOTICES.txt")).ok().filter(|p| p.exists());
+    let path = bundled.unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../THIRD-PARTY-NOTICES.txt"));
+    if let Err(e) = std::process::Command::new("open").arg("-t").arg(&path).status() {
+        applog::warn(format!("Couldn't open {}: {e}", path.display()));
+    }
+}
+
 /// The menu bar: the app menu (with Settings..., Cmd+,), File (New Local Shell, Cmd+T), Edit (which WebKit needs for
 /// Cmd+C/V), Tools (Environment Variables...) and Window.
 /// SuperXPuTTY's File, View and Tools menus join it as their features arrive.
@@ -1606,6 +1616,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>) ->
         &[
             &PredefinedMenuItem::about(app, None, None)?,
             &action("checkUpdates")?,
+            &plain("thirdPartyNotices", "Third-Party Notices")?,
             &PredefinedMenuItem::separator(app)?,
             &action("settings")?,
             &PredefinedMenuItem::separator(app)?,
@@ -2031,6 +2042,10 @@ pub fn run() {
         .on_menu_event(|app, event| {
             if event.id().0.starts_with("tray:") {
                 tray_command(app, event.id().0.as_str());
+                return;
+            }
+            if event.id().0 == "thirdPartyNotices" {
+                open_notices(app);
                 return;
             }
             // to the window in front only: with several windows, Cmd+T opens one shell, in that window

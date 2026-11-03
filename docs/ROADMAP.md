@@ -188,7 +188,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - 🚧 Local release build (`npm run tauri build`, APPLE_SIGNING_IDENTITY set to the Apple Development certificate): SuperXTerminal.app (11.8 MB) and a plain .dmg (6.4 MB), hardened runtime, the Apple Events entitlement (Connect external drives Terminal), macOS 12 or later, the permission messages for Terminal and the local network. Checked running from the bundle: Local Shell, an SSH session (Media Server, key login) and File transfer (SFTP). Fixed for it: the tab pages' messages named the main window's origin, which under Tauri's tauri:// scheme isn't one postMessage accepts, so terminal tabs stayed blank; they now send to "/" (the same origin)
 - ⬜ Developer ID signing and notarisation
 - ⬜ `.dmg` (designed)
-- ⬜ `THIRD-PARTY-NOTICES` generated per release
+- ✅ `THIRD-PARTY-NOTICES.txt` generated per release (`npm run notices`, `scripts/notices.mjs`, run before every release build): the Rust crates built into the program (cargo metadata, normal dependencies), the npm packages and the bundled web libraries, each distinct licence text once (490 components, 317 texts, about 960 KB); a package with no licence file gets its authors' copyright and the standard text (`scripts/licences/`), and the script fails if any component has none. Bundled in the app's Resources; SuperXTerminal > Third-Party Notices opens it. Checked in the release build
 - ⬜ Auto update
 - ⬜ Signed Windows MSI; Linux `.deb`, `.rpm`, AppImage
 

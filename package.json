@@ -10,6 +10,7 @@
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "licenses": "node scripts/check-licenses.mjs",
+    "notices": "node scripts/notices.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

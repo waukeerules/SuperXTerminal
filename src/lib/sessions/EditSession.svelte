@@ -19,6 +19,7 @@
   import Overrides from "./Overrides.svelte";
   import RdpSessionOptions from "./RdpSessionOptions.svelte";
   import AlgorithmsDialog from "./AlgorithmsDialog.svelte";
+  import { isMac } from "../shortcuts";
   import { lineOf, withLine } from "./serial";
   import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
@@ -205,18 +206,19 @@
       </div>
       {#if reason}<p class="note">{reason}</p>{/if}
       {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}
-      {#if profileMissing}<p class="note">Profile "{draft.profile.trim()}" isn't set up on this Mac, so Default Settings is used. Add it in Profiles….</p>{/if}
+      {#if profileMissing}<p class="note">Profile "{draft.profile.trim()}" isn't set up on {isMac ? "this Mac" : "this PC"}, so Default Settings is used. Add it in Profiles….</p>{/if}
 
       {#if serial}
         <div class="row">
           <label class="grow">Serial line:
             <input list="serial-devices" bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""}
-              placeholder={serialDevices[0] ?? "e.g. /dev/cu.usbserial-1, or COM1"} />
+              placeholder={serialDevices[0] ?? (isMac ? "e.g. /dev/cu.usbserial-1, or COM1" : "e.g. COM1")} />
             <datalist id="serial-devices">{#each serialDevices as d}<option value={d}></option>{/each}</datalist>
           </label>
           <button onclick={listSerialDevices} title="List the serial devices plugged in now">Refresh</button>
         </div>
-        <p class="note">Pick a device from the list, or type a COM name (e.g. COM1) to share the session with Windows: the Mac asks once which device it is.
+        <p class="note">{#if isMac}Pick a device from the list, or type a COM name (e.g. COM1) to share the session with Windows: the Mac asks once which device it is.
+          {:else}Pick a COM port from the list (the ports present now), or type one.{/if}
           {#if serialDevices.length === 0}No serial device is plugged in now.{/if}</p>
         <div class="row">
           <SerialLineFields {line} disabled={locked("extra_args")} onChange={(l) => (draft.extraArgs = withLine(draft.extraArgs, l))} />

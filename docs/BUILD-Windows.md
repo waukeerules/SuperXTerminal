@@ -92,6 +92,9 @@ Tried in `npm run tauri dev` on Windows 11:
 - **RDP:** the built-in client (IronRDP), logged in to a Windows 10 desktop.
 - **Database sessions:** the PostgreSQL table, read and shown under Database sessions.
 - **SSH algorithms:** per profile and per session (SSH algorithms…), listing what Windows' OpenSSH has.
+- **Serial:** a session's COM name is the port (`\\.\COM9`), opened with Windows' serial API and PuTTY's line
+  settings (`-sercfg`); Edit Session lists the COM ports present (`HKLM\HARDWARE\DEVICEMAP\SERIALCOMM`). A lab
+  switch's console on COM9 answered with its prompt. A port another program has open is said plainly.
 - **File menu:** SuperXPuTTY's imports (SuperPuTTY XML, PuTTY/KiTTY from the registry, PuTTY Portable's folder,
   PuTTY CM, RDP's recent computers from the registry), Export Sessions, Edit Sessions Externally (in Notepad++ when
   it's installed) and Reload Sessions File. The registry is read through `reg.exe`.
@@ -129,10 +132,6 @@ Connection.
 
 Found by running it:
 
-- **Serial:** the device code in `src-tauri/src/streams.rs` is termios, Unix only. On Windows it's stubbed out (serial
-  tabs say they aren't supported yet); it needs COM port code (`CreateFile`, `SetCommState`, `SetCommTimeouts`,
-  `SetCommBreak`). Serial names are already `COM1`… in shared sessions, so the "which `/dev/cu.*` is it" step isn't
-  needed on Windows.
 - **Opening other apps:** Connect external, RDP through Windows App and VNC still run the Mac's `open` and
   `osascript` (`external.rs`). On Windows: Windows Terminal or a console window for Connect external, RDP files in
   `mstsc.exe`, VNC in a Windows viewer, FileZilla's Windows path.
@@ -158,6 +157,11 @@ Known from the code, not tried yet:
 
 Fixed on the way:
 
+- **Serial on Windows:** the Mac's termios code was all there was, so serial tabs said they weren't supported. COM
+  ports are opened with `CreateFileW` and set with `SetCommState` (speed, data bits, parity, stop bits, XON/XOFF or
+  RTS/CTS), reads wait 25 ms at a time so a closed tab ends them and typing isn't held up (the port isn't
+  overlapped, so Windows runs one read or write at a time), and Break holds the line low for 300 ms. The Mac's "which
+  `/dev/cu.*` is COM9" question doesn't arise.
 - **The release build's scripts:** `scripts/notices.mjs` found its folder from the script URL's pathname
   (`/C:/Dev/...` on Windows), and both it and `check-licenses.mjs` ran `npm` directly, which is `npm.cmd` on Windows
   and needs a shell. They use `fileURLToPath` and run npm through the shell now.

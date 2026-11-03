@@ -275,8 +275,11 @@ fn stream(
             crate::streams::Target::Raw { host, port, via }
         }
         _ => {
-            // a Windows COM name is asked once which device it is on this Mac; a /dev path is used as it is
-            let device = if host.starts_with("/dev/") {
+            // on Windows the COM name is the port itself; on the Mac a COM name is asked once which /dev/cu.* device
+            // it is, and a /dev path is used as it is
+            let device = if cfg!(windows) {
+                host.to_uppercase()
+            } else if host.starts_with("/dev/") {
                 host.clone()
             } else {
                 serial_devices
@@ -290,7 +293,7 @@ fn stream(
             if let Some(i) = words.iter().position(|w| w == "-sercfg") {
                 line.apply(words.get(i + 1).map(String::as_str).unwrap_or(""))?;
             }
-            if host != device {
+            if !host.eq_ignore_ascii_case(&device) {
                 notices.push(format!("{host} is {device} on {THIS_COMPUTER}."));
             }
             crate::streams::Target::Serial { device, line }
@@ -780,9 +783,16 @@ mod tests {
         assert!(run(&[("Proto", "Raw")]).is_err(), "Raw needs a port");
         let serial = run(&[("Proto", "Serial"), ("Host", "com6"), ("ExtraArgs", "-sercfg 115200,8,n,1,N")]).unwrap();
         let line = SerialLine { speed: 115200, flow: 'N', ..SerialLine::default() };
-        assert_eq!(serial.stream, Some(Target::Serial { device: "/dev/cu.usbserial-1".into(), line }));
-        // a COM name not yet matched to a device is asked
-        assert_eq!(run(&[("Proto", "Serial"), ("Host", "COM7")]).err().unwrap(), format!("{SERIAL_DEVICE_NEEDED}COM7"));
+        if cfg!(windows) {
+            // the COM name is the port itself, matched or not
+            assert_eq!(serial.stream, Some(Target::Serial { device: "COM6".into(), line: line.clone() }));
+            assert!(serial.notices.is_empty(), "{:?}", serial.notices);
+            assert_eq!(run(&[("Proto", "Serial"), ("Host", "COM7")]).unwrap().stream, Some(Target::Serial { device: "COM7".into(), line: SerialLine::default() }));
+        } else {
+            assert_eq!(serial.stream, Some(Target::Serial { device: "/dev/cu.usbserial-1".into(), line }));
+            // a COM name not yet matched to a device is asked
+            assert_eq!(run(&[("Proto", "Serial"), ("Host", "COM7")]).err().unwrap(), format!("{SERIAL_DEVICE_NEEDED}COM7"));
+        }
     }
 
     #[test]

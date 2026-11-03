@@ -5,8 +5,9 @@
 //! - **Telnet:** a small client that negotiates as PuTTY does: it offers the terminal type (XTERM) and window size,
 //!   lets the server echo and suppress go-ahead, refuses the rest, and sends Return as a Telnet new line (CR LF).
 //! - **Raw:** a TCP connection, bytes as they are.
-//! - **Serial:** a `/dev/cu.*` device driven directly (termios), with PuTTY's line settings: 9600 baud, 8 data bits, no
-//!   parity, 1 stop bit and XON/XOFF unless `-sercfg` says otherwise.
+//! - **Serial:** a `/dev/cu.*` device driven directly (termios) on the Mac, a COM port (Windows' serial API) on
+//!   Windows, with PuTTY's line settings: 9600 baud, 8 data bits, no parity, 1 stop bit and XON/XOFF unless `-sercfg`
+//!   says otherwise.
 
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream, ToSocketAddrs};
@@ -16,10 +17,26 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Windows has no serial support here yet: a stand-in for a device's descriptor, never made (`open_serial` refuses
-/// first), so the serial tab code builds
-#[cfg(not(unix))]
-struct OwnedFd;
+/// A serial port opened on Windows (`\\.\COM9`), closed when the last of its users lets go; it stands where the Mac
+/// has the device's file descriptor, so the serial tab's code is the same on both
+#[cfg(windows)]
+struct OwnedFd(windows_sys::Win32::Foundation::HANDLE);
+
+// SAFETY: a Windows handle can be used from any thread; reads and writes on it are what the reader and writer
+// threads do, as with the Mac's file descriptor
+#[cfg(windows)]
+unsafe impl Send for OwnedFd {}
+#[cfg(windows)]
+unsafe impl Sync for OwnedFd {}
+
+#[cfg(windows)]
+impl Drop for OwnedFd {
+    /// Close the port, so another program (or a new tab) can open it
+    fn drop(&mut self) {
+        // SAFETY: the handle CreateFileW gave, closed once
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.0) };
+    }
+}
 
 /// What a stream session connects to
 #[derive(Clone, Debug, PartialEq)]
@@ -529,41 +546,148 @@ fn send_break(fd: &OwnedFd) -> Result<(), String> {
     if unsafe { libc::tcsendbreak(fd.as_raw_fd(), 0) } == 0 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
 }
 
-/// Serial lines aren't supported on Windows yet
-#[cfg(not(unix))]
-const NO_SERIAL: &str = "Serial sessions aren't supported on Windows yet.";
-
-/// Serial lines aren't supported on Windows yet
-#[cfg(not(unix))]
-fn open_serial(_device: &str, _line: &SerialLine) -> Result<OwnedFd, String> {
-    Err(NO_SERIAL.into())
+/// Open a COM port on Windows (COM9, or a full `\\.\` name), with the line's settings. Windows lets one program at a
+/// time have a port, so another one using it (PuTTY, a second tab) is said plainly.
+#[cfg(windows)]
+fn open_serial(device: &str, line: &SerialLine) -> Result<OwnedFd, String> {
+    use windows_sys::Win32::Devices::Communication::{COMMTIMEOUTS, SetCommTimeouts};
+    use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{CreateFileW, OPEN_EXISTING};
+    // COM10 and up only open by their \\.\ name, which works for COM1-9 too
+    let path = if device.starts_with(r"\\") { device.to_string() } else { format!(r"\\.\{device}") };
+    let wide: Vec<u16> = path.encode_utf16().chain(Some(0)).collect();
+    // SAFETY: a NUL-terminated name, no sharing, security or template
+    let handle = unsafe { CreateFileW(wide.as_ptr(), GENERIC_READ | GENERIC_WRITE, 0, std::ptr::null(), OPEN_EXISTING, 0, std::ptr::null_mut()) };
+    if handle == INVALID_HANDLE_VALUE {
+        let error = std::io::Error::last_os_error();
+        return Err(match error.raw_os_error() {
+            Some(2) | Some(3) => format!("{device} isn't there: is its cable plugged in? (Edit Session lists the COM ports present)"),
+            Some(5) => format!("{device} is in use by another program (PuTTY, or another tab): close it there first."),
+            _ => format!("Couldn't open {device}: {error}"),
+        });
+    }
+    let fd = OwnedFd(handle);
+    configure(&fd, line).map_err(|e| format!("Couldn't set {device} to {}: {e}", line.to_sercfg()))?;
+    // a read gives what's there as soon as anything is, else returns empty after 25 ms, so closing the tab ends it;
+    // the port isn't opened for overlapped I/O, so Windows runs one read or write at a time, and a short wait keeps
+    // typing prompt
+    let timeouts = COMMTIMEOUTS {
+        ReadIntervalTimeout: u32::MAX,
+        ReadTotalTimeoutMultiplier: u32::MAX,
+        ReadTotalTimeoutConstant: 25,
+        WriteTotalTimeoutMultiplier: 0,
+        WriteTotalTimeoutConstant: 5000,
+    };
+    // SAFETY: the port opened above, and a timeouts structure that lives through the call
+    if unsafe { SetCommTimeouts(fd.0, &timeouts) } == 0 {
+        return Err(format!("Couldn't set {device}'s timeouts: {}", std::io::Error::last_os_error()));
+    }
+    Ok(fd)
 }
 
-/// Serial lines aren't supported on Windows yet
-#[cfg(not(unix))]
-fn configure(_fd: &OwnedFd, _line: &SerialLine) -> Result<(), std::io::Error> {
-    Err(std::io::Error::other(NO_SERIAL))
+/// Set a COM port's line, as PuTTY's -sercfg: the speed, data bits, parity, stop bits and flow control, binary, with
+/// DTR and RTS raised (RTS handed to the flow control for RTS/CTS)
+#[cfg(windows)]
+fn configure(fd: &OwnedFd, line: &SerialLine) -> Result<(), std::io::Error> {
+    use windows_sys::Win32::Devices::Communication::{DCB, GetCommState, SetCommState};
+    // SAFETY: a DCB the size Windows expects, read from and written back to the open port
+    unsafe {
+        let mut dcb: DCB = std::mem::zeroed();
+        dcb.DCBlength = std::mem::size_of::<DCB>() as u32;
+        if GetCommState(fd.0, &mut dcb) == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        dcb.BaudRate = line.speed;
+        dcb.ByteSize = line.data_bits.clamp(5, 8);
+        // NOPARITY, ODDPARITY, EVENPARITY, MARKPARITY, SPACEPARITY
+        dcb.Parity = match line.parity {
+            'o' => 1,
+            'e' => 2,
+            'm' => 3,
+            's' => 4,
+            _ => 0,
+        };
+        // ONESTOPBIT or TWOSTOPBITS
+        dcb.StopBits = if line.stop_bits == 2 { 2 } else { 0 };
+        dcb._bitfield = dcb_flags(line);
+        dcb.XonChar = 0x11;
+        dcb.XoffChar = 0x13;
+        if SetCommState(fd.0, &dcb) == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    Ok(())
 }
 
-/// Serial lines aren't supported on Windows yet
-#[cfg(not(unix))]
-fn send_break(_fd: &OwnedFd) -> Result<(), String> {
-    Err(NO_SERIAL.into())
+/// The DCB's flag bits for a line: binary (bit 0), parity checking (1), CTS output flow (2), DTR on (bits 4-5 = 1),
+/// XON/XOFF out (8) and in (9), RTS on or handshaking (bits 12-13 = 1 or 2); DSR flow, error replacement, discarding
+/// NULs and aborting on errors stay off
+#[cfg(windows)]
+fn dcb_flags(line: &SerialLine) -> u32 {
+    let mut flags = 1;
+    if line.parity != 'n' {
+        flags |= 1 << 1;
+    }
+    flags |= 1 << 4;
+    match line.flow {
+        'X' => flags |= (1 << 8) | (1 << 9) | (1 << 12),
+        'R' => flags |= (1 << 2) | (2 << 12),
+        _ => flags |= 1 << 12,
+    }
+    flags
 }
 
-/// Never reached on Windows: no serial device is ever opened
-#[cfg(not(unix))]
+/// Send a break on a COM port: the line held low for 300 ms, as PuTTY's Break does
+#[cfg(windows)]
+fn send_break(fd: &OwnedFd) -> Result<(), String> {
+    use windows_sys::Win32::Devices::Communication::{ClearCommBreak, SetCommBreak};
+    // SAFETY: the open port
+    unsafe {
+        if SetCommBreak(fd.0) == 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        std::thread::sleep(Duration::from_millis(300));
+        ClearCommBreak(fd.0);
+    }
+    Ok(())
+}
+
+/// Reading a COM port on Windows: each read returns what's arrived, or nothing after the port's short timeout, so a
+/// closed tab ends a read on a quiet line
+#[cfg(windows)]
 impl Read for FdIo {
-    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
-        Err(std::io::Error::other(NO_SERIAL))
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use windows_sys::Win32::Storage::FileSystem::ReadFile;
+        loop {
+            if self.closed.load(Ordering::Relaxed) {
+                return Ok(0);
+            }
+            let mut got = 0u32;
+            let wanted = buf.len().min(u32::MAX as usize) as u32;
+            // SAFETY: the open port, a buffer of `wanted` bytes, no overlapped I/O
+            if unsafe { ReadFile(self.fd.0, buf.as_mut_ptr(), wanted, &mut got, std::ptr::null_mut()) } == 0 {
+                // the device went away (unplugged)
+                return Err(std::io::Error::other(format!("the serial device went away: {}", std::io::Error::last_os_error())));
+            }
+            if got > 0 {
+                return Ok(got as usize);
+            }
+        }
     }
 }
 
-/// Never reached on Windows: no serial device is ever opened
-#[cfg(not(unix))]
+/// Writing to a COM port on Windows
+#[cfg(windows)]
 impl Write for FdIo {
-    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
-        Err(std::io::Error::other(NO_SERIAL))
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        use windows_sys::Win32::Storage::FileSystem::WriteFile;
+        let mut put = 0u32;
+        let wanted = buf.len().min(u32::MAX as usize) as u32;
+        // SAFETY: the open port, `wanted` bytes of the buffer, no overlapped I/O
+        if unsafe { WriteFile(self.fd.0, buf.as_ptr(), wanted, &mut put, std::ptr::null_mut()) } == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(put as usize)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -571,7 +695,32 @@ impl Write for FdIo {
     }
 }
 
+/// The COM ports present on Windows, as Device Manager lists them (HKLM\HARDWARE\DEVICEMAP\SERIALCOMM, which Windows
+/// keeps to the ports plugged in now), in number order: COM3 before COM10
+#[cfg(windows)]
+pub fn serial_devices() -> Vec<String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let Ok(output) = std::process::Command::new("reg")
+        .args(["query", r"HKLM\HARDWARE\DEVICEMAP\SERIALCOMM"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    else {
+        return Vec::new();
+    };
+    // "    \Device\Silabser0    REG_SZ    COM9"
+    let mut ports: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.split_once("    REG_SZ    ").map(|(_, port)| port.trim().to_string()))
+        .filter(|port| !port.is_empty())
+        .collect();
+    ports.sort_by_key(|p| (p.trim_start_matches(|c: char| !c.is_ascii_digit()).parse::<u32>().unwrap_or(u32::MAX), p.clone()));
+    ports.dedup();
+    ports
+}
+
 /// The serial devices on this Mac (`/dev/cu.*`), for choosing which one a COM name is
+#[cfg(not(windows))]
 pub fn serial_devices() -> Vec<String> {
     let mut devices: Vec<String> = std::fs::read_dir("/dev")
         .map(|entries| {
@@ -626,5 +775,34 @@ mod tests {
         assert_eq!(telnet_out(b"ls\r"), b"ls\r\n");
         assert_eq!(telnet_out(b"a\r\nb"), b"a\r\nb");
         assert_eq!(telnet_out(&[IAC]), vec![IAC, IAC]);
+    }
+
+    /// A real serial device (SXT_SERIAL_PORT: COM9, or /dev/cu.usbserial-1; SXT_SERIAL_CFG for -sercfg, default
+    /// 9600,8,n,1,N): open it, press Return, and print what comes back, e.g. a switch's prompt:
+    /// `cargo test real_serial_port -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_serial_port() {
+        let device = std::env::var("SXT_SERIAL_PORT").expect("SXT_SERIAL_PORT");
+        let mut line = SerialLine::default();
+        line.apply(&std::env::var("SXT_SERIAL_CFG").unwrap_or_else(|_| "9600,8,n,1,N".into())).unwrap();
+        let (stream, mut reader) = open(&Target::Serial { device: device.clone(), line }, 80, 24).unwrap();
+        let got = Arc::new(Mutex::new(Vec::new()));
+        let into = got.clone();
+        std::thread::spawn(move || {
+            let mut buffer = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buffer) {
+                if n == 0 {
+                    break;
+                }
+                into.lock().unwrap().extend_from_slice(&buffer[..n]);
+            }
+        });
+        stream.writer.lock().unwrap().write_all(b"\r").unwrap();
+        std::thread::sleep(Duration::from_secs(2));
+        stream.close();
+        let text = String::from_utf8_lossy(&got.lock().unwrap()).to_string();
+        println!("{device} answered: {text:?}");
+        assert!(!text.is_empty(), "{device} said nothing to Return");
     }
 }

@@ -631,9 +631,12 @@ fn sessions_import_source(kind: String) -> Option<String> {
 fn session_external(state: State<'_, AppState>, store: sessions::Store, id: String, how: String) -> Result<String, String> {
     let profiles = state.profiles.lock().unwrap().clone();
     let values = variables::values(&state.user_folder);
-    let serial_devices = state.settings.lock().unwrap().serial_devices.clone();
+    let (serial_devices, overrides_on) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.serial_devices.clone(), settings.use_local_overrides)
+    };
     let sessions = state.sessions.lock().unwrap();
-    let session = &overrides::applied(&state.user_folder, sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?);
+    let session = &overrides::applied(&state.user_folder, sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?, overrides_on);
     // the folders' username and port, as for a tab
     let mut username = session.get("Username").to_string();
     let mut port = session.port();
@@ -742,6 +745,18 @@ fn overrides_get(state: State<'_, AppState>) -> BTreeMap<String, overrides::Over
 #[tauri::command]
 fn overrides_set(state: State<'_, AppState>, changes: Vec<(String, overrides::Override)>) -> Result<BTreeMap<String, overrides::Override>, String> {
     overrides::set(&state.user_folder, changes)
+}
+
+/// The user's override presets, by name
+#[tauri::command]
+fn override_presets_get(state: State<'_, AppState>) -> BTreeMap<String, overrides::Override> {
+    overrides::presets(&state.user_folder)
+}
+
+/// Save an override preset under a name, or remove it (no value); returns them all
+#[tauri::command]
+fn override_presets_set(state: State<'_, AppState>, name: String, value: Option<overrides::Override>) -> Result<BTreeMap<String, overrides::Override>, String> {
+    overrides::set_preset(&state.user_folder, &name, value)
 }
 
 /// The Favorites and Recent lists
@@ -1833,6 +1848,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>) ->
             &plain("profiles", "Profiles…")?,
             &plain("environmentVariables", "Environment Variables…")?,
             &plain("environmentColours", "Environment Colours…")?,
+            &PredefinedMenuItem::separator(app)?,
+            &plain("toggleLocalOverrides", "Use Local Overrides")?,
         ],
     )?;
     // shown or hidden, as SuperXPuTTY's View > Send Commands and View > Button Bar
@@ -2287,6 +2304,8 @@ pub fn run() {
             sessions_export_xml,
             sessions_edit_externally,
             overrides_set,
+            override_presets_get,
+            override_presets_set,
             pty::pty_serial_get,
             pty::pty_serial_set,
             log_open,

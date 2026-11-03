@@ -161,7 +161,10 @@ pub fn pty_open(
         session
     };
     let values = crate::variables::values(&state.user_folder);
-    let serial_devices = state.settings.lock().unwrap().serial_devices.clone();
+    let (serial_devices, overrides_on) = {
+        let settings = state.settings.lock().unwrap();
+        (settings.serial_devices.clone(), settings.use_local_overrides)
+    };
     // what's opening, for the app's log (never a password: Quick connect's host and user only)
     let what = match &target {
         Target::LocalShell => "a Local Shell".to_string(),
@@ -176,7 +179,7 @@ pub fn pty_open(
                 None => Err(format!("The session {id} is gone.")),
                 // the user's local overrides beat the session's values and its folders'
                 Some(session) => {
-                    let session = with_login(crate::overrides::applied(&state.user_folder, session));
+                    let session = with_login(crate::overrides::applied(&state.user_folder, session, overrides_on));
                     launch::launch(&sessions, &profiles, &values, &serial_devices, store, &session)
                 }
             }

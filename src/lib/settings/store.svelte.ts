@@ -31,6 +31,8 @@ export interface AppSettings {
   autoReconnectDelaySeconds: number;
   /** SSH sessions run ssh -v, its messages in the tab, for working out why a connection fails */
   sshVerbose: boolean;
+  /** Tools > Use Local Overrides: off, every session opens as stored, the overrides kept for later */
+  useLocalOverrides: boolean;
   /** The terminal's preferences, by name; only those changed from their defaults */
   terminalPrefs: Record<string, string>;
   /** Keep a log of every session (in sessionLogFolder, "" for Documents/SuperXTerminal/logs); otherwise temporary */
@@ -91,6 +93,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   autoReconnectAttempts: 6,
   autoReconnectDelaySeconds: 10,
   sshVerbose: false,
+  useLocalOverrides: true,
   terminalPrefs: {},
   sessionLogEnabled: false,
   sessionLogFolder: "",

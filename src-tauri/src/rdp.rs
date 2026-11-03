@@ -92,9 +92,10 @@ struct Target {
 /// applied, placeholders filled, the folders' username and port where the session has none, "DOMAIN\\user" split,
 /// and the password from -pw or the profile
 fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
+    let overrides_on = state.settings.lock().unwrap().use_local_overrides;
     let sessions = state.sessions.lock().unwrap();
     let stored = sessions.find(store, id).ok_or_else(|| format!("The session {id} is gone."))?;
-    let session = crate::overrides::applied(&state.user_folder, stored);
+    let session = crate::overrides::applied(&state.user_folder, stored, overrides_on);
     let values = crate::variables::values(&state.user_folder);
     let fill = |text: &str| crate::variables::substitute(text, &values);
     let along = sessions.along(store, session.folder());

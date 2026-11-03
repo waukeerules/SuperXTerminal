@@ -38,6 +38,8 @@ pub struct AppSettings {
     pub auto_reconnect: bool,
     pub auto_reconnect_attempts: u32,
     pub auto_reconnect_delay_seconds: u32,
+    /// Tools > Use Local Overrides: off, sessions open as stored, whatever overrides the user has (kept for later)
+    pub use_local_overrides: bool,
     /// SSH sessions run `ssh -v`, so ssh's own account of connecting and logging in shows in the tab (Settings >
     /// General > Diagnostics); off by default
     pub ssh_verbose: bool,
@@ -115,6 +117,7 @@ impl Default for AppSettings {
             auto_reconnect_attempts: 6,
             auto_reconnect_delay_seconds: 10,
             ssh_verbose: false,
+            use_local_overrides: true,
             terminal_prefs: std::collections::BTreeMap::new(),
             session_log_enabled: false,
             session_log_folder: String::new(),

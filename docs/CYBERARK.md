@@ -37,6 +37,10 @@ With the target in the session's own Host field, the same shared session works b
 - **Directly, with your own login** (read-only AD access, say): a local override (Edit Session > Local overrides…)
   sets your own profile and username. The username no longer has `{host_address}` in it, so ssh connects to the
   Host as an ordinary session. Nothing in the shared session changes; only you get the override.
+- **Switching between them** keeps both: the session's menu has Use Local Overrides ✓ (and the dialog, Use these
+  overrides), so turning the override off opens it through CyberArk again with your values kept for later; Tools >
+  Use Local Overrides does every session at once. A preset ("Local AD login": `{ad_username}`, Default Settings) fills
+  in the override for one session or a whole selection.
 
 ## How it works
 

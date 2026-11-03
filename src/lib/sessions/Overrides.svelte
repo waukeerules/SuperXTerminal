@@ -8,7 +8,10 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { listProfiles } from "../settings/profiles";
-  import { getSession, loadOverrides, saveOverrides, type Override, type SessionFields, type SessionView } from "./api";
+  import {
+    getSession, loadOverridePresets, loadOverrides, saveOverridePreset, saveOverrides, type Override, type SessionFields, type SessionView,
+  } from "./api";
+  import Prompt from "../ui/Prompt.svelte";
 
   interface Props {
     sessions: Pick<SessionView, "id" | "store" | "name">[];
@@ -40,6 +43,15 @@
   let mixed = $state<Record<Key, boolean>>({ Host: false, Port: false, Username: false, PuttyProfile: false, ExtraArgs: false, JumpHost: false, Note: false });
   let values = $state<Record<Key, string>>({ Host: "", Port: "", Username: "", PuttyProfile: "", ExtraArgs: "", JumpHost: "", Note: "" });
   let profileNames = $state<string[]>([]);
+  /** Use these overrides: on, off (kept, but the sessions open as stored), or each as it is (several that differ) */
+  let switched = $state<Use>("set");
+  let switchMixed = $state(false);
+  /** The user's presets, by name; the one last filled from, for Delete */
+  let presets = $state<Record<string, Override>>({});
+  let preset = $state("");
+  /** Save as preset… asking for a name */
+  let naming = $state(false);
+  let message = $state("");
   let ready = $state(false);
   let error = $state("");
 
@@ -56,6 +68,11 @@
       current = sessions.map((s) => all[s.id]);
       stored = await Promise.all(sessions.map((s) => getSession(s.store, s.id).catch(() => null)));
       profileNames = (await listProfiles()).map((p) => p.name);
+      presets = await loadOverridePresets();
+      // a session with no overrides yet counts as on: what's ticked here is used once it's saved
+      const on = current.map((o) => !o?.Disabled);
+      switchMixed = on.some((v) => v !== on[0]);
+      switched = switchMixed ? "keep" : on[0] ? "set" : "remove";
       for (const { key } of FIELDS) {
         const each = current.map((o) => valueOf(o, key));
         const first = each[0];
@@ -96,9 +113,52 @@
     use[key] = order[(order.indexOf(use[key]) + 1) % order.length];
   }
 
-  /** One session's new overrides from the choices */
-  function merge(old: Override | undefined): Override {
+  /** Use these overrides' box: on, off, and half-ticked again where the sessions differ */
+  function cycleSwitch(): void {
+    const order: Use[] = switchMixed ? ["keep", "set", "remove"] : ["set", "remove"];
+    switched = order[(order.indexOf(switched) + 1) % order.length];
+  }
+
+  /** Fill and tick the fields a preset sets; the others stay as they are */
+  function fill(name: string): void {
+    const values_ = presets[name];
+    if (!values_) return;
+    for (const { key } of FIELDS) {
+      const value = valueOf(values_, key);
+      if (value === undefined) continue;
+      use[key] = "set";
+      values[key] = value;
+    }
+    message = `Filled from "${name}"; Save to use it.`;
+  }
+
+  /** Save what's ticked as a preset (never whether it's on: that's each session's own) */
+  async function savePreset(name: string): Promise<void> {
+    naming = false;
+    try {
+      presets = await saveOverridePreset(name, merge(undefined, true));
+      preset = name.trim();
+      message = `Saved preset "${preset}".`;
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function deletePreset(): Promise<void> {
+    if (!preset) return;
+    try {
+      presets = await saveOverridePreset(preset, null);
+      message = `Deleted preset "${preset}".`;
+      preset = "";
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  /** One session's new overrides from the choices; `valuesOnly` leaves out whether they're on (a preset) */
+  function merge(old: Override | undefined, valuesOnly = false): Override {
     const out: Override = { Port: 0 };
+    if (!valuesOnly && (switched === "remove" || (switched === "keep" && old?.Disabled))) out.Disabled = true;
     for (const { key } of FIELDS) {
       const choice = use[key];
       const value = choice === "keep" ? valueOf(old, key) : choice === "set" ? values[key] : undefined;
@@ -125,7 +185,7 @@
   const title = $derived(many ? `Local overrides for ${sessions.length} sessions` : `Local overrides: ${sessions[0]?.name ?? ""}`);
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && onCancel()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && !naming && onCancel()} />
 
 <div class="backdrop" role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
@@ -133,7 +193,20 @@
     <p class="note">Your own values, used instead of the session's whenever it opens. Only you get them (SessionOverrides.json in your own folder); the session isn't changed.
       {#if many}A half-ticked box leaves each session's override as it is.{/if}</p>
 
-    <div class="fields">
+    <label class="switch" title={switched === "keep" ? "Each session keeps its own" : ""}>
+      <input type="checkbox" checked={switched === "set"} indeterminate={switched === "keep"} disabled={!ready}
+        onchange={(e) => {
+          cycleSwitch();
+          e.currentTarget.checked = switched === "set";
+          e.currentTarget.indeterminate = switched === "keep";
+        }} />
+      <span><strong>Use these overrides</strong>
+        <span class="note">{switched === "remove"
+          ? "Off: the session opens as stored (through CyberArk, say). Your values stay here for turning it on again."
+          : "Untick to open the session as stored, keeping your values. The session's menu has the same switch."}</span></span>
+    </label>
+
+    <div class="fields" class:off={switched === "remove"}>
       {#each FIELDS as f (f.key)}
         <label class="use" title={use[f.key] === "keep" ? "Each session keeps its own" : ""}>
           <input type="checkbox" checked={use[f.key] === "set"} indeterminate={use[f.key] === "keep"} disabled={!ready}
@@ -146,28 +219,42 @@
           {f.label}:
         </label>
         {#if f.key === "Note"}
-          <textarea rows="3" bind:value={values.Note} disabled={use.Note !== "set"} placeholder={f.hint}></textarea>
+          <textarea rows="3" bind:value={values.Note} disabled={use.Note !== "set"} placeholder={f.hint} aria-label={f.label}></textarea>
         {:else if f.key === "Port"}
-          <input class="port" type="number" min="1" max="65535" bind:value={values.Port} disabled={use.Port !== "set"} />
+          <input class="port" type="number" min="1" max="65535" bind:value={values.Port} disabled={use.Port !== "set"} aria-label={f.label} />
         {:else if f.key === "PuttyProfile"}
           <span>
-            <input list="override-profiles" bind:value={values.PuttyProfile} disabled={use.PuttyProfile !== "set"} />
+            <input list="override-profiles" bind:value={values.PuttyProfile} disabled={use.PuttyProfile !== "set"} aria-label={f.label} />
             <datalist id="override-profiles">{#each profileNames as n}<option value={n}></option>{/each}</datalist>
           </span>
         {:else}
-          <input bind:value={values[f.key]} disabled={use[f.key] !== "set"} placeholder={f.hint} />
+          <input bind:value={values[f.key]} disabled={use[f.key] !== "set"} placeholder={f.hint} aria-label={f.label} />
         {/if}
         <span class="stored" title="The session's own value">{ready ? `Session: ${storedText(f.key)}` : ""}</span>
       {/each}
     </div>
 
     <footer>
-      <span class="error">{error}</span>
+      <select class="presets" aria-label="Fill from preset" value="" disabled={!ready || Object.keys(presets).length === 0}
+        title={Object.keys(presets).length === 0 ? "No presets yet: fill the fields, then Save as preset…" : "Fill the fields from a preset"}
+        onchange={(e) => { preset = e.currentTarget.value; fill(preset); e.currentTarget.value = ""; }}>
+        <option value="">Fill from preset…</option>
+        {#each Object.keys(presets) as name}<option value={name}>{name}</option>{/each}
+      </select>
+      <button disabled={!ready} onclick={() => (naming = true)} title="Keep what's ticked under a name, for filling in other sessions">Save as preset…</button>
+      <button disabled={!preset || !presets[preset]} onclick={() => void deletePreset()}
+        title={preset ? `Delete preset "${preset}"` : "Fill from a preset first"}>Delete preset</button>
+      <span class="error" class:info={!error && !!message}>{error || message}</span>
       <button class="primary" disabled={!ready} onclick={save}>Save</button>
       <button onclick={onCancel}>Cancel</button>
     </footer>
   </div>
 </div>
+
+{#if naming}
+  <Prompt title="Save as preset" value={preset} validate={(name) => (name ? "" : "Give the preset a name.")}
+    onOk={(name) => void savePreset(name)} onCancel={() => (naming = false)} />
+{/if}
 
 <style>
   .backdrop {
@@ -252,6 +339,35 @@
 
   :disabled {
     opacity: 0.45;
+  }
+
+  .switch {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .switch .note {
+    display: block;
+  }
+
+  /* overrides turned off: kept and editable, but not what the session uses */
+  .fields.off {
+    opacity: 0.5;
+  }
+
+  .presets {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 4px;
+  }
+
+  .error.info {
+    color: var(--text-muted);
   }
 
   footer {

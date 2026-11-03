@@ -161,10 +161,13 @@ pub async fn sftp_open(
     let (launch, title, local, remote) = {
         let profiles = state.profiles.lock().unwrap().clone();
         let values = crate::variables::values(&state.user_folder);
-        let serial_devices = state.settings.lock().unwrap().serial_devices.clone();
+        let (serial_devices, overrides_on) = {
+            let settings = state.settings.lock().unwrap();
+            (settings.serial_devices.clone(), settings.use_local_overrides)
+        };
         let sessions = state.sessions.lock().unwrap();
         let stored = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
-        let session = crate::overrides::applied(&state.user_folder, stored);
+        let session = crate::overrides::applied(&state.user_folder, stored, overrides_on);
         let launch = crate::launch::launch(&sessions, &profiles, &values, &serial_devices, store, &session)?;
         if launch.login.is_none() {
             return Err("File transfer is for SSH sessions.".into());

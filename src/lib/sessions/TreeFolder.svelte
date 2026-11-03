@@ -92,7 +92,10 @@
     if (session.note) lines.push(session.note);
     if (session.updatedBy) lines.push(`Changed by ${session.updatedBy}`);
     const mine = overriddenFields(overrides[session.id]);
-    if (mine.length) lines.push(`Your local overrides: ${mine.join(", ")}`);
+    if (mine.length) {
+      const off = overrides[session.id]?.Disabled ? " (off)" : !settings.useLocalOverrides ? " (off: Tools > Use Local Overrides)" : "";
+      lines.push(`Your local overrides${off}: ${mine.join(", ")}`);
+    }
     if (session.locked) lines.push("Locked in the database");
     if (session.pending) lines.unshift(session.pendingNote);
     const reason = unavailableReason(session.protocol);

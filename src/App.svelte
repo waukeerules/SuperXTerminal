@@ -55,6 +55,12 @@
   /** The profile Settings > Profiles shows first (Quick connect's Edit…, Edit Session's Profiles…) */
   let settingsProfile = $state<string | null>(null);
 
+  /** Tools > Use Local Overrides: every session's overrides used or not, each kept for later */
+  async function setLocalOverrides(on: boolean): Promise<void> {
+    await saveSettings({ useLocalOverrides: on });
+    status = on ? "Local overrides on: sessions open with your own values" : "Local overrides off: sessions open as stored";
+  }
+
   /** Open Settings > Profiles on a profile (Default Settings when none), even if Settings is already open elsewhere */
   async function openProfiles(name: string | null = null): Promise<void> {
     settingsTab = null;
@@ -101,6 +107,7 @@
     else if (id === "newWindow") void invoke("window_new", { open: null });
     else if (id === "environmentVariables") variablesOpen = true;
     else if (id === "profiles") void openProfiles();
+    else if (id === "toggleLocalOverrides") void setLocalOverrides(!settings.useLocalOverrides);
     else if (id === "environmentColours") coloursOpen = true;
     else if (id === "openSession") quickOpen();
     else if (id === "switchSession") quickSwitch();
@@ -734,6 +741,10 @@
     <span class="status">{status}</span>
     <ScriptStatus />
     {#if currentLayout}<span class="layout" title="The layout open now">{currentLayout}</span>{/if}
+    {#if !settings.useLocalOverrides}
+      <button class="overrides-off" onclick={() => void setLocalOverrides(true)}
+        title="Sessions open as stored (Tools > Use Local Overrides). Click to use your local overrides again.">Local overrides off</button>
+    {/if}
     <span class="version">{version}</span>
   </div>
 </div>
@@ -1024,5 +1035,16 @@
     padding: 0 6px;
     border-left: 1px solid var(--border);
     border-right: 1px solid var(--border);
+  }
+
+  /* Tools > Use Local Overrides is off: easy to forget, so it shows until it's on again */
+  .statusbar .overrides-off {
+    padding: 0 6px;
+    border: 0;
+    border-radius: 3px;
+    background: #b7791f;
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
   }
 </style>

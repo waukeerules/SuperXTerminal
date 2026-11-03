@@ -313,6 +313,23 @@ export interface Override {
   ExtraArgs?: string;
   JumpHost?: string;
   Note?: string;
+  /** Turned off: kept, but the session opens as stored (written only when off) */
+  Disabled?: boolean;
+}
+
+/** Whether a session's overrides are used when it opens: it has some, they're on, and so is Tools > Use Local Overrides */
+export function overridesInUse(o: Override | undefined, globallyOn: boolean): boolean {
+  return globallyOn && !!o && !o.Disabled;
+}
+
+/** The user's override presets, by name (OverridePresets.json in their own folder) */
+export function loadOverridePresets(): Promise<Record<string, Override>> {
+  return invoke("override_presets_get");
+}
+
+/** Save an override preset under a name, or remove it (null); returns them all */
+export function saveOverridePreset(name: string, value: Override | null): Promise<Record<string, Override>> {
+  return invoke("override_presets_set", { name, value });
 }
 
 /** Everyone's overrides here, by session id */

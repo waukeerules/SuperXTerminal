@@ -33,12 +33,45 @@ pub struct Override {
     /// The user's own note, shown instead of the stored one ("" for none)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Turned off (Local overrides' "Use these overrides", or the session's menu): the values are kept but the
+    /// session opens as stored, e.g. through CyberArk rather than with the user's own login. Written only when off,
+    /// so an entry that's on reads as SuperXPuTTY writes it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
 }
 
 impl Override {
+    /// Whether it holds no values; one turned off still holds its own
     pub fn is_empty(&self) -> bool {
-        *self == Override::default()
+        Override { disabled: false, ..self.clone() } == Override::default()
     }
+}
+
+fn presets_file(user_folder: &Path) -> PathBuf {
+    user_folder.join("OverridePresets.json")
+}
+
+/// The user's named sets of overrides ("Local AD login", say), for filling in Local overrides; by name
+pub fn presets(user_folder: &Path) -> BTreeMap<String, Override> {
+    std::fs::read_to_string(presets_file(user_folder)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+
+/// Save a preset under its name (replacing one of that name), or remove it (None); returns them all
+pub fn set_preset(user_folder: &Path, name: &str, value: Option<Override>) -> Result<BTreeMap<String, Override>, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("A preset needs a name.".into());
+    }
+    let mut all = presets(user_folder);
+    match value {
+        // a preset is only values: whether overrides are on is each session's own
+        Some(value) => all.insert(name.to_string(), Override { disabled: false, ..value }),
+        None => all.remove(name),
+    };
+    std::fs::create_dir_all(user_folder).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?;
+    std::fs::write(presets_file(user_folder), text).map_err(|e| e.to_string())?;
+    Ok(all)
 }
 
 fn file(user_folder: &Path) -> PathBuf {
@@ -93,10 +126,14 @@ pub fn forget(user_folder: &Path, gone: impl Fn(&str) -> bool) {
 }
 
 /// A copy of a session with its overrides in place, for opening it (never saved). An override beats the session's
-/// value and its folders', as SuperXPuTTY applies them after the folders' defaults.
-pub fn applied(user_folder: &Path, session: &StoredSession) -> StoredSession {
+/// value and its folders', as SuperXPuTTY applies them after the folders' defaults. `on` is Tools > Use Local
+/// Overrides: off, no session's are used; a session's own turned off isn't either.
+pub fn applied(user_folder: &Path, session: &StoredSession, on: bool) -> StoredSession {
     let mut copy = session.clone();
-    let Some(value) = load(user_folder).remove(session.id()) else { return copy };
+    if !on {
+        return copy;
+    }
+    let Some(value) = load(user_folder).remove(session.id()).filter(|v| !v.disabled) else { return copy };
     for (name, field) in [
         ("Host", &value.host),
         ("Username", &value.username),
@@ -138,7 +175,7 @@ mod tests {
         let session = StoredSession {
             attributes: vec![("SessionId".into(), "Lab/sw1".into()), ("Host".into(), "sw1".into()), ("JumpHost".into(), "bastion".into())],
         };
-        let copy = applied(&folder, &session);
+        let copy = applied(&folder, &session, true);
         assert_eq!(copy.get("Host"), "10.0.0.9");
         assert_eq!(copy.get("Port"), "2222");
         assert_eq!(copy.get("JumpHost"), "");
@@ -147,6 +184,41 @@ mod tests {
         assert!(load(&folder).contains_key("Labs/sw1"));
         forget(&folder, |id| id == "Labs/sw1");
         assert!(load(&folder).is_empty());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn turned_off_they_keep_their_values_and_the_session_opens_as_stored() {
+        let folder = std::env::temp_dir().join(format!("sxt-overrides-off-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let session = StoredSession { attributes: vec![("SessionId".into(), "Lab/sw1".into()), ("Username".into(), "{cyberark}".into())] };
+        let mine = Override { username: Some("admin".into()), ..Override::default() };
+        set(&folder, vec![("Lab/sw1".into(), mine.clone())]).unwrap();
+        // on: the own username; written as SuperXPuTTY writes it, with no "Disabled"
+        assert_eq!(applied(&folder, &session, true).get("Username"), "admin");
+        assert!(!std::fs::read_to_string(file(&folder)).unwrap().contains("Disabled"));
+        // the global switch off: as stored, the override kept
+        assert_eq!(applied(&folder, &session, false).get("Username"), "{cyberark}");
+        // the session's own off: as stored, and its values still there for turning it on again
+        set(&folder, vec![("Lab/sw1".into(), Override { disabled: true, ..mine })]).unwrap();
+        assert_eq!(applied(&folder, &session, true).get("Username"), "{cyberark}");
+        assert_eq!(load(&folder)["Lab/sw1"].username.as_deref(), Some("admin"));
+        // off with no values left is nothing to keep
+        set(&folder, vec![("Lab/sw1".into(), Override { disabled: true, ..Override::default() })]).unwrap();
+        assert!(load(&folder).is_empty());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn presets_are_kept_by_name_without_being_on_or_off() {
+        let folder = std::env::temp_dir().join(format!("sxt-presets-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let local = Override { username: Some("{ad_username}".into()), putty_profile: Some("Default Settings".into()), disabled: true, ..Override::default() };
+        let all = set_preset(&folder, " Local AD login ", Some(local)).unwrap();
+        assert_eq!(all["Local AD login"].username.as_deref(), Some("{ad_username}"));
+        assert!(!all["Local AD login"].disabled);
+        assert!(set_preset(&folder, "  ", Some(Override::default())).is_err());
+        assert!(set_preset(&folder, "Local AD login", None).unwrap().is_empty());
         std::fs::remove_dir_all(&folder).unwrap();
     }
 }

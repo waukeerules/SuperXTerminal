@@ -30,6 +30,8 @@
     forgetRecent,
     setGroupExpanded,
     loadOverrides,
+    overridesInUse,
+    saveOverrides,
     type Override,
     type Shortcuts,
     type DbState,
@@ -105,6 +107,13 @@
   let importing = $state<ImportKind | null>(null);
   /** The user's local overrides, by session id */
   let overrides = $state<Record<string, Override>>({});
+
+  /** Turn a session's own overrides on or off, keeping their values */
+  async function toggleOverrides(id: string): Promise<void> {
+    const current = overrides[id];
+    if (!current) return;
+    overrides = await saveOverrides([[id, { ...current, Disabled: !current.Disabled }]]);
+  }
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   /** The session being edited: its store, its id (null for new) and its fields */
   /** Edit Session open; `copyOf` is the session a new one was filled in from, whose password it keeps */
@@ -142,7 +151,11 @@
   const colors = $derived(new EnvironmentColors(loaded?.folders ?? [], parseRules(settings.environmentColorRules)));
   /** The sessions as shown: a local override's note in place of the stored one, in the tooltip and the search */
   const shown = $derived(
-    (loaded?.sessions ?? []).map((s) => (overrides[s.id]?.Note !== undefined ? { ...s, note: overrides[s.id].Note ?? "" } : s)),
+    (loaded?.sessions ?? []).map((s) =>
+      overridesInUse(overrides[s.id], settings.useLocalOverrides) && overrides[s.id].Note !== undefined
+        ? { ...s, note: overrides[s.id].Note ?? "" }
+        : s,
+    ),
   );
   const saved = $derived(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending) : null);
   const privateRoot = $derived(
@@ -447,6 +460,15 @@
         { label: "Duplicate as…", disabled: session.store === "database" && !db?.writable && "Database sessions can't be written now", action: () => void duplicateAs(session) },
         { label: "Edit", disabled: block, action: () => void edit(session) },
         { label: "Local overrides…", action: () => (overriding = [session]) },
+        // switch between the session as stored (CyberArk, say) and the user's own values, keeping them either way
+        ...(overrides[session.id]
+          ? [{
+              label: "Use Local Overrides",
+              checked: !overrides[session.id].Disabled,
+              disabled: !settings.useLocalOverrides && "Tools > Use Local Overrides is off",
+              action: () => void toggleOverrides(session.id),
+            }]
+          : []),
         { label: "Delete", disabled: block, action: () => void remove(session) },
         ...transferItems([session], session.store, session.locked),
         { separator: true },

@@ -156,6 +156,9 @@
     <label class="check"><input type="checkbox" checked={prefs.wrap === "true"}
       onchange={(e) => set("wrap", String(e.currentTarget.checked))} /> Wrap lines
       <span class="hint">(off: lines up to 300 columns stay whole, with a scroll bar to pan along them)</span></label>
+    <label class="check"><input type="checkbox" checked={prefs.lineNumbers === "true"}
+      onchange={(e) => set("lineNumbers", String(e.currentTarget.checked))} /> Line numbers
+      <span class="hint">(none while a full-screen program such as less or vim runs; less -N numbers its own)</span></label>
     <label>Scrollback
       <span class="row"><input type="number" min="0" max="1000000" step="1000" value={prefs.scrollback}
         onchange={(e) => number("scrollback", e.currentTarget.value, 0, 1000000)} /> <span class="hint">lines; 0: unlimited</span></span>

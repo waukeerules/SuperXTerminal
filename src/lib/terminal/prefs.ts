@@ -31,6 +31,8 @@ export const PREF_DEFAULTS: Record<string, string> = {
   markMatches: "true",
   /** "false": lines aren't wrapped at the tab's width; the terminal is 300 columns wide and the view pans along them */
   wrap: "true",
+  /** "true": the output's line numbers in a gutter at the left (none while a full-screen program runs) */
+  lineNumbers: "false",
   /** A paste of this many lines or more is checked first; "0" never */
   pasteLines: "2",
   /** Lines kept; "0" for unlimited */

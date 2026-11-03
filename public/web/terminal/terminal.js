@@ -214,6 +214,138 @@
         followCursor();
     }
 
+    // ---- line numbers ---------------------------------------------------------------------------------------------
+
+    /** Rows between the counts kept for numbering, so a scroll up a long scrollback doesn't count it all again */
+    var NUMBER_STEP = 512;
+    /** numberCounts[k]: lines (not wrapped rows) above row k * NUMBER_STEP; kept only above the screen, where rows stay put */
+    var numberCounts = [0];
+    /** Lines dropped off the top of the scrollback since the numbers started, so a line keeps its number */
+    var droppedLines = 0;
+    /** The buffer's rows the numbers were counted on, and its width: either changing counts again */
+    var numberedRows = null;
+    var numberedCols = 0;
+    var numberedLength = 0;
+    var numbersFrame = 0;
+    /** The gutter's width as last set, in pixels */
+    var gutterWidth = 0;
+
+    /** Whether Line Numbers is on (off unless turned on) and the screen is the output's, not a full-screen program's */
+    function numbering() {
+        return loadPref('lineNumbers') === 'true' && term.buffer.active.type === 'normal';
+    }
+
+    /** The scrollback's rows (xterm.js's own list), to know when it's a new one and when it drops rows */
+    function normalRows() {
+        var core = term._core;
+        return core && core._bufferService && core._bufferService.buffers ? core._bufferService.buffers.normal.lines : null;
+    }
+
+    /** Start counting again: the rows were reflowed (a new width), replaced (a reset) or cleared */
+    function recountNumbers() {
+        numberCounts = [0];
+        var rows = normalRows();
+        if (rows !== numberedRows) {
+            numberedRows = rows;
+            droppedLines = 0;
+            // full scrollback: each new line drops the oldest; count those so the numbers don't shift
+            if (rows && rows.onTrim) {
+                rows.onTrim(function (amount) {
+                    if (rows !== numberedRows) { return; }
+                    droppedLines += amount;
+                    numberCounts = [0];
+                });
+            }
+        }
+        numberedCols = term.cols;
+    }
+
+    /** Lines that start in rows [from, to) of the normal buffer: rows a long line wraps onto aren't lines */
+    function linesStarting(buffer, from, to) {
+        var n = 0;
+        for (var y = from; y < to; y++) {
+            var line = buffer.getLine(y);
+            if (line && !line.isWrapped) { n++; }
+        }
+        return n;
+    }
+
+    /** Lines above a row, counted from the kept counts on */
+    function linesAbove(buffer, row) {
+        var k = Math.floor(row / NUMBER_STEP);
+        // the counts are only kept for rows above the screen, which output doesn't change
+        var keep = Math.floor(buffer.baseY / NUMBER_STEP);
+        while (numberCounts.length <= Math.min(k, keep)) {
+            var j = numberCounts.length;
+            numberCounts.push(numberCounts[j - 1] + linesStarting(buffer, (j - 1) * NUMBER_STEP, j * NUMBER_STEP));
+        }
+        var start = Math.min(k, numberCounts.length - 1);
+        return numberCounts[start] + linesStarting(buffer, start * NUMBER_STEP, row);
+    }
+
+    /** Draw the numbers soon: once a frame however much output comes */
+    function scheduleNumbers() {
+        if (numbersFrame) { return; }
+        numbersFrame = window.requestAnimationFrame(function () {
+            numbersFrame = 0;
+            drawNumbers();
+        });
+    }
+
+    /**
+     * Number the rows that show: a line's first row gets its number, the rows it wraps onto and the empty ones under
+     * the cursor none. A full-screen program (less, vim, top) draws a picture rather than lines, so the gutter goes
+     * while it runs (less -N numbers its own), and comes back after it.
+     */
+    function drawNumbers() {
+        var on = numbering();
+        var gutter = document.getElementById('gutter');
+        if (!on) {
+            if (document.body.classList.contains('numbers')) {
+                document.body.classList.remove('numbers');
+                gutterWidth = 0;
+                fit();
+            }
+            return;
+        }
+        var buffer = term.buffer.active;
+        var dimensions = term._core && term._core._renderService && term._core._renderService.dimensions;
+        if (!dimensions || !dimensions.css.cell.height) { return; }
+        var rows = normalRows();
+        // fewer rows than before: the scrollback was cleared (Clear Scrollback, the clear command), so start at 1 again
+        if (rows && rows.length < numberedLength) { numberedRows = null; }
+        if (rows !== numberedRows || term.cols !== numberedCols) {
+            recountNumbers();
+        }
+        numberedLength = rows ? rows.length : 0;
+        var last = buffer.baseY + buffer.cursorY;
+        var top = buffer.viewportY;
+        var first = droppedLines + linesAbove(buffer, top);
+        var text = [];
+        var n = first;
+        var widest = droppedLines + linesAbove(buffer, last) + 1;
+        for (var y = top; y < top + term.rows; y++) {
+            var line = buffer.getLine(y);
+            if (!line || y > last) { text.push(''); continue; }
+            if (line.isWrapped) { text.push(''); continue; }
+            n++;
+            text.push(String(n));
+        }
+        // room for 4 digits at least, so the terminal doesn't narrow at every tenfold
+        var width = Math.ceil(Math.max(4, String(widest).length) * dimensions.css.cell.width) + 10;
+        var style = gutter.style;
+        style.fontFamily = term.options.fontFamily;
+        style.fontSize = term.options.fontSize + 'px';
+        style.lineHeight = dimensions.css.cell.height + 'px';
+        gutter.textContent = text.join('\n');
+        if (!document.body.classList.contains('numbers') || width !== gutterWidth) {
+            gutterWidth = width;
+            document.documentElement.style.setProperty('--gutter', width + 'px');
+            document.body.classList.add('numbers');
+            fit();
+        }
+    }
+
     // ---- output, logging and highlighting -----------------------------------------------------------------------
 
     /** Base64 from TerminalControl to bytes; xterm.js decodes UTF-8 across chunks itself */
@@ -737,6 +869,7 @@
             { label: 'Copy on Select', checked: prefOn('copyOnSelect'), action: function () { togglePref('copyOnSelect'); } },
             { label: 'Mark Matches of Selection', checked: prefOn('markMatches'), action: function () { togglePref('markMatches'); markSelectionMatches(); } },
             { label: 'Wrap Lines', checked: wrapping(), action: function () { togglePref('wrap'); applyWrap(); } },
+            { label: 'Line Numbers', checked: loadPref('lineNumbers') === 'true', action: function () { savePref('lineNumbers', loadPref('lineNumbers') === 'true' ? 'false' : 'true'); drawNumbers(); } },
             '-',
             // typed through the tab (ctlPuttyPanel.SendKey), as SENDKEY types them; Other Key... asks there
             { label: 'Send Key', items: menuKeys.map(function (k) {
@@ -911,6 +1044,7 @@
         term.options.theme = xtermTheme;
         applyFont();
         document.documentElement.style.setProperty('--bg', colors.background || '#000000');
+        document.documentElement.style.setProperty('--line-numbers', colors.lineNumbers || (theme.base === 'vs' ? '#8a8a8a' : '#6e7681'));
         // the menu and the find bar follow the theme: light ones for a light theme (Monaco's base "vs")
         document.documentElement.classList.toggle('light-theme', ownBackground() ? !isDarkColour(colors.background) : theme.base === 'vs');
         window.setTimeout(fit, 0);
@@ -1094,6 +1228,7 @@
         applyTheme();
         applyCursor();
         applyWrap();
+        drawNumbers();
         markSelectionMatches();
     }
 
@@ -1288,9 +1423,10 @@
             cursorShowed = cursorShows();
         });
         // a full-screen program (alternate screen) gets the tab's own width, and the wide lines come back after it
-        term.buffer.onBufferChange(function () { fit(); followCursor(); });
+        term.buffer.onBufferChange(function () { fit(); followCursor(); scheduleNumbers(); });
+        term.onRender(scheduleNumbers);
         term.onResize(function (size) { if (sized) { post({ type: 'size', cols: size.cols, rows: size.rows }); } });
-        term.onScroll(function () { scheduleSettle(); });
+        term.onScroll(function () { scheduleSettle(); scheduleNumbers(); });
         term.onBell(ring);
         // links in the output open with Ctrl+click, as in Windows Terminal, so selecting text never opens a browser
         if (window.WebLinksAddon) {

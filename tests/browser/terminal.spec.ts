@@ -196,3 +196,57 @@ test("a profile's Light or Dark wins over Settings > Terminal's theme, and its t
   await page.evaluate(() => (window as any).terminalDev.message({ type: "colors", colors: {}, theme: "" }));
   await expect.poll(background).toBe("#000000");
 });
+
+test.describe("Line Numbers", () => {
+  /** The gutter's numbers, a row each ("" for a row without one) */
+  const numbers = (page: Page) => page.evaluate(() => {
+    const gutter = document.getElementById("gutter")!;
+    return getComputedStyle(gutter).display === "none" ? null : gutter.textContent!.split("\n");
+  });
+  const lines = (n: number, from = 1) => Array.from({ length: n }, (_, i) => `line ${i + from}`).join("\r\n") + "\r\n";
+
+  test("are off unless turned on", async ({ page }) => {
+    await openTerminal(page, {});
+    await feed(page, lines(3));
+    await expect.poll(() => numbers(page)).toBeNull();
+  });
+
+  test("number each line once, the rows a long line wraps onto and those under the cursor not at all", async ({ page }) => {
+    await openTerminal(page, { lineNumbers: "true" });
+    const cols = await page.evaluate(() => (window as any).terminalDev.term.cols as number);
+    await feed(page, "one\r\n" + "x".repeat(cols + 5) + "\r\nthree\r\n$ ");
+    await expect.poll(async () => (await numbers(page))?.slice(0, 6)).toEqual(["1", "2", "", "3", "4", ""]);
+  });
+
+  test("go while a full-screen program (less) runs, and come back after it", async ({ page }) => {
+    await openTerminal(page, { lineNumbers: "true" });
+    await feed(page, lines(3));
+    await expect.poll(async () => (await numbers(page))?.[0]).toBe("1");
+    const colsBefore = await page.evaluate(() => (window as any).terminalDev.term.cols as number);
+    await feed(page, "\x1b[?1049h\x1b[Hless's page");
+    await expect.poll(() => numbers(page)).toBeNull();
+    // the program gets the gutter's room
+    await expect.poll(() => page.evaluate(() => (window as any).terminalDev.term.cols as number)).toBeGreaterThan(colsBefore);
+    await feed(page, "\x1b[?1049l");
+    await expect.poll(async () => (await numbers(page))?.slice(0, 3)).toEqual(["1", "2", "3"]);
+  });
+
+  test("keep counting as a full scrollback drops its oldest lines", async ({ page }) => {
+    await openTerminal(page, { lineNumbers: "true", scrollback: "20" });
+    await feed(page, lines(200));
+    const rows = await page.evaluate(() => (window as any).terminalDev.term.rows as number);
+    // the last line written is 200, and the cursor's row (where the prompt goes) is 201
+    await expect.poll(async () => ((await numbers(page)) ?? []).filter(Boolean).slice(-2)).toEqual(["200", "201"]);
+    expect(rows).toBeGreaterThan(2);
+  });
+});
+
+test("Line Numbers with Wrap Lines off: the gutter stays put while the view pans", async ({ page }) => {
+  await openTerminal(page, { lineNumbers: "true", wrap: "false" });
+  await feed(page, "Router#show running-config\r\n" + "interface GigabitEthernet1/0/1 description " + "z".repeat(250) + "\r\nRouter#");
+  await expect.poll(() => page.evaluate(() => document.getElementById("gutter")!.textContent!.split("\n").slice(0, 3))).toEqual(["1", "2", "3"]);
+  expect(await cols(page)).toBe(300);
+  await panTo(page, 400);
+  const gutterLeft = await page.evaluate(() => document.getElementById("gutter")!.getBoundingClientRect().left);
+  expect(gutterLeft).toBe(0);
+});

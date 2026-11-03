@@ -41,6 +41,7 @@
   import { AUTO_RESTORE, LAYOUTS_CHANGED, listLayouts, readLayout, renameLayout, saveLayout, type Layout } from "./lib/layout/layouts";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+  import { catchShortcuts } from "./lib/shortcuts";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { askOne } from "./lib/scripting/asking.svelte";
 
@@ -75,47 +76,52 @@
 
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
   // this window's own: the core sends the menu bar's commands to the window in front only
-  void getCurrentWebviewWindow().listen<string>("menu", (event) => {
-    if (event.payload === "settings") settingsTab = "General";
-    else if (event.payload === "newLocalShell") newShell();
-    else if (event.payload === "newWindow") void invoke("window_new", { open: null });
-    else if (event.payload === "environmentVariables") variablesOpen = true;
-    else if (event.payload === "environmentColours") coloursOpen = true;
-    else if (event.payload === "openSession") quickOpen();
-    else if (event.payload === "switchSession") quickSwitch();
-    else if (event.payload === "splitRight" || event.payload === "splitDown") {
+  void getCurrentWebviewWindow().listen<string>("menu", (event) => menuAction(event.payload));
+  // Windows' menu keys don't fire while the page has the keyboard: the page catches them itself (lib/shortcuts.ts)
+  catchShortcuts(menuAction);
+
+  /** Run a menu bar item's command by its id, from the menu bar or (on Windows) its key */
+  function menuAction(id: string): void {
+    if (id === "settings") settingsTab = "General";
+    else if (id === "newLocalShell") newShell();
+    else if (id === "newWindow") void invoke("window_new", { open: null });
+    else if (id === "environmentVariables") variablesOpen = true;
+    else if (id === "environmentColours") coloursOpen = true;
+    else if (id === "openSession") quickOpen();
+    else if (id === "switchSession") quickSwitch();
+    else if (id === "splitRight" || id === "splitDown") {
       const id = tabs?.api.activePanel?.id;
-      if (id) tabs?.split(id, event.payload === "splitRight" ? "right" : "below");
-    } else if (event.payload === "joinAll") tabs?.joinAll();
-    else if (event.payload === "saveLayout") {
+      if (id) tabs?.split(id, id === "splitRight" ? "right" : "below");
+    } else if (id === "joinAll") tabs?.joinAll();
+    else if (id === "saveLayout") {
       if (currentLayout && currentLayout !== AUTO_RESTORE) void saveLayoutAs(currentLayout);
       else askLayoutName();
-    } else if (event.payload === "saveLayoutAs") askLayoutName();
-    else if (event.payload === "toggleLayouts") void saveSettings({ showLayouts: !settings.showLayouts });
-    else if (event.payload === "toggleLogViewer") void saveSettings({ showLogViewer: !settings.showLogViewer });
-    else if (event.payload === "toggleSessionsPane") void saveSettings({ showSessionsPane: !settings.showSessionsPane });
-    else if (event.payload === "toggleStatusBar") void saveSettings({ showStatusBar: !settings.showStatusBar });
-    else if (event.payload === "toggleAlwaysOnTop") void saveSettings({ alwaysOnTop: !settings.alwaysOnTop });
-    else if (event.payload === "checkUpdates") void checkForUpdates(true);
-    else if (event.payload === "nextTab") tabs?.cycle(1);
-    else if (event.payload === "prevTab") tabs?.cycle(-1);
-    else if (["duplicateSession", "renameTab", "restartSession", "resetTerminal", "copyAll"].includes(event.payload)) activeTabAction(event.payload);
-    else if (event.payload === "gotoCommandBar") void focusBar("send-command", () => saveSettings({ showSendCommands: true }));
-    else if (event.payload === "gotoConnectionBar") void focusBar("quick-connect-host");
-    else if (event.payload === "focusActiveSession") tabs?.focusActive();
-    else if (event.payload === "fullScreen") void toggleFullScreen();
-    else if (event.payload === "toggleSessionDetail") void saveSettings({ showSessionDetail: !settings.showSessionDetail });
-    else if (event.payload === "databaseSessions") databaseOpen = true;
-    else if (event.payload === "scriptEditor") editorOpen = true;
-    else if (event.payload === "closeTab") tabs?.closeActive();
-    else if (event.payload === "find") tabs?.activeHost()?.find();
-    else if (event.payload === "clearScrollback") tabs?.activeHost()?.action("clearScrollback");
-    else if (event.payload === "toggleSendCommands") void saveSettings({ showSendCommands: !settings.showSendCommands });
-    else if (event.payload === "toggleButtonBar") void saveSettings({ showButtonBar: !settings.showButtonBar });
-    else if (event.payload === "toggleSessionsAutoHide") setAutoHide(!settings.sessionsAutoHide);
-    else if (event.payload.startsWith("import:")) tree?.importSessions(event.payload.slice(7) as ImportKind);
-    else if (event.payload === "exportCsv") void tree?.exportSessions(null, "Sessions.csv");
-  });
+    } else if (id === "saveLayoutAs") askLayoutName();
+    else if (id === "toggleLayouts") void saveSettings({ showLayouts: !settings.showLayouts });
+    else if (id === "toggleLogViewer") void saveSettings({ showLogViewer: !settings.showLogViewer });
+    else if (id === "toggleSessionsPane") void saveSettings({ showSessionsPane: !settings.showSessionsPane });
+    else if (id === "toggleStatusBar") void saveSettings({ showStatusBar: !settings.showStatusBar });
+    else if (id === "toggleAlwaysOnTop") void saveSettings({ alwaysOnTop: !settings.alwaysOnTop });
+    else if (id === "checkUpdates") void checkForUpdates(true);
+    else if (id === "nextTab") tabs?.cycle(1);
+    else if (id === "prevTab") tabs?.cycle(-1);
+    else if (["duplicateSession", "renameTab", "restartSession", "resetTerminal", "copyAll"].includes(id)) activeTabAction(id);
+    else if (id === "gotoCommandBar") void focusBar("send-command", () => saveSettings({ showSendCommands: true }));
+    else if (id === "gotoConnectionBar") void focusBar("quick-connect-host");
+    else if (id === "focusActiveSession") tabs?.focusActive();
+    else if (id === "fullScreen") void toggleFullScreen();
+    else if (id === "toggleSessionDetail") void saveSettings({ showSessionDetail: !settings.showSessionDetail });
+    else if (id === "databaseSessions") databaseOpen = true;
+    else if (id === "scriptEditor") editorOpen = true;
+    else if (id === "closeTab") tabs?.closeActive();
+    else if (id === "find") tabs?.activeHost()?.find();
+    else if (id === "clearScrollback") tabs?.activeHost()?.action("clearScrollback");
+    else if (id === "toggleSendCommands") void saveSettings({ showSendCommands: !settings.showSendCommands });
+    else if (id === "toggleButtonBar") void saveSettings({ showButtonBar: !settings.showButtonBar });
+    else if (id === "toggleSessionsAutoHide") setAutoHide(!settings.sessionsAutoHide);
+    else if (id.startsWith("import:")) tree?.importSessions(id.slice(7) as ImportKind);
+    else if (id === "exportCsv") void tree?.exportSessions(null, "Sessions.csv");
+  }
 
   void loadSettings();
   // saved in another window (or this one): read them again, so every window shows and saves the same settings

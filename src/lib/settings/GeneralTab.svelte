@@ -8,6 +8,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { checkForUpdates } from "./updates";
+  import { shortcutLabel } from "../shortcuts";
 
   /** Choose where kept session logs go */
   async function chooseLogFolder(): Promise<void> {
@@ -95,7 +96,7 @@
       </select>
     </div>
     <p class="hint">Beside the tab list, one ✕ stays in the same place at the right of the tab strip and closes the
-      tab that's showing; ⌘W and each tab's right-click menu close tabs either way.</p>
+      tab that's showing; {shortcutLabel("closeTab") || "Close Tab"} and each tab's right-click menu close tabs either way.</p>
   </fieldset>
 
   <fieldset>

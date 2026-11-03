@@ -9,6 +9,18 @@ import type { SessionView } from "../sessions/api";
 import type { TabArea } from "./TabArea";
 import { specialCommands } from "../terminal/PageHost";
 import type { RdpHost } from "../terminal/RdpHost";
+import { shortcutLabel } from "../shortcuts";
+
+/**
+ * A menu item's label with its action's key now, as this system shows it ("Split Right  ⌘D", "Split Right  Ctrl+Shift+D")
+ * @param label The item's name
+ * @param id The action whose key it is (keys.rs)
+ * @returns The label, with the key when the action has one
+ */
+function withKey(label: string, id: string): string {
+  const key = shortcutLabel(id);
+  return key ? `${label}  ${key}` : label;
+}
 
 /** What the menu needs from the window */
 export interface TabMenuHost {
@@ -163,12 +175,12 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
     },
     { separator: true },
     {
-      label: "Split Right  ⌘D",
+      label: withKey("Split Right", "splitRight"),
       disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
       action: () => tabs.split(id, "right"),
     },
     {
-      label: "Split Down  ⇧⌘D",
+      label: withKey("Split Down", "splitDown"),
       disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
       action: () => tabs.split(id, "below"),
     },
@@ -251,12 +263,12 @@ function rdpMenu(host: TabMenuHost, id: string, rdp: RdpHost): MenuItem[] {
     { label: "Disconnect", disabled: rdp.isEnded && "Not connected", action: () => rdp.disconnect() },
     { separator: true },
     {
-      label: "Split Right  ⌘D",
+      label: withKey("Split Right", "splitRight"),
       disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
       action: () => tabs.split(id, "right"),
     },
     {
-      label: "Split Down  ⇧⌘D",
+      label: withKey("Split Down", "splitDown"),
       disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
       action: () => tabs.split(id, "below"),
     },

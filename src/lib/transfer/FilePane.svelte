@@ -8,6 +8,7 @@
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { formatSize, formatTime, joinPath, parentPath, type Entry, type Listing } from "./api";
   import { ResizableColumns } from "./columns.svelte";
+  import { commandKey, commandLabel } from "../shortcuts";
 
   interface Props {
     side: "local" | "remote";
@@ -89,12 +90,12 @@
   }
 
   function click(event: MouseEvent, entry: Entry): void {
-    const next = new Set(event.metaKey ? selected : []);
+    const next = new Set(commandKey(event) ? selected : []);
     if (event.shiftKey && anchor) {
       const names = entries.map((e) => e.name);
       const [a, b] = [names.indexOf(anchor), names.indexOf(entry.name)].sort((x, y) => x - y);
       for (const name of names.slice(a, b + 1)) next.add(name);
-    } else if (event.metaKey && selected.has(entry.name)) {
+    } else if (commandKey(event) && selected.has(entry.name)) {
       next.delete(entry.name);
     } else {
       next.add(entry.name);
@@ -109,14 +110,14 @@
   }
 
   function key(event: KeyboardEvent): void {
-    if (event.key === "a" && event.metaKey) {
+    if (event.key === "a" && commandKey(event)) {
       event.preventDefault();
       selected = new Set(entries.map((e) => e.name));
     } else if (event.key === "Enter" && selected.size === 1) {
       open(chosen()[0]);
-    } else if ((event.key === "Backspace" && event.metaKey) || event.key === "Delete") {
+    } else if ((event.key === "Backspace" && commandKey(event)) || event.key === "Delete") {
       if (onDelete && selected.size) onDelete(chosen());
-    } else if (event.key === "ArrowUp" && event.metaKey) {
+    } else if (event.key === "ArrowUp" && commandKey(event)) {
       event.preventDefault();
       if (listing) onNavigate(parentPath(listing.path));
     }
@@ -183,7 +184,7 @@
 <section class="pane" aria-label={title}>
   <header>
     <span class="title">{title}</span>
-    <button title="Up a folder (⌘↑)" aria-label="Up" disabled={!listing || parentPath(listing.path) === listing.path} onclick={() => listing && onNavigate(parentPath(listing.path))}>↑</button>
+    <button title="Up a folder ({commandLabel('↑')})" aria-label="Up" disabled={!listing || parentPath(listing.path) === listing.path} onclick={() => listing && onNavigate(parentPath(listing.path))}>↑</button>
     <button title="Home folder" aria-label="Home" onclick={() => onNavigate(home)}>⌂</button>
     <button title="Refresh" aria-label="Refresh" onclick={() => listing && onNavigate(listing.path)}>⟳</button>
     {#if onMkdir}<button title="New folder" aria-label="New folder" onclick={onMkdir}>+</button>{/if}

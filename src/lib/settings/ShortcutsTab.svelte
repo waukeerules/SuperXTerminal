@@ -1,99 +1,56 @@
 <!--
   Settings > Shortcuts, as SuperXPuTTY's Options > Shortcuts: every action with its key, which "Set…" changes to the
   next key pressed (Esc to stop). Each action is a menu bar item, so its key works wherever the keyboard is, a
-  terminal included (src-tauri/src/keys.rs). A key another action has can be taken from it; the Mac's own (Cmd+Q,
-  Cmd+C, ...) can't be used.
+  terminal included (src-tauri/src/keys.rs; on Windows the page catches them, src/lib/shortcuts.ts). A key another
+  action has can be taken from it; the system's own (the Mac's Cmd+Q, Cmd+C...; Windows' Alt+F4 and the terminal's
+  Ctrl+Shift+C/V) can't be used.
 -->
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { saveSettings } from "./store.svelte";
+  import { isMac, keyLabel, normalKey, pauseShortcuts, pressedKey, type ShortcutRow } from "../shortcuts";
 
-  interface Row {
-    id: string;
-    label: string;
-    default: string;
-    key: string;
-  }
+  /** keys.rs's reserved keys for this system (the Mac's Cmd+Q, Cmd+C...; Windows' Alt+F4, Ctrl+Shift+C...) */
+  let reserved: string[] = [];
 
-  /** keys.rs's RESERVED */
-  const RESERVED = ["CmdOrCtrl+Q", "CmdOrCtrl+H", "CmdOrCtrl+Alt+H", "CmdOrCtrl+M", "CmdOrCtrl+C", "CmdOrCtrl+V", "CmdOrCtrl+X",
-    "CmdOrCtrl+A", "CmdOrCtrl+Z", "CmdOrCtrl+Shift+Z", "CmdOrCtrl+Tab", "CmdOrCtrl+Space"];
-
-  let rows = $state<Row[]>([]);
+  let rows = $state<ShortcutRow[]>([]);
   /** The action whose key is being recorded */
   let recording = $state<string | null>(null);
   let message = $state("");
 
   onMount(async () => {
-    rows = await invoke<Row[]>("shortcuts_keys");
+    rows = await invoke<ShortcutRow[]>("shortcuts_keys");
+    reserved = await invoke<string[]>("shortcuts_reserved");
   });
-
-  /** Modifiers in one order, so the same key always compares equal */
-  function normal(key: string): string {
-    if (!key) return "";
-    const parts = key.split("+");
-    const main = parts.pop() ?? "";
-    const order = ["Ctrl", "Alt", "Shift", "CmdOrCtrl"];
-    const mods = parts.map((p) => (p === "Option" ? "Alt" : p === "Control" ? "Ctrl" : p === "Cmd" || p === "Command" ? "CmdOrCtrl" : p));
-    return [...order.filter((m) => mods.includes(m)), main.toUpperCase()].join("+");
-  }
-
-  /** A key as the Mac's menus show it: ⌃⌥⇧⌘ then the key */
-  function shown(key: string): string {
-    if (!key) return "";
-    const parts = normal(key).split("+");
-    const main = parts.pop() ?? "";
-    const glyph: Record<string, string> = { Ctrl: "⌃", Alt: "⌥", Shift: "⇧", CmdOrCtrl: "⌘" };
-    const keys: Record<string, string> = { LEFT: "←", RIGHT: "→", UP: "↑", DOWN: "↓", ENTER: "↩", BACKSPACE: "⌫", DELETE: "⌦", SPACE: "Space", TAB: "⇥", PAGEUP: "⇞", PAGEDOWN: "⇟", HOME: "↖", END: "↘" };
-    return parts.map((p) => glyph[p] ?? p).join("") + (keys[main] ?? main);
-  }
-
-  /** A key press as an accelerator; null for one that can't be a shortcut (no modifier, or a modifier alone) */
-  function accelerator(event: KeyboardEvent): string | null {
-    const code = event.code;
-    const named: Record<string, string> = {
-      BracketLeft: "[", BracketRight: "]", Comma: ",", Period: ".", Slash: "/", Semicolon: ";", Quote: "'", Backslash: "\\",
-      Minus: "-", Equal: "=", Backquote: "`", ArrowLeft: "Left", ArrowRight: "Right", ArrowUp: "Up", ArrowDown: "Down",
-      Enter: "Enter", Space: "Space", Tab: "Tab", Backspace: "Backspace", Delete: "Delete", Home: "Home", End: "End",
-      PageUp: "PageUp", PageDown: "PageDown",
-    };
-    let main = named[code];
-    if (!main && /^Key[A-Z]$/.test(code)) main = code.slice(3);
-    if (!main && /^Digit\d$/.test(code)) main = code.slice(5);
-    if (!main && /^F\d{1,2}$/.test(code)) main = code;
-    if (!main) return null;
-    const mods = [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", event.metaKey && "CmdOrCtrl"].filter(Boolean) as string[];
-    // a plain key would stop it being typed into a terminal; function keys may go alone
-    if (mods.length === 0 && !/^F\d/.test(main)) return null;
-    return [...mods, main].join("+");
-  }
 
   /** Keep the keys: only those changed from the defaults are stored (and the menu bar changes at once) */
   async function store(): Promise<void> {
     const changes: Record<string, string> = {};
-    for (const row of rows) if (normal(row.key) !== normal(row.default)) changes[row.id] = row.key;
+    for (const row of rows) if (normalKey(row.key) !== normalKey(row.default)) changes[row.id] = row.key;
     await saveSettings({ shortcuts: changes });
   }
 
-  async function setKey(row: Row, key: string): Promise<void> {
-    const other = key ? rows.find((r) => r !== row && normal(r.key) === normal(key)) : undefined;
+  async function setKey(row: ShortcutRow, key: string): Promise<void> {
+    const other = key ? rows.find((r) => r !== row && normalKey(r.key) === normalKey(key)) : undefined;
     if (other) {
-      const sure = await ask(`${shown(key)} is ${other.label}'s. Give it to ${row.label} instead (${other.label} is left without one)?`,
+      const sure = await ask(`${keyLabel(key)} is ${other.label}'s. Give it to ${row.label} instead (${other.label} is left without one)?`,
         { title: "Shortcuts", kind: "warning", okLabel: "Give it" });
       if (!sure) return;
       other.key = "";
     }
     row.key = key;
-    message = key ? `${row.label}: ${shown(key)}` : `${row.label}: no shortcut`;
+    message = key ? `${row.label}: ${keyLabel(key)}` : `${row.label}: no shortcut`;
     await store();
   }
 
-  // while recording, the next key is the shortcut (caught before the Settings window or a terminal sees it)
+  // while recording, the next key is the shortcut (caught before the Settings window or a terminal sees it, and
+  // before Windows' own shortcut catching runs the action it's already given to)
   $effect(() => {
     if (!recording) return;
     const id = recording;
+    pauseShortcuts(true);
     const press = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
@@ -102,13 +59,16 @@
         message = "";
         return;
       }
-      const key = accelerator(event);
+      const key = pressedKey(event);
       if (!key) {
-        if (!["Meta", "Control", "Alt", "Shift"].includes(event.key)) message = "Use a key with ⌘, ⌃ or ⌥ (or a function key alone).";
+        if (!["Meta", "Control", "Alt", "Shift"].includes(event.key)) {
+          message = isMac ? "Use a key with ⌘, ⌃ or ⌥ (or a function key alone)." : "Use a key with Ctrl or Alt (or a function key alone).";
+        }
         return;
       }
-      if (RESERVED.some((r) => normal(r) === normal(key))) {
-        message = `${shown(key)} is the Mac's own (Quit, Copy, Paste, ...): choose another.`;
+      if (reserved.some((r) => normalKey(r) === normalKey(key))) {
+        message = isMac ? `${keyLabel(key)} is the Mac's own (Quit, Copy, Paste, ...): choose another.`
+          : `${keyLabel(key)} is kept for closing the window or the terminal's copy and paste: choose another.`;
         return;
       }
       recording = null;
@@ -116,7 +76,10 @@
       if (row) void setKey(row, key);
     };
     window.addEventListener("keydown", press, true);
-    return () => window.removeEventListener("keydown", press, true);
+    return () => {
+      window.removeEventListener("keydown", press, true);
+      pauseShortcuts(false);
+    };
   });
 </script>
 
@@ -127,11 +90,11 @@
     {#each rows as row (row.id)}
       <div class="row" class:recording={recording === row.id} role="row">
         <span class="label" role="cell">{row.label}</span>
-        <span class="key" role="cell">{recording === row.id ? "Press the new key…" : shown(row.key) || "—"}</span>
+        <span class="key" role="cell">{recording === row.id ? "Press the new key…" : keyLabel(row.key) || "—"}</span>
         <span class="buttons" role="cell">
           <button onclick={() => { recording = recording === row.id ? null : row.id; message = ""; }}>{recording === row.id ? "Cancel" : "Set…"}</button>
           <button disabled={!row.key} onclick={() => void setKey(row, "")}>Clear</button>
-          <button disabled={normal(row.key) === normal(row.default)} title={row.default ? `The default: ${shown(row.default)}` : "The default: none"}
+          <button disabled={normalKey(row.key) === normalKey(row.default)} title={row.default ? `The default: ${keyLabel(row.default)}` : "The default: none"}
             onclick={() => void setKey(row, row.default)}>Default</button>
         </span>
       </div>

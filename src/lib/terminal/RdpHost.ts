@@ -11,6 +11,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { askLogin, askOne } from "../scripting/asking.svelte";
 import { settings } from "../settings/store.svelte";
+import { isMac } from "../shortcuts";
 
 type Event =
   | { type: "connecting"; host: string }
@@ -311,7 +312,8 @@ export class RdpHost {
 
     const key = (e: KeyboardEvent, down: boolean) => {
       if (this.id === null) return;
-      if (e.metaKey || e.key === "Meta") {
+      // on Windows the Meta key is the Windows key itself, and goes to the remote computer as it is (below)
+      if (isMac && (e.metaKey || e.key === "Meta")) {
         // ⌘ tapped on its own comes from the app (command-tap), as the page never sees it
         if (!down || e.key === "Meta" || e.repeat) return;
         // ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z as Windows' Ctrl ones, as Microsoft's Mac client does
@@ -333,8 +335,9 @@ export class RdpHost {
         void this.sendCombo(["MetaLeft", ...mods, e.code]);
         return;
       }
-      // Fn+Control+Option+Delete is Ctrl+Alt+Delete, as in Microsoft's Mac client
-      if (down && e.code === "Delete" && e.ctrlKey && e.altKey) {
+      // Fn+Control+Option+Delete is Ctrl+Alt+Delete, as in Microsoft's Mac client; on Windows, which keeps
+      // Ctrl+Alt+Delete for itself, Ctrl+Alt+End is, as in Remote Desktop Connection
+      if (down && e.ctrlKey && e.altKey && (e.code === "Delete" || (!isMac && e.code === "End"))) {
         e.preventDefault();
         e.stopPropagation();
         void this.sendCombo(["ControlLeft", "AltLeft", "Delete"]);

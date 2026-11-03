@@ -57,6 +57,7 @@
   import { EnvironmentColors, parseRules } from "../icons/environment";
   import { chooseSettingsFolder, databaseCheckSeconds, settings } from "../settings/store.svelte";
   import { DATABASE_SAVED, exportCsv, type ImportKind } from "./api";
+  import { commandLabel } from "../shortcuts";
 
   interface Props {
     /** Sessions with an open tab, as "store:id" */
@@ -406,7 +407,7 @@
         { label: `Local overrides for ${list.length} sessions…`, action: () => (overriding = list) },
         { label: `Delete ${list.length} sessions`, action: () => void removeSessions(list) },
         { label: `Export ${list.length} sessions to CSV…`, action: () => void exportSessions(list, "Sessions.csv") },
-        { label: `Copy ${list.length} sessions  ⌘C`, disabled: stores.size > 1 && "The selection is in more than one root", action: () => copySelection() },
+        { label: `Copy ${list.length} sessions  ${commandLabel("C")}`, disabled: stores.size > 1 && "The selection is in more than one root", action: () => copySelection() },
         ...(stores.size === 1
           ? transferItems(list, only, list.some((s) => s.locked))
           : [{ label: "Move to / Copy to", disabled: "The selection is in more than one root" } as MenuItem]),
@@ -441,7 +442,7 @@
         },
         { separator: true },
         { label: "Copy host address", action: () => void navigator.clipboard.writeText(session.host) },
-        { label: "Copy  ⌘C", action: () => copySelection() },
+        { label: `Copy  ${commandLabel("C")}`, action: () => copySelection() },
         { label: "Duplicate as…", disabled: session.store === "database" && !db?.writable && "Database sessions can't be written now", action: () => void duplicateAs(session) },
         { label: "Edit", disabled: block, action: () => void edit(session) },
         { label: "Local overrides…", action: () => (overriding = [session]) },
@@ -473,10 +474,10 @@
           : []),
         { label: "New session…", disabled: canAdd, action: () => (editing = { store: folder.store, id: null, fields: blank(folder.path) }) },
         { label: "New folder…", disabled: canAdd, action: () => newFolder(folder) },
-        ...(isRoot ? [] : [{ label: "Copy  ⌘C", action: () => copySelection() } as MenuItem]),
+        ...(isRoot ? [] : [{ label: `Copy  ${commandLabel("C")}`, action: () => copySelection() } as MenuItem]),
         {
-          label: clip ? `Paste ${clip.folder ? `folder ${clip.folder.name}` : clip.sessions.length === 1 ? clip.sessions[0].name : `${clip.sessions.length} sessions`}  ⌘V` : "Paste  ⌘V",
-          disabled: !clip ? "Copy a session or folder first (⌘C)" : canAdd,
+          label: clip ? `Paste ${clip.folder ? `folder ${clip.folder.name}` : clip.sessions.length === 1 ? clip.sessions[0].name : `${clip.sessions.length} sessions`}  ${commandLabel("V")}` : `Paste  ${commandLabel("V")}`,
+          disabled: !clip ? `Copy a session or folder first (${commandLabel("C")})` : canAdd,
           action: () => void pasteHere(),
         },
         ...(isRoot

@@ -1750,6 +1750,13 @@ fn shortcuts_keys(state: State<'_, AppState>) -> Vec<keys::Row> {
     keys::rows(&state.settings.lock().unwrap().shortcuts)
 }
 
+/// The keys this system keeps (the Mac's Cmd+Q, Cmd+C...; Windows' Alt+F4 and the terminal's Ctrl+Shift+C/V), which
+/// the Shortcuts editor won't give to an action
+#[tauri::command]
+fn shortcuts_reserved() -> Vec<&'static str> {
+    keys::reserved().to_vec()
+}
+
 /// What a new window starts with: a session to open ("store:id", Connect in new window), or a running tab to take over
 /// (Move to New Window: its session's pty id, title and how its tab looks, as the window that had it describes it)
 #[derive(Clone, serde::Serialize, serde::Deserialize, Default)]
@@ -2138,6 +2145,7 @@ pub fn run() {
             requests_take,
             links_make_default,
             shortcuts_keys,
+            shortcuts_reserved,
             layout_read,
             layout_save,
             layout_delete,

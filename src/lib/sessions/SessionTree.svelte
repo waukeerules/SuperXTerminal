@@ -75,13 +75,15 @@
     /** Open Settings at Profiles (from Edit Session) */
     /** Open Settings > Profiles, on the named profile when there is one */
     onOpenProfiles: (name?: string) => void;
+    /** Open the Database sessions settings (Tools > Database Sessions…), from the Database root's menu */
+    onDatabaseSettings?: () => void;
     /** The session selected now (a shortcut in Favorites or Recent counts), or null, for Session Detail */
     onSelected?: (session: SessionView | null) => void;
     /** While searching, the width the matches' names need (null: none, back to the user's width) */
     onWantWidth?: (width: number | null) => void;
   }
 
-  let { openSessions, onOpen, onLook, onOpenProfiles, onSelected = () => {}, onWantWidth = () => {} }: Props = $props();
+  let { openSessions, onOpen, onLook, onOpenProfiles, onDatabaseSettings = () => {}, onSelected = () => {}, onWantWidth = () => {} }: Props = $props();
 
   let selected = $state("");
 
@@ -551,6 +553,8 @@
         ...(folder.store === "database" && isRoot
           ? [
               { label: "Refresh", action: () => void readDatabase() },
+              // as SuperXPuTTY's root menu: the connection, table and read-only, as Tools > Database Sessions…
+              { label: "Database settings…", action: () => onDatabaseSettings() },
               ...(db && db.pending + db.failed > 0
                 ? [{ label: `Pending changes (${db.pending + db.failed})…`, action: () => (showPending = true) }]
                 : []),

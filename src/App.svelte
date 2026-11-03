@@ -711,7 +711,7 @@
             </svg>
           </button>
         </div>
-        <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={(name) => void openProfiles(name)} onLook={(_, icons) => {
+        <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={(name) => void openProfiles(name)} onDatabaseSettings={() => (databaseOpen = true)} onLook={(_, icons) => {
           customs = icons;
           if (tabs) tabs.customs = icons;
         }} onSelected={(s) => (selectedSession = s)} onWantWidth={(w) => (searchWidth = w)} />

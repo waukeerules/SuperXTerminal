@@ -23,6 +23,8 @@ export const PREF_DEFAULTS: Record<string, string> = {
   bell: "profile",
   copyOnSelect: "true",
   markMatches: "true",
+  /** "false": lines aren't wrapped at the tab's width; the terminal is 300 columns wide and the view pans along them */
+  wrap: "true",
   /** A paste of this many lines or more is checked first; "0" never */
   pasteLines: "2",
   /** Lines kept; "0" for unlimited */

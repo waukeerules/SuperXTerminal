@@ -8,7 +8,7 @@
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { formatSize, formatTime, joinPath, parentPath, type Entry, type Listing } from "./api";
   import { ResizableColumns } from "./columns.svelte";
-  import { commandKey, commandLabel } from "../shortcuts";
+  import { commandKey, commandLabel, isMac } from "../shortcuts";
 
   interface Props {
     side: "local" | "remote";
@@ -188,7 +188,7 @@
     <button title="Home folder" aria-label="Home" onclick={() => onNavigate(home)}>⌂</button>
     <button title="Refresh" aria-label="Refresh" onclick={() => listing && onNavigate(listing.path)}>⟳</button>
     {#if onMkdir}<button title="New folder" aria-label="New folder" onclick={onMkdir}>+</button>{/if}
-    <button class="copy" title={side === "local" ? "Copy the selected files to the remote folder" : "Copy the selected files to this Mac's folder"}
+    <button class="copy" title={side === "local" ? "Copy the selected files to the remote folder" : `Copy the selected files to ${isMac ? "this Mac" : "this PC"}'s folder`}
       disabled={!selected.size} onclick={() => onCopy(chosen().map(full))}>{side === "local" ? "Upload →" : "← Download"}</button>
   </header>
   <form class="path" onsubmit={(e) => { e.preventDefault(); onNavigate(typed); }}>

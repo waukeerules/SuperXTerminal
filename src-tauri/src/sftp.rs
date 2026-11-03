@@ -837,6 +837,11 @@ async fn scp_transfer(
     }
     let total: u64 = file_sizes.iter().sum();
     let _ = on_progress.send(Progress::Total { bytes: total, files: sources.len() as u64 });
+    // local paths as scp reads them: a \\?\ one would be taken for a host, and scp copy between two "remote" places
+    let sources: Vec<String> =
+        if upload { sources.iter().map(|s| plain_path(std::path::Path::new(s)).to_string_lossy().to_string()).collect() } else { sources.to_vec() };
+    let target = if upload { target.to_string() } else { plain_path(std::path::Path::new(target)).to_string_lossy().to_string() };
+    let target = target.as_str();
     let helper = std::env::current_exe().map_err(|e| e.to_string())?.to_string_lossy().to_string();
     let mut done = 0u64;
     for (source, size) in sources.iter().zip(file_sizes) {
@@ -862,6 +867,15 @@ async fn scp_transfer(
         .map_err(|e| e.to_string())?;
         if let Err(said) = result {
             return Err(if said == "Cancelled" { said } else { format!("{name}: {}", privilege_hint(&said)) });
+        }
+        // scp can end well having copied nothing (a path it read as another host, a device that ignores a request),
+        // so a download counts only when the file is here, at the size the listing gave
+        if !upload {
+            match std::fs::metadata(&to) {
+                Ok(meta) if size == 0 || meta.len() == size => {}
+                Ok(meta) => return Err(format!("{name}: scp ended, but {to} has {} of {} bytes", meta.len(), size)),
+                Err(_) => return Err(format!("{name}: scp ended, but {to} wasn't written")),
+            }
         }
         done += if upload || size > 0 { size } else { std::fs::metadata(&to).map(|m| m.len()).unwrap_or(0) };
         let _ = on_progress.send(Progress::Done { bytes: done, file: name });
@@ -973,7 +987,21 @@ fn id_name(id: u32, group: bool) -> String {
         .clone()
 }
 
-/// A folder on this Mac (`~` is home), its path made absolute
+/// A local path as people write it: Windows' canonical paths start `\\?\` (`\\?\C:\Users`, `\\?\UNC\server\share`),
+/// which scp reads as a host (`\\?\C`) and then copies between two remote places; the prefix is dropped. Unchanged
+/// elsewhere.
+pub fn plain_path(path: &std::path::Path) -> std::path::PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return std::path::PathBuf::from(format!(r"\\{rest}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => std::path::PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
+/// A folder on this computer (`~` is home), its path made absolute
 #[tauri::command]
 pub fn local_list(path: String) -> Result<Listing, String> {
     let path = path.trim();
@@ -984,7 +1012,7 @@ pub fn local_list(path: String) -> Result<Listing, String> {
     } else {
         std::path::PathBuf::from(path)
     };
-    let path = std::fs::canonicalize(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let path = plain_path(&std::fs::canonicalize(&path).map_err(|e| format!("{}: {e}", path.display()))?);
     let mut entries = Vec::new();
     for entry in std::fs::read_dir(&path).map_err(|e| format!("{}: {e}", path.display()))?.flatten() {
         let Ok(lmeta) = entry.metadata() else { continue };

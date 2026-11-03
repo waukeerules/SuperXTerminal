@@ -160,6 +160,10 @@ Fixed on the way:
   network), with the port in the token, and finds the asking ssh by its parent process. Then scp never started:
   Windows' pseudo console asks where the cursor is (`ESC [6n`) as it starts and waits for the answer, which a tab's
   page gives and file transfer's hidden one didn't; `run_scp` answers it now.
+- **Downloads over SCP that copied nothing:** the local folder came as Windows' canonical path (`\\?\C:\...`), which
+  scp read as a host, so it asked the switch to copy between two remote places, which IOS ended at once without an
+  error, and the transfer said Done. Local paths lose that prefix now, and a download counts only when the file is
+  there at the listed size.
 - **PuTTY .ppk keys:** OpenSSH can't read them, so ssh gets a converted copy (`ppk.rs`), written in the user's folder
   (`keys\`) with the user's own access only: Windows' OpenSSH refuses a key with any other entry, even one inherited
   from the folder, and then quietly falls back to an agent or other keys. Keys with a passphrase still need

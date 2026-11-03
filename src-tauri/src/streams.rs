@@ -10,10 +10,16 @@
 
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream, ToSocketAddrs};
+#[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// Windows has no serial support here yet: a stand-in for a device's descriptor, never made (`open_serial` refuses
+/// first), so the serial tab code builds
+#[cfg(not(unix))]
+struct OwnedFd;
 
 /// What a stream session connects to
 #[derive(Clone, Debug, PartialEq)]
@@ -242,7 +248,7 @@ impl Stream {
                 link.write_all(&[telnet::IAC, code]).map_err(|e| e.to_string())
             }
             Kind::Serial { fd, .. } if command == "break" => {
-                if unsafe { libc::tcsendbreak(fd.as_raw_fd(), 0) } == 0 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
+                send_break(fd)
             }
             _ => Err("This connection has no special commands".into()),
         }
@@ -260,7 +266,7 @@ impl Stream {
     pub fn set_serial_line(&self, new: SerialLine) -> Result<(), String> {
         match &self.kind {
             Kind::Serial { fd, line, .. } => {
-                configure(fd.as_raw_fd(), &new).map_err(|e| format!("Couldn't change the line to {}: {e}", new.to_sercfg()))?;
+                configure(fd, &new).map_err(|e| format!("Couldn't change the line to {}: {e}", new.to_sercfg()))?;
                 *line.lock().unwrap() = new;
                 Ok(())
             }
@@ -415,6 +421,7 @@ struct FdIo {
     closed: Arc<AtomicBool>,
 }
 
+#[cfg(unix)]
 impl Read for FdIo {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let raw = self.fd.as_raw_fd();
@@ -440,6 +447,7 @@ impl Read for FdIo {
     }
 }
 
+#[cfg(unix)]
 impl Write for FdIo {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let n = unsafe { libc::write(self.fd.as_raw_fd(), buf.as_ptr().cast(), buf.len()) };
@@ -452,6 +460,7 @@ impl Write for FdIo {
 }
 
 /// Open a serial device raw, with the line's settings
+#[cfg(unix)]
 fn open_serial(device: &str, line: &SerialLine) -> Result<OwnedFd, String> {
     let path = std::ffi::CString::new(device).map_err(|e| e.to_string())?;
     // O_NONBLOCK so opening doesn't wait for carrier; reads block again once it's set up
@@ -460,7 +469,7 @@ fn open_serial(device: &str, line: &SerialLine) -> Result<OwnedFd, String> {
         return Err(format!("Couldn't open {device}: {}", std::io::Error::last_os_error()));
     }
     let fd = unsafe { OwnedFd::from_raw_fd(raw) };
-    configure(raw, line).map_err(|e| format!("Couldn't set {device} to {}: {e}", line.to_sercfg()))?;
+    configure(&fd, line).map_err(|e| format!("Couldn't set {device} to {}: {e}", line.to_sercfg()))?;
     unsafe {
         let flags = libc::fcntl(raw, libc::F_GETFL);
         libc::fcntl(raw, libc::F_SETFL, flags & !libc::O_NONBLOCK);
@@ -469,7 +478,9 @@ fn open_serial(device: &str, line: &SerialLine) -> Result<OwnedFd, String> {
 }
 
 /// Set a serial device's line: raw, with the speed, data bits, parity, stop bits and flow control
-fn configure(raw: std::os::fd::RawFd, line: &SerialLine) -> Result<(), std::io::Error> {
+#[cfg(unix)]
+fn configure(fd: &OwnedFd, line: &SerialLine) -> Result<(), std::io::Error> {
+    let raw = fd.as_raw_fd();
     unsafe {
         let mut tio: libc::termios = std::mem::zeroed();
         if libc::tcgetattr(raw, &mut tio) != 0 {
@@ -510,6 +521,54 @@ fn configure(raw: std::os::fd::RawFd, line: &SerialLine) -> Result<(), std::io::
         }
     }
     Ok(())
+}
+
+/// Send a break on a serial line
+#[cfg(unix)]
+fn send_break(fd: &OwnedFd) -> Result<(), String> {
+    if unsafe { libc::tcsendbreak(fd.as_raw_fd(), 0) } == 0 { Ok(()) } else { Err(std::io::Error::last_os_error().to_string()) }
+}
+
+/// Serial lines aren't supported on Windows yet
+#[cfg(not(unix))]
+const NO_SERIAL: &str = "Serial sessions aren't supported on Windows yet.";
+
+/// Serial lines aren't supported on Windows yet
+#[cfg(not(unix))]
+fn open_serial(_device: &str, _line: &SerialLine) -> Result<OwnedFd, String> {
+    Err(NO_SERIAL.into())
+}
+
+/// Serial lines aren't supported on Windows yet
+#[cfg(not(unix))]
+fn configure(_fd: &OwnedFd, _line: &SerialLine) -> Result<(), std::io::Error> {
+    Err(std::io::Error::other(NO_SERIAL))
+}
+
+/// Serial lines aren't supported on Windows yet
+#[cfg(not(unix))]
+fn send_break(_fd: &OwnedFd) -> Result<(), String> {
+    Err(NO_SERIAL.into())
+}
+
+/// Never reached on Windows: no serial device is ever opened
+#[cfg(not(unix))]
+impl Read for FdIo {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other(NO_SERIAL))
+    }
+}
+
+/// Never reached on Windows: no serial device is ever opened
+#[cfg(not(unix))]
+impl Write for FdIo {
+    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other(NO_SERIAL))
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// The serial devices on this Mac (`/dev/cu.*`), for choosing which one a COM name is

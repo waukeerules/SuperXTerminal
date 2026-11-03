@@ -189,7 +189,7 @@ pub async fn sftp_open(
         Arc::new(move |prompt: &str, secret: bool| ask_user(&app_for_ask, &label_for_ask, &title_for_ask, prompt, secret)),
     )?;
     let program = std::env::current_exe().map_err(|e| e.to_string())?;
-    let mut child = tokio::process::Command::new("ssh")
+    let mut child = tokio::process::Command::new(crate::launch::openssh("ssh"))
         .args(&args)
         .env("SSH_ASKPASS", &program)
         .env("SSH_ASKPASS_REQUIRE", "force")
@@ -684,7 +684,7 @@ fn with_keepalive(mut base: Vec<String>) -> Vec<String> {
 /// ssh or scp with the connection's login (askpass.rs): the password, and the user asked anything else
 fn with_login(program: &str, token: &str) -> Result<tokio::process::Command, String> {
     let helper = std::env::current_exe().map_err(|e| e.to_string())?;
-    let mut command = tokio::process::Command::new(program);
+    let mut command = tokio::process::Command::new(crate::launch::openssh(program));
     command
         .env("SSH_ASKPASS", helper)
         .env("SSH_ASKPASS_REQUIRE", "force")
@@ -876,7 +876,7 @@ fn run_scp(words: &[String], token: &str, helper: &str, cancel: &AtomicBool, rep
     let pair = native_pty_system()
         .openpty(PtySize { rows: 24, cols: 200, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
-    let mut command = CommandBuilder::new("scp");
+    let mut command = CommandBuilder::new(crate::launch::openssh("scp"));
     command.args(words);
     command.env("SSH_ASKPASS", helper);
     command.env("SSH_ASKPASS_REQUIRE", "force");

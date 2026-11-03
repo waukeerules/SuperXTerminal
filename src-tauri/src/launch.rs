@@ -405,7 +405,7 @@ fn ssh(
         args.extend(["-o".into(), format!("HostName={host}"), config_host.to_string()]);
     }
 
-    let mut command = CommandBuilder::new("ssh");
+    let mut command = CommandBuilder::new(openssh("ssh"));
     command.args(&args);
     Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) }, stream: None, login: Some(login) })
 }
@@ -416,6 +416,19 @@ fn expand_home(path: &str) -> String {
         (Some(rest), Some(home)) => home.join(rest).display().to_string(),
         _ => path.to_string(),
     }
+}
+
+/// The OpenSSH program to run ("ssh", "scp"): on Windows its own OpenSSH when it's installed, as another ssh.exe on
+/// the PATH (MSYS2's, Cygwin's, Git's) may come first and read other files; elsewhere the one on the PATH
+pub fn openssh(program: &str) -> std::ffi::OsString {
+    #[cfg(windows)]
+    if let Some(root) = std::env::var_os("SystemRoot") {
+        let own = std::path::Path::new(&root).join("System32").join("OpenSSH").join(format!("{program}.exe"));
+        if own.exists() {
+            return own.into_os_string();
+        }
+    }
+    program.into()
 }
 
 /// A jump host as `ssh -J` takes it, as SuperXPuTTY's JumpHosts.Resolve: a saved session (by its id, in the same

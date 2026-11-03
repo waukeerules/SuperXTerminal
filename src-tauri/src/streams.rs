@@ -105,7 +105,7 @@ impl Link {
                     Some((h, p)) if p.parse::<u16>().is_ok() => (h.to_string(), p.to_string()),
                     _ => (jump.clone(), "22".into()),
                 };
-                let mut child = std::process::Command::new("ssh")
+                let mut child = std::process::Command::new(crate::launch::openssh("ssh"))
                     .args(["-o", "BatchMode=yes", "-p", &jump_port, "-W", &format!("{host}:{port}"), &jump_host])
                     .stdin(std::process::Stdio::piped())
                     .stdout(std::process::Stdio::piped())

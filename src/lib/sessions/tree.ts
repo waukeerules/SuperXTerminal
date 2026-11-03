@@ -237,4 +237,8 @@ export function matches(session: SessionView, needle: string): boolean {
 export const DRAG_TYPE = "application/x-superxterminal-tree";
 
 /** What's being dragged in the tree */
-export type Dragged = { kind: "session"; store: Store; id: string } | { kind: "folder"; store: Store; path: string };
+export type Dragged =
+  | { kind: "session"; store: Store; id: string }
+  | { kind: "folder"; store: Store; path: string }
+  /** A selection of several: its keys ("saved:Lab/sw1", "saved:folder:Lab/Core"), all in one root */
+  | { kind: "many"; store: Store; keys: string[] };

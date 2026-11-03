@@ -473,6 +473,24 @@
     // folder settings aren't queued while offline, as in SuperXPuTTY: they need the table
     const folderBlock = (store: Store): string | false =>
       dbBlock(store) || (store === "database" && db?.error ? "Folder settings are saved only while the database can be reached" : false);
+    // a selection of several with folders in it: what works on folders and sessions together
+    const targetKey = "session" in target ? `${target.session.store}:${target.session.id}` : `${target.folder.store}:folder:${target.folder.path}`;
+    if (multi.size > 1 && multi.has(targetKey) && [...multi].some(isFolderKey)) {
+      const { store, folders, sessions } = selectionItems(multi);
+      const all = [...sessions, ...(loaded?.sessions ?? []).filter((s) => s.store === store && folders.some((f) => folderUnder(s.folder, f) !== null))];
+      const runnable = all.filter((s) => unavailableReason(s.protocol) === null);
+      const n = folders.length + sessions.length;
+      const block = dbBlock(store, all.some((s) => s.locked));
+      items = [
+        { label: `Connect all (${runnable.length})`, bold: true, disabled: runnable.length === 0, action: () => connectMany("from the selection", runnable) },
+        { separator: true },
+        { label: `Move ${n} items to folder…`, disabled: block, action: () => askMoveItems(store, folders, sessions) },
+        { label: `Delete ${n} items…`, disabled: block, action: () => void removeItems(store, folders, sessions) },
+        { label: `Export ${all.length} sessions to CSV…`, disabled: all.length === 0 && "No sessions here", action: () => void exportSessions(all, "Sessions.csv") },
+      ];
+      menu = { x: event.clientX, y: event.clientY, items };
+      return;
+    }
     if ("session" in target && multi.size > 1 && multi.has(`${target.session.store}:${target.session.id}`)) {
       const list = selectedSessions();
       const runnable = list.filter((s) => unavailableReason(s.protocol) === null);
@@ -487,7 +505,10 @@
         { label: `Export ${list.length} sessions to CSV…`, action: () => void exportSessions(list, "Sessions.csv") },
         { label: `Copy ${list.length} sessions  ${commandLabel("C")}`, disabled: stores.size > 1 && "The selection is in more than one root", action: () => copySelection() },
         ...(stores.size === 1
-          ? transferItems(list, only, list.some((s) => s.locked))
+          ? [
+              { label: `Move ${list.length} sessions to folder…`, disabled: dbBlock(only, list.some((s) => s.locked)), action: () => askMoveItems(only, [], list) },
+              ...transferItems(list, only, list.some((s) => s.locked)),
+            ]
           : [{ label: "Move to / Copy to", disabled: "The selection is in more than one root" } as MenuItem]),
       ];
       menu = { x: event.clientX, y: event.clientY, items };
@@ -604,18 +625,21 @@
     menu = { x: event.clientX, y: event.clientY, items };
   }
 
-  /** A click on a session or folder: Cmd+click adds or removes a session from the selection, Shift+click selects the
-   * sessions shown between the last click and this one, anything else selects just it (SuperXPuTTY's
-   * BeforeSelectMulti, with Cmd for Ctrl). A right-click (no event) keeps the selection when it's on a selected one. */
+  /** A click on a session or folder: Cmd+click adds or removes it from the selection, Shift+click selects the
+   * sessions and folders shown between the last click and this one, anything else selects just it (SuperXPuTTY's
+   * BeforeSelectMulti, with Cmd for Ctrl). A selection is in one root: a click in another starts a new one. A
+   * right-click (no event) keeps the selection when it's on a selected one. */
   function select(key: string, event?: MouseEvent): void {
-    const isSession = isSessionKey(key);
+    const pickable = isSessionKey(key) || isFolderKey(key);
     if (!event) {
       if (!multi.has(key)) multi = new Set();
       selected = key;
       return;
     }
-    if (isSession && (event.metaKey || event.ctrlKey)) {
-      const next = new Set(multi.size ? multi : isSessionKey(selected) ? [selected] : []);
+    const sameRoot = (a: string) => a.split(":")[0] === key.split(":")[0];
+    if (pickable && (event.metaKey || event.ctrlKey)) {
+      const start = multi.size ? [...multi] : isSessionKey(selected) || isFolderKey(selected) ? [selected] : [];
+      const next = new Set(start.filter(sameRoot));
       if (next.has(key)) next.delete(key);
       else next.add(key);
       multi = next;
@@ -623,8 +647,8 @@
       anchor = key;
       return;
     }
-    if (isSession && event.shiftKey && anchor) {
-      const order = visibleSessionKeys();
+    if (pickable && event.shiftKey && anchor && sameRoot(anchor)) {
+      const order = visibleRowKeys();
       const [a, b] = [order.indexOf(anchor), order.indexOf(key)];
       if (a >= 0 && b >= 0) {
         multi = new Set(order.slice(Math.min(a, b), Math.max(a, b) + 1));
@@ -634,7 +658,7 @@
     }
     multi = new Set();
     selected = key;
-    if (isSession) anchor = key;
+    if (pickable) anchor = key;
   }
 
   /** Whether a selection key is a session in its own root (not a folder, nor a Favorites or Recent entry) */
@@ -643,16 +667,121 @@
     return ["saved", "private", "database"].includes(store) && second !== "folder" && key.length > store.length + 1;
   }
 
-  /** The sessions shown in the roots, top to bottom, for Shift+click */
-  function visibleSessionKeys(): string[] {
+  /** Whether a selection key is a folder in a root (not a root itself, nor Favorites or Recent) */
+  function isFolderKey(key: string): boolean {
+    const match = /^(saved|private|database):folder:(.+)$/.exec(key);
+    return !!match && match[2] !== "";
+  }
+
+  /** The folders and sessions shown in the roots, top to bottom as drawn, for Shift+click */
+  function visibleRowKeys(): string[] {
     const out: string[] = [];
     const walk = (node: FolderNode) => {
+      if (node.path) out.push(`${node.store}:folder:${node.path}`);
       if (!shownExpanded.has(node.key)) return;
       node.folders.forEach(walk);
       for (const s of node.sessions) out.push(`${s.store}:${s.id}`);
     };
     [saved, privateRoot, databaseRoot].forEach((root) => root && walk(root));
     return out;
+  }
+
+  /**
+   * What a selection holds, in its root: the folders (only the outermost: one inside another goes with it) and the
+   * sessions not inside any of them, as the tree has them now
+   */
+  function selectionItems(keys: Iterable<string>): { store: Store; folders: string[]; sessions: SessionView[] } {
+    const list = [...keys];
+    const store = (list[0]?.split(":")[0] ?? "saved") as Store;
+    const paths = list.filter(isFolderKey).map((k) => k.slice(`${store}:folder:`.length));
+    const folders = paths.filter((p) => !paths.some((o) => o !== p && folderUnder(p, o) !== null));
+    const inside = (folder: string) => folders.some((f) => folderUnder(folder, f) !== null);
+    const sessions = (loaded?.sessions ?? []).filter((s) => s.store === store && list.includes(`${s.store}:${s.id}`) && !inside(s.folder));
+    return { store, folders, sessions };
+  }
+
+  /**
+   * Move a selection's folders and sessions into a folder of the same root: each folder with all below it, each
+   * session on its own; a session whose name is taken there gets a free one ("sw1-1"), as a single move offers. A
+   * folder isn't moved into itself. One read of the sessions after.
+   */
+  async function moveItems(store: Store, folders: string[], sessions: SessionView[], to: string): Promise<void> {
+    const target = to.replace(/^\/+|\/+$/g, "");
+    const join = (a: string, b: string) => (a ? `${a}/${b}` : b);
+    const problems: string[] = [];
+    let moved = 0;
+    for (const from of folders) {
+      const dest = join(target, from.slice(from.lastIndexOf("/") + 1));
+      if (folderUnder(target, from) !== null || dest.toLowerCase() === from.toLowerCase()) continue;
+      try {
+        await moveFolder(store, from, dest);
+        const shift = (p: string) => (p === from || p.startsWith(from + "/") ? dest + p.slice(from.length) : p);
+        newFolders = { ...newFolders, [store]: newFolders[store].map(shift) };
+        expanded = new Set([...expanded].map((k) => (k.startsWith(`${store}:`) ? `${store}:${shift(k.slice(store.length + 1))}` : k)));
+        moved += 1;
+      } catch (e) {
+        problems.push(`${from}: ${e}`);
+      }
+    }
+    for (const s of sessions) {
+      if (s.folder.toLowerCase() === target.toLowerCase()) continue;
+      try {
+        const name = takenId(store, target, s.name, s.id) ? freeName(store, target, s.name, s.id) : null;
+        await moveSession(store, s.id, target, name);
+        moved += 1;
+      } catch (e) {
+        problems.push(`${s.name}: ${e}`);
+      }
+    }
+    newFolders = { ...newFolders, [store]: newFolders[store].filter((p) => p !== target) };
+    multi = new Set();
+    await reload();
+    expanded = new Set([...expanded, `${store}:${target}`]);
+    error = problems.length ? `Not moved: ${problems.join("; ")}` : "";
+    context.status(`Moved ${moved} item${moved === 1 ? "" : "s"} to ${target || "the top"}`);
+  }
+
+  /** Delete a selection's folders (with all in them) and sessions, after one question */
+  async function removeItems(store: Store, folders: string[], sessions: SessionView[]): Promise<void> {
+    const inFolders = (loaded?.sessions ?? []).filter((s) => s.store === store && folders.some((f) => folderUnder(s.folder, f) !== null)).length;
+    const what = [
+      folders.length ? `${folders.length} folder${folders.length === 1 ? "" : "s"} (${inFolders} session${inFolders === 1 ? "" : "s"} in them)` : "",
+      sessions.length ? `${sessions.length} session${sessions.length === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(" and ");
+    if (!(await ask(`Delete ${what}?`, { title: "Delete", kind: "warning", okLabel: "Delete" }))) return;
+    const problems: string[] = [];
+    for (const f of folders) {
+      try {
+        await deleteFolder(store, f);
+        newFolders = { ...newFolders, [store]: newFolders[store].filter((p) => folderUnder(p, f) === null) };
+      } catch (e) {
+        problems.push(`${f}: ${e}`);
+      }
+    }
+    for (const s of sessions) {
+      try {
+        await deleteSession(s.store, s.id);
+      } catch (e) {
+        problems.push(`${s.name}: ${e}`);
+      }
+    }
+    multi = new Set();
+    await reload();
+    error = problems.length ? `Not deleted: ${problems.join("; ")}` : "";
+  }
+
+  /** Move to folder…: ask for a folder path in the selection's root, then move it all there */
+  function askMoveItems(store: Store, folders: string[], sessions: SessionView[]): void {
+    const first = folders[0]?.includes("/") ? folders[0].slice(0, folders[0].lastIndexOf("/")) : folders.length ? "" : (sessions[0]?.folder ?? "");
+    prompt = {
+      title: `Move ${folders.length + sessions.length} items to folder (e.g. Lab/Core; empty for the top)`,
+      value: first,
+      validate: (path) => (/[<>|\\]/.test(path) ? "A folder path can't have < > | or \\" : ""),
+      onOk: (path) => {
+        prompt = null;
+        void moveItems(store, folders, sessions, path);
+      },
+    };
   }
 
   /** The sessions selected together */
@@ -918,6 +1047,35 @@
 
   /** Something dragged in the tree was dropped on a folder: move it there (within its own store) */
   async function dropped(target: FolderNode, dragged: Dragged): Promise<void> {
+    if (dragged.kind === "many") {
+      const { store, folders, sessions } = selectionItems(dragged.keys);
+      if (store === target.store) {
+        if (target.store === "database" && !db?.writable) {
+          error = "Database sessions can't be written now.";
+          return;
+        }
+        await moveItems(store, folders, sessions, target.path);
+        return;
+      }
+      // into another root: a copy, as one dragged there is, each folder with all in it under the folder dropped on
+      if (target.store === "database" && !db?.writable) {
+        error = "Database sessions can't be written now.";
+        return;
+      }
+      const join = (a: string, b: string) => (a && b ? `${a}/${b}` : a || b);
+      const all = loaded?.sessions ?? [];
+      const list: SessionView[] = [...sessions];
+      const into: string[] = sessions.map(() => target.path);
+      for (const f of folders) {
+        const name = f.slice(f.lastIndexOf("/") + 1);
+        for (const s of all.filter((s) => s.store === store && folderUnder(s.folder, f) !== null)) {
+          list.push(s);
+          into.push(join(join(target.path, name), (folderUnder(s.folder, f) ?? "").replace(/^\//, "")));
+        }
+      }
+      if (list.length) await transfer(list, store, target.store, false, into);
+      return;
+    }
     if (dragged.store !== target.store) {
       // into another root (Saved, Private or Database sessions): always a copy, so the one it came from (perhaps
       // shared) keeps it; moving is on the menu

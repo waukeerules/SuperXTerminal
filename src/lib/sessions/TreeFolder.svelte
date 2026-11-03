@@ -55,6 +55,11 @@
   let over = $state(false);
 
   /** Start dragging a session or folder */
+  /** What dragging `key` drags: the whole selection when it's one of several selected, else just it */
+  function dragOf(key: string, single: Dragged): Dragged {
+    return multi.size > 1 && multi.has(key) ? { kind: "many", store: node.store, keys: [...multi] } : single;
+  }
+
   function drag(event: DragEvent, dragged: Dragged): void {
     event.dataTransfer?.setData(DRAG_TYPE, JSON.stringify(dragged));
     if (event.dataTransfer) event.dataTransfer.effectAllowed = "copyMove";
@@ -115,12 +120,12 @@
 {/snippet}
 
 <!-- as SuperXPuTTY's tree: a click selects a folder, a double-click (or its arrow) opens or closes it -->
-<div class="row folder" class:root={isRoot} class:selected={selected === folderKey} class:over
-  draggable={!isRoot} ondragstart={(e) => drag(e, { kind: "folder", store: node.store, path: node.path })}
+<div class="row folder" class:root={isRoot} class:selected={selected === folderKey || multi.has(folderKey)} class:over
+  draggable={!isRoot} ondragstart={(e) => drag(e, dragOf(folderKey, { kind: "folder", store: node.store, path: node.path }))}
   ondragover={dragOver} ondragleave={() => (over = false)} ondrop={drop}
   oncontextmenu={(e) => { e.preventDefault(); onSelect(folderKey); onMenu(e, { folder: node }); }} style:padding-left="{depth * 18 + 2}px" style:height="{Math.round(iconSize * 1.36) + 4}px"
   role="treeitem" aria-expanded={open} aria-selected="false" tabindex="-1"
-  onclick={() => onSelect(folderKey)} ondblclick={() => onToggle(node.key)}
+  onclick={(e) => onSelect(folderKey, e)} ondblclick={() => onToggle(node.key)}
   onkeydown={(e) => (e.key === "Enter" || e.key === "ArrowRight" || e.key === "ArrowLeft") && onToggle(node.key)}>
   {#if lines}{@render connectors(depth, guides, last, first, 13)}{/if}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -139,7 +144,7 @@
     {@const key = node.group ? `${node.group}:${session.store}:${session.id}` : `${session.store}:${session.id}`}
     <div class="row session" class:dimmed={reason !== null} class:pending={session.pending} class:selected={selected === key || multi.has(key)}
       onclick={(e) => onSelect(key, e)} draggable={!session.locked && !node.group}
-      ondragstart={(e) => drag(e, { kind: "session", store: session.store, id: session.id })}
+      ondragstart={(e) => drag(e, dragOf(key, { kind: "session", store: session.store, id: session.id }))}
       ondragover={dragOver} ondragleave={() => (over = false)} ondrop={drop}
       oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session, group: node.group }); }} style:padding-left="{(depth + 1) * 18 + (lines ? 22 : 14)}px"
       style:height="{Math.round(iconSize * 1.36) + 4}px"

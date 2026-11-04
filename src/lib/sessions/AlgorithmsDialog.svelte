@@ -3,7 +3,8 @@
   cipher and MAC lists, as PuTTY's Kex, Host keys and Cipher panels. Each kind is either left to what comes before it
   (the session's profile, Default Settings, or ssh's own list with the older algorithms) or given as an ordered list
   of the algorithms ticked, from what this computer's ssh has. OK hands back the text ("kex=a,b;mac=c",
-  src-tauri/src/algorithms.rs), which the profile or session saves.
+  src-tauri/src/algorithms.rs), which the profile or session saves. `inline` shows the lists without the window, as
+  Edit Session's SSH tab does: each change is handed back at once (onChange), and there's no OK or Cancel.
 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
@@ -17,12 +18,19 @@
     /** What a kind left alone uses, e.g. "its profile's list" or "ssh's own list" */
     otherwise: string;
     /** OK: the lists as they're now stored ("" for none) */
-    onDone: (text: string) => void;
+    onDone?: (text: string) => void;
     /** Cancel, or Escape: nothing changes */
-    onCancel: () => void;
+    onCancel?: () => void;
+    /** Shown in a tab rather than its own window: no title, OK or Cancel, and every change goes to `onChange` */
+    inline?: boolean;
+    /**
+     * Inline: the lists after a change, as they'd be stored, and why they can't be ("" when they can): a kind with
+     * its own list must have one ticked, or ssh couldn't connect
+     */
+    onChange?: (text: string, problem: string) => void;
   }
 
-  let { title, text, otherwise, onDone, onCancel }: Props = $props();
+  let { title, text, otherwise, onDone = () => {}, onCancel = () => {}, inline = false, onChange = () => {} }: Props = $props();
 
   /** One kind as algorithms.rs's Available gives it */
   interface Available {
@@ -107,13 +115,55 @@
       .map((k) => `${k.key}=${k.rows.filter((r) => r.on).map((r) => r.name).join(",")}`)
       .join(";");
   }
+
+  /** The lists as first shown, written as result() writes them, to tell a change from how they were stored */
+  let opened: string | null = null;
+
+  // inline: hand back each change; the lists as they were opened are handed back as the text they came as, so
+  // writing them another way isn't taken for a change
+  $effect(() => {
+    if (!inline || kinds.length === 0) return;
+    const now = result();
+    const problem = empty.length ? `Tick at least one in ${empty.join(", ")}` : "";
+    if (opened === null) {
+      opened = now;
+      return;
+    }
+    onChange(now === opened ? untrack(() => text) : now, problem);
+  });
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onCancel(); } }} />
+<!-- Escape cancels the window; inline, it's left to the window around the lists -->
+<svelte:window onkeydown={(e) => { if (!inline && e.key === "Escape") { e.stopPropagation(); onCancel(); } }} />
+
+{#if inline}
+  <div class="inline">
+    {@render lists()}
+    <footer>
+      <button onclick={() => kinds.forEach((k) => (k.own = false))} title="Every kind back to {otherwise}">Use Defaults</button>
+      <span class="error">{empty.length ? `Tick at least one in ${empty.join(", ")}` : ""}</span>
+    </footer>
+  </div>
+{:else}
 
 <div class="backdrop" role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
     <header>{title}</header>
+    {@render lists()}
+
+    <footer>
+      <button onclick={() => kinds.forEach((k) => (k.own = false))} title="Every kind back to {otherwise}">Use Defaults</button>
+      <span class="error">{empty.length ? `Tick at least one in ${empty.join(", ")}` : ""}</span>
+      <span class="grow"></span>
+      <button class="primary" disabled={empty.length > 0 || !!error} onclick={() => onDone(result())}>OK</button>
+      <button onclick={onCancel}>Cancel</button>
+    </footer>
+  </div>
+</div>
+{/if}
+
+<!-- the note, the kinds and the list of the one shown: the window's, or an Edit Session tab's -->
+{#snippet lists()}
     <p class="note">For devices that need particular algorithms. A kind left alone uses {otherwise}; given its own list,
       ssh offers only the ticked algorithms, in this order.</p>
 
@@ -139,16 +189,7 @@
         {/each}
       </div>
     {/if}
-
-    <footer>
-      <button onclick={() => kinds.forEach((k) => (k.own = false))} title="Every kind back to {otherwise}">Use Defaults</button>
-      <span class="error">{empty.length ? `Tick at least one in ${empty.join(", ")}` : ""}</span>
-      <span class="grow"></span>
-      <button class="primary" disabled={empty.length > 0 || !!error} onclick={() => onDone(result())}>OK</button>
-      <button onclick={onCancel}>Cancel</button>
-    </footer>
-  </div>
-</div>
+{/snippet}
 
 <style>
   .backdrop {
@@ -177,6 +218,12 @@
 
   header {
     font-weight: 600;
+  }
+
+  .inline {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
   .note {

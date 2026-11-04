@@ -2,7 +2,8 @@
   Edit Session, as SuperXPuTTY's: connection details, notes and file transfer paths, saved back to the session's
   own file (Sessions.xml for Saved sessions, PrivateSessions.xml for Private ones). Also used for a new session.
   "PuTTY session profile" becomes Profile: the name is looked up in the user's own profiles (Settings > Profiles).
-  RDP options… opens the session's own Remote Desktop options; Local overrides… opens the user's own values.
+  Its tabs: General, Connection, then SSH (its own algorithm lists) for an SSH session or Remote Desktop (its own
+  RDP options) for an RDP one, Terminal and File transfer. Local overrides… opens the user's own values.
   Password is the session's own, kept in the Keychain (Credential Manager) on this computer only, never in its file;
   Move -pw here moves a -pw from the extra arguments there (session_passwords.rs).
 -->
@@ -19,8 +20,10 @@
   import { settingsShown } from "../settings/Settings.svelte";
   import SerialLineFields from "./SerialLineFields.svelte";
   import Overrides from "./Overrides.svelte";
-  import RdpSessionOptions from "./RdpSessionOptions.svelte";
   import AlgorithmsDialog from "./AlgorithmsDialog.svelte";
+  import RdpOptionsForm from "./RdpOptionsForm.svelte";
+  import { formatRdpOptions, parseRdpOptions, userDefaults, type RdpOptions } from "./rdpOptions";
+  import { settings } from "../settings/store.svelte";
   import { isMac } from "../shortcuts";
   import { SECRET_STORE, THIS_COMPUTER } from "../platform";
   import { lineOf, withLine } from "./serial";
@@ -69,10 +72,14 @@
   let error = $state("");
   /** Local overrides… open over this window */
   let overriding = $state(false);
-  /** RDP options… open over this window */
-  let rdpOptioning = $state(false);
-  /** SSH algorithms… open over this window */
-  let algorithming = $state(false);
+  /** The Remote Desktop tab's options, as its form edits them (draft.rdpOptions is them as text) */
+  let rdpOptions = $state<RdpOptions>(untrack(() => parseRdpOptions(fields.rdpOptions ?? "")));
+  /** What Default stands for on the Remote Desktop tab: Settings > Remote Desktop's */
+  const rdpDefaults = $derived(userDefaults(settings.rdpDefaults));
+  /** Why the SSH tab's lists can't be saved (a kind with its own list and none ticked), or "" */
+  let algorithmsProblem = $state("");
+  /** Counted up by Revert, so the SSH and Remote Desktop tabs start again from the session as opened */
+  let revision = $state(0);
   /** Whether the session has a password of its own in the Keychain (none for a new session) */
   let hasOwnPassword = $state(false);
   /** A new password typed in; "" forgets the stored one, undefined keeps it */
@@ -92,16 +99,20 @@
   /** How many fields have changed; a stored session saves only with changes, a new one (or a copy) any time */
   const changes = $derived(FIELDS.filter(changed).length + (password !== undefined ? 1 : 0));
   /** The window's tabs, and the fields on each: a tab with one changed shows a dot */
-  const TABS: { name: string; fields: (keyof SessionFields)[] }[] = [
+  const ALL_TABS: { name: string; fields: (keyof SessionFields)[]; for?: (protocol: string) => boolean }[] = [
     { name: "General", fields: ["name", "color", "icon", "protocol", "profile", "host", "port", "username", "note"] },
-    { name: "Connection", fields: ["extraArgs", "rdpOptions", "sshAlgorithms", "jumpHost"] },
+    { name: "Connection", fields: ["extraArgs", "jumpHost"] },
+    { name: "SSH", fields: ["sshAlgorithms"], for: (p) => p === "SSH" || p === "" },
+    { name: "Remote Desktop", fields: ["rdpOptions"], for: (p) => p === "RDP" },
     { name: "Terminal", fields: ["highlightRules", "script"] },
     { name: "File transfer", fields: ["localPath", "remotePath"] },
   ];
+  /** The tabs for the connection type: SSH's own algorithms, or RDP's own options, only for those */
+  const TABS = $derived(ALL_TABS.filter((t) => !t.for || t.for(draft.protocol.toUpperCase())));
   /** The tab shown */
   let tab = $state("General");
   /** Whether a tab has a field changed since the window opened (General's also when a password was typed or forgotten) */
-  const tabChanged = (t: (typeof TABS)[number]) => t.fields.some(changed) || (t.name === "General" && password !== undefined);
+  const tabChanged = (t: (typeof ALL_TABS)[number]) => t.fields.some(changed) || (t.name === "General" && password !== undefined);
   /** A -pw password stored in the extra arguments (shown masked), which Move -pw here can take into the Keychain */
   const storedPw = $derived(id !== null && /(^|\s)-pw\s+(••••••|"••••••")(\s|$)/.test(fields.extraArgs) && /(^|\s)-pw\s/.test(draft.extraArgs));
 
@@ -175,6 +186,11 @@
 
   /** Save and close, or show why it can't be saved */
   async function save(): Promise<void> {
+    if (algorithmsProblem && TABS.some((t) => t.name === "SSH")) {
+      error = algorithmsProblem;
+      tab = "SSH";
+      return;
+    }
     // a name already taken there is offered with -1, -2… added, as SuperXPuTTY's Edit Session
     const name = draft.name.trim();
     const free = name && !name.includes("/") && freeName ? freeName(store, draft.folder, name, id ?? "") : name;
@@ -228,7 +244,24 @@
     draft = { ...fields };
     password = undefined;
     error = "";
+    rdpOptions = parseRdpOptions(fields.rdpOptions ?? "");
+    algorithmsProblem = "";
+    revision++;
   }
+
+  /**
+   * The Remote Desktop tab's form changed: its options as RdpOptions text, or the text the session came with when
+   * they're what it had (written another way, they'd count as a change)
+   */
+  function rdpChanged(): void {
+    const now = formatRdpOptions(rdpOptions);
+    draft.rdpOptions = now === formatRdpOptions(parseRdpOptions(fields.rdpOptions ?? "")) ? fields.rdpOptions : now;
+  }
+
+  // a connection type without the tab shown (SSH to Telnet, say) goes back to General
+  $effect(() => {
+    if (!TABS.some((t) => t.name === tab)) tab = "General";
+  });
 
   /** Choose an SPSL script file */
   async function browseScript(): Promise<void> {
@@ -243,7 +276,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && !overriding && !rdpOptioning && !settingsShown() && onCancel()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && !overriding && !settingsShown() && onCancel()} />
 
 <div class="backdrop" role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
@@ -350,20 +383,38 @@
       </div>
       {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}
       <div class="row">
-        <button disabled={draft.protocol.toUpperCase() !== "RDP" || locked("rdp_options")}
-          title={locked("rdp_options") ? lockTip : draft.protocol.toUpperCase() !== "RDP" ? "For RDP sessions" : draft.rdpOptions ? `Its own: ${draft.rdpOptions}` : "Using the defaults (Settings > Remote Desktop)"}
-          onclick={() => (rdpOptioning = true)}>RDP options…{draft.rdpOptions ? " (own)" : ""}{@render dot(changed("rdpOptions"))}</button>
-        <button disabled={!["SSH", ""].includes(draft.protocol.toUpperCase()) || locked("ssh_algorithms")}
-          title={locked("ssh_algorithms") ? lockTip : !["SSH", ""].includes(draft.protocol.toUpperCase()) ? "For SSH sessions" : draft.sshAlgorithms ? `Its own: ${draft.sshAlgorithms}` : "Its profile's algorithms"}
-          onclick={() => (algorithming = true)}>SSH algorithms…{draft.sshAlgorithms ? " (own)" : ""}{@render dot(changed("sshAlgorithms"))}</button>
-      </div>
-
-      <div class="row">
         <label class="grow">{@render caption("Jump host:", "jumpHost")}<input bind:value={draft.jumpHost} disabled={locked("jump_host")} title={locked("jump_host") ? lockTip : ""}
           placeholder={inherited("jumpHost") || "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22"} /></label>
       </div>
 
     </div>
+
+    {#if TABS.some((t) => t.name === "SSH")}
+      <div class="panel" role="tabpanel" aria-label="SSH" hidden={tab !== "SSH"}>
+        <!-- disabled as a whole when the Database table locks the column -->
+        <fieldset class="plain" disabled={locked("ssh_algorithms")} title={locked("ssh_algorithms") ? lockTip : ""}>
+          {#key revision}
+            <AlgorithmsDialog inline title="" text={draft.sshAlgorithms ?? ""} otherwise={`its profile's list (${draft.profile || DEFAULT_PROFILE})`}
+              onChange={(text, problem) => { draft.sshAlgorithms = text; algorithmsProblem = problem; }} />
+          {/key}
+        </fieldset>
+      </div>
+    {/if}
+
+    {#if TABS.some((t) => t.name === "Remote Desktop")}
+      <div class="panel" role="tabpanel" aria-label="Remote Desktop" hidden={tab !== "Remote Desktop"}>
+        <p class="note">This session's own options. Left at Default, an option follows Settings &gt; Remote Desktop.</p>
+        <fieldset class="plain" disabled={locked("rdp_options")} title={locked("rdp_options") ? lockTip : ""}>
+          {#key revision}
+            <RdpOptionsForm bind:value={rdpOptions} defaults={rdpDefaults} onChange={rdpChanged} />
+          {/key}
+        </fieldset>
+        <div class="row">
+          <button disabled={locked("rdp_options")} onclick={() => { rdpOptions = {}; rdpChanged(); revision++; }}
+            title="Every option back to Default">Use Defaults</button>
+        </div>
+      </div>
+    {/if}
 
     <div class="panel" role="tabpanel" aria-label="Terminal" hidden={tab !== "Terminal"}>
       <div class="row">
@@ -425,15 +476,6 @@
   <span class="caption">{text}{@render dot(changed(field))}</span>
 {/snippet}
 
-{#if rdpOptioning}
-  <RdpSessionOptions name={draft.name} text={draft.rdpOptions ?? ""} onCancel={() => (rdpOptioning = false)}
-    onDone={(text) => { draft.rdpOptions = text; rdpOptioning = false; }} />
-{/if}
-{#if algorithming}
-  <AlgorithmsDialog title={`SSH algorithms: ${draft.name || "new session"}`} text={draft.sshAlgorithms ?? ""}
-    otherwise={`its profile's list (${draft.profile || "Default Settings"})`} onCancel={() => (algorithming = false)}
-    onDone={(text) => { draft.sshAlgorithms = text; algorithming = false; }} />
-{/if}
 
 {#if overriding && id !== null}
   <Overrides sessions={[{ id, store, name: fields.name }]} onCancel={() => (overriding = false)} onSaved={() => (overriding = false)} />
@@ -516,6 +558,14 @@
 
   .panel[hidden] {
     display: none;
+  }
+
+  /* only to disable a tab's fields together (a column locked in the Database table): no box of its own */
+  fieldset.plain {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
   }
 
   .caption {

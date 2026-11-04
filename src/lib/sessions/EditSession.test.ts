@@ -38,6 +38,10 @@ beforeEach(() => {
       return "Lab/sw1";
     }
     if (cmd === "profiles_list") return [{ name: "Default Settings" }];
+    // the SSH tab's lists: what this computer's ssh has
+    if (cmd === "ssh_algorithms_available") {
+      return [{ key: "kex", label: "Key exchange", supported: ["curve25519-sha256", "diffie-hellman-group14-sha1"], defaults: ["curve25519-sha256"] }];
+    }
     if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
     // Move -pw here asks first, with its own button labels: answered with its OK button
     if (cmd === "plugin:dialog|message") return "Move it";
@@ -113,5 +117,47 @@ describe("Edit Session's Revert", () => {
     expect((screen.getByLabelText(/^Password/) as HTMLInputElement).value).toBe("");
     expect(revert.disabled).toBe(true);
     expect(screen.queryByText(/Unsaved changes/)).toBeNull();
+  });
+});
+
+describe("Edit Session's SSH and Remote Desktop tabs", () => {
+  /** The tabs' names, as shown */
+  const tabs = () => screen.getAllByRole("tab").map((t) => t.textContent?.trim());
+
+  it("show for their own connection type only", async () => {
+    const user = userEvent.setup();
+    open();
+    expect(tabs()).toEqual(["General", "Connection", "SSH", "Terminal", "File transfer"]);
+    await user.selectOptions(screen.getByLabelText(/Connection type/), "RDP");
+    expect(tabs()).toEqual(["General", "Connection", "Remote Desktop", "Terminal", "File transfer"]);
+    await user.selectOptions(screen.getByLabelText(/Connection type/), "Telnet");
+    expect(tabs()).toEqual(["General", "Connection", "Terminal", "File transfer"]);
+  });
+
+  it("go back to General when the type changes away from the tab shown", async () => {
+    const user = userEvent.setup();
+    open();
+    await user.click(screen.getByRole("tab", { name: "SSH" }));
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    await user.selectOptions(screen.getByLabelText(/Connection type/), "Telnet");
+    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    // SSH is gone; choosing it again isn't possible, and the window shows a tab that's there
+    expect(screen.queryByRole("tab", { name: "SSH" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Connection" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("save the session's own algorithm list from the SSH tab, and won't save one with nothing ticked", async () => {
+    const user = userEvent.setup();
+    open({ ...SESSION, extraArgs: "-P 2222" });
+    await user.click(screen.getByRole("tab", { name: "SSH" }));
+    await user.click(await screen.findByLabelText(/Use its own list/));
+    expect(screen.getByRole("tab", { name: /^SSH/ }).querySelector(".dot:not(.off)")).not.toBeNull();
+    await user.click(screen.getByLabelText("curve25519-sha256"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(saved).toBeNull();
+    expect(screen.getAllByText(/Tick at least one in Key exchange/).length).toBeGreaterThan(0);
+    await user.click(screen.getByLabelText("diffie-hellman-group14-sha1"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await expect.poll(() => saved?.sshAlgorithms).toBe("kex=diffie-hellman-group14-sha1");
   });
 });

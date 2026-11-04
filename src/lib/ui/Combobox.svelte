@@ -149,33 +149,30 @@
     cursor: default;
   }
 
+  /* drawn as a select's own list (Connection type's): plain rows, a grey highlight, a thin border */
   ul {
     position: fixed;
     z-index: 300;
     max-height: 240px;
     overflow: auto;
     margin: 0;
-    padding: 4px 0;
+    padding: 0;
     list-style: none;
-    background: var(--bg-pane);
+    background: var(--bg-input);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+    border-radius: 3px;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
   }
 
   li {
-    padding: 4px 10px 4px 6px;
+    padding: 5px 16px 5px 6px;
     white-space: nowrap;
     cursor: default;
   }
 
   li.active {
-    background: var(--accent);
-    color: #fff;
-  }
-
-  li[aria-selected="true"]:not(.active) {
-    font-weight: 600;
+    background: var(--list-highlight);
+    color: var(--list-highlight-text);
   }
 
   .tick {

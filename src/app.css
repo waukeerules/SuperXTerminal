@@ -13,6 +13,9 @@
   --text: #1e1e1e;
   --text-muted: #6d6d6d;
   --accent: #007acc;
+  /* the row the pointer or keys are on in a list of choices, as a select's own list draws it */
+  --list-highlight: #dadada;
+  --list-highlight-text: #1e1e1e;
   color-scheme: light;
 }
 
@@ -26,6 +29,8 @@
   --text: #f1f1f1;
   --text-muted: #a0a0a0;
   --accent: #3399ff;
+  --list-highlight: #c8c8c8;
+  --list-highlight-text: #1e1e1e;
   color-scheme: dark;
 }
 
@@ -39,6 +44,8 @@
     --text: #f1f1f1;
     --text-muted: #a0a0a0;
     --accent: #3399ff;
+    --list-highlight: #c8c8c8;
+    --list-highlight-text: #1e1e1e;
     color-scheme: dark;
   }
 }

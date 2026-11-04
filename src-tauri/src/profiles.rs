@@ -47,6 +47,16 @@ pub struct Profile {
     pub host: String,
     /// Seconds between keep-alives (ssh's ServerAliveInterval); 0 for not set
     pub keepalive: u32,
+    /// Which addresses a host name is reached at, as PuTTY's Internet protocol version: "" (Default Settings'), "auto",
+    /// "ipv4" or "ipv6" (ssh's -4 and -6; Telnet and Raw try only those addresses)
+    pub address_family: String,
+    /// Typed into the session after `anti_idle_seconds` with nothing typed, and again after each such spell, as
+    /// KiTTY's anti-idle string: a device's or shell's own idle timeout (Cisco's exec-timeout, TMOUT) doesn't see
+    /// ssh's keep-alives and logs the session out. KiTTY's escapes (\x05, \k08, \r...), turned into keys by the tab.
+    /// "" for Default Settings'
+    pub anti_idle: String,
+    /// Seconds without typing before the anti-idle string is sent; 0 for Default Settings', else KiTTY's 180
+    pub anti_idle_seconds: u32,
     /// More ssh arguments, e.g. "-L 8080:localhost:80 -o Compression=yes"
     pub ssh_options: String,
     /// Accept the older algorithms older devices offer (SHA-1 key exchange, ssh-rsa, CBC ciphers); None: the default's

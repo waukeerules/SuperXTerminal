@@ -17,6 +17,8 @@ import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
 import { DEFAULT_PROFILE, listProfiles, profileColours, PROFILES_CHANGED, saveProfile } from "../settings/profiles";
 import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailure";
+import { antiIdleKeys } from "./antiIdle";
+import { running } from "../commands/sending.svelte";
 import { checkPaste } from "./pasting.svelte";
 import { THIS_COMPUTER } from "../platform";
 import { isMac } from "../shortcuts";
@@ -44,6 +46,10 @@ interface Look {
   foreground?: string;
   selection?: string;
   cursorColor?: string;
+  /** The profile's anti-idle string, as KiTTY writes it; "" or absent for none */
+  antiIdle?: string;
+  /** Seconds without typing before it's typed; 0 with no string */
+  antiIdleSeconds?: number;
 }
 
 /** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
@@ -130,6 +136,9 @@ const keyFetches = new Map<string, Promise<boolean>>();
 /** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
 const STABLE_AFTER_MS = 60_000;
 
+/** How often a tab looks whether its anti-idle string is due, at most: its seconds are counted to within this */
+const ANTI_IDLE_TICK_MS = 5_000;
+
 /** How much of the latest output is kept to read how a session ended */
 const TAIL_LIMIT = 4096;
 
@@ -154,6 +163,12 @@ export class PageHost implements ScriptTarget {
   private tail = "";
   /** A change to the profile that may make the next connection work, offered after a failure: F makes it */
   private fix: { profile: string; change: "olderAlgorithms" | "offerKeys" } | null = null;
+  /** What the profile's anti-idle string types (antiIdle.ts), and after how long without typing; "" and 0 for none */
+  private antiIdle = { keys: "", ms: 0 };
+  /** When something was last typed into the session: by the user, a button, the command bar or a script */
+  private typedAt = Date.now();
+  /** Looks every few seconds whether the anti-idle string is due */
+  private antiIdleTimer: ReturnType<typeof setInterval> | null = null;
   /** The program ended: nothing more can be typed */
   private ended = false;
   /** What the connection is: "pty", or a stream's "telnet", "raw" or "serial" (pty_open's started event) */
@@ -241,6 +256,7 @@ export class PageHost implements ScriptTarget {
   /** Close the pseudo terminal and stop listening; called when the tab closes */
   dispose(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.antiIdleTimer) clearInterval(this.antiIdleTimer);
     this.stopPrefs();
     window.removeEventListener(PROFILES_CHANGED, this.onProfilesChanged);
     if (this.log) void invoke("log_close", { id: this.log.id, temporary: this.log.temporary });
@@ -292,6 +308,7 @@ export class PageHost implements ScriptTarget {
           if (this.fix && /^f$/i.test(String(message.data))) await this.makeFix();
           else if (String(message.data).includes("\r")) await this.reconnect();
         } else if (this.ptyId !== null) {
+          this.typedAt = Date.now();
           await invoke("pty_write", { id: this.ptyId, data: String(message.data) });
         }
         break;
@@ -402,7 +419,31 @@ export class PageHost implements ScriptTarget {
 
   /** Type text and key sequences into the session (Send Commands, the button bar, SPSL) */
   async type(text: string): Promise<void> {
-    if (this.canReceiveCommands && text) await invoke("pty_write", { id: this.ptyId, data: text });
+    if (!this.canReceiveCommands || !text) return;
+    this.typedAt = Date.now();
+    await invoke("pty_write", { id: this.ptyId, data: text });
+  }
+
+  /**
+   * Start sending the profile's anti-idle string (KiTTY's) after `seconds` without typing, and again after each such
+   * spell; none when it's "". Counted from now, as the session has just started.
+   */
+  private startAntiIdle(text: string, seconds: number): void {
+    if (this.antiIdleTimer) clearInterval(this.antiIdleTimer);
+    this.antiIdleTimer = null;
+    const keys = antiIdleKeys(text);
+    this.antiIdle = { keys, ms: keys && seconds > 0 ? seconds * 1000 : 0 };
+    if (!this.antiIdle.ms) return;
+    this.typedAt = Date.now();
+    this.antiIdleTimer = setInterval(() => void this.sendAntiIdle(), Math.min(ANTI_IDLE_TICK_MS, this.antiIdle.ms));
+  }
+
+  /** Type the anti-idle string if it's due: the session is up, nothing typed for long enough, and no script running here (it would read the echo) */
+  private async sendAntiIdle(): Promise<void> {
+    if (!this.canReceiveCommands || Date.now() - this.typedAt < this.antiIdle.ms) return;
+    if (running.runs.some((r) => r.tabId === this.tab)) return;
+    this.typedAt = Date.now();
+    await invoke("pty_write", { id: this.ptyId, data: this.antiIdle.keys }).catch(() => {});
   }
 
   /** Whether the tab's program is running, so commands can be typed into it */
@@ -595,6 +636,7 @@ export class PageHost implements ScriptTarget {
   /** The page's settings: the highlighting rules and themes, and the profile's cursor and bell */
   private async sendConfig(look: Look): Promise<void> {
     if (look.profile !== undefined) this.profile = look.profile;
+    this.startAntiIdle(look.antiIdle ?? "", look.antiIdleSeconds ?? 0);
     const dark = isDark();
     const files = await highlighting();
     this.post({

@@ -1,12 +1,15 @@
 // A session's tab when ssh ends: what it says and whether it reconnects by itself, read from ssh's last words, and
 // the profile change it offers (F). The Rust side is stood in for by mockIPC: pty_open hands over the tab's channel,
-// which the test feeds ssh's output and its end. Also the tab's size reaching the pseudo terminal as the session starts.
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+// which the test feeds ssh's output and its end. Also the tab's size reaching the pseudo terminal as the session starts,
+// Reconnect, and the anti-idle string typed after a quiet spell.
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import { PageHost } from "./PageHost";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "../settings/profiles";
 import { settings } from "../settings/store.svelte";
+import { running } from "../commands/sending.svelte";
+import type { ScriptRun } from "../scripting/spsl";
 
 /** The tab's channel, once pty_open has been asked for it */
 let channel: Channel<unknown> | null;
@@ -22,6 +25,8 @@ let frame: HTMLIFrameElement;
 let posted: { type: string; text?: string }[];
 /** The host under test, let go of after each test */
 let host: PageHost | null;
+/** What was typed into the session (pty_write), in order */
+let written: string[];
 /** pty_resize's sizes, in order */
 let resized: { cols: number; rows: number }[];
 /** pty_open's size, and what it waits for before it answers (the page's messages can come meanwhile); none: at once */
@@ -34,6 +39,7 @@ beforeEach(() => {
   saved = [];
   posted = [];
   resized = [];
+  written = [];
   openedAt = null;
   openWaits = null;
   profiles = [emptyProfile(DEFAULT_PROFILE), { ...emptyProfile("root"), username: "admin" }];
@@ -46,6 +52,10 @@ beforeEach(() => {
       const id = opened;
       if (openWaits) await openWaits;
       return id;
+    }
+    if (cmd === "pty_write") {
+      written.push(String(payload.data));
+      return null;
     }
     if (cmd === "pty_resize") {
       resized.push({ cols: Number(payload.cols), rows: Number(payload.rows) });
@@ -179,5 +189,60 @@ describe("Reconnect", () => {
     expect(host.isReconnecting).toBe(false);
     expect(host.canReceiveCommands).toBe(true);
     expect(notices().filter((n) => n.startsWith("Reconnecting in") || n.startsWith("Session ended"))).toEqual([]);
+  });
+});
+
+/** KiTTY's anti-idle string for Ctrl+E as a profile keeps it, backslashes and all (\x05\): it types Ctrl+E */
+const KITTY_CTRL_E = "\\x05\\";
+
+describe("the anti-idle string", () => {
+  afterEach(() => {
+    running.runs = [];
+    vi.useRealTimers();
+  });
+
+  /** A session whose profile types `antiIdle` after `seconds` without typing */
+  async function idleSession(antiIdle: string, seconds: number): Promise<void> {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    await vi.waitFor(() => expect(channel).not.toBeNull());
+    (channel!.onmessage as (e: unknown) => void)({
+      type: "started", local: false, link: "pty",
+      look: { cursor: "block", blink: true, bell: "visual", rules: "", antiIdle, antiIdleSeconds: seconds },
+    });
+    await vi.waitFor(() => expect(host!.canReceiveCommands).toBe(true));
+  }
+
+  it("is typed after the profile's seconds without typing, and again after each such spell", async () => {
+    await idleSession(KITTY_CTRL_E, 60);
+    await vi.advanceTimersByTimeAsync(55_000);
+    expect(written).toEqual([]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(written).toEqual(["\x05"]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(written).toEqual(["\x05", "\x05"]);
+  });
+
+  it("waits again from whatever was typed last", async () => {
+    await idleSession(KITTY_CTRL_E, 60);
+    await vi.advanceTimersByTimeAsync(50_000);
+    page({ type: "input", data: "s" });
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect(written).toEqual(["s"]);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(written).toEqual(["s", "\x05"]);
+  });
+
+  it("isn't typed while a script runs in the tab, nor with no string", async () => {
+    await idleSession(KITTY_CTRL_E, 60);
+    running.runs = [{ run: {} as ScriptRun, tab: "sw1", tabId: "t1", started: Date.now(), source: "" }];
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(written).toEqual([]);
+    host!.dispose();
+    written = [];
+    await idleSession("", 60);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(written).toEqual([]);
   });
 });

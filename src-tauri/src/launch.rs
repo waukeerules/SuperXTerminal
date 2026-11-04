@@ -43,6 +43,10 @@ pub struct Look {
     pub selection: String,
     /// The profile's cursor colour, else "Default Settings'"; the session's environment colour wins over it
     pub cursor_color: String,
+    /// The profile's anti-idle string as written (KiTTY's escapes), else Default Settings'; "" for none
+    pub anti_idle: String,
+    /// Seconds without typing before it's sent: the profile's, else Default Settings', else KiTTY's 180; 0 with no string
+    pub anti_idle_seconds: u32,
 }
 
 /// A session ready to start
@@ -383,12 +387,12 @@ fn stream(
         Some(jump_address(sessions, values, store, session, &jump_host)?)
     };
     let target = match proto {
-        "TELNET" => crate::streams::Target::Telnet { host, port: if port == 0 { 23 } else { port }, via },
+        "TELNET" => crate::streams::Target::Telnet { host, port: if port == 0 { 23 } else { port }, via, family: address_family(profile, default) },
         "RAW" => {
             if port == 0 {
                 return Err("A Raw session needs a port.".into());
             }
-            crate::streams::Target::Raw { host, port, via }
+            crate::streams::Target::Raw { host, port, via, family: address_family(profile, default) }
         }
         _ => {
             // on Windows the COM name is the port itself; on the Mac a COM name is asked once which /dev/cu.* device
@@ -448,6 +452,7 @@ fn look(profile: &Profile, default: &Profile) -> Look {
     // the colours only when the choice is Custom
     let custom = colours_choice(profile, default) == "custom";
     let own = |a: &str, b: &str| if custom { colour(a, b) } else { String::new() };
+    let anti_idle = first(&profile.anti_idle, &default.anti_idle);
     Look {
         cursor: pick(&profile.cursor, &default.cursor, "block"),
         blink: profile.cursor_blink.or(default.cursor_blink).unwrap_or(true),
@@ -463,6 +468,25 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         foreground: own(&profile.foreground, &default.foreground),
         selection: own(&profile.selection, &default.selection),
         cursor_color: own(&profile.cursor_color, &default.cursor_color),
+        anti_idle: anti_idle.to_string(),
+        anti_idle_seconds: if anti_idle.is_empty() {
+            0
+        } else {
+            [profile.anti_idle_seconds, default.anti_idle_seconds].into_iter().find(|s| *s != 0).unwrap_or(ANTI_IDLE_SECONDS)
+        },
+    }
+}
+
+/// Seconds without typing before the anti-idle string is sent when no profile says: KiTTY's (6 of its 30 s ticks)
+pub const ANTI_IDLE_SECONDS: u32 = 180;
+
+/// Which addresses a host name is reached at: the profile's Internet protocol version, else Default Settings', else any
+pub fn address_family(profile: &Profile, default: &Profile) -> crate::streams::Family {
+    use crate::streams::Family;
+    match first(profile.address_family.trim(), default.address_family.trim()) {
+        "ipv4" => Family::V4,
+        "ipv6" => Family::V6,
+        _ => Family::Any,
     }
 }
 
@@ -709,6 +733,12 @@ fn ssh(
     // reconnect attempts come round quickly
     if !set_elsewhere("connecttimeout") {
         args.extend(["-o".into(), format!("ConnectTimeout={CONNECT_TIMEOUT}")]);
+    }
+    // the profile's Internet protocol version, as PuTTY's: a name whose IPv6 address doesn't answer, say
+    match address_family(profile, default) {
+        crate::streams::Family::V4 => args.push("-4".into()),
+        crate::streams::Family::V6 => args.push("-6".into()),
+        crate::streams::Family::Any => {}
     }
     if password.is_some() {
         // try the password before any key: ssh would otherwise offer every key in ~/.ssh and the agent first, and
@@ -1243,8 +1273,47 @@ mod tests {
     }
 
     #[test]
+    fn the_internet_protocol_version_is_the_profiles_else_default_settings() {
+        use crate::streams::{Family, Target};
+        let with = |root: &str, default: &str| Profiles {
+            profiles: vec![
+                Profile { name: profiles::DEFAULT_PROFILE.into(), older_algorithms: Some(false), address_family: default.into(), ..Profile::default() },
+                Profile { name: "root".into(), address_family: root.into(), ..Profile::default() },
+            ],
+        };
+        let flags = |profiles: &Profiles| {
+            let (args, _) = args_of(&Sessions::default(), profiles, &session(&[("PuttySession", "root")]));
+            args.into_iter().filter(|a| a == "-4" || a == "-6").collect::<Vec<_>>()
+        };
+        assert_eq!(flags(&with("ipv4", "")), ["-4"]);
+        assert_eq!(flags(&with("", "ipv6")), ["-6"]);
+        // the profile's Auto wins over Default Settings' IPv6
+        assert!(flags(&with("auto", "ipv6")).is_empty());
+        assert!(flags(&with("", "")).is_empty());
+        let mut telnet = session(&[("PuttySession", "root")]);
+        telnet.set("Proto", "Telnet");
+        let launch = launch(&Sessions::default(), &with("ipv6", ""), &HashMap::new(), &BTreeMap::new(), Store::Saved, &telnet).unwrap();
+        assert!(matches!(launch.stream, Some(Target::Telnet { family: Family::V6, .. })));
+    }
+
+    #[test]
+    fn the_anti_idle_string_goes_to_the_tab_with_its_seconds() {
+        let default = Profile { anti_idle: r"\x05\".into(), ..Profile::default() };
+        // Default Settings' string, at KiTTY's 180 s
+        let look = super::look(&Profile::default(), &default);
+        assert_eq!((look.anti_idle.as_str(), look.anti_idle_seconds), (r"\x05\", 180));
+        // the profile's own string and seconds
+        let own = Profile { anti_idle: r" \k08\".into(), anti_idle_seconds: 60, ..Profile::default() };
+        let look = super::look(&own, &default);
+        assert_eq!((look.anti_idle.as_str(), look.anti_idle_seconds), (r" \k08\", 60));
+        // none anywhere: nothing sent
+        let look = super::look(&Profile { anti_idle_seconds: 60, ..Profile::default() }, &Profile::default());
+        assert_eq!((look.anti_idle.as_str(), look.anti_idle_seconds), ("", 0));
+    }
+
+    #[test]
     fn telnet_raw_and_serial_are_streams() {
-        use crate::streams::{SerialLine, Target};
+        use crate::streams::{Family, SerialLine, Target};
         let devices: BTreeMap<String, String> = [("COM6".to_string(), "/dev/cu.usbserial-1".to_string())].into();
         // the attributes given win over the helper's host
         let run = |attributes: &[(&str, &str)]| {
@@ -1254,10 +1323,10 @@ mod tests {
             }
             launch(&Sessions::default(), &profiles(), &HashMap::new(), &devices, Store::Saved, &s)
         };
-        assert_eq!(run(&[("Proto", "Telnet")]).unwrap().stream, Some(Target::Telnet { host: "10.0.0.1".into(), port: 23, via: None }));
+        assert_eq!(run(&[("Proto", "Telnet")]).unwrap().stream, Some(Target::Telnet { host: "10.0.0.1".into(), port: 23, via: None, family: Family::Any }));
         assert_eq!(
             run(&[("Proto", "Raw"), ("Port", "2001"), ("JumpHost", "me@bastion:2222")]).unwrap().stream,
-            Some(Target::Raw { host: "10.0.0.1".into(), port: 2001, via: Some("me@bastion:2222".into()) })
+            Some(Target::Raw { host: "10.0.0.1".into(), port: 2001, via: Some("me@bastion:2222".into()), family: Family::Any })
         );
         assert!(run(&[("Proto", "Raw")]).is_err(), "Raw needs a port");
         let serial = run(&[("Proto", "Serial"), ("Host", "com6"), ("ExtraArgs", "-sercfg 115200,8,n,1,N")]).unwrap();

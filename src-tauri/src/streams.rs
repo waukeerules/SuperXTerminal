@@ -38,12 +38,51 @@ impl Drop for OwnedFd {
     }
 }
 
+/// Which of a host name's addresses a connection uses, as PuTTY's Internet protocol version (Auto, IPv4, IPv6)
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Family {
+    #[default]
+    Any,
+    V4,
+    V6,
+}
+
+impl Family {
+    /// Whether an address is one this family uses
+    fn takes(self, address: &std::net::SocketAddr) -> bool {
+        match self {
+            Family::Any => true,
+            Family::V4 => address.is_ipv4(),
+            Family::V6 => address.is_ipv6(),
+        }
+    }
+
+    /// ssh's flag for it (-4 or -6), for a connection through a jump host; None for any
+    fn ssh_flag(self) -> Option<&'static str> {
+        match self {
+            Family::Any => None,
+            Family::V4 => Some("-4"),
+            Family::V6 => Some("-6"),
+        }
+    }
+
+    /// How it's named in a message
+    fn name(self) -> &'static str {
+        match self {
+            Family::Any => "",
+            Family::V4 => "IPv4 ",
+            Family::V6 => "IPv6 ",
+        }
+    }
+}
+
 /// What a stream session connects to
 #[derive(Clone, Debug, PartialEq)]
 pub enum Target {
-    /// `via`: an SSH jump host ("user@host:port") the connection goes through (`ssh -W`)
-    Telnet { host: String, port: u16, via: Option<String> },
-    Raw { host: String, port: u16, via: Option<String> },
+    /// `via`: an SSH jump host ("user@host:port") the connection goes through (`ssh -W`); `family`: which of the
+    /// host's addresses it's reached at (the profile's Internet protocol version)
+    Telnet { host: String, port: u16, via: Option<String>, family: Family },
+    Raw { host: String, port: u16, via: Option<String>, family: Family },
     Serial { device: String, line: SerialLine },
 }
 
@@ -112,10 +151,10 @@ enum Link {
 
 impl Link {
     /// Connect, straight to the host or through the jump host's ssh (`-W`); returns the link and what reads from it
-    fn open(host: &str, port: u16, via: &Option<String>) -> Result<(Link, Box<dyn Read + Send>), String> {
+    fn open(host: &str, port: u16, via: &Option<String>, family: Family) -> Result<(Link, Box<dyn Read + Send>), String> {
         match via {
             None => {
-                let socket = connect(host, port)?;
+                let socket = connect(host, port, family)?;
                 let reader = socket.try_clone().map_err(|e| e.to_string())?;
                 Ok((Link::Direct(Arc::new(socket)), Box::new(reader)))
             }
@@ -125,6 +164,7 @@ impl Link {
                     _ => (jump.clone(), "22".into()),
                 };
                 let mut child = std::process::Command::new(crate::launch::openssh("ssh"))
+                    .args(family.ssh_flag())
                     .args(["-o", "BatchMode=yes", "-p", &jump_port, "-W", &format!("{host}:{port}"), &jump_host])
                     .stdin(std::process::Stdio::piped())
                     .stdout(std::process::Stdio::piped())
@@ -201,16 +241,16 @@ mod telnet {
 /// Open a stream; returns its writing half and its reader
 pub fn open(target: &Target, cols: u16, rows: u16) -> Result<(Stream, Box<dyn Read + Send>), String> {
     match target {
-        Target::Telnet { host, port, via } => {
-            let (link, input) = Link::open(host, *port, via)?;
+        Target::Telnet { host, port, via, family } => {
+            let (link, input) = Link::open(host, *port, via, *family)?;
             let size = Arc::new(Mutex::new((cols, rows)));
             let naws = Arc::new(Mutex::new(false));
             let writer = Arc::new(Mutex::new(Box::new(TelnetWriter { link: link.clone() }) as Box<dyn Write + Send>));
             let reader = TelnetReader { input, answers: link.clone(), size: size.clone(), naws: naws.clone(), pending: Vec::new() };
             Ok((Stream { writer, kind: Kind::Telnet { link, size, naws } }, Box::new(reader)))
         }
-        Target::Raw { host, port, via } => {
-            let (link, input) = Link::open(host, *port, via)?;
+        Target::Raw { host, port, via, family } => {
+            let (link, input) = Link::open(host, *port, via, *family)?;
             let writer = Arc::new(Mutex::new(Box::new(link.clone()) as Box<dyn Write + Send>));
             Ok((Stream { writer, kind: Kind::Raw { link } }, input))
         }
@@ -224,11 +264,11 @@ pub fn open(target: &Target, cols: u16, rows: u16) -> Result<(Stream, Box<dyn Re
     }
 }
 
-/// A TCP connection to host:port, giving up after 10 seconds per address
-fn connect(host: &str, port: u16) -> Result<TcpStream, String> {
+/// A TCP connection to host:port at an address of `family`, giving up after 10 seconds per address
+fn connect(host: &str, port: u16, family: Family) -> Result<TcpStream, String> {
     let addresses = (host, port).to_socket_addrs().map_err(|e| format!("Couldn't find {host}: {e}"))?;
-    let mut last = format!("Couldn't find {host}");
-    for address in addresses {
+    let mut last = format!("Couldn't find an {}address for {host}", family.name());
+    for address in addresses.filter(|a| family.takes(a)) {
         match TcpStream::connect_timeout(&address, Duration::from_secs(10)) {
             Ok(socket) => {
                 let _ = socket.set_nodelay(true);
@@ -767,6 +807,17 @@ pub fn serial_devices() -> Vec<String> {
 mod tests {
     use super::*;
     use telnet::*;
+
+    #[test]
+    fn a_connection_tries_only_the_addresses_of_its_internet_protocol_version() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(connect("127.0.0.1", port, Family::V4).is_ok());
+        assert!(connect("127.0.0.1", port, Family::Any).is_ok());
+        // 127.0.0.1 has no IPv6 address
+        let error = connect("127.0.0.1", port, Family::V6).unwrap_err();
+        assert_eq!(error, "Couldn't find an IPv6 address for 127.0.0.1");
+    }
 
     #[test]
     fn reads_sercfg_as_putty() {

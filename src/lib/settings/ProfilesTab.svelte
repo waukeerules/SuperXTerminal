@@ -104,7 +104,8 @@
    */
   function meaning(profile: Profile, field: keyof Profile): unknown {
     const value = profile[field];
-    if (field === "port" || field === "keepalive" || field === "keyLifetime") return Number(value) || 0;
+    if (field === "port" || field === "keepalive" || field === "keyLifetime" || field === "antiIdleSeconds") return Number(value) || 0;
+    if (isDefault && field === "addressFamily") return value || "auto";
     if (isDefault && field === "offerKeys") return value ?? true;
     if (isDefault && field === "askUsername") return value ?? false;
     // Default Settings' blank is the built-in look, the same as choosing it
@@ -124,6 +125,7 @@
   /** The fields the editor shows, for counting the changes */
   const FIELDS: Field[] = [
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
+    "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
     "colours", "background", "foreground", "selection", "cursorColor",
   ];
@@ -162,7 +164,7 @@
   async function save(): Promise<void> {
     try {
       profiles = await saveProfile(
-        { ...draft, port: Number(draft.port) || 0, keepalive: Number(draft.keepalive) || 0, keyLifetime: Math.max(0, Number(draft.keyLifetime) || 0) },
+        { ...draft, port: Number(draft.port) || 0, keepalive: Number(draft.keepalive) || 0, antiIdleSeconds: Math.max(0, Number(draft.antiIdleSeconds) || 0), keyLifetime: Math.max(0, Number(draft.keyLifetime) || 0) },
         originalName, password,
       );
       select(draft.name.trim());
@@ -388,6 +390,20 @@
         Host Name; and by sessions whose username names their host as {"{host_address}"} (a CyberArk SSH gateway, which
         takes the target in the username). Otherwise a session's own host wins. See docs/CYBERARK.md.</p>
       <label>{@render caption("Keep-alive", "keepalive")}<input class="short" type="number" min="0" bind:value={draft.keepalive} /> <span class="note">{isDefault ? "seconds (0: 15, so a lost connection ends the session in about 45 s)" : "seconds (0: Default Settings')"}</span></label>
+      <label>{@render caption("Internet protocol", "addressFamily")}
+        <select value={draft.addressFamily || (isDefault ? "auto" : "")} onchange={(e) => (draft.addressFamily = e.currentTarget.value)}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          <option value="auto">Auto: any address the name has</option>
+          <option value="ipv4">IPv4 only</option>
+          <option value="ipv6">IPv6 only</option>
+        </select></label>
+      <label>{@render caption("Anti-idle string", "antiIdle")}<input bind:value={draft.antiIdle} placeholder={isDefault ? "none; e.g. \\x05\\ (Ctrl+E)" : "from Default Settings"} /></label>
+      <label>{@render caption("Anti-idle after", "antiIdleSeconds")}<input class="short" type="number" min="0" bind:value={draft.antiIdleSeconds} /> <span class="note">{isDefault ? "seconds without typing (0: 180)" : "seconds without typing (0: Default Settings', else 180)"}</span></label>
+      <p class="note under">Typed into the session after that long with nothing typed, and again after each such spell, as
+        KiTTY's: a device's own idle timeout (a Cisco's exec-timeout) doesn't see ssh's keep-alives and logs the session
+        out. KiTTY's escapes: \xHH a character by its hex code (\x05 is Ctrl+E, the end of the line on a Cisco, which
+        shows nothing), \kHH a key, \r, \n, \t, \h (backspace) and \\; a \ at the end only ends it. Not while a
+        script runs in the tab.</p>
       <label>{@render caption("Older algorithms", "olderAlgorithms")}
         <select value={triToValue(draft.olderAlgorithms)} onchange={(e) => (draft.olderAlgorithms = valueToTri(e.currentTarget.value))}>
           {#if !isDefault}<option value="">From Default Settings</option>{/if}

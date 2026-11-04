@@ -29,6 +29,12 @@ export interface Profile {
    */
   host: string;
   keepalive: number;
+  /** Which addresses a host name is reached at, as PuTTY's Internet protocol version: "", "auto", "ipv4" or "ipv6" */
+  addressFamily: string;
+  /** KiTTY's anti-idle string, typed after a quiet spell (terminal/antiIdle.ts); "" for Default Settings' */
+  antiIdle: string;
+  /** Seconds without typing before it's typed; 0 for Default Settings', else 180 */
+  antiIdleSeconds: number;
   sshOptions: string;
   olderAlgorithms: boolean | null;
   /** Its own SSH algorithm lists ("kex=a,b;mac=c"; "" for Default Settings' or ssh's own) */
@@ -54,7 +60,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
+    name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", hasPassword: false,
   };
 }

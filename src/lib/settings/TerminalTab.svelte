@@ -9,6 +9,7 @@
   import { highlighting } from "../terminal/highlighting";
   import { settings } from "./store.svelte";
 
+  /** The colours a terminal theme sets, for showing what each colour box has when the user hasn't picked one */
   interface ThemeColours {
     background?: string;
     foreground?: string;
@@ -21,7 +22,7 @@
   let themeColours = $state<Record<string, ThemeColours>>({});
   let ruleSets = $state<{ id: string; name: string }[]>([]);
 
-  // re-read when a preference changes anywhere
+  /** re-read when a preference changes anywhere */
   const prefs = $derived.by(() => {
     void settings.terminalPrefs;
     return allPrefs();
@@ -58,8 +59,10 @@
   const colour = (c: (typeof COLOURS)[number]) =>
     prefs[c.pref] || shownTheme[c.theme] || (c.theme === "cursor" ? shownTheme.foreground : "") || "#000000";
 
+  /** The fonts offered; any other can be typed */
   const FONTS = ["Menlo", "Monaco", "SF Mono", "Courier New", "Andale Mono", "PT Mono"];
 
+  /** Set a terminal preference, which every tab takes at once */
   function set(name: string, value: string): void {
     void setPrefs({ [name]: value });
   }

@@ -20,6 +20,7 @@
     void saveSettings({ rdpDefaults: formatRdpOptions(changed as RdpOptions) });
   }
 
+  /** Reset: back to the built-in defaults (`BUILT_IN_DEFAULTS`), saved at once */
   function reset(): void {
     options = { ...BUILT_IN_DEFAULTS };
     save();

@@ -11,6 +11,7 @@
   import { saveSettings, settings } from "./store.svelte";
 
   interface Props {
+    /** OK, Cancel or Escape: the window closes */
     onClose: () => void;
   }
 
@@ -20,7 +21,9 @@
   const DEFAULT_RULES = "Prod=#C62828;Production=#C62828;Staging=#EF6C00;UAT=#EF6C00";
 
   let key = 0;
+  /** One rule as the list edits it, with a key of its own so rows keep their place as they move */
   type Rule = { key: number; pattern: string; color: string };
+  /** Rules as the list edits them, each with a new key */
   const rulesOf = (text: string): Rule[] => parseRules(text).map((r) => ({ key: key++, pattern: r.pattern, color: r.color }));
 
   let rules = $state<Rule[]>(untrack(() => rulesOf(settings.environmentColorRules)));
@@ -35,6 +38,7 @@
     return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.55 ? "#fff" : "#000";
   }
 
+  /** Add a rule, in red to start with, and select it */
   function add(): void {
     const rule = { key: key++, pattern: "", color: "#C62828" };
     rules = [...rules, rule];
@@ -43,11 +47,13 @@
     queueMicrotask(() => document.querySelector<HTMLInputElement>(`[data-rule="${rule.key}"]`)?.focus());
   }
 
+  /** Remove the selected rule */
   function remove(): void {
     rules = rules.filter((r) => r.key !== current);
     current = null;
   }
 
+  /** Move the selected rule up or down: the first rule that matches wins */
   function move(by: number): void {
     const from = rules.findIndex((r) => r.key === current);
     const to = from + by;

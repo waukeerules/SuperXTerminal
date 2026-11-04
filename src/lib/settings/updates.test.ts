@@ -1,3 +1,6 @@
+/**
+ * Tests for comparing release versions in the update check: a pure function, so nothing is stood in.
+ */
 import { describe, expect, it } from "vitest";
 import { isNewer } from "./updates";
 

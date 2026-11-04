@@ -23,6 +23,7 @@
   import RemoteDesktopTab from "./RemoteDesktopTab.svelte";
 
   interface Props {
+    /** Close, or Escape */
     onClose: () => void;
     /** The tab to open on */
     tab?: string;

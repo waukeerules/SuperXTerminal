@@ -13,6 +13,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
 
+  /** One row of the list, as EnvironmentVariables.json holds it */
   interface Variable {
     key: string;
     value: string;
@@ -22,6 +23,7 @@
   }
 
   interface Props {
+    /** OK, Cancel or Escape: the window closes */
     onClose: () => void;
   }
 
@@ -43,6 +45,7 @@
     ]);
   });
 
+  /** The built-in placeholders' names, lower-cased: a variable can't take one */
   const builtInNames = $derived(new Set(builtIn.map(([n]) => n.toLowerCase())));
 
   /** Why a row's key can't be saved, or "" when it can (an empty row is just left out) */
@@ -55,7 +58,9 @@
     return "";
   }
 
+  /** Each row's problem, or "" when it can be saved */
   const problems = $derived(rows.map((r, i) => problem(r, i)));
+  /** Whether any row has a problem, which keeps OK greyed */
   const blocked = $derived(problems.some(Boolean));
 
   /** Placeholders used somewhere that are neither the user's nor built in: they'd stop a session opening */

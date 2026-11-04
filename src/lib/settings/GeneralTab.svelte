@@ -32,6 +32,7 @@
       linksMessage = String(e);
     }
   }
+  /** The environment colour rules, for the count beside Environment colours… */
   const colourRules = $derived(parseRules(settings.environmentColorRules));
 
   /** The Sessions search's fields, as its ⋯ button shows them */

@@ -43,7 +43,9 @@
   /** The list's right-click menu, where it was opened */
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
+  /** Whether the profile shown is Default Settings, which can't be renamed or deleted */
   const isDefault = $derived(originalName.toLowerCase() === DEFAULT_PROFILE.toLowerCase());
+  /** Default Settings, whose values a profile's empty fields show */
   const defaultProfile = $derived(profiles.find((p) => p.name.toLowerCase() === DEFAULT_PROFILE.toLowerCase()));
 
   /** The Colours box's choices (Settings > Terminal's theme is Follow the theme) */
@@ -93,6 +95,7 @@
       || (field === "cursorColor" ? (!isDefault && defaultProfile?.foreground) || pref("colorForeground") || theme?.foreground : "") || c.putty;
   }
 
+  /** A field that can be changed: a profile's own, or its password (kept in the Keychain) */
   type Field = keyof Profile | "password";
 
   /**
@@ -281,6 +284,7 @@
 
   /** A three-way choice (default / on / off) as a select's value, and back */
   const triToValue = (v: boolean | null) => (v === null ? "" : v ? "on" : "off");
+  /** The select's value back as a three-way choice */
   const valueToTri = (v: string) => (v === "" ? null : v === "on");
 </script>
 

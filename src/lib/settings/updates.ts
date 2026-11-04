@@ -9,8 +9,10 @@ import { getVersion } from "@tauri-apps/api/app";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { settings } from "./store.svelte";
 
+/** The title of the update check's messages */
 const TITLE = "SuperXTerminal update check";
 
+/** Add a line to the app's log (Help > Show Log); a log that can't be written is no reason to stop */
 function log(level: "INFO" | "WARN", text: string): void {
   void invoke("applog_write", { level, text }).catch(() => {});
 }

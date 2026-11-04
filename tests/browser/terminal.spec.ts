@@ -199,6 +199,34 @@ test("a profile's Light or Dark wins over Settings > Terminal's theme, and its t
   await expect.poll(background).toBe("#000000");
 });
 
+test("Clear Scrollback stays cleared when a theme with its own font size refits the terminal", async ({ page }) => {
+  // reported on Windows: the cleared lines came back after a theme change. The page itself must not bring them back
+  // as the theme's font refits the columns and rows (bigger, then back); Windows' pseudo console is outside this test
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  const themes = [{ name: "PuTTY", colors: {} }, { name: "Big", colors: {}, font: { size: 22 } }];
+  await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", prefs: { theme: "PuTTY" }, themes }), themes);
+  await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+  await feed(page, Array.from({ length: 500 }, (_, i) => `line ${i + 1}\r\n`).join("") + "$ ");
+  /** The first line kept, and how many rows the scrollback and screen hold */
+  const kept = () => page.evaluate(() => {
+    const buffer = (window as any).terminalDev.term.buffer.active;
+    return { first: buffer.getLine(0)?.translateToString(true) as string, length: buffer.length as number };
+  });
+  await expect.poll(async () => (await kept()).first).toBe("line 1");
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "action", name: "clearScrollback" }));
+  await expect.poll(async () => (await kept()).length).toBe(await page.evaluate(() => (window as any).terminalDev.term.rows));
+  const cleared = (await kept()).first;
+  const size = () => page.evaluate(() => `${(window as any).terminalDev.term.cols}x${(window as any).terminalDev.term.rows}`);
+  for (const theme of ["Big", "PuTTY"]) {
+    const before = await size();
+    await page.evaluate((theme) => (window as any).terminalDev.message({ type: "prefs", prefs: { theme } }), theme);
+    await expect.poll(size).not.toBe(before);
+    // a smaller screen pushes its top rows into the scrollback, but nothing from before the clear comes back
+    expect((await kept()).first).toBe(cleared);
+  }
+});
+
 test.describe("Line Numbers", () => {
   /** The gutter's numbers, a row each ("" for a row without one) */
   const numbers = (page: Page) => page.evaluate(() => {

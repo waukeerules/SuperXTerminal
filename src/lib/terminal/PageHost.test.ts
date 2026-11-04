@@ -159,3 +159,25 @@ describe("a session's tab size", () => {
     expect(resized).toEqual([]);
   });
 });
+
+describe("Reconnect", () => {
+  // closing the old connection kills its ssh, whose exit comes after the new one has started (on Windows most of a
+  // second later): taken as the new session's, it ended it, and the tab reconnected again and again
+  it("isn't ended by the old connection's exit coming after the new one has started", async () => {
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    const old = channel!;
+    const sendOn = (to: Channel<unknown>, event: unknown) => (to.onmessage as (e: unknown) => void)(event);
+    sendOn(old, { type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "" }, link: "pty" });
+    await host.reconnect();
+    expect(opened).toBe(2);
+    sendOn(channel!, { type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "" }, link: "pty" });
+    // the old ssh, killed, tells of its end
+    sendOn(old, { type: "exit", code: 255 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(host.isReconnecting).toBe(false);
+    expect(host.canReceiveCommands).toBe(true);
+    expect(notices().filter((n) => n.startsWith("Reconnecting in") || n.startsWith("Session ended"))).toEqual([]);
+  });
+});

@@ -639,10 +639,17 @@ export class PageHost implements ScriptTarget {
     this.adoptId = id;
   }
 
+  /** The channel of the tab's connection now: events from one it had before are its last words, not this one's */
+  private channel: Channel<PtyEvent> | null = null;
+
   /** The channel a session's events come in on: output, how it started, notices and its end */
   private outputChannel(): Channel<PtyEvent> {
     const channel = new Channel<PtyEvent>();
+    this.channel = channel;
     channel.onmessage = (event) => {
+      // a connection closed for a new one (Reconnect) still tells of its end, after the new one has started: on
+      // Windows its exit comes most of a second later. Taken as the new session's, it ended it and reconnected again
+      if (channel !== this.channel) return;
       if (event.type === "data") {
         // ssh's messages are plain ASCII, so the bytes as characters are enough to read them
         this.tail = (this.tail + atob(event.data)).slice(-TAIL_LIMIT);

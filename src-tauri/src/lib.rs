@@ -1905,12 +1905,13 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>, ov
             &action("scriptEditor")?,
             &PredefinedMenuItem::separator(app)?,
             &plain("databaseSessions", "Database Sessions…")?,
-            &plain("profiles", "Profiles…")?,
             &plain("environmentVariables", "Environment Variables…")?,
             &plain("environmentColours", "Environment Colours…")?,
             &PredefinedMenuItem::separator(app)?,
-            // Settings' other tabs, as the app menu's Settings… opens them: "settings:" and the tab's name
+            // Settings' tabs in its order, as the app menu's Settings… opens them: "settings:" and the tab's name (Profiles…
+            // opens on Default Settings)
             &plain("settings:General", "General Settings…")?,
+            &plain("profiles", "Profiles…")?,
             &plain("settings:Terminal", "Terminal Settings…")?,
             &plain("settings:Remote Desktop", "Remote Desktop Settings…")?,
             &plain("settings:Shortcuts", "Shortcut Settings…")?,

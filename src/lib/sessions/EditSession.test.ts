@@ -1,6 +1,7 @@
 // Edit Session's tabs, which mark the one with a change unsaved; and its Password: the session's own, kept in the Keychain under its id, and Move -pw here, which takes the
-// stored -pw there and saves the session without it. The Rust side is stood in for by mockIPC: what's saved, and
-// what's stored as the session's password, are recorded.
+// stored -pw there and saves the session without it. Also its note on a profile the user doesn't have (not while the
+// profiles are still being read). The Rust side is stood in for by mockIPC: what's saved, what's stored as the
+// session's password, and the profiles, which can be held back to show the window before they arrive.
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -17,12 +18,15 @@ const SESSION: SessionFields = {
 let saved: SessionFields | null;
 let stored: { id: string; password: string }[];
 let moved: string[];
+/** What profiles_list waits for before it answers; none: at once */
+let profilesWait: Promise<void> | null;
 
 beforeEach(() => {
   saved = null;
   stored = [];
   moved = [];
-  mockIPC((cmd, args) => {
+  profilesWait = null;
+  mockIPC(async (cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (cmd === "session_password_has") return false;
     if (cmd === "session_password_from_pw") {
@@ -37,7 +41,10 @@ beforeEach(() => {
       saved = payload.fields as SessionFields;
       return "Lab/sw1";
     }
-    if (cmd === "profiles_list") return [{ name: "Default Settings" }];
+    if (cmd === "profiles_list") {
+      if (profilesWait) await profilesWait;
+      return [{ name: "Default Settings" }, { name: "root" }];
+    }
     // the SSH tab's lists: what this computer's ssh has
     if (cmd === "ssh_algorithms_available") {
       return [{ key: "kex", label: "Key exchange", supported: ["curve25519-sha256", "diffie-hellman-group14-sha1"], defaults: ["curve25519-sha256"] }];
@@ -159,5 +166,24 @@ describe("Edit Session's SSH and Remote Desktop tabs", () => {
     await user.click(screen.getByLabelText("diffie-hellman-group14-sha1"));
     await user.click(screen.getByRole("button", { name: "Save" }));
     await expect.poll(() => saved?.sshAlgorithms).toBe("kex=diffie-hellman-group14-sha1");
+  });
+});
+
+describe("Edit Session's notes", () => {
+  it("doesn't say the session's profile is missing while the profiles are still being read", async () => {
+    let arrive = () => {};
+    profilesWait = new Promise((resolve) => (arrive = resolve));
+    open({ ...SESSION, profile: "root" });
+    // it said Profile "root" isn't set up for a moment as the window opened
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText(/isn't set up/)).toBeNull();
+    arrive();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText(/isn't set up/)).toBeNull();
+  });
+
+  it("says a profile the user doesn't have is missing, once the profiles are read", async () => {
+    open({ ...SESSION, profile: "nosuch" });
+    expect(await screen.findByText(/Profile "nosuch" isn't set up/)).toBeTruthy();
   });
 });

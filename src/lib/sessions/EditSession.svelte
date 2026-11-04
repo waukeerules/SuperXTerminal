@@ -66,7 +66,8 @@
 
   // the window edits a copy, saved only on Save
   let draft = $state<SessionFields>(untrack(() => ({ ...fields })));
-  let profileNames = $state<string[]>([]);
+  /** The user's profiles' names; null until they've been read, when no profile can be said to be missing */
+  let profileNames = $state<string[] | null>(null);
   let ruleSets = $state<{ id: string; name: string }[]>([]);
   let choosingIcon = $state(false);
   let choosingColour = $state(false);
@@ -133,8 +134,9 @@
   /** Why this computer can't open the protocol (e.g. no RDP client), or "" */
   const reason = $derived(unavailableReason(draft.protocol));
   /** A profile named that the user doesn't have, which opens with Default Settings */
+  // not before the profiles have been read: every profile looked missing for a moment as the window opened
   const profileMissing = $derived(
-    !!draft.profile.trim() && draft.profile.trim().toLowerCase() !== DEFAULT_PROFILE.toLowerCase() &&
+    profileNames !== null && !!draft.profile.trim() && draft.profile.trim().toLowerCase() !== DEFAULT_PROFILE.toLowerCase() &&
       !profileNames.some((n) => n.toLowerCase() === draft.profile.trim().toLowerCase()),
   );
 
@@ -327,7 +329,7 @@
           </select>
         </label>
         <label class="grow">{@render caption("Profile:", "profile")}
-          <Combobox bind:value={draft.profile} options={profileNames} placeholder={inherited("puttyProfile") || DEFAULT_PROFILE}
+          <Combobox bind:value={draft.profile} options={profileNames ?? []} placeholder={inherited("puttyProfile") || DEFAULT_PROFILE}
             disabled={locked("putty_profile")} title={locked("putty_profile") ? lockTip : ""} />
         </label>
         <button onclick={() => onOpenProfiles(draft.profile.trim() || undefined)} title="Settings > Profiles, on this session's profile">Profiles…</button>

@@ -3,8 +3,9 @@
   (a session icon or a colour circle, and the label). A click sends the button's string, or runs its script, in the
   active tab; Shift+click sends to the Send Commands selection. The bar shown is the first whose tab icons include
   the active tab's icon, else the one picked, else the first. Right-click for New, Edit, Delete and Move buttons, and
-  for bars: New, Rename, Delete, Show for Tab Icons, Export, Import, Reload. ButtonBars.xml is in the settings folder,
-  shared by the team, and read again whenever the menu opens.
+  for bars: New, Rename, Delete, Show for Tab Icons, Export, Import, Reload, and Manage Button Bars (ManageBars.svelte)
+  for moving, copying and tidying buttons across bars. ButtonBars.xml is in the settings folder, shared by the team,
+  and read again whenever the menu opens.
 -->
 <script lang="ts">
   import { ask, open, save } from "@tauri-apps/plugin-dialog";
@@ -12,6 +13,7 @@
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import Prompt from "../ui/Prompt.svelte";
   import EditButton from "./EditButton.svelte";
+  import ManageBars from "./ManageBars.svelte";
   import TabIcons from "./TabIcons.svelte";
   import { buttonColour, exportBar, importBars, loadBars, saveBars, type Bar, type BarButton } from "./bars";
   import { activeTarget, context, fillPlaceholders, runScriptIn, running, selectedTargets, sendString } from "./sending.svelte";
@@ -30,6 +32,8 @@
   let editing = $state<{ index: number | null; button: BarButton | null } | null>(null);
   let prompt = $state<{ title: string; value: string; validate: (v: string) => string; onOk: (v: string) => void } | null>(null);
   let choosingIcons = $state(false);
+  /** Whether Manage Button Bars is open */
+  let managing = $state(false);
 
   /** The buttons' icon size: smaller than the tree's, as SuperXPuTTY's toolbars */
   const size = $derived(Math.round(settings.iconSize * 0.85));
@@ -157,6 +161,7 @@
         { label: "Rename Button Bar…", action: renameBar },
         { label: "Delete Button Bar", disabled: bars.length < 2 && "The only bar can't be deleted", action: () => void deleteBar() },
         { label: "Show for Tab Icons…", action: () => (choosingIcons = true) },
+        { label: "Manage Button Bars…", action: () => (managing = true) },
         { separator: true },
         { label: "Export Button Bar…", action: () => void exportCurrent() },
         { label: "Import Button Bar…", action: () => void importFile() },
@@ -248,6 +253,13 @@
     }
   }
 
+  /** Save what Manage Button Bars changed, and show the bar chosen there last */
+  async function saveManaged(next: Bar[], shown: string): Promise<void> {
+    managing = false;
+    await store(next);
+    await pick(shown);
+  }
+
   /** Add the button edited, or put it in place of the one it was */
   async function saveButton(button: BarButton): Promise<void> {
     const index = editing?.index ?? null;
@@ -291,6 +303,10 @@
 
 {#if prompt}
   <Prompt title={prompt.title} value={prompt.value} validate={prompt.validate} onOk={prompt.onOk} onCancel={() => (prompt = null)} />
+{/if}
+
+{#if managing}
+  <ManageBars {bars} shown={current.name} {customs} onCancel={() => (managing = false)} onSave={(b, shown) => void saveManaged(b, shown)} />
 {/if}
 
 {#if choosingIcons}

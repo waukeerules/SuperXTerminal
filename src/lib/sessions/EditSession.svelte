@@ -220,6 +220,16 @@
     return extra.replace(/(^|\s)-pw\s+("[^"]*"|\S+)/, "$1").replace(/\s{2,}/g, " ").trim();
   }
 
+  /**
+   * Revert: every field back as the window opened with it, a typed or forgotten password dropped (as Settings >
+   * Profiles' Revert). A -pw already moved into the Keychain stays there, and comes back in the extra arguments too.
+   */
+  function revert(): void {
+    draft = { ...fields };
+    password = undefined;
+    error = "";
+  }
+
   /** Choose an SPSL script file */
   async function browseScript(): Promise<void> {
     const path = await open({ title: "Choose the session's SPSL script", filters: [{ name: "Scripts", extensions: ["spsl", "txt"] }] });
@@ -242,7 +252,7 @@
     <div class="tabs" role="tablist">
       {#each TABS as t (t.name)}
         <button role="tab" class:active={tab === t.name} aria-selected={tab === t.name} onclick={() => (tab = t.name)}>
-          {t.name}{#if tabChanged(t)}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</button>
+          {t.name}{@render dot(tabChanged(t))}</button>
       {/each}
     </div>
 
@@ -342,10 +352,10 @@
       <div class="row">
         <button disabled={draft.protocol.toUpperCase() !== "RDP" || locked("rdp_options")}
           title={locked("rdp_options") ? lockTip : draft.protocol.toUpperCase() !== "RDP" ? "For RDP sessions" : draft.rdpOptions ? `Its own: ${draft.rdpOptions}` : "Using the defaults (Settings > Remote Desktop)"}
-          onclick={() => (rdpOptioning = true)}>RDP options…{draft.rdpOptions ? " (own)" : ""}{#if changed("rdpOptions")}<span class="dot" title="Changed: not saved yet"></span>{/if}</button>
+          onclick={() => (rdpOptioning = true)}>RDP options…{draft.rdpOptions ? " (own)" : ""}{@render dot(changed("rdpOptions"))}</button>
         <button disabled={!["SSH", ""].includes(draft.protocol.toUpperCase()) || locked("ssh_algorithms")}
           title={locked("ssh_algorithms") ? lockTip : !["SSH", ""].includes(draft.protocol.toUpperCase()) ? "For SSH sessions" : draft.sshAlgorithms ? `Its own: ${draft.sshAlgorithms}` : "Its profile's algorithms"}
-          onclick={() => (algorithming = true)}>SSH algorithms…{draft.sshAlgorithms ? " (own)" : ""}{#if changed("sshAlgorithms")}<span class="dot" title="Changed: not saved yet"></span>{/if}</button>
+          onclick={() => (algorithming = true)}>SSH algorithms…{draft.sshAlgorithms ? " (own)" : ""}{@render dot(changed("sshAlgorithms"))}</button>
       </div>
 
       <div class="row">
@@ -392,6 +402,7 @@
       <button disabled={id === null} title={id === null ? "Save the session first" : "Your own values for this session, used when it opens; only you get them"}
         onclick={() => (overriding = true)}>Local overrides…</button>
       <span class="error" class:pending={!error && changes > 0}>{error || (changes > 0 ? `Unsaved changes (${changes})` : "")}</span>
+      <button onclick={revert} disabled={changes === 0} title={changes === 0 ? "Nothing has changed" : "Put every field back as it was when the window opened"}>Revert</button>
       <button class="primary" onclick={save} disabled={id !== null && changes === 0}
         title={id !== null && changes === 0 ? "Nothing has changed" : ""}>Save</button>
       <button onclick={onCancel}>Cancel</button>
@@ -399,13 +410,19 @@
   </div>
 </div>
 
+<!-- the dot of a field changed since the window opened: always there, so captions keep their width, and seen only
+     once it's changed -->
+{#snippet dot(on: boolean)}
+  <span class="dot" class:off={!on} title={on ? "Changed: not saved yet" : undefined} aria-label={on ? "changed" : undefined} aria-hidden={!on}></span>
+{/snippet}
+
 <!-- a field's caption, with a dot while it differs from the session as opened -->
 {#snippet ownCaption()}
-  <span class="caption">Password:{#if password !== undefined}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</span>
+  <span class="caption">Password:{@render dot(password !== undefined)}</span>
 {/snippet}
 
 {#snippet caption(text: string, field: keyof SessionFields)}
-  <span class="caption">{text}{#if changed(field)}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</span>
+  <span class="caption">{text}{@render dot(changed(field))}</span>
 {/snippet}
 
 {#if rdpOptioning}
@@ -521,6 +538,15 @@
 
   .caption .dot {
     margin-left: 0;
+  }
+
+  .dot.off {
+    visibility: hidden;
+  }
+
+  /* an invisible column: the first caption of every row as wide as the widest, so the fields start in one line */
+  .panel > .row > :first-child > .caption {
+    min-width: 9.5em;
   }
 
   .row {

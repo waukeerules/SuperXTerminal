@@ -87,9 +87,31 @@ describe("Edit Session's tabs", () => {
     expect(screen.getByLabelText(/Notes/).closest("[role=tabpanel]")?.getAttribute("aria-label")).toBe("General");
     await user.click(connection);
     expect(connection.getAttribute("aria-selected")).toBe("true");
-    expect(connection.querySelector(".dot")).toBeNull();
+    expect(connection.querySelector(".dot:not(.off)")).toBeNull();
+    // its dot is there all along, so the tab doesn't widen as it shows
+    expect(connection.querySelector(".dot.off")).not.toBeNull();
     await user.type(screen.getByLabelText(/Jump host/), "bastion");
-    expect(connection.querySelector(".dot")).not.toBeNull();
-    expect(general.querySelector(".dot")).toBeNull();
+    expect(connection.querySelector(".dot:not(.off)")).not.toBeNull();
+    expect(general.querySelector(".dot:not(.off)")).toBeNull();
+  });
+});
+
+describe("Edit Session's Revert", () => {
+  it("puts every field back as the window opened with it, and drops a typed password", async () => {
+    const user = userEvent.setup();
+    open({ ...SESSION, extraArgs: "-P 2222" });
+    const revert = screen.getByRole("button", { name: "Revert" }) as HTMLButtonElement;
+    expect(revert.disabled).toBe(true);
+    await user.type(screen.getByLabelText(/Session name/), "-new");
+    await user.type(screen.getByLabelText(/^Password/), "s3cret");
+    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    await user.type(screen.getByLabelText(/Jump host/), "bastion");
+    expect(revert.disabled).toBe(false);
+    await user.click(revert);
+    expect((screen.getByLabelText(/Session name/) as HTMLInputElement).value).toBe("sw1");
+    expect((screen.getByLabelText(/Jump host/) as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText(/^Password/) as HTMLInputElement).value).toBe("");
+    expect(revert.disabled).toBe(true);
+    expect(screen.queryByText(/Unsaved changes/)).toBeNull();
   });
 });

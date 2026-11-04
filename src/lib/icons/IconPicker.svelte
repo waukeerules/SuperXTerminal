@@ -59,7 +59,8 @@
             {#each items as item (item.key)}
               <button class="choice" class:selected={item.key === name} onclick={() => (name = item.key)}
                 ondblclick={() => onChoose(key)} title={item.title}>
-                <Icon key={item.key} size={40} {customs} />
+                <!-- in the colour chosen, as the preview, so each icon shows how it would look -->
+                <Icon key={color ? `${item.key}#${color.slice(1)}` : item.key} size={40} {customs} />
                 <span>{item.title}</span>
               </button>
             {/each}

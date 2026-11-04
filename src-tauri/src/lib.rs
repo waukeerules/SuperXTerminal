@@ -931,6 +931,7 @@ fn variables_fill(state: State<'_, AppState>, text: String) -> Filled {
 fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettings) -> Result<AppSettings, String> {
     let mut current = state.settings.lock().unwrap();
     let folder = current.settings_folder.clone();
+    let before = current.clone();
     *current = AppSettings { settings_folder: folder, ..settings };
     current.icon_size = match current.icon_size {
         16 | 20 | 24 | 32 => current.icon_size,
@@ -939,11 +940,14 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
     current.tree_font_size = current.tree_font_size.clamp(10, 24);
     current.shortcuts = keys::cleaned(&current.shortcuts);
     current.save(&state.user_folder)?;
+    let changes = window_changes(&before, &current);
     // the menu bar's keys follow Settings > Shortcuts
-    if let Ok(bar) = menu(&app, &current.shortcuts, current.use_local_overrides) {
+    if changes.menu && let Ok(bar) = menu(&app, &current.shortcuts, current.use_local_overrides) {
         let _ = app.set_menu(bar);
     }
-    apply_window_theme(&app, &current.theme);
+    if changes.theme {
+        apply_window_theme(&app, &current.theme);
+    }
     let saved = current.clone();
     drop(current);
     applog::info("Settings saved");
@@ -952,6 +956,25 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
     // every window reads them again, so another window's next save doesn't put back what it had
     let _ = app.emit(SETTINGS_CHANGED, ());
     Ok(saved)
+}
+
+/// What a settings save has to redo in the windows themselves (see [`window_changes`])
+#[derive(Debug, PartialEq)]
+struct WindowChanges {
+    /// The menu bar again: its keys (Settings > Shortcuts) or Local overrides changed
+    menu: bool,
+    /// The menu bar, menus and title bars in the theme again: Settings > General > Theme changed
+    theme: bool,
+}
+
+/// What a save from `before` to `after` changes in the windows. Each only when its own setting changed: on Windows,
+/// setting the menu bar again lays the whole window out again, which showed as the window shifting at every save (a
+/// checkbox in a terminal tab's menu saves too)
+fn window_changes(before: &AppSettings, after: &AppSettings) -> WindowChanges {
+    WindowChanges {
+        menu: before.shortcuts != after.shortcuts || before.use_local_overrides != after.use_local_overrides,
+        theme: before.theme != after.theme,
+    }
 }
 
 /// Database sessions' settings for the window, and whether a password is stored
@@ -2600,7 +2623,8 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{loading_colour, remembered_state, remembers_place};
+    use super::{loading_colour, remembered_state, remembers_place, window_changes, WindowChanges};
+    use crate::settings::AppSettings;
     use tauri_plugin_window_state::StateFlags;
 
     #[test]
@@ -2609,6 +2633,24 @@ mod tests {
         assert_eq!(loading_colour("light"), Color(0xf5, 0xf5, 0xf5, 0xff));
         assert_eq!(loading_colour("dark"), Color(0x2d, 0x2d, 0x30, 0xff));
         assert_eq!(loading_colour("system"), Color(0x2d, 0x2d, 0x30, 0xff));
+    }
+
+    #[test]
+    fn a_terminal_preference_saved_leaves_the_menu_bar_and_theme_alone() {
+        // a checkbox in a terminal tab's menu saves the settings; setting the menu bar again shifted the whole window
+        let before = AppSettings::default();
+        let mut after = before.clone();
+        after.terminal_prefs.insert("copyOnSelect".into(), "false".into());
+        assert_eq!(window_changes(&before, &after), WindowChanges { menu: false, theme: false });
+        let mut keys = before.clone();
+        keys.shortcuts.insert("newTab".into(), "Ctrl+T".into());
+        assert_eq!(window_changes(&before, &keys), WindowChanges { menu: true, theme: false });
+        let mut overrides = before.clone();
+        overrides.use_local_overrides = !before.use_local_overrides;
+        assert_eq!(window_changes(&before, &overrides), WindowChanges { menu: true, theme: false });
+        let mut theme = before.clone();
+        theme.theme = "light".into();
+        assert_eq!(window_changes(&before, &theme), WindowChanges { menu: false, theme: true });
     }
 
     #[test]

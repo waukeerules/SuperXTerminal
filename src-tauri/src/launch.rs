@@ -20,8 +20,10 @@ use crate::profiles::{self, Profile, Profiles};
 use crate::variables;
 use crate::sessions::{Sessions, Store, StoredSession};
 
-/// How the terminal page draws this tab, from the session's profile (SuperXPuTTY took these from the PuTTY profile)
+/// How the terminal page draws this tab, from the session's profile (SuperXPuTTY took these from the PuTTY profile).
+/// Its names are the page's (cursorColor): with Rust's, the profile's cursor colour never reached a new tab
 #[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Look {
     /// "block", "underline" or "bar"
     pub cursor: String,
@@ -947,6 +949,14 @@ mod tests {
         assert_eq!(look.cursor_color, "#00ff00");
         let look = super::look(&Profile::default(), &Profile::default());
         assert_eq!(look.background, "");
+    }
+
+    #[test]
+    fn the_look_reaches_the_page_in_its_own_names() {
+        let prod = Profile { colours: "custom".into(), cursor_color: "#00FF00".into(), ..Profile::default() };
+        let page = serde_json::to_value(super::look(&prod, &Profile::default())).unwrap();
+        assert_eq!(page["cursorColor"], "#00ff00");
+        assert!(page.get("cursor_color").is_none());
     }
 
     #[test]

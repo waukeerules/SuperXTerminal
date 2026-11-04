@@ -5,9 +5,13 @@
  */
 import { isMac } from "./shortcuts";
 
+/** The system's name: macOS or Windows */
 export const SYSTEM = isMac ? "macOS" : "Windows";
+/** The computer, as the interface says it: this Mac, or this PC */
 export const THIS_COMPUTER = isMac ? "this Mac" : "this PC";
+/** Where passwords and secrets are kept, as the interface says it */
 export const SECRET_STORE = isMac ? "the Keychain" : "Windows Credential Manager";
+/** The system's file manager, for Show in Finder (Show in File Explorer) */
 export const FILE_MANAGER = isMac ? "Finder" : "File Explorer";
 /** The shortcuts' modifier as words: Cmd+V, or Ctrl+V */
 export const MOD = isMac ? "Cmd" : "Ctrl";

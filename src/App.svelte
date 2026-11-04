@@ -231,8 +231,11 @@
   let paneWidth = $state<number | null>(null);
   /** While searching, the width the Sessions tree's matches need (Settings > General: widen while searching) */
   let searchWidth = $state<number | null>(null);
+  /** The widest the Sessions pane grows to fit a search's matches */
   const SEARCH_MAX = 600;
+  /** The Sessions pane's width before the user has dragged it */
   const PANE_DEFAULT = 280;
+  /** A width the Sessions pane can take: at least 160 points, and leaving the tabs 320 */
   const clampWidth = (w: number) => Math.round(Math.max(160, Math.min(w, window.innerWidth - 320)));
 
   /**
@@ -270,19 +273,23 @@
   let slid = $state(false);
   let showTimer: ReturnType<typeof setTimeout> | undefined;
   let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  /** How long the pane stays out after the pointer leaves it, in milliseconds */
   const HIDE_AFTER = 2000;
 
+  /** Turn Auto hide on or off (the pane's pin), keeping it in the settings */
   function setAutoHide(on: boolean): void {
     slid = false;
     void saveSettings({ sessionsAutoHide: on });
   }
 
+  /** Slide the hidden pane out over the tabs */
   function slideOut(): void {
     clearTimeout(showTimer);
     clearTimeout(hideTimer);
     slid = true;
   }
 
+  /** Slide the pane back to its edge tab */
   function slideIn(): void {
     clearTimeout(showTimer);
     clearTimeout(hideTimer);
@@ -402,6 +409,7 @@
     if (text && text !== "Ready") void invoke("applog_write", { level: "INFO", text }).catch(() => {});
   });
 
+  /** Open what this window starts with: a layout (Load in New Window), a tab moved from another window, a session asked for, the command line's request or the default layout; otherwise a Local Shell */
   async function begin(): Promise<void> {
     const begin = await invoke<{ open: string | null; adopt: MovingTab | null; layout: string | null } | null>("window_start").catch(() => null);
     // Load in New Window

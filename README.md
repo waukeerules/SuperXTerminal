@@ -77,6 +77,30 @@ and works the same on the Mac and on Windows. It's built with [Tauri 2](https://
 
 Anything that can't work on the system it's running on is shown greyed out, with the reason, rather than hidden.
 
+## How it works
+
+SuperXTerminal is a [Tauri 2](https://tauri.app) app: a core written in Rust, and a window drawn by the system's own
+web view (WebKit on the Mac, WebView2 on Windows), with the interface in TypeScript and Svelte 5.
+
+- **SSH is OpenSSH.** Each SSH tab runs the system's own `ssh` (Windows has it built in too) in a pseudo terminal, so
+  keys, ssh-agent, `~/.ssh/config`, jump hosts and known hosts work as they do in any other terminal. The app builds
+  the command from the session, its folder's defaults and its profile. A saved password is kept in the Keychain (or
+  Windows' Credential Manager) and typed at the first password prompt, never put on the command line. When ssh ends,
+  the tab reads what ssh said last to tell you what went wrong, and reconnects only when that can help.
+- **The core, in Rust,** runs the pseudo terminals (ConPTY on Windows) and what OpenSSH doesn't: Telnet, Raw TCP and
+  serial ports are spoken by the core itself, and Remote Desktop by [IronRDP](https://github.com/Devolutions/IronRDP).
+  File transfer goes over the session's own ssh: SFTP, or SCP for network devices that have no SFTP. It also reads
+  and writes SuperXPuTTY's files (sessions, button bars, highlighting rules) in their own formats, so both apps can
+  share a settings folder, and keeps Database sessions in PostgreSQL, the same table SuperXPuTTY uses.
+- **The interface, in TypeScript and Svelte:** the sessions tree, tabs and splits ([dockview](https://dockview.dev)),
+  Settings, the button bar, and SPSL scripts, which run here and send to the tabs.
+- **Each terminal is a page of its own,** in plain JavaScript: [xterm.js](https://xtermjs.org) draws it, the
+  highlighting rules colour the output as it arrives, and Open as Document shows it in
+  [Monaco](https://microsoft.github.io/monaco-editor/), the editor from VS Code.
+
+Its tests are Rust's own for the core, [Vitest](https://vitest.dev) for the interface and
+[Playwright](https://playwright.dev) for the terminal page, in WebKit and Chromium (WebView2's engine).
+
 ## Download
 
 Installers are on the [Releases page](https://github.com/waukeerules/SuperXTerminal/releases): a `.dmg` for Apple

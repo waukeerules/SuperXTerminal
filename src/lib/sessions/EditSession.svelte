@@ -18,6 +18,8 @@
   import { highlighting } from "../terminal/highlighting";
   import { listProfiles, DEFAULT_PROFILE, PROFILES_CHANGED } from "../settings/profiles";
   import { settingsShown } from "../settings/Settings.svelte";
+  import { variablesShown, VARIABLES_CHANGED } from "../settings/EnvironmentVariables.svelte";
+  import { context } from "../commands/sending.svelte";
   import SerialLineFields from "./SerialLineFields.svelte";
   import Overrides from "./Overrides.svelte";
   import AlgorithmsDialog from "./AlgorithmsDialog.svelte";
@@ -68,6 +70,8 @@
   let draft = $state<SessionFields>(untrack(() => ({ ...fields })));
   /** The user's profiles' names; null until they've been read, when no profile can be said to be missing */
   let profileNames = $state<string[] | null>(null);
+  /** The Environment Variables' names and the built-in placeholders', lower-cased; null until they've been read */
+  let variableNames = $state<Set<string> | null>(null);
   let ruleSets = $state<{ id: string; name: string }[]>([]);
   let choosingIcon = $state(false);
   let choosingColour = $state(false);
@@ -139,6 +143,35 @@
     profileNames !== null && !!draft.profile.trim() && draft.profile.trim().toLowerCase() !== DEFAULT_PROFILE.toLowerCase() &&
       !profileNames.some((n) => n.toLowerCase() === draft.profile.trim().toLowerCase()),
   );
+  /**
+   * The {placeholders} the session's own fields use that have no value: no Environment Variable and not built in. The
+   * fields opening a session fills (launch.rs), each with its own: such a session doesn't open until they're defined.
+   */
+  const missingVariables = $derived({
+    host: missingIn(draft.host),
+    username: missingIn(draft.username),
+    extraArgs: missingIn(draft.extraArgs),
+    jumpHost: missingIn(draft.jumpHost),
+  });
+
+  /** The {placeholders} in a text with no value, each once as written; none before the variables have been read */
+  function missingIn(text: string): string[] {
+    if (variableNames === null) return [];
+    const found: string[] = [];
+    for (const [, key] of text.matchAll(/\{([\p{L}\p{N}_]+)\}/gu)) {
+      if (!variableNames.has(key.toLowerCase()) && !found.some((f) => f.toLowerCase() === key.toLowerCase())) found.push(key);
+    }
+    return found;
+  }
+
+  /** The variables' names and the built-in ones, again after Environment Variables is saved */
+  async function loadVariableNames(): Promise<void> {
+    const [rows, builtIn] = await Promise.all([
+      invoke<{ key: string }[]>("variables_list"),
+      invoke<[string, string][]>("variables_built_in"),
+    ]);
+    variableNames = new Set([...rows.map((r) => r.key.trim().toLowerCase()), ...builtIn.map(([n]) => n.toLowerCase())]);
+  }
 
   /** The profiles' names, again whenever Settings > Profiles changes them */
   async function loadProfileNames(): Promise<void> {
@@ -147,7 +180,12 @@
 
   onMount(() => {
     window.addEventListener(PROFILES_CHANGED, loadProfileNames);
-    return () => window.removeEventListener(PROFILES_CHANGED, loadProfileNames);
+    window.addEventListener(VARIABLES_CHANGED, loadVariableNames);
+    void loadVariableNames();
+    return () => {
+      window.removeEventListener(PROFILES_CHANGED, loadProfileNames);
+      window.removeEventListener(VARIABLES_CHANGED, loadVariableNames);
+    };
   });
 
   onMount(async () => {
@@ -279,7 +317,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && !overriding && !settingsShown() && onCancel()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && !choosingIcon && !overriding && !settingsShown() && !variablesShown() && onCancel()} />
 
 <div class="backdrop" role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
@@ -359,12 +397,14 @@
           <label>{@render caption("TCP port:", "port")}<input class="port" type="number" min="0" max="65535" bind:value={draft.port}
             placeholder={inherited("port")} disabled={locked("port")} title={locked("port") ? lockTip : ""} /></label>
         </div>
+        {@render missing(missingVariables.host)}
       {/if}
 
       <div class="row">
         <label class="grow">{@render caption("Login username:", "username")}<input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"}
           disabled={locked("username")} title={locked("username") ? lockTip : ""} /></label>
       </div>
+      {@render missing(missingVariables.username)}
       <div class="row">
         <label class="grow">{@render ownCaption()}<input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
           placeholder={hasOwnPassword && password !== "" ? `Stored in ${SECRET_STORE}` : /(^|\s)-pw\s/.test(draft.extraArgs) ? "none: the -pw on the Connection tab" : "none: the profile's"}
@@ -383,11 +423,13 @@
         <label class="grow">{@render caption("Extra arguments:", "extraArgs")}<input bind:value={draft.extraArgs} placeholder="PuTTY-style, e.g. -pw secret -L 8080:localhost:80"
           disabled={locked("extra_args")} title={locked("extra_args") ? lockTip : ""} /></label>
       </div>
+      {@render missing(missingVariables.extraArgs)}
       {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}
       <div class="row">
         <label class="grow">{@render caption("Jump host:", "jumpHost")}<input bind:value={draft.jumpHost} disabled={locked("jump_host")} title={locked("jump_host") ? lockTip : ""}
           placeholder={inherited("jumpHost") || "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22"} /></label>
       </div>
+      {@render missing(missingVariables.jumpHost)}
 
     </div>
 
@@ -472,6 +514,17 @@
 <!-- a field's caption, with a dot while it differs from the session as opened -->
 {#snippet ownCaption()}
   <span class="caption">Password:{@render dot(password !== undefined)}</span>
+{/snippet}
+
+<!-- a field's {placeholders} with no value, in red, and the way to define them: the session won't open until they are -->
+{#snippet missing(names: string[])}
+  {#if names.length}
+    <p class="note missing">
+      {#each names as name, i}{i > 0 ? ", " : ""}<span class="unset">{"{"}{name}{"}"}</span>{/each}
+      {names.length === 1 ? "has" : "have"} no value yet, so the session won't open.
+      <button class="define" onclick={() => context.editVariables()}>Environment Variables…</button>
+    </p>
+  {/if}
 {/snippet}
 
 {#snippet caption(text: string, field: keyof SessionFields)}
@@ -705,6 +758,15 @@
 
   .note.warn {
     color: #e5534b;
+  }
+
+  .note .unset {
+    color: #e5534b;
+    font-weight: 600;
+  }
+
+  .note .define {
+    margin-left: 0.4em;
   }
 
   :disabled {

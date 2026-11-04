@@ -1,13 +1,16 @@
 // Edit Session's tabs, which mark the one with a change unsaved; and its Password: the session's own, kept in the Keychain under its id, and Move -pw here, which takes the
-// stored -pw there and saves the session without it. Also its note on a profile the user doesn't have (not while the
-// profiles are still being read). The Rust side is stood in for by mockIPC: what's saved, what's stored as the
-// session's password, and the profiles, which can be held back to show the window before they arrive.
-import { beforeEach, describe, expect, it } from "vitest";
+// stored -pw there and saves the session without it. Also its notes: a profile the user doesn't have (not while the
+// profiles are still being read), and {placeholders} with no value, with the way to Environment Variables. The Rust
+// side is stood in for by mockIPC: what's saved, what's stored as the session's password, the profiles and the
+// variables, which can be held back to show the window before they arrive.
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import EditSession from "./EditSession.svelte";
 import type { SessionFields } from "./api";
+import { VARIABLES_CHANGED } from "../settings/EnvironmentVariables.svelte";
+import { context } from "../commands/sending.svelte";
 
 const SESSION: SessionFields = {
   name: "sw1", folder: "Lab", protocol: "SSH", host: "192.168.0.50", port: 22, username: "admin", profile: "", color: "",
@@ -20,12 +23,15 @@ let stored: { id: string; password: string }[];
 let moved: string[];
 /** What profiles_list waits for before it answers; none: at once */
 let profilesWait: Promise<void> | null;
+/** The Environment Variables' names, as variables_list gives them */
+let variables: string[];
 
 beforeEach(() => {
   saved = null;
   stored = [];
   moved = [];
   profilesWait = null;
+  variables = [];
   mockIPC(async (cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (cmd === "session_password_has") return false;
@@ -45,6 +51,8 @@ beforeEach(() => {
       if (profilesWait) await profilesWait;
       return [{ name: "Default Settings" }, { name: "root" }];
     }
+    if (cmd === "variables_list") return variables.map((key) => ({ key, value: "", secret: false }));
+    if (cmd === "variables_built_in") return [["host_address", ""], ["host_port", ""], ["key_file", ""]];
     // the SSH tab's lists: what this computer's ssh has
     if (cmd === "ssh_algorithms_available") {
       return [{ key: "kex", label: "Key exchange", supported: ["curve25519-sha256", "diffie-hellman-group14-sha1"], defaults: ["curve25519-sha256"] }];
@@ -185,5 +193,24 @@ describe("Edit Session's notes", () => {
   it("says a profile the user doesn't have is missing, once the profiles are read", async () => {
     open({ ...SESSION, profile: "nosuch" });
     expect(await screen.findByText(/Profile "nosuch" isn't set up/)).toBeTruthy();
+  });
+
+  it("marks a placeholder in the username with no value, opens Environment Variables, and lets go once it's defined", async () => {
+    const user = userEvent.setup();
+    const editVariables = vi.fn();
+    context.editVariables = editVariables;
+    variables = ["domain"];
+    // {host_address} is built in, {domain} defined: only {user} has no value
+    open({ ...SESSION, username: "{user}@{domain}@{host_address}" });
+    const unset = await screen.findByText("{user}");
+    expect(unset.className).toContain("unset");
+    expect(screen.queryByText("{domain}")).toBeNull();
+    expect(screen.getByText(/has no value yet, so the session won't open/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Environment Variables…" }));
+    expect(editVariables).toHaveBeenCalledOnce();
+    // defined and saved there
+    variables = ["domain", "user"];
+    window.dispatchEvent(new Event(VARIABLES_CHANGED));
+    await expect.poll(() => screen.queryByText("{user}")).toBeNull();
   });
 });

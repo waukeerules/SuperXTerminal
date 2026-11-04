@@ -6,7 +6,20 @@
 
   Beside the user's own: where each is used, the placeholders used that have no value yet, the ones SuperXTerminal
   fills itself (which no variable can be named), and a preview of a template filled in, secrets as dots.
+  It opens in front of Edit Session, whose Environment Variables… button opens it for a placeholder with no value.
 -->
+<script lang="ts" module>
+  let shown = $state(false);
+
+  /** Said when the variables are saved, so a dialog showing what's missing (Edit Session) looks again */
+  export const VARIABLES_CHANGED = "superxterminal:variables-changed";
+
+  /** Whether Environment Variables is open, so a dialog it was opened over (Edit Session) leaves Escape to it */
+  export function variablesShown(): boolean {
+    return shown;
+  }
+</script>
+
 <script lang="ts">
   import { isMac } from "../shortcuts";
   import { SECRET_STORE } from "../platform";
@@ -37,13 +50,20 @@
   let template = $state("");
   let message = $state("");
 
-  onMount(async () => {
+  onMount(() => {
+    shown = true;
+    void load();
+    return () => (shown = false);
+  });
+
+  /** The variables, where each is used, and the built-in names */
+  async function load(): Promise<void> {
     [rows, usage, builtIn] = await Promise.all([
       invoke<Variable[]>("variables_list"),
       invoke<Record<string, string[]>>("variables_usage"),
       invoke<[string, string][]>("variables_built_in"),
     ]);
-  });
+  }
 
   /** The built-in placeholders' names, lower-cased: a variable can't take one */
   const builtInNames = $derived(new Set(builtIn.map(([n]) => n.toLowerCase())));
@@ -93,6 +113,7 @@
     if (blocked) return;
     try {
       rows = await invoke<Variable[]>("variables_save", { variables: rows });
+      window.dispatchEvent(new Event(VARIABLES_CHANGED));
       onClose();
     } catch (e) {
       message = String(e);
@@ -187,7 +208,8 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    z-index: 110;
+    /* over Edit Session (120), as Settings is (125); below the dialogs Settings opens (140) */
+    z-index: 126;
     background: rgb(0 0 0 / 0.35);
     display: flex;
     align-items: center;

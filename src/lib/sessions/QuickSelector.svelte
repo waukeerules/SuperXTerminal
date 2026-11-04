@@ -25,9 +25,13 @@
   interface Props {
     /** "Open Session" or "Switch Session", shown with the count */
     title: string;
+    /** What can be chosen: sessions, or open tabs */
     items: QuickItem[];
+    /** The user's custom icons, for the list */
     customs: ReadonlyMap<string, CustomIcon>;
+    /** Enter or a click: the item chosen */
     onChoose: (item: QuickItem) => void;
+    /** Escape, or a click outside the window */
     onClose: () => void;
   }
 
@@ -39,6 +43,7 @@
 
   /** The words typed, as SuperXPuTTY's FormatFilterString: split at spaces, dots and *, with * [ , dropped */
   const words = $derived(text.split(/[ .*]/).map((w) => w.replace(/[*[,]/g, "").toLowerCase()).filter(Boolean));
+  /** The items with every word in their name or detail, in detail order, as SuperXPuTTY's list */
   const shown = $derived(
     items
       .filter((item) => words.every((w) => item.name.toLowerCase().includes(w) || item.detail.toLowerCase().includes(w)))
@@ -51,6 +56,7 @@
     index = Math.max(0, untrack(() => shown).findIndex((item) => !item.current));
   });
 
+  /** Move the highlight up or down, keeping it in view */
   async function move(by: number): Promise<void> {
     if (shown.length === 0) return;
     index = Math.max(0, Math.min(shown.length - 1, index + by));
@@ -58,10 +64,12 @@
     list?.querySelector(".row.current")?.scrollIntoView({ block: "nearest" });
   }
 
+  /** Choose an item, if there is one */
   function choose(item: QuickItem | undefined): void {
     if (item) onChoose(item);
   }
 
+  /** The search box's keys: Escape closes, Enter chooses, the arrows and Page keys move the highlight, Ctrl+Backspace goes back to the last "/" */
   function key(event: KeyboardEvent): void {
     if (event.key === "Escape") onClose();
     else if (event.key === "Enter") choose(shown[index]);

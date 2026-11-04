@@ -1,3 +1,7 @@
+/**
+ * Tests for a serial session's line settings as PuTTY's -sercfg reads and writes them: pure functions, so nothing
+ * is stood in.
+ */
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LINE, applySercfg, lineOf, toSercfg, withLine } from "./serial";
 

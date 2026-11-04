@@ -174,6 +174,7 @@ export interface SearchOptions {
   fields?: SearchField[];
 }
 
+/** A search ignoring case, without regex: the default */
 const PLAIN: SearchOptions = { caseSensitive: false, regex: false };
 
 /** An icon as a search finds it: its key's name ("switch", without the colour) and its title ("Switch") */

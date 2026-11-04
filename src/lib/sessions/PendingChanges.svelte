@@ -15,6 +15,7 @@
   let busy = $state("");
   let error = $state("");
 
+  /** The changes ticked */
   const picked = $derived(changes.filter((c) => chosen.has(c.id)));
 
   onMount(() => void fill());
@@ -29,6 +30,7 @@
     }
   }
 
+  /** Tick or untick a change */
   function toggle(id: string): void {
     const next = new Set(chosen);
     if (next.has(id)) next.delete(id);
@@ -63,6 +65,7 @@
     await fill();
   }
 
+  /** What a change's Status column says: waiting, waiting to overwrite, or why the table refused it */
   function status(c: PendingChange): string {
     return c.error === null ? (c.force ? "Waiting (will overwrite)" : "Waiting to be sent") : `Not saved: ${c.error}`;
   }

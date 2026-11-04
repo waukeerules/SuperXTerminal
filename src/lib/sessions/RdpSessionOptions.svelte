@@ -10,17 +10,22 @@
   import { formatRdpOptions, parseRdpOptions, userDefaults, type RdpOptions } from "./rdpOptions";
 
   interface Props {
+    /** The session's name, for the title */
     name: string;
     /** The session's RdpOptions text */
     text: string;
+    /** OK: the options as RdpOptions text ("" for all Default) */
     onDone: (text: string) => void;
+    /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
   }
 
   let { name, text, onDone, onCancel }: Props = $props();
 
   let options = $state<RdpOptions>(untrack(() => parseRdpOptions(text)));
+  /** What Default stands for: the user's defaults from Settings > Remote Desktop */
   const defaults = $derived(userDefaults(settings.rdpDefaults));
+  /** The window's title, naming the session */
   const title = $derived(`RDP options: ${name || "new session"}`);
 </script>
 

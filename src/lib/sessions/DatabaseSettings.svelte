@@ -11,6 +11,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { open, save } from "@tauri-apps/plugin-dialog";
 
+  /** The Database sessions settings, as db.rs's DbSettings (SuperXPuTTY's Database options) */
   interface DbSettings {
     enabled: boolean;
     host: string;
@@ -27,7 +28,9 @@
   }
 
   interface Props {
+    /** Saved: the settings are written, and the sessions read again */
     onSaved: () => void;
+    /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
   }
 
@@ -64,6 +67,7 @@
     }
   }
 
+  /** What Test connection found: the server, whether the table's there, and how many sessions it holds */
   interface TestResult {
     serverVersion: string;
     tableExists: boolean;

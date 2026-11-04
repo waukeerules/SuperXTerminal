@@ -12,16 +12,19 @@
   import { applyImport, fileNameOf, importSource, planImport, type ImportKind, type ImportSummary, type Store } from "./api";
 
   interface Props {
+    /** What's imported from: a CSV file, another app's sessions or files, or the system's lists */
     kind: ImportKind;
     /** Whether Saved sessions are in use, so they can be chosen */
     savedAvailable: boolean;
     /** Imported: the status bar's text */
     onDone: (status: string) => void;
+    /** Cancel, or Escape: nothing is imported */
     onCancel: () => void;
   }
 
   let { kind, savedAvailable, onDone, onCancel }: Props = $props();
 
+  /** Each kind's window title */
   const TITLES: Record<ImportKind, string> = {
     csv: "Import sessions from a CSV file",
     mobaxterm: "Import sessions from MobaXterm",
@@ -33,6 +36,7 @@
     putty: "Import PuTTY's saved sessions",
     rdpRegistry: "Import Remote Desktop's recent computers",
   };
+  /** The folder each kind's sessions go in, as SuperXPuTTY names them; a CSV file names its own */
   const FOLDERS: Record<ImportKind, string> = {
     csv: "", mobaxterm: "ImportedFromMobaXterm", rdp: "ImportedFromRDP", ssh: "ImportedFromSshConfig", superputty: "Imported",
     puttycm: "ImportedFromPuTTYCM", puttyFolder: "ImportedFromPortablePuTTY", putty: "ImportedFromPuTTY", rdpRegistry: "ImportedFromRDPRecent",
@@ -47,7 +51,9 @@
   let error = $state("");
   let busy = $state(false);
 
+  /** A path's file name, for the window's text */
   const fileName = fileNameOf;
+  /** What's being imported, in the window's text: the file, or how many */
   const what = $derived(
     kind === "putty" ? "PuTTY's saved sessions" : kind === "rdpRegistry" ? "Remote Desktop's recent computers"
       : paths.length === 1 ? fileName(paths[0]) : `${paths.length} files`,
@@ -101,6 +107,7 @@
     }
   }
 
+  /** Import the sessions, then say how many were added and changed */
   async function run(): Promise<void> {
     busy = true;
     try {
@@ -113,6 +120,7 @@
     }
   }
 
+  /** Whether there's something to import and nothing's wrong, so Import can be pressed */
   const ready = $derived(!!summary && !summary.error && summary.adds + summary.updates > 0);
 </script>
 

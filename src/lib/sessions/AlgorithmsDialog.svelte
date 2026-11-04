@@ -10,12 +10,15 @@
   import { invoke } from "@tauri-apps/api/core";
 
   interface Props {
+    /** The window's title, naming the session or profile */
     title: string;
     /** The lists as stored ("" for none) */
     text: string;
     /** What a kind left alone uses, e.g. "its profile's list" or "ssh's own list" */
     otherwise: string;
+    /** OK: the lists as they're now stored ("" for none) */
     onDone: (text: string) => void;
+    /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
   }
 
@@ -77,6 +80,7 @@
     }
   });
 
+  /** The kind whose list is shown (Key exchange, Host key, Cipher, MAC) */
   const current = $derived(kinds.find((k) => k.key === shown));
 
   /**

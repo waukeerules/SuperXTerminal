@@ -230,6 +230,7 @@ export interface Shortcuts {
   RecentExpanded: boolean;
 }
 
+/** The user's Favorites and Recent */
 export function loadShortcuts(): Promise<Shortcuts> {
   return invoke<Shortcuts>("shortcuts_get");
 }

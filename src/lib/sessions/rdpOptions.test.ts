@@ -1,3 +1,7 @@
+/**
+ * Tests for reading and writing a session's RDP options text (SuperXPuTTY's RdpOptions): pure functions, so
+ * nothing is stood in.
+ */
 import { describe, expect, it } from "vitest";
 import { formatRdpOptions, parseRdpOptions } from "./rdpOptions";
 

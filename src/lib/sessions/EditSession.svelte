@@ -24,15 +24,21 @@
   import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
   interface Props {
+    /** Which sessions it's in: Saved, Private or Database */
     store: Store;
     /** The session's id; null for a new session */
     id: string | null;
+    /** Its fields as stored, which the window starts from */
     fields: SessionFields;
     /** Its folder's settings, nearest first, for showing what it inherits */
     folders: FolderSetting[];
+    /** The size of the icon shown, as the Sessions tree's */
     iconSize: number;
+    /** The user's custom icons, for the icon and Choose Icon */
     customs: ReadonlyMap<string, CustomIcon>;
+    /** Saved: the session's id, which a rename changes */
     onSaved: (id: string) => void;
+    /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
     /** Open Settings > Profiles, on the named profile (the session's) when there is one */
     onOpenProfiles: (name?: string) => void;
@@ -48,6 +54,7 @@
 
   /** Whether a column is locked in the table (Database sessions only) */
   const locked = (column: string) => lockedFields.split(",").map((f) => f.trim()).includes(column);
+  /** The tooltip on a field locked in the database */
   const lockTip = "Locked in the database";
 
   // the window edits a copy, saved only on Save
@@ -70,6 +77,7 @@
   const meaning = (f: SessionFields, field: keyof SessionFields) => (field === "port" ? Number(f[field]) || 0 : String(f[field] ?? ""));
   /** Whether a field differs from the session as it was opened (or as a new one started) */
   const changed = (field: keyof SessionFields) => meaning(draft, field) !== meaning(fields, field);
+  /** The fields that count as changes, for the count by Save */
   const FIELDS: (keyof SessionFields)[] = [
     "name", "color", "icon", "protocol", "profile", "host", "port", "username", "highlightRules", "extraArgs", "rdpOptions",
     "sshAlgorithms", "jumpHost", "script", "note", "localPath", "remotePath",
@@ -77,15 +85,22 @@
   /** How many fields have changed; a stored session saves only with changes, a new one (or a copy) any time */
   const changes = $derived(FIELDS.filter(changed).length);
 
+  /** Whether it's a serial session, which shows the line's settings in place of host and port */
   const serial = $derived(draft.protocol.toUpperCase() === "SERIAL");
+  /** The serial line's settings, as the extra arguments' -sercfg has them */
   const line = $derived(lineOf(draft.extraArgs));
 
+  /** Where the session is kept, in the title */
   const where = $derived(
     store === "saved" ? "Saved sessions (Sessions.xml)" : store === "private" ? "Private sessions (PrivateSessions.xml)" : "Database sessions",
   );
+  /** A Database session with a -pw password typed in, which everyone reading the table can see */
   const sharedPassword = $derived(store === "database" && /(^|\s)-pw\s/.test(draft.extraArgs) && !/-pw\s+\{\w+\}/.test(draft.extraArgs));
+  /** The window's title: New session or Edit session, and where it's kept */
   const title = $derived(id === null ? `New session — ${where}` : `Edit session: ${fields.name} — ${where}`);
+  /** Why this computer can't open the protocol (e.g. no RDP client), or "" */
   const reason = $derived(unavailableReason(draft.protocol));
+  /** A profile named that the user doesn't have, which opens with Default Settings */
   const profileMissing = $derived(
     !!draft.profile.trim() && draft.profile.trim().toLowerCase() !== DEFAULT_PROFILE.toLowerCase() &&
       !profileNames.some((n) => n.toLowerCase() === draft.profile.trim().toLowerCase()),
@@ -115,6 +130,7 @@
     return "";
   }
 
+  /** Fill the serial port list with the ports this computer has now */
   async function listSerialDevices(): Promise<void> {
     serialDevices = await invoke<string[]>("serial_devices_list");
   }

@@ -13,11 +13,17 @@
   import { settings } from "../settings/store.svelte";
 
   interface Props {
+    /** The folder shown, with its folders and sessions */
     node: FolderNode;
+    /** How deep it is (0 for a root), for its indent */
     depth: number;
+    /** The keys of the folders open */
     expanded: Set<string>;
+    /** The environment colours, for each session's tab colour and the folders' colours */
     colors: EnvironmentColors;
+    /** The size of the icons, as Settings > General has it */
     iconSize: number;
+    /** The user's custom icons */
     customs: ReadonlyMap<string, CustomIcon>;
     /** Sessions with an open tab, as "store:id" */
     openSessions: ReadonlySet<string>;
@@ -27,7 +33,9 @@
     multi: ReadonlySet<string>;
     /** The user's local overrides, by session id, for the tooltip */
     overrides: Record<string, Override>;
+    /** A folder's arrow or double-click: open or close it */
     onToggle: (key: string) => void;
+    /** A session's double-click, or Enter: open it */
     onOpen: (session: SessionView) => void;
     /** A click (with its modifiers) or a right-click (no event) on a session or folder */
     onSelect: (key: string, event?: MouseEvent) => void;
@@ -47,7 +55,9 @@
 
   /** Each level's line runs down the middle of its arrow's column */
   const STEP = 18;
+  /** Where a level's tree line runs, from the row's left edge */
   const lineX = (level: number) => level * STEP + 9;
+  /** Whether tree lines are drawn (Settings > General) */
   const lines = $derived(settings.treeLines);
   /** This folder's line carries on for its children's rows when it isn't the last in its own folder */
   const childGuides = $derived([...guides, !last]);
@@ -60,6 +70,7 @@
     return multi.size > 1 && multi.has(key) ? { kind: "many", store: node.store, keys: [...multi] } : single;
   }
 
+  /** Start dragging a session or folder, for moving it to another folder or copying it to another store */
   function drag(event: DragEvent, dragged: Dragged): void {
     event.dataTransfer?.setData(DRAG_TYPE, JSON.stringify(dragged));
     if (event.dataTransfer) event.dataTransfer.effectAllowed = "copyMove";
@@ -85,7 +96,9 @@
   /** The roots' icons, as SuperXPuTTY's tree: a folder for Saved sessions, a padlock for Private ones, a database */
   const ROOT_ICONS: Record<string, string> = { saved: "folder", private: "lock", database: "database", favorites: "star", recent: "clock" };
 
+  /** Whether this folder is open */
   const open = $derived(expanded.has(node.key));
+  /** Whether it's a root (Saved sessions, Private sessions...) */
   const isRoot = $derived(node.path === "");
   /** The folder's key when it's selected; Favorites and Recent have their own */
   const folderKey = $derived(node.group ? `${node.group}:folder:` : `${node.store}:folder:${node.path}`);

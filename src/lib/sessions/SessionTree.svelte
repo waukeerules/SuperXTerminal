@@ -1623,7 +1623,9 @@
     border-color: #e5534b;
   }
 
-  .search input {
+  /* the search text only: Search in…'s checkboxes are inside .search too, and stretched they each sat in the middle of
+     what their label left */
+  .search .field input {
     flex: 1;
     min-width: 0;
     background: transparent;

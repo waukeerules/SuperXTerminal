@@ -15,7 +15,8 @@ import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
 import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
-import { listProfiles, profileColours, PROFILES_CHANGED } from "../settings/profiles";
+import { DEFAULT_PROFILE, listProfiles, profileColours, PROFILES_CHANGED, saveProfile } from "../settings/profiles";
+import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailure";
 import { checkPaste } from "./pasting.svelte";
 import { THIS_COMPUTER } from "../platform";
 import { isMac } from "../shortcuts";
@@ -129,6 +130,9 @@ const keyFetches = new Map<string, Promise<boolean>>();
 /** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
 const STABLE_AFTER_MS = 60_000;
 
+/** How much of the latest output is kept to read how a session ended */
+const TAIL_LIMIT = 4096;
+
 /** How much finished output is kept for WAITFOR; half is dropped when it's exceeded, as TerminalControl */
 const RECENT_OUTPUT_LIMIT = 256 * 1024;
 
@@ -142,6 +146,13 @@ export class PageHost implements ScriptTarget {
   private currentLine = "";
   /** Where WAITFOR starts looking, counted like committedTotal */
   private mark = 0;
+  /**
+   * The end of the output since the session last started, as it came (before the page shows it): how it ended is
+   * read from it, in step with the end itself, where the page's finished lines can still be on their way
+   */
+  private tail = "";
+  /** A change to the profile that may make the next connection work, offered after a failure: F makes it */
+  private fix: { profile: string; change: "olderAlgorithms" | "offerKeys" } | null = null;
   /** The program ended: nothing more can be typed */
   private ended = false;
   /** What the connection is: "pty", or a stream's "telnet", "raw" or "serial" (pty_open's started event) */
@@ -275,9 +286,10 @@ export class PageHost implements ScriptTarget {
           this.typeLogin(String(message.data));
           break;
         }
-        // while the session is down, Enter reconnects (TerminalControl.OnInput)
+        // while the session is down, Enter reconnects (TerminalControl.OnInput); F makes the fix offered, then reconnects
         if (this.ended) {
-          if (String(message.data).includes("\r")) await this.reconnect();
+          if (this.fix && /^f$/i.test(String(message.data))) await this.makeFix();
+          else if (String(message.data).includes("\r")) await this.reconnect();
         } else if (this.ptyId !== null) {
           await invoke("pty_write", { id: this.ptyId, data: String(message.data) });
         }
@@ -425,12 +437,23 @@ export class PageHost implements ScriptTarget {
 
   /**
    * The session ended some other way than a logout: keep the tab and its output, and reconnect by itself when the
-   * settings say so, as TerminalControl.OnExited. A session that stayed up a minute starts its attempts again.
+   * settings say so, as TerminalControl.OnExited. A session that stayed up a minute starts its attempts again, and
+   * each attempt waits twice as long as the one before (up to two minutes), so a device's reload is ridden out.
+   * An ssh failure that reconnecting can't mend (a refused login, an unknown host, older algorithms) says what to do
+   * instead, and doesn't reconnect by itself: a wrong password tried again and again can lock the account.
    */
-  private dropped(): void {
+  private async dropped(): Promise<void> {
     if (Date.now() - this.startedAt > STABLE_AFTER_MS) this.reconnectAttempts = 0;
+    const failure = this.link === "pty" && !this.local ? sshFailure(this.tail) : ({ kind: "other" } as SshFailure);
+    this.fix = null;
+    const advice = await this.advice(failure);
+    if (advice) this.post({ type: "notice", text: advice, kind: retries(failure) ? "info" : "error" });
+    if (!retries(failure)) {
+      this.post({ type: "notice", text: this.fix ? "Press F to make that change and reconnect, or Enter to reconnect as it is." : "Press Enter to try again.", kind: "info" });
+      return;
+    }
     const max = Math.max(1, settings.autoReconnectAttempts);
-    const delay = Math.max(1, settings.autoReconnectDelaySeconds);
+    const delay = reconnectDelay(Math.max(1, settings.autoReconnectDelaySeconds), this.reconnectAttempts);
     if (settings.autoReconnect && this.reconnectAttempts < max) {
       this.post({
         type: "notice",
@@ -441,6 +464,71 @@ export class PageHost implements ScriptTarget {
     } else {
       this.post({ type: "notice", text: "Session ended. Press Enter to reconnect.", kind: "info" });
     }
+    this.onState();
+  }
+
+  /** What to tell the user about how the session ended, offering a fix where the profile has one; "" for nothing */
+  private async advice(failure: SshFailure): Promise<string> {
+    const name = this.profile ?? DEFAULT_PROFILE;
+    const inProfile = `in profile "${name}" (Settings > Profiles)`;
+    switch (failure.kind) {
+      case "login":
+        return `Login failed: the username, password or key was refused. Check them ${inProfile}. Not reconnecting by itself, so a wrong password can't lock the account.`;
+      case "unknownHost":
+        return `Can't find host "${failure.host}": check the session's host name, or the network, VPN or DNS.`;
+      case "tooManyAttempts": {
+        const profile = await this.profileNamed(name);
+        if (profile && profile.offerKeys !== false) this.fix = { profile: name, change: "offerKeys" };
+        return this.fix
+          ? `The device closed the connection after too many login attempts: ssh offered its keys before the password, and each one counts. Offer SSH keys can be turned off ${inProfile}.`
+          : `The device closed the connection after too many login attempts. Check the username and password ${inProfile}.`;
+      }
+      case "algorithms": {
+        const profile = await this.profileNamed(name);
+        const older = profile?.olderAlgorithms ?? (await this.profileNamed(DEFAULT_PROFILE))?.olderAlgorithms ?? false;
+        if (profile && !older) this.fix = { profile: name, change: "olderAlgorithms" };
+        return this.fix
+          ? `The device offers only older algorithms: no ${failure.what} in common (it offers ${failure.offer}). Allow older algorithms can be turned on ${inProfile}.`
+          : `No ${failure.what} in common with the device (it offers ${failure.offer}), even with older algorithms allowed: add it to the algorithm lists ${inProfile}.`;
+      }
+      case "refused":
+        return `Nothing answered on port ${failure.port}: the device may be restarting, or SSH is off or on another port.`;
+      case "unreachable":
+        return "No route to the device: check the network or VPN.";
+      default:
+        return "";
+    }
+  }
+
+  /** A profile by name, whatever its case; undefined when it isn't there (or the profiles can't be read) */
+  private async profileNamed(name: string) {
+    const profiles = await listProfiles().catch(() => []);
+    return profiles.find((p) => p.name.toLowerCase() === name.trim().toLowerCase());
+  }
+
+  /** Make the change offered (F) to the session's profile, and reconnect with it */
+  private async makeFix(): Promise<void> {
+    const fix = this.fix;
+    this.fix = null;
+    if (!fix) return;
+    const profile = await this.profileNamed(fix.profile);
+    if (!profile) {
+      this.post({ type: "notice", text: `Profile "${fix.profile}" isn't there any more. Press Enter to reconnect.`, kind: "error" });
+      return;
+    }
+    const changed = fix.change === "olderAlgorithms" ? { ...profile, olderAlgorithms: true } : { ...profile, offerKeys: false };
+    try {
+      await saveProfile(changed, profile.name);
+    } catch (e) {
+      this.post({ type: "notice", text: `Couldn't change the profile: ${e}. Press Enter to reconnect.`, kind: "error" });
+      return;
+    }
+    this.post({
+      type: "notice",
+      text: fix.change === "olderAlgorithms" ? `Allow older algorithms is on in profile "${profile.name}".` : `Offer SSH keys is off in profile "${profile.name}".`,
+      kind: "info",
+    });
+    await this.reconnect();
   }
 
   /** Whether an automatic reconnect is waiting (the tab menu offers Stop Reconnecting) */
@@ -555,6 +643,8 @@ export class PageHost implements ScriptTarget {
     const channel = new Channel<PtyEvent>();
     channel.onmessage = (event) => {
       if (event.type === "data") {
+        // ssh's messages are plain ASCII, so the bytes as characters are enough to read them
+        this.tail = (this.tail + atob(event.data)).slice(-TAIL_LIMIT);
         this.queue.push(event.data);
         this.flush();
       } else if (event.type === "started") {
@@ -582,7 +672,7 @@ export class PageHost implements ScriptTarget {
         }
         // a clean end (a logout) or a local shell closes the tab, as PuTTY's window would
         if (this.local || event.code === 0) this.onExit();
-        else this.dropped();
+        else void this.dropped();
         this.onState();
       }
     };
@@ -592,6 +682,8 @@ export class PageHost implements ScriptTarget {
   /** Start the tab's program at the page's size and pass its output on */
   private async open(): Promise<void> {
     if (this.ptyId !== null) return;
+    this.tail = "";
+    this.fix = null;
     const channel = this.outputChannel();
     if (this.adoptId !== null) {
       // the session another window gave up: it replays how it started and what it has shown, then carries on here

@@ -485,6 +485,9 @@ fn colours_choice<'a>(profile: &'a Profile, default: &'a Profile) -> &'a str {
 /// so a dead link ends the session in about 45 seconds
 pub const BUILT_IN_KEEPALIVE: u32 = 15;
 
+/// Seconds ssh waits for a host to answer before it gives up on connecting
+pub const CONNECT_TIMEOUT: u32 = 10;
+
 /// A profile's colour, else "Default Settings'", when it's "#rrggbb"; "" for none
 fn colour(profile: &str, default: &str) -> String {
     let good = |c: &str| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|d| d.is_ascii_hexdigit());
@@ -690,12 +693,19 @@ fn ssh(
     // ends the session within a minute rather than going unnoticed while the tab is idle; the built-in one stands
     // back for one set in the ssh options, the session's own arguments or an ~/.ssh/config Host, which it would beat
     let keepalive = if profile.keepalive != 0 { profile.keepalive } else { default.keepalive };
-    let set_elsewhere = !config_host.is_empty()
-        || first(&profile.ssh_options, &default.ssh_options).to_ascii_lowercase().contains("serveralive")
-        || extra.args.iter().any(|a| a.to_ascii_lowercase().contains("serveralive"));
-    let keepalive = if keepalive == 0 && !set_elsewhere { BUILT_IN_KEEPALIVE } else { keepalive };
+    let set_elsewhere = |option: &str| {
+        !config_host.is_empty()
+            || first(&profile.ssh_options, &default.ssh_options).to_ascii_lowercase().contains(option)
+            || extra.args.iter().any(|a| a.to_ascii_lowercase().contains(option))
+    };
+    let keepalive = if keepalive == 0 && !set_elsewhere("serveralive") { BUILT_IN_KEEPALIVE } else { keepalive };
     if keepalive != 0 {
         args.extend(["-o".into(), format!("ServerAliveInterval={keepalive}")]);
+    }
+    // a host that doesn't answer gives up in seconds, the same on every system (the OS's own wait is 20 to 75 s), so
+    // reconnect attempts come round quickly
+    if !set_elsewhere("connecttimeout") {
+        args.extend(["-o".into(), format!("ConnectTimeout={CONNECT_TIMEOUT}")]);
     }
     if password.is_some() {
         // try the password before any key: ssh would otherwise offer every key in ~/.ssh and the agent first, and
@@ -1143,14 +1153,14 @@ mod tests {
         sessions.folders.entry(Store::Saved).or_default().insert("lab".into(), folder);
         let (args, notices) = args_of(&sessions, &profiles(), &session(&[("PuttySession", "root")]));
         // the folder's port beats the profile's; the profile gives the username; Default Settings the keep-alive
-        assert_eq!(args, ["-tt", "-p", "2200", "-l", "root", "-o", "ServerAliveInterval=30", "10.0.0.1"]);
+        assert_eq!(args, ["-tt", "-p", "2200", "-l", "root", "-o", "ServerAliveInterval=30", "-o", "ConnectTimeout=10", "10.0.0.1"]);
         assert!(notices.is_empty());
     }
 
     #[test]
     fn a_missing_profile_falls_back_to_default_settings_and_says_so() {
         let (args, notices) = args_of(&Sessions::default(), &profiles(), &session(&[("PuttySession", "netops")]));
-        assert_eq!(args, ["-tt", "-o", "ServerAliveInterval=30", "10.0.0.1"]);
+        assert_eq!(args, ["-tt", "-o", "ServerAliveInterval=30", "-o", "ConnectTimeout=10", "10.0.0.1"]);
         assert!(notices[0].contains(&format!("\"netops\" isn't set up on {THIS_COMPUTER}")));
     }
 
@@ -1167,6 +1177,13 @@ mod tests {
         let config = Profile { ssh_config_host: "lab".into(), ..Profile::default() };
         let (args, _) = args_of(&Sessions::default(), &none(config), &session(&[]));
         assert_eq!(alive(&args), None);
+        // the connect timeout the same way
+        assert!(!args.iter().any(|a| a.starts_with("ConnectTimeout=")));
+        let (args, _) = args_of(&Sessions::default(), &none(Profile::default()), &session(&[]));
+        assert!(args.iter().any(|a| a == "ConnectTimeout=10"));
+        let own = Profile { ssh_options: "-o ConnectTimeout=30".into(), ..Profile::default() };
+        let (args, _) = args_of(&Sessions::default(), &none(own), &session(&[]));
+        assert_eq!(args.iter().filter(|a| a.starts_with("ConnectTimeout=")).collect::<Vec<_>>(), ["ConnectTimeout=30"]);
     }
 
     #[test]
@@ -1191,7 +1208,7 @@ mod tests {
         let (args, _) = args_of(&Sessions::default(), &profiles(), &session);
         assert_eq!(
             args,
-            ["-tt", "-p", "2222", "-l", "admin", "-o", "ServerAliveInterval=30", "-o",
+            ["-tt", "-p", "2222", "-l", "admin", "-o", "ServerAliveInterval=30", "-o", "ConnectTimeout=10", "-o",
              "PreferredAuthentications=keyboard-interactive,password,publickey", "192.168.0.50"]
         );
         let telnet = QuickConnect { host: "telnet://10.0.0.1".into(), ..quick };

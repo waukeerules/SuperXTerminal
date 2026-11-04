@@ -55,8 +55,13 @@ body,
   overflow: hidden;
 }
 
+/* html too: index.html starts it dark while this loads, and it takes the theme's colour from here on */
+html,
 body {
   background: var(--bg-window);
+}
+
+body {
   color: var(--text);
   font: 13px var(--font-ui);
   -webkit-user-select: none;

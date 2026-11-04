@@ -2227,6 +2227,13 @@ fn apply_window_theme(app: &AppHandle, theme: &str) {
     let _ = (app, theme);
 }
 
+/// A window's colour before its page has drawn: the page's own window colour (app.css's --bg-window), light only when
+/// Settings > General > Theme is Light. Following the system starts dark too, so a dark system never sees a white
+/// flash; a light one sees dark for a moment instead, as the page follows the system once it's loaded.
+fn loading_colour(theme: &str) -> tauri::window::Color {
+    if theme == "light" { tauri::window::Color(0xf5, 0xf5, 0xf5, 0xff) } else { tauri::window::Color(0x2d, 0x2d, 0x30, 0xff) }
+}
+
 /// Whether a window opens where it was last left: the main window only, as the one SuperXTerminal starts with; New
 /// Window's windows each start down and to the right of the one in front, as a Mac app cascades them
 fn remembers_place(label: &str) -> bool {
@@ -2254,10 +2261,12 @@ fn window(app: &tauri::AppHandle, label: &str, at: Option<(f64, f64)>) -> tauri:
     };
     #[cfg(target_os = "macos")]
     let builder = builder.with_webview_configuration(writing_tools_off());
+    let theme = app.try_state::<AppState>().map(|s| s.settings.lock().unwrap().theme.clone()).unwrap_or_default();
+    // the window's own colour while the page loads, which was white whatever the theme, a flash in a dark room
+    let builder = builder.background_color(loading_colour(&theme));
     // Windows: its menu bar, menus and title bar in the app's theme from the start
     #[cfg(windows)]
     let builder = {
-        let theme = app.try_state::<AppState>().map(|s| s.settings.lock().unwrap().theme.clone()).unwrap_or_default();
         apply_menu_theme(&theme);
         builder.theme(window_theme(&theme))
     };
@@ -2552,8 +2561,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{remembered_state, remembers_place};
+    use super::{loading_colour, remembered_state, remembers_place};
     use tauri_plugin_window_state::StateFlags;
+
+    #[test]
+    fn a_window_loads_dark_unless_the_theme_is_light() {
+        use tauri::window::Color;
+        assert_eq!(loading_colour("light"), Color(0xf5, 0xf5, 0xf5, 0xff));
+        assert_eq!(loading_colour("dark"), Color(0x2d, 0x2d, 0x30, 0xff));
+        assert_eq!(loading_colour("system"), Color(0x2d, 0x2d, 0x30, 0xff));
+    }
 
     #[test]
     fn only_the_main_window_opens_where_it_was_left() {

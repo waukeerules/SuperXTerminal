@@ -415,9 +415,44 @@ impl PasswordPrompt {
             let cut = (cut..self.tail.len()).find(|i| self.tail.is_char_boundary(*i)).unwrap_or(cut);
             self.tail.drain(..cut);
         }
-        let end = self.tail.trim_end().to_ascii_lowercase();
+        let end = without_escapes(&self.tail);
+        let end = end.trim_end().to_ascii_lowercase();
         (end.ends_with("password:") || end.ends_with("passcode:")).then(|| format!("{}\r", self.password))
     }
+}
+
+/// Output with the terminal's escape sequences taken out (CSI, OSC and the two-character ones), and an unfinished one
+/// at the end too: Windows' ConPTY draws the space after "Password:" as a cursor move (ESC[1C) once the screen has
+/// scrolled (ssh -v's debug lines), and the prompt then didn't end the output
+fn without_escapes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            // CSI: parameters and intermediates, up to a final byte from @ to ~
+            Some('[') => while let Some(c) = chars.next() {
+                if ('@'..='~').contains(&c) {
+                    break;
+                }
+            },
+            // OSC (a window title): up to BEL or ST (ESC \)
+            Some(']') => while let Some(c) = chars.next() {
+                if c == '\x07' || (c == '\x1b' && chars.next_if_eq(&'\\').is_some()) {
+                    break;
+                }
+            },
+            // a character set or keypad mode: one more character
+            Some('(' | ')') => {
+                chars.next();
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Type into a pseudo terminal: `data` is text as the page sends it ("input" messages), including control characters
@@ -598,6 +633,18 @@ mod tests {
         let mut prompt = PasswordPrompt::new("pw".into());
         assert_eq!(prompt.answer(b"(admin@192.168.0.50) Pass"), None);
         assert_eq!(prompt.answer(b"word: "), Some("pw\r".into()));
+    }
+
+    #[test]
+    fn answers_a_prompt_conpty_ends_with_a_cursor_move() {
+        // ssh -v's debug lines scroll the screen, and ConPTY then draws the prompt's trailing space as ESC[1C
+        let mut prompt = PasswordPrompt::new("pw".into());
+        assert_eq!(prompt.answer(b"debug1: Next authentication method: keyboard-interactive\r\n"), None);
+        assert_eq!(prompt.answer(b"(admin@192.168.0.50) Password:\x1b[1C"), Some("pw\r".into()));
+        // with the cursor shown, or a window title, after it; and a sequence split across reads
+        assert_eq!(PasswordPrompt::new("pw".into()).answer(b"Password:\x1b[?25h\x1b]0;ssh\x07"), Some("pw\r".into()));
+        let mut split = PasswordPrompt::new("pw".into());
+        assert_eq!(split.answer(b"Password:\x1b["), Some("pw\r".into()));
     }
 
     #[test]

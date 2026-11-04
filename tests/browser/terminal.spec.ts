@@ -25,8 +25,11 @@ async function panTo(page: Page, x: number) {
   await expect.poll(() => page.evaluate(() => document.querySelector("#terminal .xterm-screen")!.getAttribute("style") ?? "")).toContain("translateX");
 }
 
-/** A command longer than the terminal is wide, for Wrap Lines off */
-const LONG_COMMAND = "show running-config | include interface GigabitEthernet1/0/24 description uplink-to-core";
+/**
+ * A command longer than the tab is wide, for Wrap Lines off: wider than the 700-pixel page in either system's font
+ * (Windows' Consolas is 7 pixels a character, which a 96-character one fitted, so nothing panned)
+ */
+const LONG_COMMAND = "show running-config | include interface GigabitEthernet1/0/24 description uplink-to-core-switch-01 via port-channel 10";
 
 test.describe("Wrap Lines off", () => {
   test.beforeEach(async ({ page }) => openTerminal(page, { wrap: "false" }));

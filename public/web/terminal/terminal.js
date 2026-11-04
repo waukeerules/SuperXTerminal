@@ -14,7 +14,7 @@
  * Messages from TerminalControl: config, data, notice, paste, focus, action, cursorColor. To it: ready, size, input,
  * ack, log, copy, pasteRequest (every paste, so TerminalControl can ask first; with "text" for one not from the
  * clipboard), document, bell, tab, openInPutty, special (a Special Command, when config.specials offers it), openLink (a link Ctrl+clicked), pref, cleared (the screen was cleared
- * here, so the pseudo console's own copy of it is cleared too and a resize can't bring the text back).
+ * here; Windows' pseudo console keeps its own copy, whose redraw after a resize the page drops: dropConptyRedraw).
  *
  * xterm.js add-ons: web links (Ctrl+click opens) and WebGL drawing (Options > Terminal > Drawing; the DOM renderer
  * takes over without it).
@@ -411,9 +411,95 @@
         return bytes;
     }
 
+    // ---- Windows' pseudo console's redraw ----------------------------------------------------------------------------
+
+    /**
+     * Windows' pseudo console (ConPTY) keeps its own copy of the screen, and when the tab's new size reaches it (a
+     * theme or font change, a resized window) it sends that whole screen again: the cursor hidden (ESC[?25l), the rows
+     * from the top left (ESC[H), then the cursor shown again (ESC[?25h); for a quick run of resizes, once each, the
+     * first also naming a size on the way (ESC[8;rows;cols t). After a clear here its copy still holds what was cleared, so the redraw brought it
+     * back. ConPTY can't be told to forget it (ClearPseudoConsole is only in Windows Terminal's own conpty.dll, not in
+     * Windows), so that redraw is dropped instead: the page already has everything since the clear. Once a screenful
+     * of output has followed the clear, ConPTY's copy holds nothing older, and its redraws are drawn again.
+     */
+    var conpty = {
+        cleared: null,     // marker on the cursor's line at the last clear, while ConPTY's screen may still hold older text
+        resizedAt: 0,      // when the terminal last changed size (the new size goes to the session)
+        dropping: false,   // inside a redraw being dropped
+        dropTimer: null    // ends a drop whose ESC[?25h never came
+    };
+    /** How soon after a resize ConPTY's redraw comes: it goes through the app to ConPTY and back */
+    var REDRAW_WITHIN_MS = 2000;
+    /** How long a dropped redraw can take, so a lost ESC[?25h can't hide the session's output */
+    var REDRAW_TAKES_MS = 500;
+
+    /** A clear: ConPTY's screen still holds what was on it, until a screenful of output has followed */
+    function clearedForConpty() {
+        if (conpty.cleared) { conpty.cleared.dispose(); }
+        conpty.cleared = term.registerMarker(0);
+    }
+
+    /** Whether ConPTY's screen may hold text cleared here: on the usual screen, less than a screenful since a clear */
+    function conptyHoldsCleared() {
+        var marker = conpty.cleared;
+        var buffer = term.buffer.active;
+        if (!marker || marker.isDisposed || buffer.type !== 'normal') { return false; }
+        if (buffer.baseY + buffer.cursorY - marker.line < term.rows) { return true; }
+        marker.dispose();
+        conpty.cleared = null;
+        return false;
+    }
+
+    /** The bytes with ConPTY's redraw after a resize left out, if it would bring back text cleared here */
+    function dropConptyRedraw(bytes) {
+        if (!conpty.dropping && !conptyHoldsCleared()) { return bytes; }
+        // the escape sequences are ASCII: one character per byte keeps the positions
+        var text = String.fromCharCode.apply(null, bytes);
+        // the cursor hidden, then from the top left; only the first of a quick run of resizes' redraws names a size
+        // between them, and it's the size that redraw was for, not the terminal's now
+        var redraw = /\x1b\[\?25l(?:\x1b\[8;\d+;\d+t)?\x1b\[H/g;
+        var pieces = [];
+        var at = 0;
+        // a run of resizes sends a redraw for each, and they can come together
+        while (at < text.length) {
+            if (!conpty.dropping) {
+                redraw.lastIndex = at;
+                var found = redraw.exec(text);
+                if (!found || Date.now() - conpty.resizedAt > REDRAW_WITHIN_MS) { break; }
+                pieces.push(bytes.subarray(at, found.index));
+                at = found.index;
+                conpty.dropping = true;
+                window.clearTimeout(conpty.dropTimer);
+                conpty.dropTimer = window.setTimeout(function () {
+                    if (conpty.dropping) { conpty.dropping = false; term.write('\x1b[?25h'); }
+                }, REDRAW_TAKES_MS);
+            }
+            var end = text.indexOf('\x1b[?25h', at);
+            if (end < 0) { return joinBytes(pieces); }
+            // the cursor shown again is kept, as the redraw hid it
+            conpty.dropping = false;
+            window.clearTimeout(conpty.dropTimer);
+            at = end;
+            if (!conptyHoldsCleared()) { break; }
+            pieces.push(bytes.subarray(at, at + 6));
+            at += 6;
+        }
+        pieces.push(bytes.subarray(at));
+        return joinBytes(pieces);
+    }
+
+    /** Byte arrays one after another, as one */
+    function joinBytes(pieces) {
+        var length = pieces.reduce(function (sum, piece) { return sum + piece.length; }, 0);
+        var joined = new Uint8Array(length);
+        var at = 0;
+        pieces.forEach(function (piece) { joined.set(piece, at); at += piece.length; });
+        return joined;
+    }
+
     /** Write output and ask for the next chunk once it's drawn */
     function write(bytes) {
-        term.write(bytes, function () {
+        term.write(dropConptyRedraw(bytes), function () {
             post({ type: 'ack' });
             scheduleSettle();
         });
@@ -711,7 +797,7 @@
 
     /** Clear Scrollback: drop the lines above the screen, keep the screen */
     function clearScrollback() {
-        term.write('\x1b[3J', function () { skipLog(); highlight(true); });
+        term.write('\x1b[3J', function () { skipLog(); highlight(true); clearedForConpty(); });
     }
 
     /**
@@ -722,7 +808,7 @@
         var buffer = term.buffer.active;
         var x = buffer.cursorX;
         var line = readLines(logicalStart(buffer.baseY + buffer.cursorY), buffer.baseY + buffer.cursorY + 1).join('');
-        term.write('\x1b[2J\x1b[H\x1b[2K' + line + '\x1b[' + (x + 1) + 'G', function () { skipLog(); highlight(true); });
+        term.write('\x1b[2J\x1b[H\x1b[2K' + line + '\x1b[' + (x + 1) + 'G', function () { skipLog(); highlight(true); clearedForConpty(); });
         post({ type: 'cleared' });
     }
 
@@ -731,6 +817,7 @@
         term.clear();
         skipLog();
         highlight(true);
+        clearedForConpty();
         post({ type: 'cleared' });
     }
 
@@ -1395,6 +1482,7 @@
                 term.reset();
                 skipLog();
                 highlight(true);
+                clearedForConpty();
                 post({ type: 'cleared' });
                 break;
             case 'copyAll':
@@ -1488,7 +1576,10 @@
         // a full-screen program (alternate screen) gets the tab's own width, and the wide lines come back after it
         term.buffer.onBufferChange(function () { fit(); followCursor(); scheduleNumbers(); });
         term.onRender(scheduleNumbers);
-        term.onResize(function (size) { if (sized) { post({ type: 'size', cols: size.cols, rows: size.rows }); } });
+        term.onResize(function (size) {
+            conpty.resizedAt = Date.now();
+            if (sized) { post({ type: 'size', cols: size.cols, rows: size.rows }); }
+        });
         // the dropped lines are counted from the start, not from the gutter's first drawing
         watchTrims();
         term.onScroll(function () { watchTrims(); scheduleSettle(); scheduleNumbers(); });

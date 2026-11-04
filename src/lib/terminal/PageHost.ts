@@ -350,7 +350,8 @@ export class PageHost implements ScriptTarget {
         });
         break;
       case "cleared":
-        // Windows' pseudo console keeps its own copy of the screen; the Mac's doesn't, so there's nothing to clear
+        // Windows' pseudo console keeps its own copy of the screen, which it can't be told to forget; the page drops its
+        // redraw after a resize instead (dropConptyRedraw in terminal.js). The Mac's keeps none.
         break;
       case "sendKey":
         await this.sendKey(typeof message.key === "string" ? message.key : null);

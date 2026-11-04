@@ -344,3 +344,66 @@ test.describe("Shift+Insert and Ctrl+Shift+V", () => {
     });
   }
 });
+
+test.describe("Windows' pseudo console redrawing its screen after a resize (ConPTY)", () => {
+  /** A 60-line listing, then the prompt */
+  const LISTING = Array.from({ length: 60 }, (_, i) => `old ${i + 1}\r\n`).join("") + "$ ";
+  /**
+   * What ConPTY sends after the tab's new size reaches it, as seen from cmd on Windows 11: its whole screen again,
+   * from its own copy, between hiding and showing the cursor. Its copy still holds the listing, whatever the tab cleared.
+   * Only the first redraw of a quick run of resizes names a size (ESC[8;rows;cols t), and it's the size that redraw
+   * was for, not the one the terminal ends up; `named` is false for the ones after it.
+   */
+  const redraw = (cols: number, rows: number, named = true) =>
+    `\x1b[?25l${named ? `\x1b[8;${rows};${cols}t` : ""}\x1b[H` +
+    Array.from({ length: rows - 1 }, (_, i) => `old ${60 - rows + 2 + i}\x1b[K\r\n`).join("") +
+    `$ \x1b[K\x1b[${rows};3H\x1b[?25h`;
+  /** Every row the terminal holds, scrollback and screen */
+  const rows = (page: Page) => page.evaluate(() => {
+    const buffer = (window as any).terminalDev.term.buffer.active;
+    return Array.from({ length: buffer.length as number }, (_, i) => (buffer.getLine(i).translateToString(true) as string).trimEnd());
+  });
+  /** The terminal's size, as "colsxrows" */
+  const size = (page: Page) => page.evaluate(() => `${(window as any).terminalDev.term.cols}x${(window as any).terminalDev.term.rows}`);
+
+  /** Open the page with a theme that has its own font size, and the listing on screen */
+  async function listed(page: Page) {
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    const themes = [{ name: "PuTTY", colors: {} }, { name: "Big", colors: {}, font: { size: 22 } }];
+    await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", prefs: { theme: "PuTTY" }, themes }), themes);
+    await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+    await feed(page, LISTING);
+    await expect.poll(async () => (await rows(page)).some((r) => r === "old 1")).toBe(true);
+  }
+
+  /**
+   * Change to the big theme, which refits the terminal, then have ConPTY redraw as it did for two quick resizes: once
+   * naming a size on the way, then again at the new size without naming it
+   */
+  async function themeChanged(page: Page) {
+    const before = await size(page);
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs", prefs: { theme: "Big" } }));
+    await expect.poll(() => size(page)).not.toBe(before);
+    const [cols, rowCount] = (await size(page)).split("x").map(Number);
+    await feed(page, redraw(cols + 10, rowCount + 5) + redraw(cols, rowCount, false));
+  }
+
+  test("Clear Screen and Scrollback stays cleared when a theme change resizes the terminal", async ({ page }) => {
+    await listed(page);
+    await page.locator("#terminal").click({ button: "right" });
+    await page.locator("#menu").getByText("Clear Screen and Scrollback", { exact: true }).click();
+    await expect.poll(async () => (await rows(page)).filter(Boolean)).toEqual(["$"]);
+    await themeChanged(page);
+    // what's typed and printed after it still shows, on the prompt's line
+    await feed(page, "ls\r\nfile\r\n$ ");
+    await expect.poll(async () => (await rows(page)).filter(Boolean)).toEqual(["$ ls", "file", "$"]);
+  });
+
+  test("without a clear, the redraw is drawn as ConPTY sent it", async ({ page }) => {
+    await listed(page);
+    await themeChanged(page);
+    const [, rowCount] = (await size(page)).split("x").map(Number);
+    await expect.poll(async () => (await rows(page)).slice(-rowCount, -rowCount + 1)).toEqual([`old ${60 - rowCount + 2}`]);
+  });
+});

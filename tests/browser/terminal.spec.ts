@@ -241,6 +241,20 @@ test.describe("Line Numbers", () => {
     await expect.poll(async () => ((await numbers(page)) ?? []).filter(Boolean).slice(-2)).toEqual(["200", "201"]);
     expect(rows).toBeGreaterThan(2);
   });
+
+  test("count the lines a full scrollback dropped before they were turned on", async ({ page }) => {
+    // the dropped lines were only counted from the gutter's first drawing, so output that filled the scrollback
+    // before it (a burst as the tab opened, or Line Numbers turned on later) started the numbers again near 1
+    await openTerminal(page, { scrollback: "20" });
+    await feed(page, lines(200));
+    // all written (and the oldest dropped) before the numbers are turned on
+    await expect.poll(() => page.evaluate(() => {
+      const buffer = (window as any).terminalDev.term.buffer.active;
+      return buffer.getLine(buffer.baseY + buffer.cursorY - 1)?.translateToString(true);
+    })).toBe("line 200");
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs", prefs: { lineNumbers: "true", scrollback: "20" } }));
+    await expect.poll(async () => ((await numbers(page)) ?? []).filter(Boolean).slice(-2)).toEqual(["200", "201"]);
+  });
 });
 
 test("Line Numbers with Wrap Lines off: the gutter stays put while the view pans", async ({ page }) => {

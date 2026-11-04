@@ -220,8 +220,14 @@
     var NUMBER_STEP = 512;
     /** numberCounts[k]: lines (not wrapped rows) above row k * NUMBER_STEP; kept only above the screen, where rows stay put */
     var numberCounts = [0];
-    /** Lines dropped off the top of the scrollback since the numbers started, so a line keeps its number */
+    /**
+     * Lines dropped off the top of the scrollback since it began (or was cleared), so a line keeps its number. Counted
+     * whether or not Line Numbers is on, and from before the gutter is first drawn: output that fills the scrollback
+     * before then would otherwise leave the numbers starting again near 1
+     */
     var droppedLines = 0;
+    /** The scrollback's rows (xterm.js's list) whose dropped lines are being counted */
+    var trimmedRows = null;
     /** The buffer's rows the numbers were counted on, and its width: either changing counts again */
     var numberedRows = null;
     var numberedCols = 0;
@@ -278,22 +284,30 @@
         return core && core._bufferService && core._bufferService.buffers ? core._bufferService.buffers.normal.lines : null;
     }
 
+    /**
+     * Count the lines a full scrollback drops (each new line drops the oldest), so the numbers don't shift. Called as
+     * the terminal opens and at every scroll, so a new list (after a reset) is watched from its first line on, long
+     * before it's full and drops any
+     */
+    function watchTrims() {
+        var rows = normalRows();
+        if (!rows || rows === trimmedRows) { return; }
+        trimmedRows = rows;
+        droppedLines = 0;
+        if (rows.onTrim) {
+            rows.onTrim(function (amount) {
+                if (rows !== trimmedRows) { return; }
+                droppedLines += amount;
+                numberCounts = [0];
+            });
+        }
+    }
+
     /** Start counting again: the rows were reflowed (a new width), replaced (a reset) or cleared */
     function recountNumbers() {
         numberCounts = [0];
-        var rows = normalRows();
-        if (rows !== numberedRows) {
-            numberedRows = rows;
-            droppedLines = 0;
-            // full scrollback: each new line drops the oldest; count those so the numbers don't shift
-            if (rows && rows.onTrim) {
-                rows.onTrim(function (amount) {
-                    if (rows !== numberedRows) { return; }
-                    droppedLines += amount;
-                    numberCounts = [0];
-                });
-            }
-        }
+        numberedRows = normalRows();
+        watchTrims();
         numberedCols = term.cols;
     }
 
@@ -350,7 +364,7 @@
         if (!dimensions || !dimensions.css.cell.height) { return; }
         var rows = normalRows();
         // fewer rows than before: the scrollback was cleared (Clear Scrollback, the clear command), so start at 1 again
-        if (rows && rows.length < numberedLength) { numberedRows = null; }
+        if (rows && rows.length < numberedLength) { numberedRows = null; droppedLines = 0; }
         if (rows !== numberedRows || term.cols !== numberedCols) {
             recountNumbers();
         }
@@ -1475,7 +1489,9 @@
         term.buffer.onBufferChange(function () { fit(); followCursor(); scheduleNumbers(); });
         term.onRender(scheduleNumbers);
         term.onResize(function (size) { if (sized) { post({ type: 'size', cols: size.cols, rows: size.rows }); } });
-        term.onScroll(function () { scheduleSettle(); scheduleNumbers(); });
+        // the dropped lines are counted from the start, not from the gutter's first drawing
+        watchTrims();
+        term.onScroll(function () { watchTrims(); scheduleSettle(); scheduleNumbers(); });
         term.onBell(ring);
         // links in the output open with Ctrl+click, as in Windows Terminal, so selecting text never opens a browser
         if (window.WebLinksAddon) {

@@ -69,6 +69,13 @@
     settingsProfile = name;
     settingsTab = "Profiles";
   }
+
+  /** Open Settings on a tab (Tools > General Settings…, ...), even if Settings is already open on another */
+  async function openSettings(tab: string): Promise<void> {
+    settingsTab = null;
+    await tick();
+    settingsTab = tab;
+  }
   /** This build's version, for the status bar (tauri.conf.json's) */
   let version = $state("");
   void getVersion().then((v) => (version = v), () => {});
@@ -104,6 +111,7 @@
   /** Run a menu bar item's command by its id, from the menu bar or (on Windows) its key */
   function menuAction(id: string): void {
     if (id === "settings") settingsTab = "General";
+    else if (id.startsWith("settings:")) void openSettings(id.slice("settings:".length));
     else if (id === "newLocalShell") newShell();
     else if (id === "newWindow") void invoke("window_new", { open: null });
     else if (id === "environmentVariables") variablesOpen = true;

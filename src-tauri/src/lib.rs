@@ -1909,6 +1909,12 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>, ov
             &plain("environmentVariables", "Environment Variables…")?,
             &plain("environmentColours", "Environment Colours…")?,
             &PredefinedMenuItem::separator(app)?,
+            // Settings' other tabs, as the app menu's Settings… opens them: "settings:" and the tab's name
+            &plain("settings:General", "General Settings…")?,
+            &plain("settings:Terminal", "Terminal Settings…")?,
+            &plain("settings:Remote Desktop", "Remote Desktop Settings…")?,
+            &plain("settings:Shortcuts", "Shortcut Settings…")?,
+            &PredefinedMenuItem::separator(app)?,
             &CheckMenuItem::with_id(app, "toggleLocalOverrides", "Use Local Overrides", true, overrides_on, None::<&str>)?,
         ],
     )?;

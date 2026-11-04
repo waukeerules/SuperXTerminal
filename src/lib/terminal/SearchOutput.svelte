@@ -7,13 +7,17 @@
   import { invoke } from "@tauri-apps/api/core";
 
   interface Props {
+    /** The tab's title, for the window's title */
     title: string;
+    /** The tab's session log; null before it has one */
     logPath: string | null;
+    /** The window's close button, or Escape */
     onClose: () => void;
   }
 
   let { title, logPath, onClose }: Props = $props();
 
+  /** The most matching lines shown */
   const LIMIT = 5000;
 
   let query = $state("");
@@ -37,6 +41,7 @@
       .split("\n");
   }
 
+  /** Find the search in the log's lines, as plain text or a regex, up to LIMIT of them */
   async function find(): Promise<void> {
     if (!logPath) {
       summary = "This tab has no log yet.";
@@ -73,6 +78,7 @@
     queueMicrotask(() => list?.scrollTo({ top: list.scrollHeight }));
   }
 
+  /** Copy a matching line (a double-click) */
   async function copy(result: { line: number; text: string }): Promise<void> {
     await navigator.clipboard.writeText(result.text);
     summary = `Copied line ${result.line} to the clipboard.`;

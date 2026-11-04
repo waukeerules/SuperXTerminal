@@ -8,12 +8,19 @@ import { PageHost } from "./PageHost";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "../settings/profiles";
 import { settings } from "../settings/store.svelte";
 
+/** The tab's channel, once pty_open has been asked for it */
 let channel: Channel<unknown> | null;
+/** How many times pty_open was asked: a reconnect asks again */
 let opened: number;
+/** The profiles the tab saved (its profile change) */
 let saved: Profile[];
+/** The profiles stored, as profiles_list gives them */
 let profiles: Profile[];
+/** The iframe standing in for the tab's page */
 let frame: HTMLIFrameElement;
+/** What the host sent the page */
 let posted: { type: string; text?: string }[];
+/** The host under test, let go of after each test */
 let host: PageHost | null;
 
 beforeEach(() => {
@@ -69,6 +76,7 @@ async function sshEnds(output: string): Promise<void> {
   send({ type: "exit", code: 255 });
 }
 
+/** The notices the host gave the page, in order */
 const notices = () => posted.filter((m) => m.type === "notice").map((m) => m.text ?? "");
 
 describe("a session's tab when ssh ends", () => {

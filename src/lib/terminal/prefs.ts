@@ -55,6 +55,7 @@ export function pref(name: string): string {
   return allPrefs()[name] ?? "";
 }
 
+/** Who to tell when a preference changes */
 const listeners = new Set<(prefs: Record<string, string>) => void>();
 
 /** Be told every preference whenever one changes; returns how to stop */

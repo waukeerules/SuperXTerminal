@@ -11,10 +11,13 @@
   import type { PageHost } from "./PageHost";
 
   interface Props {
+    /** The tab's title, for the window's title */
     title: string;
+    /** The tab's host, which changes the line */
     host: PageHost;
     /** The tab's session, when it was opened from one */
     session: { store: Store; id: string } | null;
+    /** Cancel, Escape, or after Apply */
     onClose: () => void;
   }
 
@@ -36,6 +39,7 @@
     }
   });
 
+  /** Change the open line's settings, and save them to the session too when asked */
   async function apply(): Promise<void> {
     error = "";
     try {

@@ -13,6 +13,7 @@ import { askLogin, askOne } from "../scripting/asking.svelte";
 import { settings } from "../settings/store.svelte";
 import { isMac } from "../shortcuts";
 
+/** What the core says about the session: connecting, where the pointer is and how it looks, or that it ended */
 type Event =
   | { type: "connecting"; host: string }
   | { type: "pointer"; kind: "default" | "hidden" | "position"; x: number; y: number }
@@ -67,6 +68,7 @@ export interface RdpTarget {
   id: string;
 }
 
+/** A Remote Desktop tab's host: connects the session, draws the desktop and passes on the keyboard, mouse and clipboard */
 export class RdpHost {
   readonly element: HTMLDivElement;
   private readonly canvas: HTMLCanvasElement;
@@ -223,11 +225,13 @@ export class RdpHost {
     this.canvas.style.cursor = `url(${shape.toDataURL()}) ${hx} ${hy}, default`;
   }
 
+  /** Show a message over the desktop (connecting, ended, reconnecting) */
   private show(text: string): void {
     this.overlay.textContent = text;
     this.overlay.style.display = "flex";
   }
 
+  /** The session ended: say why, and reconnect after a while when it dropped (Settings > General's reconnect settings) */
   private end(text: string, clean: boolean): void {
     this.ended = true;
     this.id = null;
@@ -267,6 +271,7 @@ export class RdpHost {
     return { x: Math.max(0, Math.min(this.canvas.width - 1, x)), y: Math.max(0, Math.min(this.canvas.height - 1, y)) };
   }
 
+  /** Pass the canvas's mouse, wheel and keyboard on to the remote desktop */
   private bindInput(): void {
     const c = this.canvas;
     const buttons = ["left", "middle", "right"];
@@ -462,10 +467,12 @@ export class RdpHost {
     return this.id !== null && !this.ended;
   }
 
+  /** Whether the session has ended */
   get isEnded(): boolean {
     return this.ended;
   }
 
+  /** Whether a reconnect is waiting, for the tab's Stop Reconnecting */
   get isReconnecting(): boolean {
     return this.reconnectTimer !== undefined;
   }
@@ -497,12 +504,15 @@ export class RdpHost {
   /** WAITFOR has no output to look at in a Remote Desktop: it waits out its time, as in SuperXPuTTY */
   markOutput(_atLineStart: boolean): void {}
 
+  /** A Remote Desktop has no output for WAITFOR to read */
   outputSinceMark(): string {
     return "";
   }
 
+  /** A Remote Desktop has no output for WAITFOR to read, so nothing to move past */
   advanceMark(_characters: number): void {}
 
+  /** SENDBREAK is a serial line's; a Remote Desktop has none */
   async sendBreak(): Promise<void> {
     throw new Error("A Remote Desktop tab can't send a Break");
   }
@@ -527,6 +537,7 @@ export class RdpHost {
     if (this.ended) this.show("Not reconnecting. Click or press Enter to connect again.");
   }
 
+  /** Stop the reconnect waiting and its countdown, and start counting tries again */
   private cancelReconnect(): void {
     clearTimeout(this.reconnectTimer);
     clearInterval(this.countdown);

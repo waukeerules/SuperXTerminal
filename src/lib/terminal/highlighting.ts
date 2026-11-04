@@ -6,6 +6,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 
+/** A rule set or theme, as its JSON file has it */
 type Item = Record<string, unknown>;
 
 /** Rule sets and themes, ready for the page's "config" */
@@ -14,6 +15,7 @@ export interface HighlightingFiles {
   themes: Item[];
 }
 
+/** The read under way or done, shared by every tab; null until the first tab asks */
 let loading: Promise<HighlightingFiles> | null = null;
 
 /** The rule sets and themes, read on first use */

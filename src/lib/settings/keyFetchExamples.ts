@@ -20,10 +20,10 @@ export function keyFetchExamples(mac: boolean): KeyFetchExample[] {
   return [
     {
       name: "CyberArk (MFA caching)",
-      command: `sftp "{ad_username}@{domain}#{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`,
+      command: `sftp "{ad_username}@{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`,
       lifetime: 240,
       keyFile: "~/.ssh/cyberark_key",
-      note: "The key from CyberArk's key target; sign in at the link it shows, then paste the PIN. Set {ad_username}, {domain}, {cyberark_region} and {cyberark_gateway} (e.g. example.ssh.cyberark.cloud).",
+      note: "The key from CyberArk's key target; sign in at the link it shows, then paste the PIN. Set {ad_username}, {cyberark_region} and {cyberark_gateway} (e.g. example.ssh.cyberark.cloud).",
     },
     {
       name: mac ? "A shell function of your own" : "A PowerShell function of your own",

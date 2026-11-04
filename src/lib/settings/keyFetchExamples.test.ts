@@ -15,6 +15,14 @@ describe("Fetch command examples", () => {
     });
   }
 
+  it("fetches CyberArk's key as its key target names it: the AD username, the region, then key@ the gateway", () => {
+    for (const mac of [true, false]) {
+      const cyberArk = keyFetchExamples(mac).find((e) => e.name.startsWith("CyberArk"))!;
+      expect(cyberArk.command).toBe(`sftp "{ad_username}@{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`);
+      expect(cyberArk.note).not.toContain("{domain}");
+    }
+  });
+
   it("gives Windows PowerShell's commands where they differ", () => {
     const test = keyFetchExamples(false).find((e) => e.name.startsWith("Test"))!;
     expect(test.command).toContain("Remove-Item");

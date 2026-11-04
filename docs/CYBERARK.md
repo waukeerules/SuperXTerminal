@@ -160,7 +160,7 @@ Settings > Profiles > Login, under Key file:
 | Lifetime | How long a key is good for, in minutes (240 here: CyberArk's 4 hours); 0 fetches only when there's none. |
 
 **Examples…** beside the Fetch command fills it from a list for the system it's on (`keyFetchExamples.ts`): CyberArk
-(`sftp "{ad_username}@{domain}#{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`, 4 hours), a shell or
+(`sftp "{ad_username}@{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`, 4 hours), a shell or
 PowerShell function of your own, Teleport (`tsh login … --out`), Smallstep (`step ssh certificate`), and a test that
 makes a throwaway key every minute. Picking one also sets the Lifetime, and the Key file when there's none, and says
 what to set (its Environment Variables), for editing from there.

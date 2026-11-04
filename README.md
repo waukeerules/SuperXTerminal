@@ -83,21 +83,6 @@ Installers are on the [Releases page](https://github.com/waukeerules/SuperXTermi
 silicon Macs, and an MSI or setup `.exe` for Windows. The Mac build isn't notarised yet, so on first open right-click
 the app and choose Open; Windows SmartScreen warns about the unsigned installer the first time it runs.
 
-## Status
-
-M0 to M5 are done: the sessions tree and Database sessions, SSH, Telnet and serial, scripting and commands, terminal
-extras, RDP in a tab (IronRDP), file transfer (SFTP, and SCP for network devices) and the rest. M6 (distribution)
-is partly done: signed local release builds for the Mac and Windows, the installer window, the app icon and the
-third-party notices. Developer ID signing, notarisation and auto update are deferred until it's decided who installs
-it and where releases live (docs/PLAN.md §6, question 8).
-
-- **[docs/PLAN.md](docs/PLAN.md):** the plan. It covers the options and the chosen stack (Tauri 2 and Svelte 5, with xterm.js and Monaco), licensing, the feature matrix, data compatibility, the UI mapping, milestones and open questions.
-- **[docs/ROADMAP.md](docs/ROADMAP.md):** progress, one line per feature, ticked ✅ as each is delivered.
-
-The Mac came first; Windows runs and has release builds, with some features still Mac-only
-([BUILD-Windows.md](docs/BUILD-Windows.md)). Builds and releases are made locally and pushed to GitHub; nothing builds
-on GitHub automatically.
-
 ## Building
 
 - **[docs/BUILD-macOS.md](docs/BUILD-macOS.md):** what you need, the signing certificate, running it while developing,
@@ -106,6 +91,9 @@ on GitHub automatically.
   still Mac-only, and its MSI and setup `.exe`.
 - **[docs/RELEASE.md](docs/RELEASE.md):** making a release: the version, building on both systems into `releases/`,
   and publishing the installers on GitHub.
+- **[docs/PLAN.md](docs/PLAN.md):** the plan: the chosen stack (Tauri 2 and Svelte 5, with xterm.js and Monaco),
+  licensing, the feature matrix, data compatibility and open questions.
+- **[docs/ROADMAP.md](docs/ROADMAP.md):** one line per feature, ticked as each is delivered.
 
 The short version, on a Mac with Rust and Node:
 

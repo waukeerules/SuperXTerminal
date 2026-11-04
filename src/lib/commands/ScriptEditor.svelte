@@ -13,8 +13,9 @@
   import { resolveSnippet } from "../scripting/asking.svelte";
   import { lineFeedsAsEnter } from "../scripting/spsl";
 
-  let { onClose }: { onClose: () => void } = $props();
+  let { onClose }: { /** Close, or after Send */ onClose: () => void } = $props();
 
+  /** A saved script: its name, and "spsl" or "lines" */
   type Entry = { name: string; kind: string };
 
   let text = $state("");
@@ -28,21 +29,25 @@
 
   void refresh();
 
+  /** Read the saved scripts' list again */
   async function refresh(): Promise<void> {
     saved = await invoke<Entry[]>("scripts_list");
   }
 
+  /** Put text in the script at the cursor, in place of what's selected */
   function insert(more: string): void {
     const start = box.selectionStart ?? text.length;
     text = text.slice(0, start) + more + text.slice(box.selectionEnd ?? start);
     queueMicrotask(() => box.focus());
   }
 
+  /** Insert a saved script's text at the cursor */
   async function insertSaved(entry: Entry | null): Promise<void> {
     if (!entry) return;
     insert(await invoke<string>("script_load", { name: entry.name, kind: entry.kind }));
   }
 
+  /** Delete the saved script chosen, after asking */
   async function remove(): Promise<void> {
     if (!chosen) return;
     if (!(await ask(`Delete the saved script "${chosen.name}"?`, { title: "Saved scripts", kind: "warning", okLabel: "Delete" }))) return;
@@ -50,6 +55,7 @@
     chosen = null;
   }
 
+  /** Save the script under a name, in the scripts folder */
   async function saveAs(name: string): Promise<void> {
     naming = false;
     try {
@@ -60,6 +66,7 @@
     }
   }
 
+  /** Open a script file into the editor */
   async function openFile(): Promise<void> {
     const path = await open({ filters: [{ name: "Scripts", extensions: ["spsl", "txt"] }, { name: "All files", extensions: ["*"] }] });
     if (typeof path !== "string") return;
@@ -68,6 +75,7 @@
     if (path.toLowerCase().endsWith(".spsl") || text.startsWith("#!/bin/spsl")) kind = "spsl";
   }
 
+  /** Save the script to a file of the user's choosing */
   async function saveFile(): Promise<void> {
     const path = await save({ defaultPath: kind === "spsl" ? "script.spsl" : "lines.txt" });
     if (path) await invoke("text_file_write", { path, text });

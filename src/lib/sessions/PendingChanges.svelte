@@ -8,7 +8,12 @@
   import { ask } from "@tauri-apps/plugin-dialog";
   import { discardPending, pendingChanges, retryPending, type DbState, type PendingChange } from "./api";
 
-  let { onChanged, onClose }: { onChanged: (state: DbState) => void; onClose: () => void } = $props();
+  let { onChanged, onClose }: {
+    /** How Database sessions stand after changes were sent or dropped */
+    onChanged: (state: DbState) => void;
+    /** Close, or Escape */
+    onClose: () => void;
+  } = $props();
 
   let changes = $state<PendingChange[]>([]);
   let chosen = $state(new Set<string>());

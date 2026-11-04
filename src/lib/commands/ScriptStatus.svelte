@@ -16,11 +16,13 @@
     return () => clearInterval(timer);
   });
 
+  /** A run's line in the status bar: its name, tab, line, step and seconds so far */
   function describe(entry: (typeof running.runs)[number]): string {
     const { run } = entry;
     return `${run.name} (${entry.tab}): line ${run.line}/${run.lineCount} · ${run.step} · ${Math.round((now - entry.started) / 1000)}s`;
   }
 
+  /** Open the menu above the status bar: Stop for each script, and Stop all */
   function showMenu(event: MouseEvent): void {
     event.stopPropagation();
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();

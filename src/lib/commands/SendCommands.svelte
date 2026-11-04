@@ -14,7 +14,7 @@
   import { lineFeedsAsEnter } from "../scripting/spsl";
   import SelectTabs from "./SelectTabs.svelte";
 
-  let { onOpenEditor }: { onOpenEditor: () => void } = $props();
+  let { onOpenEditor }: { /** Open the Script Editor */ onOpenEditor: () => void } = $props();
 
   let text = $state("");
   let masked = $state(false);
@@ -26,6 +26,7 @@
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let box: HTMLInputElement;
 
+  /** The buttons' icon size: smaller than the tree's, as SuperXPuTTY's toolbars */
   const size = $derived(Math.round(settings.iconSize * 0.85));
 
   /** Send the box's text, then Enter, to the selected tabs */
@@ -67,6 +68,7 @@
     return ch ? { name: null, char: ch, ...mods } : null;
   }
 
+  /** The box's keys: Enter sends, Up and Down go through the history, and any other Ctrl+key goes straight to the selected tabs */
   function keydown(e: KeyboardEvent): void {
     if (e.key === "Enter" && !e.ctrlKey) {
       e.preventDefault();

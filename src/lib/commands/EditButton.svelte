@@ -14,9 +14,13 @@
   import type { BarButton } from "./bars";
 
   interface Props {
+    /** The button edited; null for a new one */
     button: BarButton | null;
+    /** The user's custom icons, for the icon and Choose Icon */
     customs: ReadonlyMap<string, CustomIcon>;
+    /** OK: the button as edited */
     onSave: (button: BarButton) => void;
+    /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
   }
 
@@ -35,14 +39,17 @@
   let textBox: HTMLTextAreaElement;
   let help: SpslHelp | undefined = $state();
 
+  /** Whether the command is an SPSL script, which shows the SPSL panel */
   const spsl = $derived(draft.action === "SpslScript");
 
+  /** Put text in the command at the cursor, in place of what's selected */
   function insert(text: string): void {
     const at = textBox.selectionStart ?? draft.text.length;
     draft.text = draft.text.slice(0, at) + text + draft.text.slice(textBox.selectionEnd ?? at);
     queueMicrotask(() => textBox.focus());
   }
 
+  /** Check the button has a label and a command, then give it back */
   async function ok(): Promise<void> {
     const label = draft.label.trim();
     if (!label) {

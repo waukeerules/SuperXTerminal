@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { buttonColour, type BarButton } from "./bars";
 
+/** A button sending `ls -la`, with an icon and a circle colour */
 const button = (icon: string, color = ""): BarButton => ({ label: "ls -la", tooltip: "", color, icon, action: "SendString", text: "ls -la\\n" });
 
 describe("buttonColour", () => {

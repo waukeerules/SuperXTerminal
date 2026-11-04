@@ -7,12 +7,14 @@
   import { context } from "./sending.svelte";
   import { saveSettings, settings } from "../settings/store.svelte";
 
-  let { onClose }: { onClose: () => void } = $props();
+  let { onClose }: { /** OK, Cancel or Escape */ onClose: () => void } = $props();
 
+  /** The open tabs that can take commands, as the window opened */
   const tabs = context.tabs?.commandTabs() ?? [];
   let ticked = $state(new Set(tabs.filter((t) => t.acceptCommands).map((t) => t.id)));
   let visibleOnly = $state(settings.sendToVisibleOnly);
 
+  /** Tick or untick a tab */
   function toggle(id: string): void {
     const next = new Set(ticked);
     if (next.has(id)) next.delete(id);
@@ -20,6 +22,7 @@
     ticked = next;
   }
 
+  /** OK: the ticked tabs take commands, and Send to visible tabs only is saved */
   async function ok(): Promise<void> {
     context.tabs?.setAccepting(ticked);
     if (visibleOnly !== settings.sendToVisibleOnly) await saveSettings({ sendToVisibleOnly: visibleOnly });

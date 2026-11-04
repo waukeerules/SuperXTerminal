@@ -9,7 +9,9 @@
 (function () {
     'use strict';
 
+    /** The tab's panel id, from the iframe's URL, which every message carries */
     var tab = new URLSearchParams(window.location.search).get('tab') || '';
+    /** The page's "message" listeners */
     var listeners = [];
 
     window.addEventListener('message', function (event) {
@@ -20,6 +22,7 @@
         listeners.forEach(function (listener) { listener({ data: envelope.message }); });
     });
 
+    /** Turn off the system's text helpers on a field */
     // keystrokes go to the session as typed: no capitalisation, autocorrect, spell checking or Writing Tools ("Write
     // with Siri", whose badge sat by the cursor) on xterm's hidden input or Monaco's. Set as each field is created:
     // WebKit decides what to offer as the field gains focus, before a focus handler could change it.

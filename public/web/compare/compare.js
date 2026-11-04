@@ -5,14 +5,21 @@
 (function () {
     'use strict';
 
+    /** The tab's panel id, from the URL, which every message carries */
     var tab = new URLSearchParams(location.search).get('tab') || '';
+    /** Monaco's diff editor, once it's loaded */
     var editor = null;
+    /** The left output's model (the original side) */
     var left = null;
+    /** The right output's model (the changed side) */
     var right = null;
+    /** Follow's timer, asking for the outputs every 2 seconds; null when Follow is off */
     var followTimer = null;
 
+    /** An element by its id */
     function $(id) { return document.getElementById(id); }
 
+    /** Ask the main window for both outputs again */
     function ask() {
         window.parent.postMessage({ channel: 'sxt-compare-page', tab: tab, type: 'refresh' }, '/');
     }
@@ -24,6 +31,7 @@
             .join('\n');
     }
 
+    /** Show the two outputs and their titles, changing only a side whose text changed (so the view stays where it is) */
     function show(message) {
         $('titles').textContent = message.left.title + '  ↔  ' + message.right.title;
         var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -41,11 +49,13 @@
         setTimeout(count, 300);
     }
 
+    /** Say in the status bar how many differences there are */
     function count() {
         var changes = editor.getLineChanges() || [];
         $('status').textContent = changes.length === 0 ? 'The same' : changes.length + ' difference' + (changes.length === 1 ? '' : 's');
     }
 
+    /** Make the diff editor, wire up the toolbar and the main window's messages, then ask for the outputs */
     function start() {
         editor = monaco.editor.createDiffEditor($('editor'), {
             readOnly: true,

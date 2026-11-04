@@ -83,6 +83,11 @@ class TabLabel implements ITabRenderer {
     };
     draw(parameters.title);
     parameters.api.onDidTitleChange((e) => draw(e.title));
+    // clicking a tab leaves the keyboard on the tab itself (dockview makes it focusable), so typing went nowhere:
+    // put it in the tab's terminal, as SuperXPuTTY does. A drag ends without a click, so moving a tab doesn't.
+    // Dockview switches tabs in the animation frame after the press, which a quick click can come before; a frame
+    // asked for now runs after dockview's, with the clicked tab active.
+    this.element.addEventListener("click", () => requestAnimationFrame(() => this.tabs.focusActive()));
     // the tab's own menu, as SuperXPuTTY's (App builds it)
     this.element.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -872,12 +877,15 @@ export class TabArea {
     const at = list.findIndex((t) => t.active);
     const next = list[(at + by + list.length) % list.length];
     this.activate(next.id);
-    this.focusActive();
   }
 
-  /** Switch to a tab */
+  /**
+   * Switch to a tab (the open tabs' ▾ list, the tab switcher, Next Tab), with the keyboard in it. After the list or
+   * menu that chose it has closed, which would otherwise take the keyboard back to where it was.
+   */
   activate(id: string): void {
     this.api.getPanel(id)?.api.setActive();
+    setTimeout(() => this.focusActive(), 0);
   }
 
   /** The open terminal tabs in the order they show, group by group */
@@ -959,7 +967,7 @@ export class TabArea {
     });
   }
 
-  /** Put the keyboard back in the active tab, after a button or Send Commands */
+  /** Put the keyboard in the active tab: after a tab is clicked or switched to, a button, or Send Commands */
   focusActive(): void {
     const panel = this.api.activePanel;
     const rdp = panel ? this.rdpHosts.get(panel.id) : undefined;

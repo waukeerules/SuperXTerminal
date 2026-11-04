@@ -91,9 +91,10 @@ function main() {
   console.log(`\nSuperXTerminal ${v}'s installers, in ${join("releases", v)}:\n  ${found.map((f) => basename(f)).join("\n  ")}`);
   if (mac) {
     const changed = spawnSync("git diff --quiet -- THIRD-PARTY-NOTICES.txt", { cwd: root, shell: true }).status !== 0;
-    if (changed) console.log("\nTHIRD-PARTY-NOTICES.txt changed (a dependency did): commit it with the release.");
+    // before publishing, which tags the commit and refuses while it's uncommitted
+    if (changed) console.log("\nTHIRD-PARTY-NOTICES.txt changed (a dependency did): commit and push it before npm run release:publish.");
   }
-  console.log("\nNext: npm run release:publish, to put them in the GitHub release (docs/RELEASE.md).");
+  console.log(`\nNext: npm run release:publish, to put them in the GitHub release. Release notes go in ${join("releases", v, "NOTES.md")} (docs/RELEASE.md).`);
 }
 
 main();

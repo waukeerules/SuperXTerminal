@@ -8,11 +8,12 @@
 
 ## Release, step by step
 
-Each command is on its own, to run one after the other. The only thing to change is the version in step 2; the rest
-is the same every time. [RELEASE.md](RELEASE.md) says what each one does.
+Each command is on its own, to run one after the other. The only things to change are the version in step 2 and the notes
+in step 5; the rest is the same every time. [RELEASE.md](RELEASE.md) says what each one does.
 
 Once per PC: the tools below ([What you'll need](#what-youll-need)), the packages (`npm ci`), and GitHub's CLI
-signed in (`winget install GitHub.cli`, then `gh auth login`).
+signed in (`winget install GitHub.cli`, then `gh auth login`). Keep the CLI up to date (`winget upgrade GitHub.cli`):
+older versions can't find a draft release by its tag, so step 6 on the second computer fails with "release not found".
 
 1. Get the latest code:
 
@@ -31,7 +32,7 @@ signed in (`winget install GitHub.cli`, then `gh auth login`).
    git push
    ```
 
-3. Check it:
+3. Check it: the type check, the unit and browser tests, the licences, the Rust tests and `cargo deny`:
 
    ```bash
    npm run release:checks
@@ -45,13 +46,25 @@ signed in (`winget install GitHub.cli`, then `gh auth login`).
    npm run release
    ```
 
-5. Put the installers in the GitHub release (a draft, which the first computer makes and the second adds to):
+5. Write the release notes, **on the first computer only**, in `releases/<version>/NOTES.md`: what's new, the
+   download table and the "Before you install" warnings. The last release's make a start, to change:
+
+   ```bash
+   gh release view --json body -q .body > releases/0.3.0/NOTES.md
+   ```
+
+   Without the file the draft gets GitHub's generated notes, which are only a changelog link here. Changing it later
+   and running step 6 again puts the new notes in.
+
+6. Put the installers in the GitHub release (a draft, which the first computer makes and the second adds to). The
+   first computer's tags the commit, so it stops if something isn't committed and pushed:
 
    ```bash
    npm run release:publish
    ```
 
-6. Once both computers' installers are in, make it public (from either one):
+7. Once both computers' installers are in, make it public (from either one). It stays a draft until the `.dmg`, the
+   MSI and the setup `.exe` are all there:
 
    ```bash
    npm run release:publish -- --final

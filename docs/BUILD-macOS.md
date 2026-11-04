@@ -7,8 +7,8 @@ The Windows build is in [BUILD-Windows.md](BUILD-Windows.md).
 
 ## Release, step by step
 
-Each command is on its own, to run one after the other. The only thing to change is the version in step 2; the rest
-is the same every time. [RELEASE.md](RELEASE.md) says what each one does.
+Each command is on its own, to run one after the other. The only things to change are the version in step 2 and the notes
+in step 5; the rest is the same every time. [RELEASE.md](RELEASE.md) says what each one does.
 
 Once per Mac: the signing certificate (section 2), the packages (`npm install`, section 3), and GitHub's CLI signed
 in (`brew install gh`, then `gh auth login`).
@@ -30,27 +30,39 @@ in (`brew install gh`, then `gh auth login`).
    git push
    ```
 
-3. Check it:
+3. Check it: the type check, the unit and browser tests, the licences, the Rust tests and `cargo deny`:
 
    ```bash
    npm run release:checks
    ```
 
 4. Build it. Quit any running SuperXTerminal first. It takes a few minutes, signs with the Keychain's certificate by
-   itself, and leaves the `.dmg` in `releases/<version>/`. If it says `THIRD-PARTY-NOTICES.txt` changed, commit that
-   too.
+   itself, and leaves the `.dmg` in `releases/<version>/`. If it says `THIRD-PARTY-NOTICES.txt` changed, commit and
+   push that before step 6.
 
    ```bash
    npm run release
    ```
 
-5. Put the installers in the GitHub release (a draft, which the first computer makes and the second adds to):
+5. Write the release notes, **on the first computer only**, in `releases/<version>/NOTES.md`: what's new, the
+   download table and the "Before you install" warnings. The last release's make a start, to change:
+
+   ```bash
+   gh release view --json body -q .body > releases/0.3.0/NOTES.md
+   ```
+
+   Without the file the draft gets GitHub's generated notes, which are only a changelog link here. Changing it later
+   and running step 6 again puts the new notes in.
+
+6. Put the installers in the GitHub release (a draft, which the first computer makes and the second adds to). The
+   first computer's tags the commit, so it stops if something isn't committed and pushed:
 
    ```bash
    npm run release:publish
    ```
 
-6. Once both computers' installers are in, make it public (from either one):
+7. Once both computers' installers are in, make it public (from either one). It stays a draft until the `.dmg`, the
+   MSI and the setup `.exe` are all there:
 
    ```bash
    npm run release:publish -- --final

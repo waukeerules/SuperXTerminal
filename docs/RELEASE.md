@@ -9,9 +9,9 @@ Four npm commands do it, the same on both computers:
 | Command | What it does |
 |---|---|
 | `npm run release:version -- 0.3.0` | Sets the version in all five places it's written, and commits just those files (`scripts/set-version.mjs`) |
-| `npm run release:checks` | The type check, the front-end tests, the licence check and the Rust tests |
+| `npm run release:checks` | The type check, the front-end and browser tests, the licence check, the Rust tests and `cargo deny` |
 | `npm run release` | Builds this computer's installers and copies them into `releases/<version>/` (`scripts/release.mjs`) |
-| `npm run release:publish` | Puts `releases/<version>/` into the version's GitHub release, a draft until `-- --final` (`scripts/release-publish.mjs`) |
+| `npm run release:publish` | Puts `releases/<version>/` into the version's GitHub release, with `NOTES.md` there as its notes; a draft until `-- --final` (`scripts/release-publish.mjs`) |
 
 The steps to click through are in each build guide:
 
@@ -32,16 +32,23 @@ The steps to click through are in each build guide:
    | Windows | `SuperXTerminal_<version>_x64-setup.exe` | not signed yet |
 
    Git ignores `releases/`, so it never syncs between the computers.
-3. **Publish.** The first computer's `npm run release:publish` tags the commit (`v<version>`, pushed) and makes the
-   GitHub release as a **draft**, with notes from the commits since the last release. The second computer's adds its
-   installers to that draft. `npm run release:publish -- --final` then makes it public: that's when the app's update
-   check (Settings → General → Updates) offers it, so do it once both computers' installers are in.
+3. **The notes.** On the first computer, write `releases/<version>/NOTES.md`: what's new, the download table, and the
+   "Before you install" warnings for Gatekeeper and SmartScreen. `gh release view --json body -q .body` prints the
+   last release's to start from. It's never uploaded as a file. Without it the draft gets GitHub's generated notes,
+   which are built from pull requests and so are little more than a changelog link here.
+4. **Publish.** The first computer's `npm run release:publish` tags the commit (`v<version>`, pushed) and makes the
+   GitHub release as a **draft**, with the notes. Before tagging it checks that nothing tracked is uncommitted and
+   the commit is `origin/main`, so the tag is on the code that was built and pushed. The second computer's adds its
+   installers to that draft, and each run puts `NOTES.md` in again when the folder has it.
+   `npm run release:publish -- --final` then makes it public: that's when the app's update check
+   (Settings → General → Updates) offers it, so it refuses until the Mac's `.dmg` and Windows' MSI and setup `.exe`
+   are all in.
 
    Copying one computer's installers into the other's `releases/<version>/` and publishing from there works too: it
    uploads whatever is in the folder.
 
 `release:publish` needs GitHub's CLI, signed in once per computer: `brew install gh` or `winget install GitHub.cli`,
-then `gh auth login`. Nothing it does runs a GitHub Actions workflow.
+then `gh auth login`. Keep it up to date: older versions can't find a draft by its tag. Nothing it does runs a GitHub Actions workflow.
 
 ## Doing it by hand
 
@@ -54,8 +61,9 @@ What the scripts do, for when one of them can't:
 - **Windows' notices:** the build writes Windows' `THIRD-PARTY-NOTICES.txt` over the repository's, which is the Mac's:
   put it back with `git checkout -- THIRD-PARTY-NOTICES.txt`.
 - **Publishing:** `git tag v0.3.0 && git push origin v0.3.0`, then
-  `gh release create v0.3.0 releases/0.3.0/* --title "SuperXTerminal 0.3.0" --generate-notes`, and from the other
-  computer `gh release upload v0.3.0 releases/0.3.0/*`.
+  `gh release create v0.3.0 releases/0.3.0/*.dmg --draft --title "SuperXTerminal 0.3.0" --notes-file releases/0.3.0/NOTES.md`,
+  from the other computer `gh release upload v0.3.0 releases/0.3.0/*.msi releases/0.3.0/*-setup.exe`, and once all
+  three are in, `gh release edit v0.3.0 --draft=false`.
 
 ## Signing
 

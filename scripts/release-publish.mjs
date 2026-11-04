@@ -1,8 +1,17 @@
 // Puts the installers in releases/<version>/ into the version's GitHub release: `npm run release:publish`. The first
-// computer to run it tags the commit (v<version>, pushed) and makes the release as a draft, with GitHub's notes from
-// the commits since the last tag; the other adds its installers to it (one already there is replaced).
-// `npm run release:publish -- --final` then makes the draft public, which is when the app's update check offers it, so
-// it's done once both computers' installers are in. Needs GitHub's CLI, signed in (gh auth login). docs/RELEASE.md.
+// computer to run it tags the commit (v<version>, pushed) and makes the release as a draft; the other adds its
+// installers to it (one already there is replaced). `npm run release:publish -- --final` then makes the draft public,
+// which is when the app's update check offers it, so it refuses until the Mac's .dmg and Windows' .msi and -setup.exe
+// are all in.
+//
+// The notes are releases/<version>/NOTES.md when it's there (what's new, the download table, how to get past
+// Gatekeeper and SmartScreen), put in whenever the script runs so they can be written or changed while it's a draft;
+// without it, GitHub's generated notes, which for commits straight to main are little more than a changelog link.
+//
+// Tagging checks first that what's tagged is what's on GitHub: no uncommitted changes to tracked files, and the commit
+// the same as origin/main. Whether the release exists is read from `gh release list`, which includes drafts, so an
+// older GitHub CLI that can't look a draft up by its tag stops with its own error rather than making a second release;
+// keep the CLI up to date (docs/BUILD-Windows.md). Needs that CLI, signed in (gh auth login). docs/RELEASE.md.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +19,9 @@ import { spawnSync } from "node:child_process";
 
 /** The repository's folder (fileURLToPath, not the URL's pathname: on Windows that's "/C:/...") */
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** The notes' file name in releases/<version>/; it's never uploaded as an installer */
+const NOTES = "NOTES.md";
 
 /**
  * Run a command in the repository, its output shown; stops the script if it fails
@@ -28,38 +40,82 @@ function succeeds(words) {
   return spawnSync(words[0], words.slice(1), { cwd: root, stdio: "ignore" }).status === 0;
 }
 
+/** A command's output, trimmed; "" when it fails */
+function output(words) {
+  const result = spawnSync(words[0], words.slice(1), { cwd: root, encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : "";
+}
+
+/** Stop with a message */
+function fail(message) {
+  console.error(message);
+  process.exit(1);
+}
+
+/** Whether the version's release exists, a draft or not: from the list, which has drafts in every version of gh */
+function releaseExists(tag) {
+  const list = output(["gh", "release", "list", "--limit", "100", "--json", "tagName"]);
+  return (list ? JSON.parse(list) : []).some((r) => r.tagName === tag);
+}
+
+/** The installers that must all be in before the release is public: the Mac's and Windows' two */
+function expected(version) {
+  return [`SuperXTerminal_${version}_aarch64.dmg`, `SuperXTerminal_${version}_x64_en-US.msi`, `SuperXTerminal_${version}_x64-setup.exe`];
+}
+
+/** Stop unless this checkout is what GitHub has: tracked files as committed, and the commit origin/main's */
+function checkPushed() {
+  const changed = output(["git", "status", "--porcelain", "--untracked-files=no"]);
+  if (changed) fail(`These files have changes that aren't committed, so the tag wouldn't match what was built:\n${changed}\nCommit and push them (or put them back), then run this again.`);
+  run(["git", "fetch", "--quiet", "origin", "main"]);
+  const head = output(["git", "rev-parse", "HEAD"]);
+  const main = output(["git", "rev-parse", "origin/main"]);
+  if (head !== main) fail("This commit isn't origin/main: git push (or git pull), then run this again, so the tag is on the code everyone has.");
+}
+
 function main() {
   const version = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8")).version;
   const tag = `v${version}`;
   const folder = join(root, "releases", version);
-  const files = existsSync(folder) ? readdirSync(folder).map((f) => join(folder, f)) : [];
+  const names = existsSync(folder) ? readdirSync(folder) : [];
+  const files = names.filter((f) => f !== NOTES && !f.startsWith(".")).map((f) => join(folder, f));
+  const notes = names.includes(NOTES) ? join(folder, NOTES) : null;
   const final = process.argv.includes("--final");
-  if (files.length === 0 && !final) {
-    console.error(`releases/${version}/ has no installers: run npm run release first.`);
-    process.exit(1);
-  }
+  if (files.length === 0 && !final) fail(`releases/${version}/ has no installers: run npm run release first.`);
   if (!succeeds(["gh", "auth", "status"])) {
-    console.error("GitHub's CLI isn't installed or signed in: install it (brew install gh, or winget install GitHub.cli), then gh auth login.");
-    process.exit(1);
+    fail("GitHub's CLI isn't installed or signed in: install it (brew install gh, or winget install GitHub.cli), then gh auth login.");
   }
 
-  if (succeeds(["gh", "release", "view", tag])) {
+  if (releaseExists(tag)) {
     if (files.length) {
       console.log(`Adding to the ${tag} release: ${files.map((f) => f.split(/[\\/]/).pop()).join(", ")}`);
       run(["gh", "release", "upload", tag, ...files, "--clobber"]);
     }
+    if (notes) run(["gh", "release", "edit", tag, "--notes-file", notes]);
   } else {
-    // the commit that was built, tagged here unless the other computer already has
-    if (!succeeds(["git", "rev-parse", "--verify", "--quiet", `refs/tags/${tag}`])) {
-      run(["git", "fetch", "--tags", "--quiet"]);
+    if (final) fail(`There's no ${tag} release yet: run npm run release:publish first.`);
+    const hasTag = () => succeeds(["git", "rev-parse", "--verify", "--quiet", `refs/tags/${tag}`]);
+    if (!hasTag()) run(["git", "fetch", "--tags", "--quiet"]);
+    if (hasTag()) {
+      // the other computer tagged it: it should be the commit built here
+      if (output(["git", "rev-list", "-n", "1", tag]) !== output(["git", "rev-parse", "HEAD"])) {
+        console.warn(`Note: ${tag} is on another commit than this one. The release is that commit's.`);
+      }
+    } else {
+      checkPushed();
+      run(["git", "tag", tag]);
     }
-    if (!succeeds(["git", "rev-parse", "--verify", "--quiet", `refs/tags/${tag}`])) run(["git", "tag", tag]);
     run(["git", "push", "origin", `refs/tags/${tag}`]);
     console.log(`Making the ${tag} release, as a draft, with: ${files.map((f) => f.split(/[\\/]/).pop()).join(", ")}`);
-    run(["gh", "release", "create", tag, ...files, "--draft", "--title", `SuperXTerminal ${version}`, "--generate-notes"]);
+    if (!notes) console.log(`(No releases/${version}/${NOTES}: GitHub's generated notes for now. Write it and run this again to put it in.)`);
+    run(["gh", "release", "create", tag, ...files, "--draft", "--title", `SuperXTerminal ${version}`,
+      ...(notes ? ["--notes-file", notes] : ["--generate-notes"])]);
   }
 
   if (final) {
+    const assets = output(["gh", "release", "view", tag, "--json", "assets", "--jq", ".assets[].name"]).split(/\r?\n/);
+    const missing = expected(version).filter((name) => !assets.includes(name));
+    if (missing.length) fail(`\n${tag} stays a draft: it hasn't got ${missing.join(", ")} yet. Run npm run release:publish on the computer that has them.`);
     run(["gh", "release", "edit", tag, "--draft=false"]);
     console.log(`\n${tag} is public: the app's update check offers it now.`);
   } else {

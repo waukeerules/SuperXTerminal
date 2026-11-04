@@ -25,6 +25,13 @@ unused-allowed-license = "allow"
 [advisories]
 # unmaintained crates deep in Tauri's tree are reported, not failed; vulnerabilities still fail
 unmaintained = "none"
+ignore = [
+  # The Marvin attack: timing that leaks an RSA private key while it decrypts, in the rsa crate, which has no fixed
+  # version. It comes in through IronRDP (picky, sspi, winscard). The Remote Desktop client only encrypts to the
+  # server's public key (NLA's CredSSP); it never decrypts or signs with a private RSA key of its own, as smart card
+  # logins, the one path that would, aren't used. Look again when rsa 0.10 is released or IronRDP moves on.
+  { id = "RUSTSEC-2023-0071", reason = "rsa has no fix; IronRDP's client uses only the server's public key" },
+]
 
 [bans]
 multiple-versions = "allow"

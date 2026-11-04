@@ -383,7 +383,7 @@
       <p class="note under">Used, at the Port above, by sessions with no host of their own, as a PuTTY saved session's
         Host Name; and by sessions whose username names their host as {"{host_address}"} (a CyberArk SSH gateway, which
         takes the target in the username). Otherwise a session's own host wins. See docs/CYBERARK.md.</p>
-      <label>{@render caption("Keep-alive", "keepalive")}<input class="short" type="number" min="0" bind:value={draft.keepalive} /> <span class="note">seconds (0: none)</span></label>
+      <label>{@render caption("Keep-alive", "keepalive")}<input class="short" type="number" min="0" bind:value={draft.keepalive} /> <span class="note">{isDefault ? "seconds (0: 15, so a lost connection ends the session in about 45 s)" : "seconds (0: Default Settings')"}</span></label>
       <label>{@render caption("Older algorithms", "olderAlgorithms")}
         <select value={triToValue(draft.olderAlgorithms)} onchange={(e) => (draft.olderAlgorithms = valueToTri(e.currentTarget.value))}>
           {#if !isDefault}<option value="">From Default Settings</option>{/if}

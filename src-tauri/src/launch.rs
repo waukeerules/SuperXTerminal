@@ -481,6 +481,10 @@ fn colours_choice<'a>(profile: &'a Profile, default: &'a Profile) -> &'a str {
     [own(profile), own(default)].into_iter().find(|c| !c.is_empty()).unwrap_or("theme")
 }
 
+/// Seconds between keep-alives when no profile sets them: ssh gives up after 3 unanswered (ServerAliveCountMax),
+/// so a dead link ends the session in about 45 seconds
+pub const BUILT_IN_KEEPALIVE: u32 = 15;
+
 /// A profile's colour, else "Default Settings'", when it's "#rrggbb"; "" for none
 fn colour(profile: &str, default: &str) -> String {
     let good = |c: &str| c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|d| d.is_ascii_hexdigit());
@@ -682,7 +686,14 @@ fn ssh(
     if login.key_file.is_empty() && !extra.args.iter().any(|a| a == "-i") && !profile.offer_keys.or(default.offer_keys).unwrap_or(true) {
         args.extend(["-o".into(), "PubkeyAuthentication=no".into()]);
     }
+    // the profile's keep-alive, else Default Settings', else the built-in one, so a lost connection (a pulled cable)
+    // ends the session within a minute rather than going unnoticed while the tab is idle; the built-in one stands
+    // back for one set in the ssh options, the session's own arguments or an ~/.ssh/config Host, which it would beat
     let keepalive = if profile.keepalive != 0 { profile.keepalive } else { default.keepalive };
+    let set_elsewhere = !config_host.is_empty()
+        || first(&profile.ssh_options, &default.ssh_options).to_ascii_lowercase().contains("serveralive")
+        || extra.args.iter().any(|a| a.to_ascii_lowercase().contains("serveralive"));
+    let keepalive = if keepalive == 0 && !set_elsewhere { BUILT_IN_KEEPALIVE } else { keepalive };
     if keepalive != 0 {
         args.extend(["-o".into(), format!("ServerAliveInterval={keepalive}")]);
     }
@@ -1141,6 +1152,21 @@ mod tests {
         let (args, notices) = args_of(&Sessions::default(), &profiles(), &session(&[("PuttySession", "netops")]));
         assert_eq!(args, ["-tt", "-o", "ServerAliveInterval=30", "10.0.0.1"]);
         assert!(notices[0].contains(&format!("\"netops\" isn't set up on {THIS_COMPUTER}")));
+    }
+
+    #[test]
+    fn with_no_keep_alive_set_the_built_in_one_is_used_unless_ssh_gets_one_elsewhere() {
+        let none = |default: Profile| Profiles { profiles: vec![Profile { name: profiles::DEFAULT_PROFILE.into(), ..default }] };
+        let alive = |args: &[String]| args.iter().find(|a| a.starts_with("ServerAliveInterval=")).cloned();
+        let (args, _) = args_of(&Sessions::default(), &none(Profile::default()), &session(&[]));
+        assert_eq!(alive(&args).as_deref(), Some("ServerAliveInterval=15"));
+        // one in the ssh options, or an ~/.ssh/config Host (which the command line would beat): left to them
+        let options = Profile { ssh_options: "-o ServerAliveInterval=60".into(), ..Profile::default() };
+        let (args, _) = args_of(&Sessions::default(), &none(options), &session(&[]));
+        assert_eq!(args.iter().filter(|a| a.starts_with("ServerAliveInterval=")).collect::<Vec<_>>(), ["ServerAliveInterval=60"]);
+        let config = Profile { ssh_config_host: "lab".into(), ..Profile::default() };
+        let (args, _) = args_of(&Sessions::default(), &none(config), &session(&[]));
+        assert_eq!(alive(&args), None);
     }
 
     #[test]

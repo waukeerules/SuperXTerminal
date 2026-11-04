@@ -6,6 +6,59 @@
 > The release build makes an MSI and a setup `.exe` ([Release build](#release-build)); a release is made as in
 > [RELEASE.md](RELEASE.md).
 
+## Release, step by step
+
+Each command is on its own, to run one after the other. The only thing to change is the version in step 2; the rest
+is the same every time. [RELEASE.md](RELEASE.md) says what each one does.
+
+Once per PC: the tools below ([What you'll need](#what-youll-need)), the packages (`npm ci`), and GitHub's CLI
+signed in (`winget install GitHub.cli`, then `gh auth login`).
+
+1. Get the latest code:
+
+   ```bash
+   git pull
+   ```
+
+2. Set the new version, **on one computer only** (skip this on the second: it pulled the version in step 1). It
+   changes the version everywhere and commits it:
+
+   ```bash
+   npm run release:version -- 0.3.0
+   ```
+
+   ```bash
+   git push
+   ```
+
+3. Check it:
+
+   ```bash
+   npm run release:checks
+   ```
+
+4. Build it. The first build takes 15 to 20 minutes, later ones a few ([Release build](#release-build)). It leaves
+   the MSI and the setup `.exe` in `releases\<version>\`, and puts the repository's `THIRD-PARTY-NOTICES.txt` back
+   afterwards.
+
+   ```bash
+   npm run release
+   ```
+
+5. Put the installers in the GitHub release (a draft, which the first computer makes and the second adds to):
+
+   ```bash
+   npm run release:publish
+   ```
+
+6. Once both computers' installers are in, make it public (from either one):
+
+   ```bash
+   npm run release:publish -- --final
+   ```
+
+The installers stay in `releases/<version>/` too, for copying to the other computer if you'd rather publish from one.
+
 On Windows, SuperXPuTTY remains the main application. Whether a Windows SuperXTerminal should ever replace it, or stay a
 lighter option beside it, is an open question ([PLAN.md](PLAN.md), section 6).
 
@@ -45,16 +98,18 @@ npm run tauri dev
 
 ## Release build
 
+`npm run release` makes it and collects the installers ([Release, step by step](#release-step-by-step)). By hand:
+
 ```powershell
 npm run tauri build
 ```
 
 It leaves both installers in `src-tauri\target\release\bundle\`:
 
-| Package | File | Size |
+| Package | File | Size (0.2.0) |
 |---|---|---|
-| Windows Installer (WiX) | `msi\SuperXTerminal_0.1.0_x64_en-US.msi` | 7 MB |
-| Setup program (NSIS) | `nsis\SuperXTerminal_0.1.0_x64-setup.exe` | 5 MB |
+| Windows Installer (WiX) | `msi\SuperXTerminal_<version>_x64_en-US.msi` | 7 MB |
+| Setup program (NSIS) | `nsis\SuperXTerminal_<version>_x64-setup.exe` | 5.5 MB |
 
 Both install `superxterminal.exe` (the pages are built into it) and `THIRD-PARTY-NOTICES.txt` in
 `Program Files\SuperXTerminal`; WebView2 comes with Windows. Notes:
@@ -66,10 +121,11 @@ Both install `superxterminal.exe` (the pages are built into it) and `THIRD-PARTY
   Tauri cache.
 - **Notices:** `npm run notices` runs first and writes `THIRD-PARTY-NOTICES.txt` for the system building, so the
   installer has Windows' crates. The copy in the repository is the Mac's: don't commit the Windows one over it
-  (`git checkout THIRD-PARTY-NOTICES.txt` after a build).
+  (`npm run release` puts it back; by hand, `git checkout -- THIRD-PARTY-NOTICES.txt` after a build).
 - **Signing:** none yet, so SmartScreen warns on the first run. Signing is set with
   `bundle.windows.certificateThumbprint` (or a signing command) in `src-tauri/tauri.conf.json`.
-- **Releasing:** copy both installers into `releases\<version>\` and publish them as in [RELEASE.md](RELEASE.md).
+- **Releasing:** `npm run release` copies both into `releases\<version>\`; `npm run release:publish` puts them in
+  the GitHub release ([RELEASE.md](RELEASE.md)).
 
 The manual GitHub workflow (`.github/workflows/build.yml`, run by hand from Actions) builds Windows unsigned, for an
 occasional check that it still compiles.

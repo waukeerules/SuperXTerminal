@@ -5,6 +5,59 @@ are made on a Mac, locally; nothing builds on GitHub automatically (see [PLAN.md
 
 The Windows build is in [BUILD-Windows.md](BUILD-Windows.md).
 
+## Release, step by step
+
+Each command is on its own, to run one after the other. The only thing to change is the version in step 2; the rest
+is the same every time. [RELEASE.md](RELEASE.md) says what each one does.
+
+Once per Mac: the signing certificate (section 2), the packages (`npm install`, section 3), and GitHub's CLI signed
+in (`brew install gh`, then `gh auth login`).
+
+1. Get the latest code:
+
+   ```bash
+   git pull
+   ```
+
+2. Set the new version, **on one computer only** (skip this on the second: it pulled the version in step 1). It
+   changes the version everywhere and commits it:
+
+   ```bash
+   npm run release:version -- 0.3.0
+   ```
+
+   ```bash
+   git push
+   ```
+
+3. Check it:
+
+   ```bash
+   npm run release:checks
+   ```
+
+4. Build it. Quit any running SuperXTerminal first. It takes a few minutes, signs with the Keychain's certificate by
+   itself, and leaves the `.dmg` in `releases/<version>/`. If it says `THIRD-PARTY-NOTICES.txt` changed, commit that
+   too.
+
+   ```bash
+   npm run release
+   ```
+
+5. Put the installers in the GitHub release (a draft, which the first computer makes and the second adds to):
+
+   ```bash
+   npm run release:publish
+   ```
+
+6. Once both computers' installers are in, make it public (from either one):
+
+   ```bash
+   npm run release:publish -- --final
+   ```
+
+The installers stay in `releases/<version>/` too, for copying to the other computer if you'd rather publish from one.
+
 ## 1. What you need
 
 | Tool | Version | How to get it |
@@ -104,14 +157,16 @@ npm run licenses
 
 ## 6. Make a release build
 
-Quit any running SuperXTerminal first (section 4). Then, with your certificate's name from
+`npm run release` does this section and collects the `.dmg` ([Release, step by step](#release-step-by-step)). By
+hand: quit any running SuperXTerminal first (section 4), then, with your certificate's name from
 `security find-identity -v -p codesigning`:
 
 ```bash
 APPLE_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" npm run tauri build
 ```
 
-It takes a few minutes. What happens:
+`npm run release` finds that name in the Keychain itself (a Developer ID Application certificate first, else Apple
+Development); `APPLE_SIGNING_IDENTITY`, when set, wins. It takes a few minutes. What happens:
 
 1. **`npm run notices`** writes `THIRD-PARTY-NOTICES.txt`: every component the app ships and its licence text
    (`scripts/notices.mjs`). It stops the build if a component has no licence text.
@@ -132,8 +187,8 @@ The results:
 **Without a certificate:** leave out `APPLE_SIGNING_IDENTITY`. The app is then signed ad hoc, which runs on the Mac that
 built it.
 
-**The version** is `version` in `src-tauri/tauri.conf.json` (and `package.json` and `src-tauri/Cargo.toml`, kept the
-same). Change all three for a new release.
+**The version** is written in five places (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`,
+`src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`): `npm run release:version -- 0.3.0` sets them all and commits them.
 
 ### Check the build
 
@@ -227,7 +282,7 @@ rustup target add x86_64-apple-darwin
 ```
 
 ```bash
-APPLE_SIGNING_IDENTITY="..." npm run tauri build -- --target universal-apple-darwin
+npm run release -- --target universal-apple-darwin
 ```
 
 The result is in `src-tauri/target/universal-apple-darwin/release/bundle/`. This hasn't been tried yet.

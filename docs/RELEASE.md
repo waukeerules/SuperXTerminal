@@ -4,68 +4,58 @@ Releases are built locally, on a Mac and on a Windows PC, and published to GitHu
 Nothing builds on GitHub automatically: the manual workflow in `.github/workflows/build.yml` is only for an occasional
 check, as its runs cost money.
 
-How to build on each system:
+Four npm commands do it, the same on both computers:
 
-- **Mac:** [BUILD-macOS.md](BUILD-macOS.md), sections 6 (release build), 7 (notarise) and 9 (installing).
-- **Windows:** [BUILD-Windows.md](BUILD-Windows.md#release-build).
+| Command | What it does |
+|---|---|
+| `npm run release:version -- 0.3.0` | Sets the version in all five places it's written, and commits just those files (`scripts/set-version.mjs`) |
+| `npm run release:checks` | The type check, the front-end tests, the licence check and the Rust tests |
+| `npm run release` | Builds this computer's installers and copies them into `releases/<version>/` (`scripts/release.mjs`) |
+| `npm run release:publish` | Puts `releases/<version>/` into the version's GitHub release, a draft until `-- --final` (`scripts/release-publish.mjs`) |
 
-## 1. Set the version
+The steps to click through are in each build guide:
 
-The version is in three places, kept the same:
+- **Mac:** [BUILD-macOS.md, Release, step by step](BUILD-macOS.md#release-step-by-step)
+- **Windows:** [BUILD-Windows.md, Release, step by step](BUILD-Windows.md#release-step-by-step)
 
-- `package.json`: `"version"`
-- `src-tauri/tauri.conf.json`: `"version"` (this one names the installers)
-- `src-tauri/Cargo.toml`: `version` under `[package]`
+## How it fits together
 
-Run the checks ([BUILD-macOS.md](BUILD-macOS.md), section 5), then commit and push to `main`.
+1. **The version, once, on one computer.** `npm run release:version -- 0.3.0` changes `package.json`,
+   `package-lock.json` (twice), `src-tauri/tauri.conf.json` (which names the installers), `src-tauri/Cargo.toml` and
+   the app's entry in `src-tauri/Cargo.lock`, and commits them as "Version 0.3.0". Push it; the other computer pulls.
+2. **Build on each computer.** `npm run release` builds and collects:
 
-## 2. Build on both systems
+   | Computer | Installer | Signed with |
+   |---|---|---|
+   | Mac | `SuperXTerminal_<version>_aarch64.dmg` | the Keychain's Developer ID Application certificate, else its Apple Development one, else ad hoc |
+   | Windows | `SuperXTerminal_<version>_x64_en-US.msi` | not signed yet |
+   | Windows | `SuperXTerminal_<version>_x64-setup.exe` | not signed yet |
 
-On each one, pull `main`, make the release build, and copy the installers into `releases/<version>/` at the top of
-the repository. Git ignores `releases/`, so this folder never syncs between the two systems. Bring each system's
-installers into one folder before you publish, or upload them from each system (step 3).
+   Git ignores `releases/`, so it never syncs between the computers.
+3. **Publish.** The first computer's `npm run release:publish` tags the commit (`v<version>`, pushed) and makes the
+   GitHub release as a **draft**, with notes from the commits since the last release. The second computer's adds its
+   installers to that draft. `npm run release:publish -- --final` then makes it public: that's when the app's update
+   check (Settings → General → Updates) offers it, so do it once both computers' installers are in.
 
-| System | Installer | Built at |
-|---|---|---|
-| Mac | `SuperXTerminal_<version>_aarch64.dmg` | `src-tauri/target/release/bundle/dmg/` |
-| Windows | `SuperXTerminal_<version>_x64_en-US.msi` | `src-tauri\target\release\bundle\msi\` |
-| Windows | `SuperXTerminal_<version>_x64-setup.exe` | `src-tauri\target\release\bundle\nsis\` |
+   Copying one computer's installers into the other's `releases/<version>/` and publishing from there works too: it
+   uploads whatever is in the folder.
 
-On the Mac, for example:
+`release:publish` needs GitHub's CLI, signed in once per computer: `brew install gh` or `winget install GitHub.cli`,
+then `gh auth login`. Nothing it does runs a GitHub Actions workflow.
 
-```bash
-mkdir -p releases/0.1.0 && cp src-tauri/target/release/bundle/dmg/*.dmg releases/0.1.0/
-```
+## Doing it by hand
 
-On Windows, in PowerShell:
+What the scripts do, for when one of them can't:
 
-```powershell
-mkdir releases\0.1.0 -Force; cp src-tauri\target\release\bundle\msi\*.msi, src-tauri\target\release\bundle\nsis\*-setup.exe releases\0.1.0\
-```
-
-After a Windows build, run `git checkout THIRD-PARTY-NOTICES.txt`. The repository keeps the Mac's copy
-([BUILD-Windows.md](BUILD-Windows.md#release-build)).
-
-## 3. Tag and publish
-
-Tag the commit that was built, push the tag, and make a GitHub release with the installers attached:
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-```bash
-gh release create v0.1.0 releases/0.1.0/* --title "SuperXTerminal 0.1.0" --notes "..."
-```
-
-To add the other system's installers to the release afterwards, from that system:
-
-```bash
-gh release upload v0.1.0 releases/0.1.0/*
-```
-
-Neither command runs a GitHub Actions workflow. The app's update check (Settings → General → Updates) offers the
-repository's latest release, so publish only builds that are ready for people to install.
+- **The version:** the five places above, kept the same.
+- **The build:** `npm run tauri build` (on the Mac with `APPLE_SIGNING_IDENTITY` set to the certificate's name, from
+  `security find-identity -v -p codesigning`). The installers are in `src-tauri/target/release/bundle/` (`dmg/`, or
+  `msi/` and `nsis/`).
+- **Windows' notices:** the build writes Windows' `THIRD-PARTY-NOTICES.txt` over the repository's, which is the Mac's:
+  put it back with `git checkout -- THIRD-PARTY-NOTICES.txt`.
+- **Publishing:** `git tag v0.3.0 && git push origin v0.3.0`, then
+  `gh release create v0.3.0 releases/0.3.0/* --title "SuperXTerminal 0.3.0" --generate-notes`, and from the other
+  computer `gh release upload v0.3.0 releases/0.3.0/*`.
 
 ## Signing
 

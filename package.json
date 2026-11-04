@@ -13,6 +13,10 @@
     "test:browser": "playwright test",
     "licenses": "node scripts/check-licenses.mjs",
     "notices": "node scripts/notices.mjs",
+    "release:version": "node scripts/set-version.mjs",
+    "release:checks": "npm run check && npm test && npm run licenses && cargo test --manifest-path src-tauri/Cargo.toml",
+    "release": "node scripts/release.mjs",
+    "release:publish": "node scripts/release-publish.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

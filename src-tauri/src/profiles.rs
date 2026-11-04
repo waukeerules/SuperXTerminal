@@ -4,6 +4,9 @@
 //! profile of that name says how they log in, as their PuTTY profile does on Windows. Profiles are per user, in
 //! `Profiles.json` in the user's folder; passwords are in the OS's secret store (the Keychain on a Mac), never in a
 //! file and never sent to the UI. "Default Settings" always exists, and every other profile falls back to it.
+//!
+//! A profile is exported to a file of the same shape as `Profiles.json` (Settings > Profiles, Export…), without its
+//! password or whether it has one; an import reads that, a whole `Profiles.json`, or one profile on its own.
 
 use std::path::Path;
 
@@ -155,9 +158,73 @@ pub fn set_password(profile: &str, password: &str) -> Result<(), String> {
     secrets::set(&account(profile), password)
 }
 
+/// A profile as an exported file: `{"profiles": [ … ]}`, the shape of `Profiles.json`. No password: it's in the secret
+/// store, never in a file, and whether one is stored isn't written either, as it means nothing on another computer
+pub fn export_text(profile: &Profile) -> Result<String, String> {
+    let mut value = serde_json::to_value(profile).map_err(|e| e.to_string())?;
+    if let Some(fields) = value.as_object_mut() {
+        fields.remove("hasPassword");
+    }
+    serde_json::to_string_pretty(&serde_json::json!({ "profiles": [value] })).map_err(|e| e.to_string())
+}
+
+/// The profiles in an exported file, a whole `Profiles.json`, or one profile on its own, their names trimmed; an
+/// error when there are none, or one has no name
+pub fn import_text(text: &str) -> Result<Vec<Profile>, String> {
+    let value: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("Not a profiles file: {e}"))?;
+    let list = match value.get("profiles") {
+        Some(list) => serde_json::from_value::<Vec<Profile>>(list.clone()),
+        None => serde_json::from_value::<Profile>(value).map(|p| vec![p]),
+    }
+    .map_err(|e| format!("Not a profiles file: {e}"))?;
+    let mut profiles = Vec::new();
+    for mut profile in list {
+        profile.name = profile.name.trim().to_string();
+        if profile.name.is_empty() {
+            return Err("A profile in the file has no name.".into());
+        }
+        profiles.push(profile);
+    }
+    if profiles.is_empty() {
+        return Err("There are no profiles in the file.".into());
+    }
+    Ok(profiles)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::Profile;
+    use super::{export_text, import_text, Profile};
+
+    #[test]
+    fn an_exported_profile_has_no_password_and_imports_as_it_was() {
+        let profile = Profile { name: "root".into(), username: "admin".into(), port: 2222, key_file: "~/.ssh/id_root".into(),
+            has_password: true, ..Profile::default() };
+        let text = export_text(&profile).unwrap();
+        // the password is never in a profile, and whether one is stored isn't written
+        assert!(!text.to_lowercase().contains("password"), "{text}");
+        let imported = import_text(&text).unwrap();
+        assert_eq!(imported.len(), 1);
+        assert_eq!((imported[0].name.as_str(), imported[0].username.as_str(), imported[0].port), ("root", "admin", 2222));
+        assert_eq!(imported[0].key_file, "~/.ssh/id_root");
+        assert!(!imported[0].has_password);
+    }
+
+    #[test]
+    fn a_whole_profiles_json_or_one_profile_on_its_own_imports() {
+        let all = import_text(r#"{"profiles":[{"name":"Default Settings","hasPassword":true},{"name":" root ","username":"admin"}]}"#).unwrap();
+        assert_eq!(all.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Default Settings", "root"]);
+        // hasPassword in a Profiles.json copied over is ignored: the password stays on the computer it came from
+        assert!(all.iter().all(|p| !p.has_password));
+        assert_eq!(import_text(r#"{"name":"lab","port":22}"#).unwrap()[0].name, "lab");
+    }
+
+    #[test]
+    fn a_file_that_isnt_profiles_is_refused() {
+        assert!(import_text("not json").unwrap_err().starts_with("Not a profiles file"));
+        assert_eq!(import_text(r#"{"profiles":[]}"#).unwrap_err(), "There are no profiles in the file.");
+        assert_eq!(import_text(r#"{"profiles":[{"name":"  "}]}"#).unwrap_err(), "A profile in the file has no name.");
+        assert!(import_text(r#"{"profiles":"root"}"#).is_err());
+    }
 
     #[test]
     fn a_profile_saved_with_gateway_host_reads_it_as_its_host() {

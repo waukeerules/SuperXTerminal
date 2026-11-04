@@ -2,11 +2,13 @@
   Settings > Profiles: the user's own profiles, matched by name to the PuTTY profile a session names ("root",
   "Default Settings"), as their PuTTY profiles are on Windows. The shared session says what to connect to; the
   profile says how this user logs in. Empty fields fall back to Default Settings.
+  A profile's right-click menu exports it to a .json file (no password) and imports profiles from one, as a
+  colleague's or another computer's.
 -->
 <script lang="ts">
   import { SECRET_STORE, SSH_KEYS } from "../platform";
   import { onMount } from "svelte";
-  import { ask, open } from "@tauri-apps/plugin-dialog";
+  import { ask, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { isMac } from "../shortcuts";
   import { context } from "../commands/sending.svelte";
@@ -217,7 +219,49 @@
     }
   }
 
-  /** The list's right-click menu: Duplicate and Delete, greyed while there are unsaved changes */
+  /** Export a profile to a .json file, for a colleague or another computer; its password stays here */
+  async function exportProfile(name: string): Promise<void> {
+    const path = await saveDialog({ title: `Export profile "${name}"`, defaultPath: `${name} profile.json`, filters: [{ name: "Profile", extensions: ["json"] }] });
+    if (!path) return;
+    try {
+      await invoke("profiles_export", { name, path });
+      const profile = profiles.find((p) => p.name === name);
+      message = profile?.hasPassword ? `Exported "${name}". Its password isn't in the file.` : `Exported "${name}".`;
+    } catch (e) {
+      message = String(e);
+    }
+  }
+
+  /**
+   * Add the profiles in a .json file (an exported profile, or a whole Profiles.json); one named as a profile already
+   * here comes in under the next free name, as Duplicate's, so nothing here is replaced. The last one opens.
+   */
+  async function importProfiles(): Promise<void> {
+    const path = await open({ title: "Import profiles", filters: [{ name: "Profile", extensions: ["json"] }] });
+    if (typeof path !== "string") return;
+    try {
+      const found = await invoke<Profile[]>("profiles_read_file", { path });
+      const added: string[] = [];
+      const renamed: string[] = [];
+      for (const profile of found) {
+        const taken = profiles.some((p) => p.name.toLowerCase() === profile.name.toLowerCase());
+        const name = taken ? copyName(profile.name) : profile.name;
+        if (taken) renamed.push(`"${profile.name}" as "${name}"`);
+        profiles = await saveProfile({ ...profile, name, hasPassword: false }, "", undefined);
+        added.push(name);
+      }
+      select(added[added.length - 1]);
+      message = [
+        added.length === 1 ? `Imported "${added[0]}".` : `Imported ${added.length} profiles.`,
+        renamed.length ? `Already here, so imported ${renamed.join(", ")}.` : "",
+        "Passwords aren't in profile files: type them in.",
+      ].filter(Boolean).join(" ");
+    } catch (e) {
+      message = String(e);
+    }
+  }
+
+  /** The list's right-click menu: Duplicate, Export and Import, and Delete, greyed while there are unsaved changes */
   function showMenu(event: MouseEvent, name: string): void {
     event.preventDefault();
     const busy = changes > 0 ? "Save or revert the changes first" : false;
@@ -227,6 +271,9 @@
       y: event.clientY,
       items: [
         { label: "Duplicate", disabled: busy, action: () => void duplicate(name) },
+        { separator: true },
+        { label: "Export…", action: () => void exportProfile(name) },
+        { label: "Import…", disabled: busy, action: () => void importProfiles() },
         { separator: true },
         { label: "Delete…", disabled: busy || (isDefaultProfile ? "Default Settings can't be deleted" : false), action: () => void remove(name) },
       ],

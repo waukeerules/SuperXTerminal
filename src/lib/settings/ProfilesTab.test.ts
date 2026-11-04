@@ -1,6 +1,6 @@
 // Settings > Profiles: which fields show as changed, what's greyed while there are changes, Save and Revert, and the
-// list's Duplicate. The Rust side is stood in for by mockIPC: the profiles live in `stored`, and every save and delete
-// is recorded in `calls`.
+// list's Duplicate, Export and Import. The Rust side is stood in for by mockIPC: the profiles live in `stored`, every
+// save and delete is recorded in `calls`, and the file chosen to import holds `inFile`.
 import { beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -12,6 +12,8 @@ import { DEFAULT_PROFILE, emptyProfile, type Profile } from "./profiles";
 let stored: Profile[];
 /** Every command the tab sent, with its arguments */
 let calls: { cmd: string; args: Record<string, unknown> }[];
+/** The profiles in the file chosen to import, as profiles_read_file reads them */
+let inFile: Profile[];
 
 beforeEach(() => {
   stored = [
@@ -20,6 +22,7 @@ beforeEach(() => {
     { ...emptyProfile("CyberArk"), keyFile: "~/.ssh/cyberark_key", keyFetch: "pam-key {key_file}", keyLifetime: 240 },
   ];
   calls = [];
+  inFile = [];
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: payload });
@@ -34,8 +37,11 @@ beforeEach(() => {
       stored = stored.filter((p) => p.name !== payload.name);
       return stored;
     }
-    // the dialog plugin's "Are you sure?": yes
+    // the dialog plugin's "Are you sure?": yes; the file chosen to save to or open
     if (cmd === "plugin:dialog|ask") return true;
+    if (cmd === "plugin:dialog|save") return "/tmp/root profile.json";
+    if (cmd === "plugin:dialog|open") return "/tmp/profiles.json";
+    if (cmd === "profiles_read_file") return inFile;
     // the key fetch's key file: 37 minutes old, or 5 hours for the "old" one
     if (cmd === "profile_key_age") return String(payload.keyFile).includes("old") ? 5 * 3600 : 37 * 60;
     return null;
@@ -119,6 +125,29 @@ describe("Settings > Profiles", () => {
     expect(save?.args.previousName).toBe("");
     expect(save?.args.password).toBeNull();
     expect(await screen.findByRole("option", { name: "root-1" })).toBeTruthy();
+  });
+
+  it("exports the profile right-clicked to the file chosen, and says its password isn't in it", async () => {
+    stored = stored.map((p) => (p.name === "root" ? { ...p, hasPassword: true } : p));
+    await open("root");
+    await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("option", { name: "root" }) });
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Export…" }));
+    expect(await screen.findByText(`Exported "root". Its password isn't in the file.`)).toBeTruthy();
+    expect(calls.find((c) => c.cmd === "profiles_export")?.args).toEqual({ name: "root", path: "/tmp/root profile.json" });
+  });
+
+  it("imports the profiles in a file, one already here under the next free name, without passwords", async () => {
+    inFile = [{ ...emptyProfile("root"), username: "admin" }, { ...emptyProfile("lab"), port: 2200 }];
+    await open("root");
+    await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("option", { name: "root" }) });
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Import…" }));
+    expect(await screen.findByText(/Imported 2 profiles\. Already here, so imported "root" as "root-1"\./)).toBeTruthy();
+    const saves = calls.filter((c) => c.cmd === "profiles_save");
+    expect(saves.map((c) => [(c.args.profile as Profile).name, c.args.previousName, c.args.password])).toEqual([["root-1", "", null], ["lab", "", null]]);
+    // the root here is left as it was; the imported one is beside it, and the last one opens
+    expect(stored.find((p) => p.name === "root")?.username).toBe("root");
+    expect(stored.find((p) => p.name === "root-1")?.username).toBe("admin");
+    expect(screen.getByRole("option", { name: "lab" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("shows how old a fetched key is, and when the next session will fetch another", async () => {

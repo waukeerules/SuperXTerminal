@@ -148,6 +148,20 @@ fn profiles_delete(state: State<'_, AppState>, name: String) -> Result<Vec<Profi
     Ok(profiles.profiles.clone())
 }
 
+/// Export a profile to a file, without its password (Settings > Profiles, Export…)
+#[tauri::command]
+fn profiles_export(state: State<'_, AppState>, name: String, path: String) -> Result<(), String> {
+    let profiles = state.profiles.lock().unwrap();
+    let profile = profiles.get(&name).ok_or_else(|| format!("There's no profile called {name}."))?;
+    std::fs::write(&path, profiles::export_text(profile)?).map_err(|e| e.to_string())
+}
+
+/// The profiles in a file, for Settings > Profiles' Import… to add (it names them and saves each)
+#[tauri::command]
+fn profiles_read_file(path: String) -> Result<Vec<Profile>, String> {
+    profiles::import_text(&std::fs::read_to_string(&path).map_err(|e| e.to_string())?)
+}
+
 /// Read (or read again) the session and folder files, and give the UI what it shows
 #[tauri::command]
 fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
@@ -2565,6 +2579,8 @@ pub fn run() {
             variables_save,
             variables_fill,
             profiles_list,
+            profiles_export,
+            profiles_read_file,
             profiles_save,
             profiles_delete,
             clipboard::clipboard_text,

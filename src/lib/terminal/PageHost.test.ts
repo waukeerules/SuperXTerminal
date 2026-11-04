@@ -1,6 +1,6 @@
 // A session's tab when ssh ends: what it says and whether it reconnects by itself, read from ssh's last words, and
 // the profile change it offers (F). The Rust side is stood in for by mockIPC: pty_open hands over the tab's channel,
-// which the test feeds ssh's output and its end.
+// which the test feeds ssh's output and its end. Also the tab's size reaching the pseudo terminal as the session starts.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
@@ -15,19 +15,34 @@ let profiles: Profile[];
 let frame: HTMLIFrameElement;
 let posted: { type: string; text?: string }[];
 let host: PageHost | null;
+/** pty_resize's sizes, in order */
+let resized: { cols: number; rows: number }[];
+/** pty_open's size, and what it waits for before it answers (the page's messages can come meanwhile); none: at once */
+let openedAt: { cols: number; rows: number } | null;
+let openWaits: Promise<void> | null;
 
 beforeEach(() => {
   channel = null;
   opened = 0;
   saved = [];
   posted = [];
+  resized = [];
+  openedAt = null;
+  openWaits = null;
   profiles = [emptyProfile(DEFAULT_PROFILE), { ...emptyProfile("root"), username: "admin" }];
-  mockIPC((cmd, args) => {
+  mockIPC(async (cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (cmd === "pty_open") {
       opened++;
       channel = payload.onEvent as Channel<unknown>;
-      return opened;
+      openedAt = { cols: Number(payload.cols), rows: Number(payload.rows) };
+      const id = opened;
+      if (openWaits) await openWaits;
+      return id;
+    }
+    if (cmd === "pty_resize") {
+      resized.push({ cols: Number(payload.cols), rows: Number(payload.rows) });
+      return null;
     }
     if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
     if (cmd === "profiles_list") return profiles;
@@ -110,5 +125,29 @@ describe("a session's tab when ssh ends", () => {
     await expect.poll(() => notices().join("\n")).toContain("Nothing answered on port 22: the device may be restarting");
     expect(notices().at(-1)).toContain("Reconnecting in 10 s (1 of 6)");
     expect(host!.isReconnecting).toBe(true);
+  });
+});
+
+describe("a session's tab size", () => {
+  // the page measures itself once it's configured, which "started" does while pty_open is still running: that size
+  // has to reach the pseudo terminal, or Windows' ConPTY draws for 80x24 (the prompt in the middle of the output)
+  it("reaches the pseudo terminal when the page gives it while the session is starting", async () => {
+    let answer = () => {};
+    openWaits = new Promise((resolve) => (answer = resolve));
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    await expect.poll(() => openedAt).toEqual({ cols: 80, rows: 24 });
+    page({ type: "size", cols: 132, rows: 45 });
+    answer();
+    await expect.poll(() => resized.at(-1)).toEqual({ cols: 132, rows: 45 });
+  });
+
+  it("isn't sent again when it hasn't changed since the session started", async () => {
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "size", cols: 132, rows: 45 });
+    page({ type: "ready" });
+    await expect.poll(() => openedAt).toEqual({ cols: 132, rows: 45 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(resized).toEqual([]);
   });
 });

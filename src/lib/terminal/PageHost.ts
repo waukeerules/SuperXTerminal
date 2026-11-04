@@ -705,7 +705,7 @@ export class PageHost implements ScriptTarget {
       return;
     }
     try {
-      this.ptyId = await invoke<number>("pty_open", { target: this.target, ...this.size, onEvent: channel, loginAs: this.loginAs });
+      await this.openPty({ target: this.target, onEvent: channel, loginAs: this.loginAs });
       this.fetchedKey = false;
       this.startedAt = Date.now();
       // one log for the tab, kept across reconnects, as SuperXPuTTY's
@@ -783,13 +783,26 @@ export class PageHost implements ScriptTarget {
     }
   }
 
+  /**
+   * Open the tab's pseudo terminal at the page's size, and pass on a size the page gave while it was opening: the
+   * page measures itself once it's configured, which the "started" event does while pty_open is still running, so its
+   * size used to be kept but never sent. On Windows ConPTY then drew for 80x24 with its own cursor moves, putting the
+   * prompt and the ends of long lines in the middle of the output; on the Mac the host only wrapped lines early.
+   * @param args pty_open's arguments but the size
+   */
+  private async openPty(args: { target: Target; onEvent: ReturnType<PageHost["outputChannel"]>; loginAs: string | null }): Promise<void> {
+    const opening = { ...this.size };
+    this.ptyId = await invoke<number>("pty_open", { ...args, ...opening });
+    if (this.size.cols !== opening.cols || this.size.rows !== opening.rows) {
+      await invoke("pty_resize", { id: this.ptyId, ...this.size }).catch(() => {});
+    }
+  }
+
   /** Run the profile's key fetch here; whether it ended well (exit code 0) */
   private async runKeyFetch(profile: string): Promise<boolean> {
     const code = new Promise<number | null>((resolve) => (this.fetching = resolve));
     try {
-      this.ptyId = await invoke<number>("pty_open", {
-        target: { kind: "keyFetch", profile } satisfies Target, ...this.size, onEvent: this.outputChannel(), loginAs: null,
-      });
+      await this.openPty({ target: { kind: "keyFetch", profile } satisfies Target, onEvent: this.outputChannel(), loginAs: null });
     } catch (error) {
       this.fetching = null;
       this.post({ type: "notice", text: `${String(error)} Press Enter to try again.`, kind: "error" });

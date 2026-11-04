@@ -54,6 +54,7 @@ pub struct DbSettings {
 }
 
 impl Default for DbSettings {
+    /// The settings before the user has set any: off, PostgreSQL's port, and SuperXPuTTY's database and schema names
     fn default() -> DbSettings {
         DbSettings {
             enabled: false,
@@ -654,6 +655,7 @@ mod tests {
         tauri::async_runtime::block_on(schema_and_locks());
     }
 
+    /// Make the schema, then check its locks hold, against the server named in the SXT_DB_* variables (an ignored test)
     async fn schema_and_locks() {
         let env = |k: &str| std::env::var(k).expect(k);
         let folder = std::env::temp_dir().join("sxt-db-test");
@@ -906,12 +908,14 @@ pub struct WriteError {
 }
 
 impl WriteError {
+    /// A write the database turned down (a lock, a name clash), as opposed to one that couldn't reach it
     pub fn refused(message: &str) -> WriteError {
         WriteError { message: message.to_string(), unavailable: false }
     }
 }
 
 impl From<WriteError> for String {
+    /// The message, for a command's error
     fn from(e: WriteError) -> String {
         e.message
     }

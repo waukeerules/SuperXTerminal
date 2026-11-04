@@ -106,6 +106,7 @@ pub struct AppSettings {
 }
 
 impl Default for AppSettings {
+    /// The settings before the user has changed any, as SuperXPuTTY's defaults
     fn default() -> AppSettings {
         AppSettings {
             settings_folder: None,

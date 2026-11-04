@@ -96,6 +96,7 @@ pub struct Stream {
     kind: Kind,
 }
 
+/// What the stream is: a Telnet or raw TCP connection (direct or through a jump host), or a serial line
 enum Kind {
     Telnet { link: Link, size: Arc<Mutex<(u16, u16)>>, naws: Arc<Mutex<bool>> },
     Raw { link: Link },
@@ -110,6 +111,7 @@ enum Link {
 }
 
 impl Link {
+    /// Connect, straight to the host or through the jump host's ssh (`-W`); returns the link and what reads from it
     fn open(host: &str, port: u16, via: &Option<String>) -> Result<(Link, Box<dyn Read + Send>), String> {
         match via {
             None => {
@@ -136,6 +138,7 @@ impl Link {
         }
     }
 
+    /// Send all of `bytes`
     fn write_all(&self, bytes: &[u8]) -> std::io::Result<()> {
         match self {
             Link::Direct(socket) => (&**socket).write_all(bytes),
@@ -143,6 +146,7 @@ impl Link {
         }
     }
 
+    /// Close the connection: the socket, or the jump host's ssh
     fn close(&self) {
         match self {
             Link::Direct(socket) => {
@@ -156,11 +160,13 @@ impl Link {
 }
 
 impl Write for Link {
+    /// Send all of `buf`
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         Link::write_all(self, buf)?;
         Ok(buf.len())
     }
 
+    /// Nothing's held back to flush
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
@@ -168,16 +174,27 @@ impl Write for Link {
 
 /// Telnet's codes (RFC 854 and friends)
 mod telnet {
+    /// Interpret As Command: the byte before every command
     pub const IAC: u8 = 255;
+    /// Asks the other side to stop an option
     pub const DONT: u8 = 254;
+    /// Asks the other side to use an option
     pub const DO: u8 = 253;
+    /// Refuses an option, or says it's stopped
     pub const WONT: u8 = 252;
+    /// Offers an option, or agrees to it
     pub const WILL: u8 = 251;
+    /// Starts a subnegotiation (the terminal type, the window size)
     pub const SB: u8 = 250;
+    /// Ends a subnegotiation
     pub const SE: u8 = 240;
+    /// Option: the server echoes what's typed
     pub const ECHO: u8 = 1;
+    /// Option: Suppress Go Ahead, so characters go as they're typed
     pub const SGA: u8 = 3;
+    /// Option: the terminal type ("xterm")
     pub const TTYPE: u8 = 24;
+    /// Option: Negotiate About Window Size
     pub const NAWS: u8 = 31;
 }
 
@@ -311,11 +328,13 @@ struct TelnetWriter {
 }
 
 impl Write for TelnetWriter {
+    /// Send typed bytes as Telnet: an IAC doubled, Return as CR LF
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.link.write_all(&telnet_out(buf))?;
         Ok(buf.len())
     }
 
+    /// Nothing's held back to flush
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
@@ -352,6 +371,7 @@ struct TelnetReader {
 }
 
 impl Read for TelnetReader {
+    /// The next data, with Telnet's commands answered and taken out; 0 when the connection ends
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         loop {
             let mut incoming = vec![0u8; buf.len().max(1)];
@@ -440,6 +460,7 @@ struct FdIo {
 
 #[cfg(unix)]
 impl Read for FdIo {
+    /// Read what's arrived on the serial line, waiting 200 ms at a time so a closed tab ends it; 0 once closed, an error when the device is unplugged
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let raw = self.fd.as_raw_fd();
         loop {
@@ -466,11 +487,13 @@ impl Read for FdIo {
 
 #[cfg(unix)]
 impl Write for FdIo {
+    /// Write to the serial line
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let n = unsafe { libc::write(self.fd.as_raw_fd(), buf.as_ptr().cast(), buf.len()) };
         if n < 0 { Err(std::io::Error::last_os_error()) } else { Ok(n as usize) }
     }
 
+    /// Nothing's held back to flush
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
@@ -656,6 +679,7 @@ fn send_break(fd: &OwnedFd) -> Result<(), String> {
 /// closed tab ends a read on a quiet line
 #[cfg(windows)]
 impl Read for FdIo {
+    /// What's arrived on the port, or 0 bytes once the tab has closed
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         use windows_sys::Win32::Storage::FileSystem::ReadFile;
         loop {
@@ -679,6 +703,7 @@ impl Read for FdIo {
 /// Writing to a COM port on Windows
 #[cfg(windows)]
 impl Write for FdIo {
+    /// Write to the port, as much as it takes in one go
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         use windows_sys::Win32::Storage::FileSystem::WriteFile;
         let mut put = 0u32;
@@ -690,6 +715,7 @@ impl Write for FdIo {
         Ok(put as usize)
     }
 
+    /// Nothing's held back to flush
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
@@ -700,6 +726,7 @@ impl Write for FdIo {
 #[cfg(windows)]
 pub fn serial_devices() -> Vec<String> {
     use std::os::windows::process::CommandExt;
+    /// Run reg without a console window flashing up
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let Ok(output) = std::process::Command::new("reg")
         .args(["query", r"HKLM\HARDWARE\DEVICEMAP\SERIALCOMM"])

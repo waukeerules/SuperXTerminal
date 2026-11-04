@@ -55,6 +55,7 @@ pub struct PendingChange {
 impl PendingChange {
     /// A new change of `kind`, with a fresh id
     pub fn new(kind: Kind) -> PendingChange {
+        /// Changes made this run, so two in the same nanosecond still differ
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         PendingChange {
@@ -104,6 +105,7 @@ fn file(user_folder: &Path) -> PathBuf {
     user_folder.join("DatabaseSessions.outbox.json")
 }
 
+/// The changes waiting; none if the file is missing or unreadable
 fn load(user_folder: &Path) -> OutboxFile {
     std::fs::read_to_string(file(user_folder)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
 }
@@ -254,6 +256,7 @@ pub fn apply(server: &[StoredSession], changes: &[PendingChange]) -> Vec<StoredS
 mod tests {
     use super::*;
 
+    /// A database row for an SSH session in a folder
     fn row(folder: &str, name: &str, host: &str) -> Row {
         Row { folder: folder.into(), name: name.into(), host: host.into(), protocol: "SSH".into(), ..Row::default() }
     }

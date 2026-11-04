@@ -131,10 +131,12 @@ fn decode(text: &str) -> String {
 mod tests {
     use super::*;
 
+    /// A command line's arguments, split at each space
     fn args(text: &str) -> Vec<String> {
         text.split(' ').map(str::to_string).collect()
     }
 
+    /// The connection a command line asks for, with no password or profile
     fn connect(protocol: &str, host: &str, username: &str) -> Request {
         Request::Connect { protocol: protocol.into(), host: host.into(), username: username.into(), password: String::new(), profile: String::new() }
     }

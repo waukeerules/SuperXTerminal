@@ -47,6 +47,7 @@ impl Override {
     }
 }
 
+/// Where the presets are kept, in the user folder
 fn presets_file(user_folder: &Path) -> PathBuf {
     user_folder.join("OverridePresets.json")
 }
@@ -74,6 +75,7 @@ pub fn set_preset(user_folder: &Path, name: &str, value: Option<Override>) -> Re
     Ok(all)
 }
 
+/// Where the overrides are kept, in the user folder
 fn file(user_folder: &Path) -> PathBuf {
     user_folder.join("SessionOverrides.json")
 }
@@ -85,6 +87,7 @@ pub fn load(user_folder: &Path) -> BTreeMap<String, Override> {
     read.into_iter().filter(|(_, o)| !o.is_empty()).collect()
 }
 
+/// Write all the overrides, making the user folder if it isn't there
 fn save(user_folder: &Path, all: &BTreeMap<String, Override>) -> Result<(), String> {
     std::fs::create_dir_all(user_folder).map_err(|e| e.to_string())?;
     let text = serde_json::to_string_pretty(all).map_err(|e| e.to_string())?;

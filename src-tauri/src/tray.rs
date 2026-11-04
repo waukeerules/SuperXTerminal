@@ -15,6 +15,7 @@ use tauri::{AppHandle, Manager, Runtime};
 
 use crate::sessions::{Sessions, Store, StoredSession};
 
+/// The tray icon's id, for finding it again to update its menu
 const TRAY: &str = "superxterminal";
 
 /// The icon: a template image (black on clear), which macOS draws to suit a light or dark menu bar
@@ -125,6 +126,7 @@ fn root<R: Runtime>(app: &AppHandle<R>, title: &str, store: Store, list: &[Store
     folder_menu(app, title, store, &mut top, !list.is_empty())
 }
 
+/// A folder's submenu: its folders first, then its sessions by name (up to [`MOST`], then "… and N more"), disabled when it has none
 fn folder_menu<R: Runtime>(app: &AppHandle<R>, title: &str, store: Store, folder: &mut Folder, enabled: bool) -> tauri::Result<Submenu<R>> {
     let mut subs = Vec::new();
     for (name, child) in folder.folders.values_mut() {

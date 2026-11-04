@@ -534,6 +534,7 @@ fn open_in_app(path: &std::path::Path) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        /// Start cmd without a console window flashing up
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         // start's first quoted argument is a window title, hence the empty one
         std::process::Command::new("cmd").args(["/c", "start", ""]).arg(path).creation_flags(CREATE_NO_WINDOW).spawn().map(|_| ()).map_err(|e| e.to_string())
@@ -887,6 +888,7 @@ struct Filled {
     missing: Vec<String>,
 }
 
+/// Put the user's environment variables into `text`, and name any it uses that aren't set
 #[tauri::command]
 fn variables_fill(state: State<'_, AppState>, text: String) -> Filled {
     let values = variables::values(&state.user_folder);
@@ -2099,6 +2101,7 @@ fn links_make_default(app: AppHandle) -> Result<(), String> {
         use objc2_foundation::NSString;
         #[link(name = "CoreServices", kind = "framework")]
         unsafe extern "C" {
+            /// LaunchServices' call to make an app the default for a URL scheme; 0 when it worked
             fn LSSetDefaultHandlerForURLScheme(scheme: *const std::ffi::c_void, bundle: *const std::ffi::c_void) -> i32;
         }
         let bundle = NSString::from_str(&app.config().identifier);
@@ -2295,6 +2298,7 @@ pub fn askpass_helper() -> bool {
     askpass::helper()
 }
 
+/// Start the app: load the settings, open the main window, and handle the command line SuperXPuTTY takes
 pub fn run() {
     let user_folder = sessions::user_folder();
     let settings = AppSettings::load(&user_folder);

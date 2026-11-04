@@ -6,10 +6,12 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
+/// The Keychain's service name every item is kept under
 const SERVICE: &str = "SuperXTerminal";
 
 /// What's been read or written this run, by account; None when there's nothing stored
 fn cache() -> &'static Mutex<HashMap<String, Option<String>>> {
+    /// The cache, made the first time it's used
     static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
     CACHE.get_or_init(Default::default)
 }

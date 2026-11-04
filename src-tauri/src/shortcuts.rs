@@ -22,6 +22,7 @@ pub struct Shortcuts {
     pub recent_expanded: bool,
 }
 
+/// Where the lists are kept, in the user folder
 fn file(user_folder: &Path) -> PathBuf {
     user_folder.join("SessionShortcuts.json")
 }

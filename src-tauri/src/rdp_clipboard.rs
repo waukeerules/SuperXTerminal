@@ -26,6 +26,7 @@ pub struct Shared {
 }
 
 impl Shared {
+    /// Send a message to the clipboard channel, once the engine's there to take it
     fn send(&self, message: ClipboardMessage) {
         if let Some(sender) = self.sender.lock().unwrap().as_ref() {
             let _ = sender.send(RdpInputEvent::Clipboard(message));
@@ -51,11 +52,13 @@ impl Shared {
 pub struct Factory(pub Shared);
 
 impl CliprdrBackendFactory for Factory {
+    /// A backend for a new connection, sharing the channel and the text last passed
     fn build_cliprdr_backend(&self) -> Box<dyn CliprdrBackend> {
         Box::new(Backend { shared: self.0.clone(), started: std::time::Instant::now() })
     }
 }
 
+/// The clipboard channel's backend for one connection
 #[derive(Debug)]
 pub struct Backend {
     shared: Shared,
@@ -64,24 +67,29 @@ pub struct Backend {
 }
 
 impl ironrdp_core::AsAny for Backend {
+    /// Itself, as IronRDP asks every backend for
     fn as_any(&self) -> &dyn core::any::Any {
         self
     }
 
+    /// Itself, as IronRDP asks every backend for
     fn as_any_mut(&mut self) -> &mut dyn core::any::Any {
         self
     }
 }
 
 impl CliprdrBackend for Backend {
+    /// Where IronRDP would keep files passed; files aren't passed, so it's never made
     fn temporary_directory(&self) -> &str {
         ".cliprdr"
     }
 
+    /// Long format names, as Windows' own clients ask for
     fn client_capabilities(&self) -> ClipboardGeneralCapabilityFlags {
         ClipboardGeneralCapabilityFlags::USE_LONG_FORMAT_NAMES
     }
 
+    /// Nothing to do when the channel is ready: Windows asks for the format list next
     fn on_ready(&mut self) {}
 
     /// The channel's start: what the Mac's clipboard holds is offered
@@ -94,6 +102,7 @@ impl CliprdrBackend for Backend {
         self.shared.send(ClipboardMessage::SendInitiateCopy(formats));
     }
 
+    /// Nothing to do with the capabilities agreed: only text is passed
     fn on_process_negotiated_capabilities(&mut self, _capabilities: ClipboardGeneralCapabilityFlags) {}
 
     /// Copied in the remote desktop: its text is fetched at once, for the Mac's clipboard. Windows also announces
@@ -129,10 +138,13 @@ impl CliprdrBackend for Backend {
         }
     }
 
-    // files aren't passed (text only, for now)
+    /// files aren't passed (text only, for now)
     fn on_file_contents_request(&mut self, _request: FileContentsRequest) {}
+    /// Files aren't passed
     fn on_file_contents_response(&mut self, _response: FileContentsResponse<'_>) {}
+    /// Nothing is locked, as files aren't passed
     fn on_lock(&mut self, _data_id: LockDataId) {}
+    /// Nothing is locked, as files aren't passed
     fn on_unlock(&mut self, _data_id: LockDataId) {}
 }
 
@@ -142,12 +154,14 @@ mod mac {
     use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
     use objc2_foundation::NSString;
 
+    /// The text on the Mac's clipboard, if any
     pub fn read() -> Option<String> {
         let board = NSPasteboard::generalPasteboard();
         let text = unsafe { board.stringForType(NSPasteboardTypeString) }?;
         Some(text.to_string())
     }
 
+    /// Put text on the Mac's clipboard, in place of what it held
     pub fn write(text: &str) {
         let board = NSPasteboard::generalPasteboard();
         board.clearContents();
@@ -157,9 +171,11 @@ mod mac {
 
 #[cfg(not(target_os = "macos"))]
 mod mac {
+    /// No Mac clipboard on this system
     pub fn read() -> Option<String> {
         None
     }
 
+    /// No Mac clipboard on this system
     pub fn write(_text: &str) {}
 }

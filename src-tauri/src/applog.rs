@@ -27,6 +27,7 @@ const KEPT: usize = 2000;
 /// The file's size before it starts again
 const ROLL_AT: u64 = 5 * 1024 * 1024;
 
+/// The last sequence number given, and the entries kept for the log viewer (the newest [`KEPT`])
 static LOG: Mutex<(u64, VecDeque<Entry>)> = Mutex::new((0, VecDeque::new()));
 
 /// The log file: in ~/Library/Logs on the Mac, %LOCALAPPDATA%\SuperXTerminal\logs on Windows
@@ -38,6 +39,7 @@ pub fn file() -> PathBuf {
     }
 }
 
+/// Keep an entry and add it to the log file, starting the file again once it reaches [`ROLL_AT`]
 fn write(level: &'static str, text: &str) {
     let time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
     {
@@ -61,14 +63,17 @@ fn write(level: &'static str, text: &str) {
     }
 }
 
+/// Log something that happened, as it should
 pub fn info(text: impl AsRef<str>) {
     write("INFO", text.as_ref());
 }
 
+/// Log something that went wrong but the app carried on from
 pub fn warn(text: impl AsRef<str>) {
     write("WARN", text.as_ref());
 }
 
+/// Log something that failed
 pub fn error(text: impl AsRef<str>) {
     write("ERROR", text.as_ref());
 }

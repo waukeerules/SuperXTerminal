@@ -316,6 +316,7 @@ mod tests {
     /// A file as SuperXPuTTY's XmlSerializer writes it: CRLF, escaped characters, and an attribute this app doesn't know
     const SESSIONS: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<ArrayOfSessionData xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\r\n  <SessionData SessionId=\"Lab/Core/sw &amp; rtr\" Color=\"#C62828\" SessionName=\"sw &amp; rtr\" Host=\"10.0.0.1\" Note=\"line one&#xA;line two\" Port=\"0\" Proto=\"SSH\" FutureField=\"kept\" />\r\n</ArrayOfSessionData>\r\n";
 
+    /// The folders' file as SuperXPuTTY writes it, with defaults for a folder and a subfolder
     const FOLDERS: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n<Folders>\r\n  <FolderSetting Path=\"Lab\" Color=\"#2E7D32\" Username=\"netops\" Port=\"2222\" />\r\n  <FolderSetting Path=\"Lab/Core\" Username=\"core\" />\r\n</Folders>\r\n";
 
     #[test]

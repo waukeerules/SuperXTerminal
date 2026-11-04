@@ -511,17 +511,50 @@ fn end(session: Option<Session>) {
 mod tests {
     use super::{shown_command, watch_exit, PasswordPrompt};
     use portable_pty::{native_pty_system, PtySize};
+    use std::io::{Read, Write};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
+
+    /// A shell running `script` (its words for "a job in the background, then exit 3" differ): cmd on Windows, where
+    /// MSYS's sh (Git's) keeps its own process alive until its background jobs end, sh elsewhere
+    fn shell(unix: &str, windows: &str) -> portable_pty::CommandBuilder {
+        if cfg!(windows) {
+            let mut command = portable_pty::CommandBuilder::new("cmd.exe");
+            command.args(["/c", windows]);
+            command
+        } else {
+            let mut command = portable_pty::CommandBuilder::new("sh");
+            command.args(["-c", unix]);
+            command
+        }
+    }
+
+    /// Read the output and answer the cursor position query, as the tab's page does: Windows' ConPTY asks it first
+    /// (ESC[6n) and holds the program up until it's answered
+    fn answer_the_terminal(master: &dyn portable_pty::MasterPty) {
+        let mut output = master.try_clone_reader().unwrap();
+        let mut input = master.take_writer().unwrap();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = output.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                if buf[..n].windows(4).any(|w| w == b"\x1b[6n") {
+                    let _ = input.write_all(b"\x1b[1;1R");
+                }
+            }
+        });
+    }
 
     #[test]
     fn the_end_of_a_program_is_told_though_its_output_stays_open() {
         // a job left in the background holds the output open, as Windows' ConPTY does after ssh exits
         let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
-        let mut command = portable_pty::CommandBuilder::new("sh");
-        command.args(["-c", "sleep 5 & exit 3"]);
+        let command = shell("sleep 5 & exit 3", "start /b ping -n 6 127.0.0.1 >nul & exit 3");
         let child = Arc::new(Mutex::new(pair.slave.spawn_command(command).unwrap()));
         drop(pair.slave);
+        answer_the_terminal(&*pair.master);
         let (sent, got) = std::sync::mpsc::channel();
         let finished = Arc::new(AtomicBool::new(false));
         watch_exit(child, finished.clone(), move |code| sent.send(code).unwrap());
@@ -533,10 +566,10 @@ mod tests {
     #[test]
     fn the_watcher_says_nothing_once_the_reader_has_told_of_the_end() {
         let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
-        let mut command = portable_pty::CommandBuilder::new("sh");
-        command.args(["-c", "exit 0"]);
+        let command = shell("exit 0", "exit 0");
         let child = Arc::new(Mutex::new(pair.slave.spawn_command(command).unwrap()));
         drop(pair.slave);
+        answer_the_terminal(&*pair.master);
         let (sent, got) = std::sync::mpsc::channel();
         let finished = Arc::new(AtomicBool::new(true));
         watch_exit(child, finished, move |code| sent.send(code).unwrap());

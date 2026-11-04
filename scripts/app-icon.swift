@@ -1,7 +1,8 @@
 // Draws SuperXTerminal's app icon (src-tauri/icons/app-icon.png, 1024 x 1024): SuperXPuTTY's terminal screen with its
 // ">_" prompt, as a Mac icon (a rounded square on Apple's icon grid, with its shadow), and a blue "X" raised like a
-// superscript for the X in the name. Run from the project folder, then make every size the app needs:
-//   swift scripts/app-icon.swift && npx tauri icon src-tauri/icons/app-icon.png
+// superscript for the X in the name. Run from the project folder, then make every size the app needs, and Windows'
+// icon from the tile alone (scripts/windows-icon.py):
+//   swift scripts/app-icon.swift && npx tauri icon src-tauri/icons/app-icon.png && python3 scripts/windows-icon.py
 import AppKit
 
 /// The icon's size in pixels, square

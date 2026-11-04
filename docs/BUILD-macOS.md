@@ -208,8 +208,12 @@ swift scripts/dmg-background.swift && tiffutil -cathidpicheck src-tauri/dmg/back
 (`icon.icns`, `icon.ico`, the PNGs) is made from it. To change it, edit the script, then:
 
 ```bash
-swift scripts/app-icon.swift && npx tauri icon src-tauri/icons/app-icon.png && rm -rf src-tauri/icons/android src-tauri/icons/ios
+swift scripts/app-icon.swift && npx tauri icon src-tauri/icons/app-icon.png && rm -rf src-tauri/icons/android src-tauri/icons/ios && python3 scripts/windows-icon.py
 ```
+
+The last step makes `icon.ico` again from the tile alone, without the Mac's margin and shadow, so the icon fills its
+square on Windows' taskbar as the icons beside it do (`tauri icon` makes it from the whole 1024 × 1024). It needs
+Pillow (`python3 -m pip install pillow`).
 
 The menu bar icon is separate: `src-tauri/icons/tray-template@2x.png`, black on transparent, which macOS tints.
 Finder and the Dock cache icons, so a new one can take a restart of the Dock (`killall Dock`) to show.

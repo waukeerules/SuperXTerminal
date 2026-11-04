@@ -5,6 +5,7 @@ import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+/** The licences a shipped package may have (SPDX ids), as src-tauri/deny.toml allows */
 const ALLOWED = new Set([
   "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Zlib", "CC0-1.0", "0BSD", "Unicode-3.0", "MPL-2.0",
 ]);
@@ -17,9 +18,12 @@ function allowed(expression) {
   );
 }
 
+/** The production dependency tree, with each package's licence and folder */
 // through the shell: npm is npm.cmd on Windows, which only a shell runs
 const tree = JSON.parse(execSync("npm ls --omit=dev --all --json --long", { encoding: "utf8" }));
+/** Each package with a licence that isn't allowed, as "name@version: licence" */
 const problems = [];
+/** The packages checked, as "name@version", so a package used twice is checked once */
 const seen = new Set();
 
 /** Check a package and everything it depends on */

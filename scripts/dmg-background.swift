@@ -5,12 +5,14 @@
 //   swift scripts/dmg-background.swift && tiffutil -cathidpicheck src-tauri/dmg/background.png src-tauri/dmg/background@2x.png -out src-tauri/dmg/background.tiff && rm src-tauri/dmg/background*.png
 import AppKit
 
+/// The background's size in points, as the .dmg window shows it
 let size = CGSize(width: 660, height: 400)
 // where tauri.conf.json puts the icons (points, from the top left). Everything sits in the top 300 points: Finder's
 // tab and path bars, when the user has them on, cover the window's bottom
 let app = CGPoint(x: 180, y: 165)
 let applications = CGPoint(x: 480, y: 165)
 
+/// Draw the background at a scale (1 or 2), to a PNG at `path`
 func draw(scale: CGFloat, to path: String) {
     let width = Int(size.width * scale), height = Int(size.height * scale)
     let space = CGColorSpace(name: CGColorSpace.sRGB)!

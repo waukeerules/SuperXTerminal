@@ -4,10 +4,14 @@
 //   swift scripts/app-icon.swift && npx tauri icon src-tauri/icons/app-icon.png
 import AppKit
 
+/// The icon's size in pixels, square
 let canvas: CGFloat = 1024
+/// sRGB, the colour space every colour here is given in
 let space = CGColorSpace(name: CGColorSpace.sRGB)!
+/// What the icon is drawn on
 let context = CGContext(data: nil, width: Int(canvas), height: Int(canvas), bitsPerComponent: 8, bytesPerRow: 0, space: space,
                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+/// A colour from its hex value (0xRRGGBB), and how opaque
 func colour(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
     CGColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255, blue: CGFloat(hex & 0xff) / 255, alpha: alpha)
 }
@@ -63,6 +67,7 @@ context.strokePath()
 let graphics = NSGraphicsContext(cgContext: context, flipped: false)
 NSGraphicsContext.saveGraphicsState()
 NSGraphicsContext.current = graphics
+/// Draw text at a point, in the system font or its monospaced one
 func draw(_ text: String, size: CGFloat, weight: NSFont.Weight, colour: NSColor, at point: CGPoint, mono: Bool) {
     let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight) : NSFont.systemFont(ofSize: size, weight: weight)
     NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: colour]).draw(at: point)
@@ -75,6 +80,7 @@ draw("X", size: 250, weight: .heavy, colour: NSColor(srgbRed: 0.20, green: 0.60,
 context.restoreGState()
 NSGraphicsContext.restoreGraphicsState()
 
+/// The finished icon, written to src-tauri/icons/app-icon.png
 let image = context.makeImage()!
 let url = URL(fileURLWithPath: "src-tauri/icons/app-icon.png")
 let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)!

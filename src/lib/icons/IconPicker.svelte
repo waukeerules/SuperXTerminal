@@ -15,14 +15,17 @@
   interface Props {
     /** The key chosen so far */
     value: string;
+    /** The user's custom icons, for the Custom section */
     customs: ReadonlyMap<string, CustomIcon>;
+    /** OK: the key chosen */
     onChoose: (key: string) => void;
+    /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
   }
 
   let { value, customs, onChoose, onCancel }: Props = $props();
 
-  // the window starts from the key it's opened with; later changes are its own
+  /** the window starts from the key it's opened with; later changes are its own */
   const start = untrack(() => parseKey(value));
   let name = $state((start?.name ?? "workstation").toLowerCase());
   let color = $state<string | null>(start?.color ?? null);
@@ -35,12 +38,16 @@
     ...Object.keys(logos).map((k) => ({ key: k, title: logos[k].title, section: "Logos" })),
     ...[...customs.entries()].map(([k, icon]) => ({ key: CUSTOM_PREFIX + k, title: icon.title, section: "Custom" })),
   ]);
+  /** The sections, in Choose Icon's order */
   const sections = ["Devices", "General", "Logos", "Custom"];
+  /** The icons whose title has the search's text */
   const shown = $derived(all.filter((i) => !search.trim() || i.title.toLowerCase().includes(search.trim().toLowerCase())));
 
   /** The icon's own colour, used when no other is chosen */
   const defaultColor = $derived(templates[name]?.color ?? logos[name]?.color ?? customs.get(name.replace(CUSTOM_PREFIX, ""))?.color ?? "");
+  /** The chosen icon's title, for the preview */
   const title = $derived(all.find((i) => i.key === name)?.title ?? name);
+  /** The key given back: the name, and the colour when it isn't the icon's own */
   const key = $derived(color && color.toUpperCase() !== defaultColor.toUpperCase() ? `${name}#${color.slice(1).toUpperCase()}` : name);
 </script>
 

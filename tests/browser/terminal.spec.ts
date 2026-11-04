@@ -15,6 +15,7 @@ async function feed(page: Page, text: string) {
   await page.evaluate((text) => (window as any).terminalDev.feedText(text), text);
 }
 
+/** How many columns the terminal has now */
 const cols = (page: Page) => page.evaluate(() => (window as any).terminalDev.term.cols as number);
 /** How far the view is panned, in pixels (the side-to-side scroll bar follows it) */
 const pan = (page: Page) => page.evaluate(() => document.getElementById("hscroll")!.scrollLeft);
@@ -24,6 +25,7 @@ async function panTo(page: Page, x: number) {
   await expect.poll(() => page.evaluate(() => document.querySelector("#terminal .xterm-screen")!.getAttribute("style") ?? "")).toContain("translateX");
 }
 
+/** A command longer than the terminal is wide, for Wrap Lines off */
 const LONG_COMMAND = "show running-config | include interface GigabitEthernet1/0/24 description uplink-to-core";
 
 test.describe("Wrap Lines off", () => {

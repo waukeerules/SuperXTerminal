@@ -15,7 +15,9 @@ pub fn install(app: &AppHandle) {
     use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSEventType};
     use tauri::{Emitter, Manager};
 
+    /// Whether Command is down now
     static DOWN: AtomicBool = AtomicBool::new(false);
+    /// Whether it's been alone since it went down (no other key, modifier or click): a tap when it goes up
     static ALONE: AtomicBool = AtomicBool::new(false);
 
     let app = app.clone();
@@ -57,5 +59,6 @@ pub fn install(app: &AppHandle) {
     std::mem::forget(monitor);
 }
 
+/// Elsewhere there's no Command key to watch
 #[cfg(not(target_os = "macos"))]
 pub fn install(_app: &AppHandle) {}

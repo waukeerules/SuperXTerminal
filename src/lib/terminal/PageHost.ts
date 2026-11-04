@@ -136,6 +136,7 @@ const TAIL_LIMIT = 4096;
 /** How much finished output is kept for WAITFOR; half is dropped when it's exceeded, as TerminalControl */
 const RECENT_OUTPUT_LIMIT = 256 * 1024;
 
+/** A terminal tab's host: the session behind the tab's page, its log, its reconnects and what scripts and Send Commands type into it */
 export class PageHost implements ScriptTarget {
   /** Finished lines kept for WAITFOR, "\n" after each; `recentStart` counts what's been dropped from the front */
   private recent = "";

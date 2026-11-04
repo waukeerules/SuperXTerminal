@@ -1,7 +1,12 @@
+/**
+ * Tests for the Sessions tree's search and building the tree from sessions: pure functions, given sessions made
+ * here, so nothing is stood in.
+ */
 import { describe, expect, it } from "vitest";
 import type { SessionView } from "./api";
 import { ALL_SEARCH_FIELDS, DEFAULT_SEARCH_FIELDS, buildTree, searchFieldsOf, searchProblem, searchTest, toggledSearchFields } from "./tree";
 
+/** A Saved SSH session in Lab, with any fields given */
 function session(name: string, extra: Partial<SessionView> = {}): SessionView {
   return {
     id: `Lab/${name}`, store: "saved", name, folder: "Lab", protocol: "SSH", host: "", port: 22, username: "", profile: "",
@@ -9,8 +14,11 @@ function session(name: string, extra: Partial<SessionView> = {}): SessionView {
   } as SessionView;
 }
 
+/** Two switches to search, different in case, host and note */
 const SW1 = session("Core-SW1", { host: "10.0.0.1", note: "Rack 4" });
+/** The second switch */
 const SW2 = session("access-sw22", { host: "10.0.1.22" });
+/** The names of the switches a search matches; both when there's no search */
 const names = (test: ((s: SessionView) => boolean) | null) => [SW1, SW2].filter((s) => !test || test(s)).map((s) => s.name);
 
 describe("the Sessions search", () => {

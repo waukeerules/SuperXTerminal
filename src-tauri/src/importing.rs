@@ -61,6 +61,7 @@ fn normalize(header: &str) -> String {
     header.chars().filter(|c| !c.is_whitespace() && *c != '_' && *c != '-').collect::<String>().to_lowercase()
 }
 
+/// The Source column's word for a store, as SuperXPuTTY's CSV has it
 fn source_of(store: Store) -> &'static str {
     match store {
         Store::Saved => "Saved",
@@ -147,6 +148,7 @@ pub fn export(list: &[(Store, &StoredSession)], path: &Path) -> Result<(), Strin
     std::fs::write(path, format!("\u{feff}{}", to_csv(list))).map_err(|e| e.to_string())
 }
 
+/// Add a row of values to the CSV, each quoted as it needs, ending with CRLF as SuperXPuTTY's
 fn write_row(csv: &mut String, values: impl Iterator<Item = String>) {
     csv.push_str(&values.map(|v| quote(&v)).collect::<Vec<_>>().join(","));
     csv.push_str("\r\n");
@@ -256,6 +258,7 @@ pub struct Summary {
 }
 
 impl Plan {
+    /// What the plan would do, counted: for the import's confirmation
     pub fn summary(&self) -> Summary {
         let go = || self.rows.iter().filter(|r| r.skip.is_none());
         Summary {
@@ -288,6 +291,7 @@ pub struct Existing<'a> {
 }
 
 impl Existing<'_> {
+    /// Which store already has a session with this id, if any (Saved first)
     fn find(&self, id: &str) -> Option<Store> {
         if self.saved.iter().any(|s| s.id() == id) {
             Some(Store::Saved)
@@ -298,6 +302,7 @@ impl Existing<'_> {
         }
     }
 
+    /// Whether a session in either store has this id, ignoring case, as the tree does
     fn taken(&self, id: &str) -> bool {
         self.saved.iter().chain(self.private).any(|s| s.id().eq_ignore_ascii_case(id))
     }
@@ -671,6 +676,7 @@ fn read_ssh_config(path: &Path, ssh_folder: &Path, depth: u32) -> Vec<Found> {
     found
 }
 
+/// Add `switch value` to a command line's arguments, unless the value is empty
 fn add_arg(args: &mut String, switch: &str, value: &str) {
     if value.is_empty() {
         return;
@@ -852,6 +858,7 @@ fn read_putty_folder(folder: &Path, into: &str) -> Result<Vec<Found>, String> {
 #[cfg(windows)]
 fn registry_values(key: &str) -> Vec<(String, String, String)> {
     use std::os::windows::process::CommandExt;
+    /// Run reg without a console window flashing up
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let Ok(output) = std::process::Command::new("reg").args(["query", key, "/s"]).creation_flags(CREATE_NO_WINDOW).output() else {
         return Vec::new();
@@ -1157,6 +1164,7 @@ pub fn apply(plan: &Plan, file_of: impl Fn(Store) -> Result<PathBuf, String>, id
 mod tests {
     use super::*;
 
+    /// A session with these attributes set
     fn session(id: &str, attributes: &[(&str, &str)]) -> StoredSession {
         let mut s = StoredSession::new(id);
         for (n, v) in attributes {

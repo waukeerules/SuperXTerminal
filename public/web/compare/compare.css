@@ -1,3 +1,6 @@
+/*
+ * Compare Output page layout: the toolbar over Monaco's diff editor, dark or light as the system is.
+ */
 html, body {
   margin: 0;
   height: 100%;

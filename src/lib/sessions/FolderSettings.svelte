@@ -11,9 +11,13 @@
   import { saveFolderSettings, type FolderSetting, type Store } from "./api";
 
   interface Props {
+    /** Which sessions the folder is in: Saved, Private or Database */
     store: Store;
+    /** The folder's settings as stored, which the window starts from */
     setting: FolderSetting;
+    /** Saved: the tree reads the settings again */
     onSaved: () => void;
+    /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
   }
 

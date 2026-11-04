@@ -19,7 +19,7 @@
   import { saveSettings, settings } from "../settings/store.svelte";
   import type { CustomIcon } from "../icons/custom";
 
-  let { customs }: { customs: ReadonlyMap<string, CustomIcon> } = $props();
+  let { customs }: { /** The user's custom icons, for buttons with one */ customs: ReadonlyMap<string, CustomIcon> } = $props();
 
   let bars = $state<Bar[]>([{ name: "Default", buttons: [], tabIcons: [] }]);
   /** The active tab's icon, which picks a bar that lists it */
@@ -31,6 +31,7 @@
   let prompt = $state<{ title: string; value: string; validate: (v: string) => string; onOk: (v: string) => void } | null>(null);
   let choosingIcons = $state(false);
 
+  /** The buttons' icon size: smaller than the tree's, as SuperXPuTTY's toolbars */
   const size = $derived(Math.round(settings.iconSize * 0.85));
 
   /** Which bar shows, as ButtonBarStrip.CurrentBar */
@@ -61,6 +62,7 @@
     return tabs.onChange(update);
   });
 
+  /** Read ButtonBars.xml again; a problem goes in the status bar */
   async function reload(): Promise<void> {
     try {
       bars = await loadBars();
@@ -117,6 +119,7 @@
     return running.runs.some((r) => r.source === button.label);
   }
 
+  /** A button's tooltip: its own, else its command, and how to send it to the selected tabs */
   function tooltip(button: BarButton): string {
     return `${button.tooltip || button.text}\n(Shift+click: send to selected tabs)`;
   }
@@ -163,12 +166,14 @@
     };
   }
 
+  /** Delete a button, after asking */
   async function deleteButton(index: number): Promise<void> {
     const label = current.buttons[index].label;
     if (!(await ask(`Delete the button "${label}"?`, { title: "Delete Button", kind: "warning", okLabel: "Delete" }))) return;
     await changeBar((bar) => ({ ...bar, buttons: bar.buttons.filter((_, i) => i !== index) }));
   }
 
+  /** Move a button left or right on its bar */
   async function moveButton(index: number, by: number): Promise<void> {
     await changeBar((bar) => {
       const buttons = [...bar.buttons];
@@ -177,6 +182,7 @@
     });
   }
 
+  /** Ask for a name, then add an empty bar and show it */
   function newBar(): void {
     prompt = {
       title: "New Button Bar",
@@ -190,6 +196,7 @@
     };
   }
 
+  /** Ask for a new name for the bar shown */
   function renameBar(): void {
     const old = current.name;
     prompt = {
@@ -204,6 +211,7 @@
     };
   }
 
+  /** Delete the bar shown and its buttons, after asking (it's gone for everyone sharing the settings folder) */
   async function deleteBar(): Promise<void> {
     const name = current.name;
     const sure = await ask(`Delete the button bar "${name}" and its ${current.buttons.length} buttons?\n\nButtonBars.xml is in the settings folder, so it goes for everyone who shares it.`,
@@ -214,6 +222,7 @@
     await pick(next[0].name);
   }
 
+  /** Save the bar shown as SuperXPuTTY's export JSON */
   async function exportCurrent(): Promise<void> {
     const path = await save({ defaultPath: `${current.name} button bar.json`, filters: [{ name: "Button bar", extensions: ["json"] }] });
     if (!path) return;
@@ -225,6 +234,7 @@
     }
   }
 
+  /** Add a bar from SuperXPuTTY's export JSON, and show it */
   async function importFile(): Promise<void> {
     const path = await open({ filters: [{ name: "Button bar", extensions: ["json"] }] });
     if (typeof path !== "string") return;
@@ -238,6 +248,7 @@
     }
   }
 
+  /** Add the button edited, or put it in place of the one it was */
   async function saveButton(button: BarButton): Promise<void> {
     const index = editing?.index ?? null;
     editing = null;

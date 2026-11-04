@@ -1,3 +1,6 @@
+/**
+ * Tests for the Fetch command examples on both systems: a pure function, so nothing is stood in.
+ */
 import { describe, expect, it } from "vitest";
 import { keyFetchExamples } from "./keyFetchExamples";
 

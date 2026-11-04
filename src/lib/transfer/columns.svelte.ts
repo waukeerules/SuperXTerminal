@@ -18,6 +18,7 @@ export class ResizableColumns {
     return this.widths.reduce((a, b) => a + b, 0);
   }
 
+  /** The widths kept for `key`, or the defaults when none are kept (or they don't fit these columns) */
   private saved(): number[] {
     try {
       const saved = JSON.parse(localStorage.getItem(`sxt.transfer.${this.key}`) ?? "null");
@@ -28,6 +29,7 @@ export class ResizableColumns {
     return [...this.defaults];
   }
 
+  /** Keep the widths for every file transfer tab */
   private save(): void {
     try {
       localStorage.setItem(`sxt.transfer.${this.key}`, JSON.stringify(this.widths));
@@ -55,6 +57,7 @@ export class ResizableColumns {
     grip.addEventListener("pointercancel", done);
   }
 
+  /** A double-click on a heading's edge: back to the column's default width */
   reset(i: number): void {
     this.widths[i] = this.defaults[i];
     this.save();

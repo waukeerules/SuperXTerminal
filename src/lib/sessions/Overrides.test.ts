@@ -7,15 +7,20 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import Overrides from "./Overrides.svelte";
 import type { Override, SessionFields } from "./api";
 
+/** The session the window is opened on: a Database session, as the user's CyberArk one */
 const SESSION: SessionFields = {
   name: "Switch - CyberArk", folder: "Region 4", protocol: "SSH", host: "192.168.0.50", port: 22,
   username: "{email}#{cyberark_region}@…", profile: "CyberArk", color: "", icon: "switch", highlightRules: "",
   extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "", rdpOptions: "", sshAlgorithms: "",
 };
+/** Its id, the key its overrides are kept by */
 const ID = "@db/Region 4/Switch - CyberArk";
 
+/** The overrides stored, as the stand-in for overrides_get gives them */
 let stored: Record<string, Override>;
+/** The presets stored, which the stand-in for override_presets_set changes */
 let presets: Record<string, Override>;
+/** What the window last saved (overrides_set), or null if it hasn't */
 let saved: [string, Override][] | null;
 
 beforeEach(() => {
@@ -42,13 +47,16 @@ beforeEach(() => {
   });
 });
 
+/** Open the window on the session, and wait until its stored values are shown */
 async function open() {
   render(Overrides, { sessions: [{ id: ID, store: "database", name: SESSION.name }], onSaved: () => {}, onCancel: () => {} });
   // ready once the stored values are shown beside the fields
   await screen.findByText("Session: 192.168.0.50");
 }
 
+/** The Use these overrides switch */
 const useSwitch = () => screen.getByRole("checkbox", { name: /Use these overrides/ }) as HTMLInputElement;
+/** A field by its label */
 const field = (label: RegExp) => screen.getByRole("textbox", { name: label }) as HTMLInputElement;
 
 describe("Local overrides", () => {

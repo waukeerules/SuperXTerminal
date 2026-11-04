@@ -8,7 +8,9 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import ProfilesTab from "./ProfilesTab.svelte";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "./profiles";
 
+/** The profiles stored, which the stand-ins for profiles_save and profiles_delete change */
 let stored: Profile[];
+/** Every command the tab sent, with its arguments */
 let calls: { cmd: string; args: Record<string, unknown> }[];
 
 beforeEach(() => {
@@ -46,7 +48,9 @@ async function open(initial: string | null = null) {
   await screen.findByRole("option", { name: "root" });
 }
 
+/** A button by its name */
 const button = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
+/** The dots beside fields that have changed */
 const dots = () => screen.queryAllByLabelText("changed");
 
 describe("Settings > Profiles", () => {

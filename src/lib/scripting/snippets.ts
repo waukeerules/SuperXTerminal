@@ -13,6 +13,7 @@ export interface Field {
   secret: boolean;
 }
 
+/** A {prompt:Name}, {prompt:Name=default} or {secret:Name} field: its kind, name and default */
 const PATTERN = /\{(prompt|secret):([^{}=]+?)(?:=([^{}]*))?\}/gi;
 
 /** The last value given for each name (not secrets), by lower-case name */

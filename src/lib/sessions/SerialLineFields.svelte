@@ -6,13 +6,17 @@
   import { DATA_BITS, FLOWS, PARITIES, SPEEDS, STOP_BITS, type SerialLine } from "./serial";
 
   interface Props {
+    /** The line's settings shown */
     line: SerialLine;
+    /** Called with the settings after any change */
     onChange: (line: SerialLine) => void;
+    /** Greyed, as for a field locked in the database */
     disabled?: boolean;
   }
 
   let { line, onChange, disabled = false }: Props = $props();
 
+  /** Change some of the line's settings, keeping the rest */
   const set = (changes: Partial<SerialLine>) => onChange({ ...line, ...changes });
 </script>
 

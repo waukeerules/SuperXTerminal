@@ -20,10 +20,12 @@ pub fn folder(settings_folder: &Path) -> PathBuf {
     settings_folder.join("scripts")
 }
 
+/// A script's file extension: `.spsl` for SPSL scripts, `.txt` for plain ones
 fn extension(kind: &str) -> &'static str {
     if kind == "spsl" { ".spsl" } else { ".txt" }
 }
 
+/// Where a script of this name and kind is kept
 fn path_of(settings_folder: &Path, name: &str, kind: &str) -> PathBuf {
     folder(settings_folder).join(format!("{}{}", name.trim(), extension(kind)))
 }

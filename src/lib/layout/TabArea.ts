@@ -132,10 +132,12 @@ class TabListButton implements IHeaderActionsRenderer {
     this.element.append(close, list);
   }
 
+  /** Take the group the buttons belong to: ✕ closes its active tab */
   init(parameters: IGroupHeaderProps): void {
     this.group = parameters.group;
   }
 
+  /** Nothing to let go of: the buttons go with the header */
   dispose(): void {}
 }
 
@@ -158,6 +160,7 @@ class OutputPanel implements IContentRenderer {
     this.element.className = "terminal-panel";
   }
 
+  /** Open the output page for the tab it follows, with an OutputHost behind it */
   init(parameters: GroupPanelPartInitParameters): void {
     const id = parameters.api.id;
     const { source, logPath, title } = parameters.params as OutputParams;
@@ -171,6 +174,7 @@ class OutputPanel implements IContentRenderer {
     this.element.append(frame);
   }
 
+  /** The panel closed: stop following the tab's log */
   dispose(): void {
     this.host?.dispose();
     for (const [source, host] of this.tabs.outputs) if (host === this.host) this.tabs.outputs.delete(source);
@@ -188,6 +192,7 @@ class RdpPanel implements IContentRenderer {
     this.element.className = "terminal-panel";
   }
 
+  /** Connect the Remote Desktop session and show it, framed in its environment colour */
   init(parameters: GroupPanelPartInitParameters): void {
     const { target, environment } = parameters.params as TerminalParams;
     if (target.kind !== "session") return;
@@ -202,6 +207,7 @@ class RdpPanel implements IContentRenderer {
     void this.host.connect();
   }
 
+  /** The tab closed: end the Remote Desktop session */
   dispose(): void {
     this.host?.dispose();
     for (const [id, host] of this.tabs.rdpHosts) if (host === this.host) this.tabs.rdpHosts.delete(id);
@@ -219,6 +225,7 @@ class SftpPanel implements IContentRenderer {
     this.element.className = "terminal-panel";
   }
 
+  /** Show the session's files, framed in its environment colour */
   init(parameters: GroupPanelPartInitParameters): void {
     const { target, environment } = parameters.params as TerminalParams;
     if (target.kind !== "session") return;
@@ -229,6 +236,7 @@ class SftpPanel implements IContentRenderer {
     this.view = mount(FileTransfer, { target: this.element, props: { store: target.store, id: target.id } });
   }
 
+  /** The tab closed: take the file transfer away, which closes its connection */
   dispose(): void {
     if (this.view) void unmount(this.view);
     this.view = null;
@@ -267,6 +275,7 @@ class ComparePanel implements IContentRenderer {
     this.element.className = "terminal-panel";
   }
 
+  /** Open the compare page; it asks for the two outputs once it's ready */
   init(parameters: GroupPanelPartInitParameters): void {
     this.id = parameters.api.id;
     this.params = parameters.params as unknown as CompareParams;
@@ -295,6 +304,7 @@ class ComparePanel implements IContentRenderer {
     );
   }
 
+  /** The tab closed: stop listening to its page */
   dispose(): void {
     window.removeEventListener("message", this.onMessage);
   }
@@ -383,6 +393,7 @@ class TerminalPanel implements IContentRenderer {
   }
 }
 
+/** The tab area: dockview's tabs and groups, and what each tab holds (its page host, its watches, its session) */
 export class TabArea {
   readonly api: DockviewApi;
   private count = 0;
@@ -459,12 +470,12 @@ export class TabArea {
     this.api.onDidAddPanel(() => this.changed());
   }
 
-  /** Open a new Local Shell tab */
   /** Open a tab that runs a profile's key fetch on its own (Settings > Profiles > Log in & cache key) */
   openKeyFetch(profile: string): void {
     this.add(`Key fetch: ${profile}`, { target: { kind: "keyFetch", profile }, local: true, icon: "terminal", environment: null });
   }
 
+  /** Open a new Local Shell tab, numbered after the first */
   openLocalShell(): void {
     this.count += 1;
     this.add(this.count === 1 ? "Local Shell" : `Local Shell (${this.count})`, {
@@ -550,6 +561,7 @@ export class TabArea {
     return () => this.listeners.delete(listener);
   }
 
+  /** Tell the listeners the tabs have changed */
   private changed(): void {
     for (const listener of this.listeners) listener();
   }

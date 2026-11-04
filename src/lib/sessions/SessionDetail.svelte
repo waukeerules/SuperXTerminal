@@ -9,9 +9,13 @@
   import { getSession, type SessionFields, type SessionView } from "./api";
 
   interface Props {
+    /** The session shown; null when none is selected */
     session: SessionView | null;
+    /** The user's custom icons, for the session's icon */
     customs: ReadonlyMap<string, CustomIcon>;
+    /** Edit…: open the session in Edit Session */
     onEdit: (session: SessionView) => void;
+    /** The pane's close button */
     onClose: () => void;
   }
 

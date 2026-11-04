@@ -346,6 +346,7 @@ fn plain_failure(error: &str) -> String {
     }
 }
 
+/// Send an event to the tab as JSON; a tab that's gone misses it
 fn send_json(channel: &Channel<InvokeResponseBody>, event: &RdpEvent) {
     if let Ok(text) = serde_json::to_string(event) {
         let _ = channel.send(InvokeResponseBody::Json(text));
@@ -356,6 +357,7 @@ fn send_json(channel: &Channel<InvokeResponseBody>, event: &RdpEvent) {
 /// compared whole first (a memory compare), and only changed rows are searched for their changed columns.
 fn changed_rect(old: &[u32], new: &[u32], w: u16, h: u16) -> Option<(u16, u16, u16, u16)> {
     let width = w as usize;
+    /// Row `y` of a frame `width` pixels wide
     fn row(pixels: &[u32], width: usize, y: usize) -> &[u32] {
         &pixels[y * width..(y + 1) * width]
     }
@@ -399,6 +401,7 @@ fn frame(buffer: &[u32], w: u16, h: u16, (x, y, rw, rh): (u16, u16, u16, u16)) -
     packet
 }
 
+/// Pass the tab's input to the session's engine, or say the session has ended
 fn send(rdps: &Rdps, id: u32, event: RdpInputEvent) -> Result<(), String> {
     let sessions = rdps.sessions.lock().unwrap();
     let session = sessions.get(&id).ok_or("The Remote Desktop session has ended.")?;
@@ -440,6 +443,7 @@ pub fn rdp_keys(rdps: State<'_, Rdps>, id: u32, keys: Vec<(u8, bool, bool)>) -> 
 
 /// The US keyboard's key for a character: its scancode and whether Shift is pressed with it
 fn us_key(c: char) -> Option<(u8, bool)> {
+    /// The US keyboard's rows: their characters, shifted characters and the scancode of the first key
     const ROWS: [(&str, &str, u8); 4] = [
         ("`1234567890-=", "~!@#$%^&*()_+", 0x29),
         ("qwertyuiop[]\\", "QWERTYUIOP{}|", 0x10),

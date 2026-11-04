@@ -21,8 +21,10 @@
     });
   });
 
+  /** How many lines the paste has now, for the question */
   const lines = $derived(pasteLineCount(text));
 
+  /** Close the window, giving back the text to type (with CR LF line breaks) or null for Cancel */
   function finish(paste: boolean): void {
     const current = pasting.current;
     if (!current) return;
@@ -31,6 +33,7 @@
     current.resolve(paste && text ? text.replace(/\n/g, "\r\n") : null);
   }
 
+  /** Escape cancels, Cmd+Enter (Ctrl+Enter on Windows) pastes */
   function keydown(e: KeyboardEvent): void {
     if (!pasting.current) return;
     if (e.key === "Escape") finish(false);

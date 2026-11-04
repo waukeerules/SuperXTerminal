@@ -13,9 +13,13 @@
   interface Props {
     /** The layout open now, shown in bold */
     current: string | null;
+    /** Load, or a double-click: open the layout in this window */
     onLoad: (name: string) => void;
+    /** Load in New Window: open the layout in a window of its own */
     onLoadInNewWindow: (name: string) => void;
+    /** Rename: ask for the layout's new name */
     onRename: (name: string) => void;
+    /** The pane's close button */
     onClose: () => void;
   }
 
@@ -25,6 +29,7 @@
   let selected = $state<string | null>(null);
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
+  /** Read the saved layouts' names again */
   async function refresh(): Promise<void> {
     names = await listLayouts().catch(() => []);
   }
@@ -36,6 +41,7 @@
     return () => window.removeEventListener(LAYOUTS_CHANGED, changed);
   });
 
+  /** Delete a layout, after asking; the default layout can't be deleted */
   async function remove(name: string): Promise<void> {
     if (name === settings.defaultLayoutName) {
       await ask("The default layout can't be deleted: set another as the default first.", { title: "Delete layout", kind: "warning" });
@@ -46,6 +52,7 @@
     await refresh();
   }
 
+  /** Open a layout's menu: Load, Load in New Window, Rename, Delete and Set as default layout */
   function showMenu(event: MouseEvent, name: string): void {
     event.preventDefault();
     selected = name;

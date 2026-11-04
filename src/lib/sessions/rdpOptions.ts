@@ -4,6 +4,7 @@
  * (Edit Session > RDP options…) holds its own, laid over them. `Retina` is the Mac's own; SuperXPuTTY skips it.
  */
 
+/** A session's or the user's RDP options; an option left out is Default (the user's, then Remote Desktop's own) */
 export interface RdpOptions {
   /** "FitTab" or "Fixed" */
   display?: "FitTab" | "Fixed";
@@ -28,7 +29,9 @@ export interface RdpOptions {
   retina?: boolean;
 }
 
+/** The options that are on or off */
 export type FlagKey = "smartSizing" | "clipboard" | "drives" | "printers" | "smartCards" | "microphone" | "console" | "retina";
+/** The options chosen from a list, by their number in it */
 export type NumberKey = "colorDepth" | "audio" | "keyboard" | "authentication";
 
 /** Each option's key in the text, in SuperXPuTTY's order */

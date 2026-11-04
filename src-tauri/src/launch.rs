@@ -87,6 +87,7 @@ const OLDER_ALGORITHMS: [(&str, &str, &[&str]); 5] = [
 /// refuses to start at all when an option names one it doesn't know, and newer builds drop some (DSA). Asked once
 /// per run; when ssh can't be asked, the ones every OpenSSH 9 and 10 still has.
 fn older_algorithm_args() -> Vec<String> {
+    /// The arguments, worked out the first time they're needed
     static ARGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     ARGS.get_or_init(|| {
         let mut args = Vec::new();
@@ -933,6 +934,7 @@ mod tests {
         sw
     }
 
+    /// What CyberArk's variables are set to in the tests
     const CYBERARK_VALUES: [(&str, &str); 5] =
         [("ad_user", "me"), ("region", "r1"), ("target_user", "admin"), ("vault", "v1"), ("connector", "c1")];
 

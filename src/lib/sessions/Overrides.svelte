@@ -14,17 +14,22 @@
   import Prompt from "../ui/Prompt.svelte";
 
   interface Props {
+    /** The sessions the overrides are for: one, or several from the tree's selection */
     sessions: Pick<SessionView, "id" | "store" | "name">[];
+    /** Saved: the tree reads the overrides again */
     onSaved: () => void;
+    /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
   }
 
   let { sessions, onSaved, onCancel }: Props = $props();
 
+  /** A field that can be overridden, by its name in SessionOverrides.json */
   type Key = "Host" | "Port" | "Username" | "PuttyProfile" | "ExtraArgs" | "JumpHost" | "Note";
   /** set: this value on all; remove: no override on any; keep: each as it is (only where they differ) */
   type Use = "set" | "remove" | "keep";
 
+  /** Each field: its name in the file, its label, the session's own value (shown beside it) and a hint */
   const FIELDS: { key: Key; label: string; stored: (f: SessionFields) => string; hint: string }[] = [
     { key: "Host", label: "Host", stored: (f) => f.host, hint: "" },
     { key: "Port", label: "Port", stored: (f) => (f.port ? String(f.port) : "the protocol's"), hint: "" },
@@ -35,6 +40,7 @@
     { key: "Note", label: "Notes", stored: (f) => f.note, hint: "your own note, shown instead of the session's" },
   ];
 
+  /** Whether it's for several sessions, which shows "Keep" for fields that differ between them */
   const many = untrack(() => sessions.length > 1);
   let current = $state<(Override | undefined)[]>([]);
   let stored = $state<(SessionFields | null)[]>([]);
@@ -144,6 +150,7 @@
     }
   }
 
+  /** Delete the preset chosen */
   async function deletePreset(): Promise<void> {
     if (!preset) return;
     try {
@@ -169,6 +176,7 @@
     return out;
   }
 
+  /** Save the overrides for every session; a Port that's set must be a number */
   async function save(): Promise<void> {
     if (use.Port === "set" && !(Number(values.Port) > 0)) {
       error = "Give a port from 1 to 65535, or untick Port.";
@@ -182,6 +190,7 @@
     }
   }
 
+  /** The window's title: the session's name, or how many sessions */
   const title = $derived(many ? `Local overrides for ${sessions.length} sessions` : `Local overrides: ${sessions[0]?.name ?? ""}`);
 </script>
 

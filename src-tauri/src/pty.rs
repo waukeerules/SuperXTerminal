@@ -60,6 +60,7 @@ const KEPT_OUTPUT: usize = 2 * 1024 * 1024;
 #[derive(Clone)]
 struct Outlet(Arc<Mutex<OutletState>>);
 
+/// What an [`Outlet`] keeps: the tab's channel, the "started" event, the recent output and the end, if it's come
 struct OutletState {
     channel: Channel<PtyEvent>,
     started: Option<PtyEvent>,
@@ -68,6 +69,7 @@ struct OutletState {
 }
 
 impl Outlet {
+    /// An outlet sending to a tab's channel, with nothing passed on yet
     fn new(channel: Channel<PtyEvent>) -> Outlet {
         Outlet(Arc::new(Mutex::new(OutletState { channel, started: None, recent: VecDeque::new(), exit: None })))
     }
@@ -300,6 +302,7 @@ pub fn pty_open(
 /// How often the watcher looks whether the program has ended, and how long it then leaves the reader to pass on its
 /// last output and see the end itself
 const EXIT_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+/// How long the reader is left after the end is seen (see [`EXIT_POLL`])
 const EXIT_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Tell of the program's end even when its output doesn't end with it: on Windows a ConPTY's output stays open after
@@ -399,6 +402,7 @@ struct PasswordPrompt {
 }
 
 impl PasswordPrompt {
+    /// Watches output for the password prompt, to type `password` at it once
     fn new(password: String) -> PasswordPrompt {
         PasswordPrompt { password, tail: String::new() }
     }

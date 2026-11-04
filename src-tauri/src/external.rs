@@ -144,6 +144,7 @@ fn filezilla_url(host: &str, port: u16, username: &str, password: Option<&str>, 
     format!("sftp://{user}{host}:{port}{path}")
 }
 
+/// Open a URL with the app the Mac has for it (`open`), or say nothing here does
 fn open_url(url: &str) -> Result<(), String> {
     let status = std::process::Command::new("open").arg(url).status().map_err(|e| e.to_string())?;
     if status.success() { Ok(()) } else { Err(format!("Nothing on this Mac opens {url}")) }

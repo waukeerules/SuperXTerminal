@@ -26,9 +26,13 @@
   import type { CustomIcon } from "../icons/custom";
 
   interface Props {
+    /** The items, separators and submenus */
     items: MenuItem[];
+    /** Where the menu opens: its left edge, in the window's pixels (moved in when it would run off the window) */
     x: number;
+    /** Where the menu opens: its top edge, in the window's pixels (moved up when it would run off the window) */
     y: number;
+    /** An item was chosen, Escape, or a click outside */
     onClose: () => void;
     /** A submenu: placed beside its item instead of at x, y */
     nested?: boolean;

@@ -32,6 +32,7 @@
     await saveSettings({ shortcuts: changes });
   }
 
+  /** Give an action a key, or none; a key another action has is taken from it, after asking */
   async function setKey(row: ShortcutRow, key: string): Promise<void> {
     const other = key ? rows.find((r) => r !== row && normalKey(r.key) === normalKey(key)) : undefined;
     if (other) {

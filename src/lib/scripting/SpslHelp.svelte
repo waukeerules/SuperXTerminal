@@ -36,11 +36,13 @@
     ["# comment", "A comment; so is #!/bin/spsl on the first line"],
   ];
 
+  /** Show the Saved tab, with the saved scripts listed again */
   async function showSaved(): Promise<void> {
     tab = "saved";
     saved = await invoke<{ name: string; kind: string }[]>("scripts_list");
   }
 
+  /** Insert a saved script's text into the script being edited */
   async function insertSaved(entry: { name: string; kind: string }): Promise<void> {
     onInsert(await invoke<string>("script_load", { name: entry.name, kind: entry.kind }));
   }

@@ -4,6 +4,7 @@
  * and XON/XOFF flow control.
  */
 
+/** A serial line's settings, as PuTTY's -sercfg holds them */
 export interface SerialLine {
   speed: number;
   dataBits: number;
@@ -15,13 +16,18 @@ export interface SerialLine {
   flow: string;
 }
 
+/** PuTTY's line when -sercfg doesn't say: 9600 8N1, XON/XOFF */
 export const DEFAULT_LINE: SerialLine = { speed: 9600, dataBits: 8, parity: "n", stopBits: "1", flow: "X" };
 
 /** The speeds offered in the list; any other can be typed */
 export const SPEEDS = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
+/** The data bits offered */
 export const DATA_BITS = [5, 6, 7, 8];
+/** The stop bits offered */
 export const STOP_BITS = ["1", "1.5", "2"];
+/** The parities offered: -sercfg's letter, and its name */
 export const PARITIES: [string, string][] = [["n", "None"], ["o", "Odd"], ["e", "Even"], ["m", "Mark"], ["s", "Space"]];
+/** The flow controls offered: -sercfg's letter, and its name */
 export const FLOWS: [string, string][] = [["N", "None"], ["X", "XON/XOFF"], ["R", "RTS/CTS"], ["D", "DSR/DTR"]];
 
 /** Read a -sercfg value onto a line: settings in any order, as PuTTY reads them */
@@ -37,6 +43,7 @@ export function applySercfg(line: SerialLine, cfg: string): SerialLine {
   return out;
 }
 
+/** A line as -sercfg text: "9600,8,n,1,X" */
 export function toSercfg(line: SerialLine): string {
   return `${line.speed},${line.dataBits},${line.parity},${line.stopBits},${line.flow}`;
 }

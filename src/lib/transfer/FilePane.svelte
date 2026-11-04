@@ -12,18 +12,27 @@
   import { commandKey, commandLabel, isMac } from "../shortcuts";
 
   interface Props {
+    /** Which side it is: this computer's files, or the session's */
     side: "local" | "remote";
+    /** The side's heading */
     title: string;
+    /** Where Home goes: the side's home folder */
     home: string;
+    /** The folder shown; null before the first listing */
     listing: Listing | null;
+    /** A listing is being read */
     loading: boolean;
+    /** Why the last listing or action failed, shown under the list */
     error: string;
+    /** Go to a folder (Up, Home, the path typed, or a folder opened) */
     onNavigate: (path: string) => void;
     /** Copy these (full paths) to the other side's folder */
     onCopy: (paths: string[]) => void;
     /** Files dragged from the other side (full paths), dropped into this side's `folder` */
     onDrop: (paths: string[], folder: string) => void;
+    /** New Folder… in the menu; absent where a side can't make one (SCP) */
     onMkdir?: () => void;
+    /** Rename… in the menu; absent where a side can't rename (SCP) */
     onRename?: (entry: Entry) => void;
     /** Remote only: delete these entries */
     onDelete?: (entries: Entry[]) => void;
@@ -33,14 +42,18 @@
 
   let { side, title, home, listing, loading, error, onNavigate, onCopy, onDrop, onMkdir, onRename, onDelete, onReveal }: Props = $props();
 
+  /** A column of the list, by the Entry field it shows */
   type Column = "name" | "size" | "modified" | "permissions" | "owner" | "group";
+  /** Each column and its heading, as SuperXPuTTY's panes name them */
   const HEADINGS: [Column, string][] = [["name", "Name"], ["size", "Size"], ["modified", "Last Mod"], ["permissions", "Perm"], ["owner", "Owner"], ["group", "Group"]];
   /** Each side's widths are its own; Name fills what the others leave (at least its own width) */
   // svelte-ignore state_referenced_locally
   const columns = new ResizableColumns(side, [120, 64, 124, 82, 64, 56]);
   /** The list's width: Name takes what the other columns leave of it, and at least its own width */
   let listWidth = $state(0);
+  /** The columns after Name, together */
   const others = $derived(columns.widths.slice(1).reduce((a, b) => a + b, 0));
+  /** Name's width: what the others leave, and at least its own */
   const nameWidth = $derived(Math.max(columns.widths[0], listWidth - others));
   let sort = $state<{ by: Column; up: boolean }>({ by: "name", up: true });
   let selected = $state<Set<string>>(new Set());
@@ -51,6 +64,7 @@
   /** A folder (or the list) a drag is over */
   let dropTarget = $state<string | null>(null);
 
+  /** What a drag between the two sides carries, so a drop from elsewhere (Finder) isn't taken for one */
   const DRAG_TYPE = "application/x-sxt-transfer";
 
   // the path box follows the folder shown, and the selection is cleared on a new folder
@@ -59,6 +73,7 @@
     selected = new Set();
   });
 
+  /** The folder's entries in the order chosen: folders first, then by the column sorted on (by name when equal) */
   const entries = $derived.by(() => {
     const list = [...(listing?.entries ?? [])];
     const factor = sort.up ? 1 : -1;
@@ -72,13 +87,16 @@
     });
     return list;
   });
+  /** The count under the list: "3 files, 1 folder" */
   const counts = $derived.by(() => {
     const all = listing?.entries ?? [];
     const dirs = all.filter((e) => e.dir).length;
     return `${all.length - dirs} file${all.length - dirs === 1 ? "" : "s"}, ${dirs} folder${dirs === 1 ? "" : "s"}`;
   });
 
+  /** An entry's full path */
   const full = (entry: Entry) => joinPath(listing?.path ?? "", entry.name);
+  /** The entries selected, in the list's order */
   const chosen = () => entries.filter((e) => selected.has(e.name));
 
   /** A click on a heading sorts by it; one on its resize grip (the end of a drag) doesn't */
@@ -86,10 +104,12 @@
     if (!(event.target as HTMLElement).classList.contains("grip")) setSort(by);
   }
 
+  /** Sort by a column, or the other way when it's sorted on already */
   function setSort(by: Column): void {
     sort = sort.by === by ? { by, up: !sort.up } : { by, up: true };
   }
 
+  /** Select an entry: a click selects it alone, Cmd+click (Ctrl on Windows) adds or takes it out, Shift+click a run */
   function click(event: MouseEvent, entry: Entry): void {
     const next = new Set(commandKey(event) ? selected : []);
     if (event.shiftKey && anchor) {
@@ -105,11 +125,13 @@
     selected = next;
   }
 
+  /** Open an entry: go into a folder, or copy a file to the other side */
   function open(entry: Entry): void {
     if (entry.dir) onNavigate(full(entry));
     else onCopy([full(entry)]);
   }
 
+  /** The list's keys: select all, Enter opens, Delete (or Cmd+Backspace) deletes, Cmd+Up goes up a folder */
   function key(event: KeyboardEvent): void {
     if (event.key === "a" && commandKey(event)) {
       event.preventDefault();
@@ -124,6 +146,7 @@
     }
   }
 
+  /** Start dragging the selection (or the entry dragged, if it isn't selected) to the other side */
   function dragStart(event: DragEvent, entry: Entry): void {
     if (!selected.has(entry.name)) selected = new Set([entry.name]);
     event.dataTransfer?.setData(DRAG_TYPE, JSON.stringify({ side, paths: chosen().map(full) }));
@@ -135,6 +158,7 @@
     return !!event.dataTransfer?.types.includes(DRAG_TYPE);
   }
 
+  /** A drag from the other side is over a folder (or the list): show it as the drop's target */
   function over(event: DragEvent, folder: string): void {
     if (!incoming(event)) return;
     event.preventDefault();
@@ -143,6 +167,7 @@
     dropTarget = folder;
   }
 
+  /** A drop from the other side: copy its files into the folder dropped on */
   function drop(event: DragEvent, folder: string): void {
     dropTarget = null;
     const raw = event.dataTransfer?.getData(DRAG_TYPE);
@@ -159,6 +184,7 @@
     return { destroy: () => node.remove() };
   }
 
+  /** Open the right-click menu for an entry, or for the folder when on no entry */
   function showMenu(event: MouseEvent, entry: Entry | null): void {
     event.preventDefault();
     if (entry && !selected.has(entry.name)) selected = new Set([entry.name]);

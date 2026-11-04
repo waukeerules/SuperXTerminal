@@ -203,6 +203,7 @@ struct ExportFile {
     bars: Vec<ExportBar>,
 }
 
+/// One bar in SuperXPuTTY's export JSON (camelCase, as it writes it)
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExportBar {
@@ -214,6 +215,7 @@ struct ExportBar {
     buttons: Vec<ExportButton>,
 }
 
+/// One button in SuperXPuTTY's export JSON
 #[derive(Serialize, Deserialize)]
 struct ExportButton {
     #[serde(default)]
@@ -230,6 +232,7 @@ struct ExportButton {
     text: String,
 }
 
+/// The export's "format", which SuperXPuTTY checks before it imports a file
 const EXPORT_FORMAT: &str = "superxputty-button-bars";
 
 /// One bar as SuperXPuTTY's export JSON

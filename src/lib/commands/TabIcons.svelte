@@ -11,20 +11,26 @@
   import type { Bar } from "./bars";
 
   interface Props {
+    /** The bar whose session icons are chosen */
     bar: Bar;
+    /** The user's custom icons */
     customs: ReadonlyMap<string, CustomIcon>;
+    /** Called with the bar's icons after each tick */
     onChange: (icons: string[]) => void;
+    /** Close, or Escape */
     onClose: () => void;
   }
 
   let { bar, customs, onChange, onClose }: Props = $props();
 
+  /** Every icon that can be ticked: the templates, then the logos, then the custom icons */
   const icons = $derived([
     ...templateOrder.map((k) => ({ key: k, title: templates[k].title })),
     ...Object.keys(logos).map((k) => ({ key: k, title: logos[k].title })),
     ...[...customs.entries()].map(([k, icon]) => ({ key: CUSTOM_PREFIX + k, title: icon.title })),
   ]);
 
+  /** Tick or untick an icon */
   function toggle(key: string): void {
     const has = bar.tabIcons.some((t) => t.toLowerCase() === key.toLowerCase());
     onChange(has ? bar.tabIcons.filter((t) => t.toLowerCase() !== key.toLowerCase()) : [...bar.tabIcons, key]);

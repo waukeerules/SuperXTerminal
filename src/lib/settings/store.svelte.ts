@@ -81,6 +81,7 @@ export interface AppSettings {
   treeSearchFields: string[];
 }
 
+/** The settings now, for every component; `loaded` once they've been read at the start */
 export const settings = $state<AppSettings & { loaded: boolean }>({
   loaded: false,
   settingsFolder: null,

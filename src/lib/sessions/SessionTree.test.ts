@@ -8,6 +8,7 @@ import SessionTree from "./SessionTree.svelte";
 import { settings } from "../settings/store.svelte";
 import type { SessionView } from "./api";
 
+/** A Saved SSH session with this id, its name and folder taken from it */
 function session(id: string): SessionView {
   const name = id.slice(id.lastIndexOf("/") + 1);
   const folder = id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : "";
@@ -17,6 +18,7 @@ function session(id: string): SessionView {
   };
 }
 
+/** Every command the tree sent, with its arguments, for checking what a move asked for */
 let calls: { cmd: string; args: Record<string, unknown> }[];
 /** One user for a whole test, so a key held down (Cmd, Shift) is still down for the click after it */
 let user: ReturnType<typeof userEvent.setup>;
@@ -38,6 +40,7 @@ beforeEach(() => {
   Object.assign(settings, { loaded: true, treeSearchFields: [], treeSearchCase: false, treeSearchRegex: false });
 });
 
+/** Show the tree on the stand-in sessions, with Saved sessions' folders open */
 async function open() {
   render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
   await screen.findByText(/Imported/);
@@ -45,6 +48,7 @@ async function open() {
   await user.click(screen.getByRole("button", { name: "Expand all" }));
 }
 
+/** A tree row, by the text in it */
 const row = (text: string | RegExp) => screen.getByText(text).closest(".row") as HTMLElement;
 
 describe("selecting folders and sessions together", () => {

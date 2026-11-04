@@ -10,11 +10,17 @@
   interface Props {
     /** "in Lab", for the title */
     title: string;
+    /** The sessions to choose from */
     sessions: SessionView[];
+    /** The size of the icons in the list, as the Sessions tree's */
     iconSize: number;
+    /** The user's custom icons, for the list */
     customs: ReadonlyMap<string, CustomIcon>;
+    /** A session's environment colour, for its tab */
     environment: (session: SessionView) => string | null;
+    /** Connect: the sessions ticked, in the list's order */
     onConnect: (sessions: SessionView[]) => void;
+    /** Cancel, or Escape: nothing opens */
     onCancel: () => void;
   }
 
@@ -22,22 +28,27 @@
 
   /** The most opened at once */
   const MAX = 10;
+  /** A session's key in the ticked list, "store:id", as its id alone may be in two stores */
   const keyOf = (s: SessionView) => `${s.store}:${s.id}`;
 
   let ticked = $state<string[]>([]);
   let filter = $state("");
 
+  /** The sessions whose name, host or folder has the filter's text */
   const shown = $derived.by(() => {
     const needle = filter.trim().toLowerCase();
     return needle ? sessions.filter((s) => [s.name, s.host, s.folder].some((f) => f.toLowerCase().includes(needle))) : sessions;
   });
+  /** Whether `MAX` are ticked, so no more can be */
   const full = $derived(ticked.length >= MAX);
 
+  /** Tick or untick a session; ticking stops at MAX */
   function toggle(session: SessionView, on: boolean): void {
     const key = keyOf(session);
     ticked = on ? (ticked.includes(key) || full ? ticked : [...ticked, key]) : ticked.filter((k) => k !== key);
   }
 
+  /** Open the ticked sessions */
   function connect(): void {
     const chosen = new Set(ticked);
     onConnect(sessions.filter((s) => chosen.has(keyOf(s))));

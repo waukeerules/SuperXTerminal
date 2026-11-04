@@ -24,8 +24,10 @@ use crate::AppState;
 
 /// Bytes a read or write asks for, and how many are in flight at once
 const CHUNK: u32 = 32 * 1024;
+/// How many reads or writes of [`CHUNK`] are sent before waiting for the first answer
 const IN_FLIGHT: usize = 16;
 
+/// One open file transfer: its connection, and the window that asks the user its questions
 struct Conn {
     /// SFTP: the protocol over ssh, and the ssh
     raw: Option<Arc<RawSftpSession>>,
@@ -37,6 +39,7 @@ struct Conn {
 }
 
 impl Conn {
+    /// The SFTP session, or why there's none: a device with only SCP can copy but not rename, delete or make folders
     fn raw(&self) -> Result<&RawSftpSession, String> {
         self.raw.as_deref().ok_or_else(|| "This device only offers SCP, which can copy files but not do this.".to_string())
     }
@@ -49,6 +52,7 @@ pub struct Sftps {
     cancels: Mutex<HashMap<u32, Arc<AtomicBool>>>,
 }
 
+/// The next id given to a tab's connection, a question or a transfer
 static NEXT: AtomicU32 = AtomicU32::new(1);
 
 /// What a tab opens on
@@ -85,6 +89,7 @@ pub struct Entry {
     group: String,
 }
 
+/// A folder's contents, at its full path
 #[derive(Serialize)]
 pub struct Listing {
     path: String,
@@ -109,6 +114,7 @@ struct Ask {
     secret: bool,
 }
 
+/// The questions waiting for the user's answer, by id
 static ASKS: Mutex<Option<HashMap<u32, std::sync::mpsc::Sender<Option<String>>>>> = Mutex::new(None);
 
 /// Ask the user in the window, waiting up to ten minutes
@@ -132,6 +138,7 @@ pub fn sftp_answer(ask_id: u32, answer: Option<String>) {
     }
 }
 
+/// An SFTP error in the user's words: "No such file or folder" rather than the status code
 fn plain(error: SftpError) -> String {
     match error {
         SftpError::Status(status) => match status.status_code {
@@ -144,6 +151,7 @@ fn plain(error: SftpError) -> String {
     }
 }
 
+/// The tab's connection, or say it's closed
 fn conn(sftps: &Sftps, id: u32) -> Result<Arc<Conn>, String> {
     sftps.conns.lock().unwrap().get(&id).cloned().ok_or_else(|| "The file transfer has closed.".to_string())
 }
@@ -406,6 +414,7 @@ pub async fn sftp_delete(sftps: State<'_, Sftps>, id: u32, path: String) -> Resu
     }
 }
 
+/// Delete a file, or a folder and everything in it
 async fn delete(raw: &RawSftpSession, path: &str) -> Result<(), String> {
     let attrs = raw.lstat(path).await.map_err(plain)?.attrs;
     if attrs.is_dir() {
@@ -459,6 +468,7 @@ pub async fn sftp_transfer(
     result
 }
 
+/// Copy files and folders over SFTP: count them all first, for the progress bar, then copy each, stopping if cancelled
 async fn run_transfer(
     raw: &RawSftpSession,
     upload: bool,
@@ -992,6 +1002,7 @@ fn meter_percent(text: &str) -> Option<u64> {
 /// A user or group id's name, as ls shows it
 #[cfg(unix)]
 fn id_name(id: u32, group: bool) -> String {
+    /// The names found so far, so each id is asked about once
     static NAMES: Mutex<Option<HashMap<(u32, bool), String>>> = Mutex::new(None);
     let mut names = NAMES.lock().unwrap();
     let names = names.get_or_insert_with(HashMap::new);

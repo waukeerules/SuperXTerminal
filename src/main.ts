@@ -1,3 +1,7 @@
+/**
+ * The main window's entry point: mounts App.svelte in index.html's #app, with dockview's styles and the app's own
+ * (app.css), and turns off the Mac's text helpers in every field.
+ */
 import { mount } from "svelte";
 import "virtual:dockview.css";
 import "./app.css";
@@ -20,6 +24,7 @@ document.addEventListener(
   true,
 );
 
+/** The main window's app */
 const app = mount(App, { target: document.getElementById("app")! });
 
 export default app;

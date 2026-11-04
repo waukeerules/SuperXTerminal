@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { CUSTOM_PREFIX, parseKey, resolveIcon } from "../icons/library";
 
+/** One button on a bar, as ButtonBars.xml holds it (SuperXPuTTY's) */
 export interface BarButton {
   label: string;
   tooltip: string;
@@ -17,6 +18,7 @@ export interface BarButton {
   text: string;
 }
 
+/** One button bar, as ButtonBars.xml holds it */
 export interface Bar {
   name: string;
   buttons: BarButton[];
@@ -44,10 +46,12 @@ export function loadBars(): Promise<Bar[]> {
   return invoke<Bar[]>("buttonbars_load");
 }
 
+/** Write ButtonBars.xml with these bars */
 export function saveBars(bars: Bar[]): Promise<void> {
   return invoke("buttonbars_save", { bars });
 }
 
+/** Save one bar as SuperXPuTTY's export JSON, at `path` */
 export function exportBar(bar: Bar, path: string): Promise<void> {
   return invoke("buttonbars_export", { bar, path });
 }

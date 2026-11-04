@@ -22,6 +22,7 @@ const LIFETIME: Duration = Duration::from_secs(120);
 /// Asks the user ssh's question (the prompt, and whether the answer is secret); None when cancelled
 pub type Asker = Arc<dyn Fn(&str, bool) -> Option<String> + Send + Sync>;
 
+/// What a token answers: the password to give, and who to ask for anything else
 struct Entry {
     /// Given at the first password question of each ssh (one run, or each run for a token with an asker)
     password: Option<String>,
@@ -32,6 +33,7 @@ struct Entry {
     made: Instant,
 }
 
+/// The tokens given out this run, by token; None until the first
 static TOKENS: Mutex<Option<HashMap<String, Entry>>> = Mutex::new(None);
 
 /// The socket, in this user's own temporary folder (the Mac's and Linux's; Windows listens on 127.0.0.1)
@@ -58,6 +60,7 @@ pub fn forget(token: &str) {
     }
 }
 
+/// Give out a token for `entry`, listening on the socket first if this is the first; the token is 32 random hex digits
 #[cfg(unix)]
 fn add(entry: Entry) -> Result<String, String> {
     listen()?;
@@ -86,6 +89,7 @@ fn add(entry: Entry) -> Result<String, String> {
     Ok(token)
 }
 
+/// No askpass on this system: there's nowhere to listen
 #[cfg(not(any(unix, windows)))]
 fn add(_entry: Entry) -> Result<String, String> {
     Err("Not on this system".into())
@@ -112,6 +116,7 @@ fn serve(mut stream: std::net::TcpStream) {
 /// reaches ssh through its environment. Returns the port.
 #[cfg(windows)]
 fn listen_local() -> Result<u16, String> {
+    /// The listener's port, or why it couldn't start; started once per run
     static STARTED: std::sync::OnceLock<Result<u16, String>> = std::sync::OnceLock::new();
     STARTED
         .get_or_init(|| {
@@ -165,6 +170,7 @@ fn answer(token: &str, kind: &str, ssh_pid: u32, prompt: &str) -> String {
 fn listen() -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixListener;
+    /// Whether the socket's listener started, or why not; started once per run
     static STARTED: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
     STARTED
         .get_or_init(|| {
@@ -237,6 +243,7 @@ pub fn helper() -> bool {
     true
 }
 
+/// No askpass on this system: always run as the app
 #[cfg(not(any(unix, windows)))]
 pub fn helper() -> bool {
     false

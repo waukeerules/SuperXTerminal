@@ -137,6 +137,7 @@
   /** Whether the table is being read */
   let dbLoading = $state(false);
 
+  /** The size of the icons in the tree (Settings > General) */
   const iconSize = $derived(settings.iconSize);
   /** The toolbar's and search buttons' icons scale with the icon size, as SuperXPuTTY's toolbars do */
   const toolSize = $derived(Math.round(settings.iconSize * 0.85));
@@ -156,6 +157,7 @@
   /** Favorites and Recent */
   let shortcuts = $state<Shortcuts>({ Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false });
 
+  /** Each session's environment colour, from its folders' and the rules' colours */
   const colors = $derived(new EnvironmentColors(loaded?.folders ?? [], parseRules(settings.environmentColorRules)));
   /** The sessions as shown: a local override's note in place of the stored one, in the tooltip and the search */
   const shown = $derived(
@@ -168,6 +170,7 @@
   /** The search's Aa and .* (kept in the settings), and why a regular expression can't be used, if it can't */
   /** Where the search looks (Search in…): the user's fields, else the defaults */
   const searchFields = $derived<SearchField[]>(searchFieldsOf(settings.treeSearchFields));
+  /** The search as set: Match case, Regex and Search in… */
   const searchOptions = $derived({ caseSensitive: settings.treeSearchCase, regex: settings.treeSearchRegex, fields: searchFields });
   /** Search in…'s list is open */
   let searchingIn = $state(false);
@@ -182,22 +185,31 @@
   function toggleSearchField(field: SearchField | "all"): void {
     void saveSettings({ treeSearchFields: toggledSearchFields(searchFields, field) });
   }
+  /** Why the search can't be run (a bad regex), shown under it */
   const searchError = $derived(searchProblem(query, searchOptions));
+  /** The Saved sessions root, as the search leaves it */
   const saved = $derived(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending, searchOptions) : null);
+  /** The Private sessions root, as the search leaves it */
   const privateRoot = $derived(
     loaded ? buildTree("private", "Private sessions", shown, query, newFolders.private, descending, searchOptions) : null,
   );
+  /** The Database sessions root, when they're on */
   const databaseRoot = $derived(
     loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), shown, query, newFolders.database, descending, searchOptions) : null,
   );
+  /** Favorites, as the search leaves it */
   const favorites = $derived(loaded ? buildGroup("favorites", "Favorites", shortcuts.Favorites, shown, query, searchOptions) : null);
+  /** Recent, as the search leaves it */
   const recent = $derived(loaded ? buildGroup("recent", "Recent", shortcuts.Recent, shown, query, searchOptions) : null);
+  /** Every root, in the tree's order */
   const roots = $derived([favorites, recent, saved, privateRoot, databaseRoot].filter((r): r is FolderNode => r !== null));
+  /** Whether there's a search */
   const searching = $derived(query.trim() !== "");
   /** The roots as shown, for the tree lines (the first's line starts at it, the last's stops at it) */
   const shownRoots = $derived(
     [favorites, recent, loaded && !loaded.savedOff && loaded.savedFile !== null ? saved : null, privateRoot, databaseRoot].filter((r) => r !== null),
   );
+  /** Where a root is among those shown: first or last, for its tree line */
   const rootPlace = (node: FolderNode) => ({ first: shownRoots[0] === node, last: shownRoots.at(-1) === node });
 
   let treeElement = $state<HTMLElement | undefined>();
@@ -226,6 +238,7 @@
   const SEARCH_OPEN_LIMIT = 1000;
   /** How many sessions the search matches (Favorites and Recent hold the same ones again, so they don't count) */
   const matchCount = $derived([saved, privateRoot, databaseRoot].reduce((n, r) => n + (r?.count ?? 0), 0));
+  /** A search matching so many sessions that only the roots are opened, as SuperXPuTTY's */
   const broadSearch = $derived(searching && matchCount > SEARCH_OPEN_LIMIT);
   /**
    * What's open: while searching every folder holding a match (but those closed since), or for a broad search only the
@@ -362,6 +375,7 @@
     return reloading;
   }
 
+  /** Read the custom icons, sessions, shortcuts and overrides again, once */
   async function reloadOnce(): Promise<void> {
     try {
       customs = await loadCustomIcons();

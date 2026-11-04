@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import EnvironmentVariables from "./EnvironmentVariables.svelte";
 
+/** What the window last saved (variables_save), or null if it hasn't */
 let saved: unknown = null;
 
 beforeEach(() => {
@@ -31,12 +32,15 @@ beforeEach(() => {
   });
 });
 
+/** Open the window, and wait until the stored variables are shown */
 async function open() {
   render(EnvironmentVariables, { onClose: () => {} });
   await screen.findByDisplayValue("ad_username");
 }
 
+/** Every Key field, in order */
 const keys = () => screen.getAllByLabelText("Key") as HTMLInputElement[];
+/** The OK button */
 const ok = () => screen.getByRole("button", { name: "OK" }) as HTMLButtonElement;
 
 describe("Environment Variables", () => {

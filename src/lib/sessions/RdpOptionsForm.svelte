@@ -13,16 +13,22 @@
     value: RdpOptions;
     /** A session's: what Default stands for; absent for Settings' defaults */
     defaults?: Required<RdpOptions>;
+    /** Called after any change to `value` */
     onChange: () => void;
   }
 
   let { value = $bindable(), defaults, onChange }: Props = $props();
 
+  /** Whether it's a session's options (with Default for each), rather than Settings' defaults */
   const session = $derived(!!defaults);
 
+  /** The colour depths offered, as Remote Desktop Connection's */
   const COLOUR_DEPTHS: [number, string][] = [[15, "15-bit (High Colour)"], [16, "16-bit (High Colour)"], [24, "24-bit (True Colour)"], [32, "32-bit (Highest Quality)"]];
+  /** Where the remote computer's sound plays, as Remote Desktop Connection's */
   const AUDIO = ["Play on this computer", "Play on the remote computer", "Don't play"];
+  /** Where Windows key combinations go, as Remote Desktop Connection's */
   const KEYBOARD = ["On this computer", "On the remote computer", "Only when using the full screen"];
+  /** What to do when the server's identity can't be checked, as Remote Desktop Connection's */
   const AUTHENTICATION = ["Connect and don't warn me", "Don't connect", "Warn me"];
 
   /** A tick box's state, as shown: a session's unset one shows its default, filled */
@@ -41,6 +47,7 @@
     onChange();
   }
 
+  /** A session's tick box's tooltip, saying what Default is; none for Settings' defaults */
   function flagTitle(key: FlagKey): string {
     if (!session) return "";
     return `Filled: Default (${defaults![key] ? "on" : "off"}). Ticked: on. Empty: off.`;
@@ -52,12 +59,14 @@
     onChange();
   }
 
+  /** Take a width or height typed: 200 to 8192 pixels; empty or nonsense is Default for a session */
   function sizeChanged(key: "width" | "height", text: string): void {
     const n = Number(text);
     value[key] = text.trim() === "" || !Number.isFinite(n) || n <= 0 ? (session ? undefined : value[key]) : Math.min(8192, Math.max(200, Math.round(n)));
     onChange();
   }
 
+  /** Whether the size is fixed (rather than fitting the tab), which shows the width and height */
   const fixed = $derived((value.display ?? defaults?.display) === "Fixed");
 </script>
 

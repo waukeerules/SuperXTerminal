@@ -15,6 +15,7 @@ export interface KeyFetchExample {
   note: string;
 }
 
+/** The examples for this system: `mac` for the Mac's shell commands, else PowerShell's */
 export function keyFetchExamples(mac: boolean): KeyFetchExample[] {
   return [
     {

@@ -64,6 +64,7 @@ pub(crate) fn owner_only(path: &Path) -> std::io::Result<()> {
         (_, Ok(name)) => name,
         _ => return Err(std::io::Error::other("no user name")),
     };
+    /// Run icacls without a console window flashing up
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let output = std::process::Command::new("icacls")
         .arg(path)

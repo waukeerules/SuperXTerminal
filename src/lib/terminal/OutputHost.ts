@@ -10,8 +10,10 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { highlighting } from "./highlighting";
 import { isDark } from "../settings/store.svelte";
 
+/** A message to or from the output page: its type, and what goes with it */
 type PageMessage = { type: string; [key: string]: unknown };
 
+/** One Highlighted Output panel's host: follows a file and feeds the page, as HighlightedOutputPanel */
 export class OutputHost {
   /** The file followed: the tab's log, or one opened from the page */
   private path: string | null;
@@ -37,6 +39,7 @@ export class OutputHost {
     window.addEventListener("message", this.onWindowMessage);
   }
 
+  /** The panel closed: stop following and stop listening to the page */
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
     window.removeEventListener("message", this.onWindowMessage);
@@ -51,10 +54,12 @@ export class OutputHost {
     });
   }
 
+  /** Send the page a message, on the host's channel for this panel */
   private post(message: PageMessage): void {
     this.frame.contentWindow?.postMessage({ channel: "sxt-host", tab: this.id, message }, "/");
   }
 
+  /** Take a message from this panel's page, ignoring any other window's */
   private receive(event: MessageEvent): void {
     if (event.source !== this.frame.contentWindow || event.origin !== window.location.origin) return;
     const envelope = event.data;
@@ -62,6 +67,7 @@ export class OutputHost {
     void this.handle(envelope.message as PageMessage);
   }
 
+  /** Answer the page: ready (send the rules, then the file from the start), ack (the next chunk), save, open and the rest */
   private async handle(message: PageMessage): Promise<void> {
     switch (message.type) {
       case "ready":

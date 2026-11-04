@@ -17,17 +17,23 @@
   interface Props {
     /** "in Lab" or "3 selected sessions", for the title */
     title: string;
+    /** The sessions that can be changed, all ticked to start with */
     sessions: SessionView[];
+    /** The size of the icons in the list, as the Sessions tree's */
     iconSize: number;
+    /** The user's custom icons, for the list and Choose Icon */
     customs: ReadonlyMap<string, CustomIcon>;
     /** Done: how many changed, and what was left alone */
     onDone: (done: number, problems: string[]) => void;
+    /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
   }
 
   let { title, sessions, iconSize, customs, onDone, onCancel }: Props = $props();
 
+  /** A session's key in the ticked set, "store:id", as its id alone may be in two stores */
   const keyOf = (s: SessionView) => `${s.store}:${s.id}`;
+  /** The sessions in id order, as the list shows them */
   const sorted = $derived([...sessions].sort((a, b) => a.id.localeCompare(b.id, undefined, { sensitivity: "base", numeric: true })));
   let ticked = $state(new Set(untrack(() => sessions.map(keyOf))));
 
@@ -46,6 +52,7 @@
     ruleSets = (await highlighting()).ruleSets.map((r) => ({ id: String(r.id ?? ""), name: String(r.name ?? r.id ?? "") }));
   });
 
+  /** Tick or untick a session */
   function toggle(key: string, on: boolean): void {
     const next = new Set(ticked);
     if (on) next.add(key);
@@ -53,6 +60,7 @@
     ticked = next;
   }
 
+  /** Change the ticked sessions' ticked fields, then say how many changed and what was left alone */
   async function apply(): Promise<void> {
     const change: BulkChange = {};
     if (use.username) change.username = values.username;

@@ -7,7 +7,7 @@
 //! A session's PuTTY profile name is looked up in the user's own profiles (`profiles.rs`): the session's own fields
 //! win, then its folders' defaults, then the profile, then "Default Settings" (docs/PLAN.md §2 Profiles).
 //!
-//! A password (the session's `-pw`, else its profile's) is never put on the command line or in the environment: the
+//! A password (the session's own, kept in the Keychain, else its `-pw`, else its profile's) is never put on the command line or in the environment: the
 //! pseudo terminal types it once, at the first password prompt (`pty.rs`). That also leaves host-key questions in the
 //! terminal for the user to answer.
 
@@ -665,9 +665,11 @@ fn ssh(
     {
         return Err(format!("{USERNAME_NEEDED}{host}"));
     }
-    // Quick connect's password (never stored), else the session's own -pw, else its profile's, else Default Settings'
+    // Quick connect's password (never stored), else the session's own (Edit Session's Password, this computer's
+    // only), else its -pw, else its profile's, else Default Settings'
     let password = Some(session.get(QUICK_PASSWORD).to_string())
         .filter(|p| !p.is_empty())
+        .or_else(|| Some(session.id()).filter(|id| !id.is_empty()).and_then(crate::session_passwords::get))
         .or_else(|| extra.password.clone())
         .or_else(|| profiles::password(&profile.name))
         .or_else(|| if profile.name == default.name { None } else { profiles::password(&default.name) });
@@ -1226,6 +1228,19 @@ mod tests {
         let own = Profile { ssh_options: "-o ConnectTimeout=30".into(), ..Profile::default() };
         let (args, _) = args_of(&Sessions::default(), &none(own), &session(&[]));
         assert_eq!(args.iter().filter(|a| a.starts_with("ConnectTimeout=")).collect::<Vec<_>>(), ["ConnectTimeout=30"]);
+    }
+
+    #[test]
+    fn a_sessions_own_password_comes_before_its_pw_and_its_profiles() {
+        let folder = std::env::temp_dir().join(format!("sxt-launch-own-password-{}", std::process::id()));
+        let mut own = session(&[("ExtraArgs", "-pw from-extra-args")]);
+        own.set("SessionId", "Lab/own-password");
+        let password = |s: &StoredSession| launch(&Sessions::default(), &profiles(), &HashMap::new(), &BTreeMap::new(), Store::Saved, s).unwrap().password;
+        assert_eq!(password(&own).as_deref(), Some("from-extra-args"));
+        crate::session_passwords::set(&folder, "Lab/own-password", "its-own").unwrap();
+        assert_eq!(password(&own).as_deref(), Some("its-own"));
+        crate::session_passwords::set(&folder, "Lab/own-password", "").unwrap();
+        assert_eq!(password(&own).as_deref(), Some("from-extra-args"));
     }
 
     #[test]

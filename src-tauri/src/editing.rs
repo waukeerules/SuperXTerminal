@@ -183,6 +183,19 @@ pub(crate) fn unmask_password(edited: &str, stored: &str) -> String {
     replace_password(edited, |p| if p == MASK { stored_password.clone().unwrap_or_default() } else { p.to_string() })
 }
 
+/// The password a session's stored extra arguments give with `-pw`, for moving it into the Keychain; None when there's
+/// none, or it's an Environment Variable's placeholder ({secret}), which is already kept there
+pub(crate) fn stored_password(extra: &str) -> Option<String> {
+    let mut found = None;
+    replace_password(extra, |p| {
+        if found.is_none() {
+            found = Some(p.to_string());
+        }
+        p.to_string()
+    });
+    found.filter(|p| !p.is_empty() && !(p.starts_with('{') && p.ends_with('}')))
+}
+
 /// Rewrite the word after `-pw`, keeping the rest of the text exactly as it was
 pub(crate) fn replace_password(extra: &str, mut with: impl FnMut(&str) -> String) -> String {
     let mut out = String::new();
@@ -226,6 +239,15 @@ mod tests {
         assert_eq!(unmask_password(&shown, stored), stored);
         assert_eq!(unmask_password("-pw newone -P 2222", stored), "-pw newone -P 2222");
         assert_eq!(unmask_password("-P 2222", stored), "-P 2222");
+    }
+
+    #[test]
+    fn a_stored_pw_can_be_moved_but_a_secret_placeholder_isnt() {
+        assert_eq!(stored_password("-P 2222 -pw cisco").as_deref(), Some("cisco"));
+        assert_eq!(stored_password("-pw \"two words\"").as_deref(), Some("two words"));
+        // already in the Keychain, as an Environment Variable's secret
+        assert_eq!(stored_password("-pw {switch_password}"), None);
+        assert_eq!(stored_password("-P 2222"), None);
     }
 
     #[test]

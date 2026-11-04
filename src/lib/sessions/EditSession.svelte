@@ -3,6 +3,8 @@
   own file (Sessions.xml for Saved sessions, PrivateSessions.xml for Private ones). Also used for a new session.
   "PuTTY session profile" becomes Profile: the name is looked up in the user's own profiles (Settings > Profiles).
   RDP options… opens the session's own Remote Desktop options; Local overrides… opens the user's own values.
+  Password is the session's own, kept in the Keychain (Credential Manager) on this computer only, never in its file;
+  Move -pw here moves a -pw from the extra arguments there (session_passwords.rs).
 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
@@ -20,6 +22,7 @@
   import RdpSessionOptions from "./RdpSessionOptions.svelte";
   import AlgorithmsDialog from "./AlgorithmsDialog.svelte";
   import { isMac } from "../shortcuts";
+  import { SECRET_STORE, THIS_COMPUTER } from "../platform";
   import { lineOf, withLine } from "./serial";
   import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
@@ -70,6 +73,10 @@
   let rdpOptioning = $state(false);
   /** SSH algorithms… open over this window */
   let algorithming = $state(false);
+  /** Whether the session has a password of its own in the Keychain (none for a new session) */
+  let hasOwnPassword = $state(false);
+  /** A new password typed in; "" forgets the stored one, undefined keeps it */
+  let password = $state<string | undefined>(undefined);
   /** The serial devices plugged in (/dev/cu.*), for the Serial line list */
   let serialDevices = $state<string[]>([]);
 
@@ -83,7 +90,9 @@
     "sshAlgorithms", "jumpHost", "script", "note", "localPath", "remotePath",
   ];
   /** How many fields have changed; a stored session saves only with changes, a new one (or a copy) any time */
-  const changes = $derived(FIELDS.filter(changed).length);
+  const changes = $derived(FIELDS.filter(changed).length + (password !== undefined ? 1 : 0));
+  /** A -pw password stored in the extra arguments (shown masked), which Move -pw here can take into the Keychain */
+  const storedPw = $derived(id !== null && /(^|\s)-pw\s+(••••••|"••••••")(\s|$)/.test(fields.extraArgs) && /(^|\s)-pw\s/.test(draft.extraArgs));
 
   /** Whether it's a serial session, which shows the line's settings in place of host and port */
   const serial = $derived(draft.protocol.toUpperCase() === "SERIAL");
@@ -117,6 +126,7 @@
   });
 
   onMount(async () => {
+    if (id !== null) hasOwnPassword = await invoke<boolean>("session_password_has", { id }).catch(() => false);
     await loadProfileNames();
     ruleSets = (await highlighting()).ruleSets.map((r) => ({ id: String(r.id ?? ""), name: String(r.name ?? r.id ?? "") }));
   });
@@ -165,10 +175,38 @@
     }
     try {
       const saved = await saveSession(store, id, { ...draft, port: Number(draft.port) || 0 }, id === null ? copyOf : null);
+      // the session's own password goes in the Keychain under its id, which a rename has already taken along
+      if (password !== undefined) await invoke("session_password_set", { id: saved, password });
       onSaved(saved);
     } catch (e) {
       error = String(e);
     }
+  }
+
+  /**
+   * Move -pw here: the stored -pw becomes the session's own password in the Keychain, and leaves the extra arguments
+   * when the session is saved. Asked first, as SuperXPuTTY and other computers reading the session then lose it.
+   */
+  async function movePassword(): Promise<void> {
+    if (id === null) return;
+    const sure = await ask(
+      `Move the -pw password into ${SECRET_STORE}?\n\nIt's then kept on ${THIS_COMPUTER} only, and taken out of the session's extra arguments when you save: SuperXPuTTY and other computers reading this session won't have it.`,
+      { title: "Move -pw here", kind: "warning", okLabel: "Move it", cancelLabel: "Cancel" },
+    );
+    if (!sure) return;
+    try {
+      await invoke("session_password_from_pw", { store, id });
+      hasOwnPassword = true;
+      password = undefined;
+      if (!locked("extra_args")) draft.extraArgs = withoutPw(draft.extraArgs);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  /** Extra arguments without their -pw and its value, the rest as it was */
+  function withoutPw(extra: string): string {
+    return extra.replace(/(^|\s)-pw\s+("[^"]*"|\S+)/, "$1").replace(/\s{2,}/g, " ").trim();
   }
 
   /** Choose an SPSL script file */
@@ -265,6 +303,11 @@
       <div class="row">
         <label class="grow">{@render caption("Login username:", "username")}<input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"}
           disabled={locked("username")} title={locked("username") ? lockTip : ""} /></label>
+        <label>{@render ownCaption()}<input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
+          placeholder={hasOwnPassword && password !== "" ? `Stored in ${SECRET_STORE}` : /(^|\s)-pw\s/.test(draft.extraArgs) ? "none: the -pw below" : "none: the profile's"}
+          title={`Kept in ${SECRET_STORE} on ${THIS_COMPUTER} only, never in the session's file; used before its -pw and its profile's`} /></label>
+        {#if hasOwnPassword && password !== ""}<button onclick={() => (password = "")} title="Forget the stored password">Forget</button>{/if}
+        {#if storedPw}<button onclick={movePassword} title={`Keep the -pw password in ${SECRET_STORE} instead, on ${THIS_COMPUTER} only`}>Move -pw here</button>{/if}
         <label>{@render caption("Highlight:", "highlightRules")}
           <select bind:value={draft.highlightRules} disabled={locked("highlight_rules")} title={locked("highlight_rules") ? lockTip : ""}>
             <option value="">{inherited("highlightRules") ? `From the folder (${inherited("highlightRules")})` : "Default (Settings)"}</option>
@@ -329,6 +372,10 @@
 </div>
 
 <!-- a field's caption, with a dot while it differs from the session as opened -->
+{#snippet ownCaption()}
+  <span class="caption">Password:{#if password !== undefined}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</span>
+{/snippet}
+
 {#snippet caption(text: string, field: keyof SessionFields)}
   <span class="caption">{text}{#if changed(field)}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</span>
 {/snippet}

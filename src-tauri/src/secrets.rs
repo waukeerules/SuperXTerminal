@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-/// The Keychain's service name every item is kept under
+/// The Keychain's service name every item is kept under (tests never use it)
+#[cfg_attr(test, allow(dead_code))]
 const SERVICE: &str = "SuperXTerminal";
 
 /// What's been read or written this run, by account; None when there's nothing stored
@@ -32,6 +33,19 @@ pub fn get(account: &str) -> Option<String> {
 
 /// Store a value for an account, or forget it when `value` is empty
 pub fn set(account: &str, value: &str) -> Result<(), String> {
+    // tests never touch the Keychain: what they store is kept for the run only
+    #[cfg(test)]
+    {
+        cache().lock().unwrap().insert(account.to_string(), (!value.is_empty()).then(|| value.to_string()));
+        return Ok(());
+    }
+    #[cfg(not(test))]
+    store(account, value)
+}
+
+/// Store a value in the Keychain itself, then in the cache
+#[cfg(not(test))]
+fn store(account: &str, value: &str) -> Result<(), String> {
     let store = if cfg!(target_os = "macos") { "The Keychain" } else { "Windows Credential Manager" };
     let entry = keyring::Entry::new(SERVICE, account).map_err(|_| format!("{store} isn't available"))?;
     if value.is_empty() {

@@ -28,6 +28,7 @@ mod secrets;
 mod outbox;
 mod overrides;
 mod sessions;
+mod session_passwords;
 mod shortcuts;
 mod streams;
 mod tray;
@@ -280,6 +281,31 @@ fn with_copied_password(state: &AppState, mut fields: editing::SessionFields, co
     fields
 }
 
+/// Whether a session has a password of its own (Edit Session's Password), without reading the Keychain
+#[tauri::command]
+fn session_password_has(state: State<'_, AppState>, id: String) -> bool {
+    session_passwords::has(&state.user_folder, &id)
+}
+
+/// Store a session's own password in the Keychain, or forget it when `password` is empty
+#[tauri::command]
+fn session_password_set(state: State<'_, AppState>, id: String, password: String) -> Result<(), String> {
+    session_passwords::set(&state.user_folder, &id, &password)
+}
+
+/// Edit Session's Move to Password: the session's stored -pw becomes its own password in the Keychain. The -pw stays
+/// in its extra arguments until the window saves them without it.
+#[tauri::command]
+fn session_password_from_pw(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<(), String> {
+    let extra = {
+        let sessions = state.sessions.lock().unwrap();
+        let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
+        session.get("ExtraArgs").to_string()
+    };
+    let password = editing::stored_password(&extra).ok_or("The session has no -pw password.")?;
+    session_passwords::set(&state.user_folder, &id, &password)
+}
+
 /// Delete a session from its file
 #[tauri::command]
 fn session_delete(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<(), String> {
@@ -331,18 +357,20 @@ fn session_move(state: State<'_, AppState>, store: sessions::Store, id: String, 
     Ok(new)
 }
 
-/// Favorites and Recent follow a session renamed or moved
+/// Favorites, Recent, local overrides and the session's own password follow a session renamed or moved
 fn follow_id(state: &AppState, old: &str, new: &str) {
     if old != new {
         shortcuts::follow(&state.user_folder, |id| (id == old).then(|| new.to_string()));
         overrides::follow(&state.user_folder, |id| (id == old).then(|| new.to_string()));
+        session_passwords::follow(&state.user_folder, |id| (id == old).then(|| new.to_string()));
     }
 }
 
-/// Favorites, Recent and local overrides forget a deleted session
+/// Favorites, Recent, local overrides and the session's own password forget a deleted session
 fn forget_id(state: &AppState, gone: &str) {
     shortcuts::forget(&state.user_folder, |s| s == gone);
     overrides::forget(&state.user_folder, |s| s == gone);
+    session_passwords::forget(&state.user_folder, |s| s == gone);
 }
 
 /// Favorites and Recent follow the sessions below a renamed or moved folder ("Lab" or "@db/Lab"), any spelling of it
@@ -350,6 +378,7 @@ fn follow_folder(state: &AppState, from: &str, to: &str) {
     let rename = |id: &str| folders::under(id, from).filter(|rest| !rest.is_empty()).map(|rest| format!("{to}{rest}"));
     shortcuts::follow(&state.user_folder, rename);
     overrides::follow(&state.user_folder, rename);
+    session_passwords::follow(&state.user_folder, rename);
 }
 
 /// Favorites and Recent forget the sessions below a deleted folder
@@ -357,6 +386,7 @@ fn forget_folder(state: &AppState, path: &str) {
     let gone = |id: &str| folders::under(id, path).is_some_and(|rest| !rest.is_empty());
     shortcuts::forget(&state.user_folder, gone);
     overrides::forget(&state.user_folder, gone);
+    session_passwords::forget(&state.user_folder, gone);
 }
 
 /// The settings folder, or the user's folder when none is chosen, for shared files (ButtonBars.xml, scripts)
@@ -2417,6 +2447,9 @@ pub fn run() {
             icons_custom,
             highlighting_load,
             session_get,
+            session_password_has,
+            session_password_set,
+            session_password_from_pw,
             session_save,
             session_delete,
             session_move,

@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
@@ -250,6 +250,11 @@ pub fn pty_open(
     let typist = writer.clone();
     let ending = child.clone();
     let output = outlet.clone();
+    // the tab hears of the end once: from the reader when the output ends, or from the watcher when the program does
+    let finished = Arc::new(AtomicBool::new(false));
+    let told = finished.clone();
+    let watched = outlet.clone();
+    watch_exit(child.clone(), finished.clone(), move |code| watched.send(PtyEvent::Exit { code }));
     std::thread::Builder::new()
         .name(format!("pty-{id}"))
         .spawn(move || {
@@ -282,12 +287,43 @@ pub fn pty_open(
                     Err(_) => break,
                 }
             }
-            output.send(PtyEvent::Exit { code });
+            if !told.swap(true, Ordering::SeqCst) {
+                output.send(PtyEvent::Exit { code });
+            }
         })
         .map_err(|e| e.to_string())?;
 
     ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Pty { master: pair.master, child }, window: window.label().to_string(), outlet });
     Ok(id)
+}
+
+/// How often the watcher looks whether the program has ended, and how long it then leaves the reader to pass on its
+/// last output and see the end itself
+const EXIT_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+const EXIT_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Tell of the program's end even when its output doesn't end with it: on Windows a ConPTY's output stays open after
+/// ssh exits (until the pseudo console is closed), and anywhere a job it left running in the background holds it
+/// open. The tab then never heard the session had ended (a pulled cable's "Connection reset" left a dead tab).
+fn watch_exit(child: Arc<Mutex<Box<dyn Child + Send + Sync>>>, finished: Arc<AtomicBool>, on_exit: impl FnOnce(Option<u32>) + Send + 'static) {
+    let _ = std::thread::Builder::new().name("pty-exit".into()).spawn(move || loop {
+        std::thread::sleep(EXIT_POLL);
+        if finished.load(Ordering::SeqCst) {
+            return;
+        }
+        let status = child.lock().unwrap().try_wait();
+        match status {
+            Ok(Some(status)) => {
+                std::thread::sleep(EXIT_GRACE);
+                if !finished.swap(true, Ordering::SeqCst) {
+                    on_exit(Some(status.exit_code()));
+                }
+                return;
+            }
+            Ok(None) => {}
+            Err(_) => return,
+        }
+    });
 }
 
 /// Start a Telnet, Raw or Serial stream and pass its output on, as a pseudo terminal's. The other end closing is a
@@ -473,7 +509,39 @@ fn end(session: Option<Session>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{shown_command, PasswordPrompt};
+    use super::{shown_command, watch_exit, PasswordPrompt};
+    use portable_pty::{native_pty_system, PtySize};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn the_end_of_a_program_is_told_though_its_output_stays_open() {
+        // a job left in the background holds the output open, as Windows' ConPTY does after ssh exits
+        let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
+        let mut command = portable_pty::CommandBuilder::new("sh");
+        command.args(["-c", "sleep 5 & exit 3"]);
+        let child = Arc::new(Mutex::new(pair.slave.spawn_command(command).unwrap()));
+        drop(pair.slave);
+        let (sent, got) = std::sync::mpsc::channel();
+        let finished = Arc::new(AtomicBool::new(false));
+        watch_exit(child, finished.clone(), move |code| sent.send(code).unwrap());
+        assert_eq!(got.recv_timeout(std::time::Duration::from_secs(3)).unwrap(), Some(3));
+        assert!(finished.load(Ordering::SeqCst));
+        drop(pair.master);
+    }
+
+    #[test]
+    fn the_watcher_says_nothing_once_the_reader_has_told_of_the_end() {
+        let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
+        let mut command = portable_pty::CommandBuilder::new("sh");
+        command.args(["-c", "exit 0"]);
+        let child = Arc::new(Mutex::new(pair.slave.spawn_command(command).unwrap()));
+        drop(pair.slave);
+        let (sent, got) = std::sync::mpsc::channel();
+        let finished = Arc::new(AtomicBool::new(true));
+        watch_exit(child, finished, move |code| sent.send(code).unwrap());
+        assert!(got.recv_timeout(std::time::Duration::from_secs(2)).is_err());
+    }
 
     #[test]
     fn the_logged_command_hides_passwords() {

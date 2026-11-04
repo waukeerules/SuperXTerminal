@@ -15,11 +15,15 @@
   import type { CustomIcon } from "./custom";
 
   interface Props {
+    /** The icon's key, e.g. "switch#1E63B4" (a colour after # when it isn't the icon's own) */
     key: string;
     /** The icon's size in pixels (Settings: icon size); the cell around it is larger by SuperXPuTTY's padding */
     size: number;
+    /** The environment colour, for the circle behind it; none for no circle */
     environment?: string | null;
+    /** Whether the session has an open tab: the small green dot */
     open?: boolean;
+    /** The user's custom icons, for a custom icon's key */
     customs?: ReadonlyMap<string, CustomIcon>;
     /** A toolbar glyph ("check", "clear", ...) rather than a session icon */
     glyph?: boolean;
@@ -27,11 +31,15 @@
 
   let { key, size, environment = null, open = false, customs = new Map(), glyph = false }: Props = $props();
 
+  /** This icon's prefix for its SVG ids */
   const uid = `i${next++}`;
+  /** What the key draws: a template, logo, custom icon or glyph, and its colour */
   const icon = $derived(resolveIcon(key, new Set(customs.keys()), glyph));
+  /** The custom icon, when it's one */
   const custom = $derived(icon.kind === "custom" ? customs.get(icon.name) : undefined);
-  // IconLibrary pads each icon by 18% on every side, which leaves room for the environment circle
+  /** IconLibrary pads each icon by 18% on every side, which leaves room for the environment circle */
   const cell = $derived(Math.round(size * 1.36));
+  /** The outline's width round the icon on a circle */
   const outline = $derived(Math.max(1, size / 20));
 </script>
 

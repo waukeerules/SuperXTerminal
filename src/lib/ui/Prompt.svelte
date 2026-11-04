@@ -6,17 +6,22 @@
   import { untrack } from "svelte";
 
   interface Props {
+    /** The window's title */
     title: string;
+    /** The text it starts with, selected */
     value: string;
     /** Why a name isn't allowed, or "" when it is */
     validate: (name: string) => string;
+    /** OK, or Enter: the name, trimmed */
     onOk: (name: string) => void;
+    /** Cancel, or Escape */
     onCancel: () => void;
   }
 
   let { title, value, validate, onOk, onCancel }: Props = $props();
 
   let name = $state(untrack(() => value));
+  /** Why the name typed isn't allowed, shown under it; OK waits until it's "" */
   const problem = $derived(validate(name.trim()));
 
   /** Select the text when the field appears, ready to type over */

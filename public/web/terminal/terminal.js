@@ -1393,8 +1393,8 @@
 
     /**
      * PuTTY's keys that the terminal itself doesn't know; anything else goes to the session as typed. Shift+Insert and
-     * Ctrl+Shift+V stop the browser's own paste too: once WebView2 is allowed to read the clipboard (it asks once, for
-     * PageHost's readText), that paste has the text as well, and the line went in twice.
+     * Ctrl+Shift+V stop the browser's own paste too: it reaches the paste listener below as a second paste request,
+     * with the clipboard's text, and the line went in twice.
      */
     function onKey(e) {
         if (e.type !== 'keydown') { return true; }

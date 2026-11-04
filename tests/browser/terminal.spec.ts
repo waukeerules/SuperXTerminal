@@ -279,13 +279,18 @@ test("Line Numbers take a button's colour for its command's lines, until a comma
 test.describe("Shift+Insert and Ctrl+Shift+V", () => {
   for (const keys of ["Shift+Insert", "Control+Shift+V"]) {
     test(`${keys} pastes once, through TerminalControl, not again as the browser's own paste`, async ({ page, context, browserName }) => {
-      // with the clipboard allowed (WebView2 asks once), the browser's own paste has the text too, and pasted it twice
+      // the browser's own paste has the clipboard's text too, and pasted it twice. Not every browser pastes on these
+      // keys (headless Chromium and WebKit don't on Ctrl+Shift+V; WebView2 does), so the key press is also checked to
+      // have stopped it, which holds in any browser
       if (browserName === "chromium") await context.grantPermissions(["clipboard-read", "clipboard-write"]);
       await openTerminal(page, {});
       await page.evaluate(() => {
         // what the page sends TerminalControl, through host/webview.js (to the main window: here, the page itself)
         (window as any).sent = [];
         window.addEventListener("message", (e) => { if (e.data?.channel === "sxt-page") (window as any).sent.push(e.data.message); });
+        // whether each key press was stopped from going on to the browser's paste, seen once xterm.js has had it
+        (window as any).stopped = [];
+        window.addEventListener("keydown", (e) => { if (!["Shift", "Control"].includes(e.key)) (window as any).stopped.push(e.defaultPrevented); });
       });
       if (browserName === "chromium") await page.evaluate(() => navigator.clipboard.writeText("FastEthernet0/5"));
       await page.locator("#terminal").click();
@@ -293,6 +298,7 @@ test.describe("Shift+Insert and Ctrl+Shift+V", () => {
       await page.waitForTimeout(200);
       const pastes = await page.evaluate(() => (window as any).sent.filter((m: any) => m.type === "pasteRequest"));
       expect(pastes).toEqual([{ type: "pasteRequest" }]);
+      expect(await page.evaluate(() => (window as any).stopped)).toEqual([true]);
     });
   }
 });

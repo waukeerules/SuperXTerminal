@@ -12,6 +12,7 @@
     if (asking.current) queueMicrotask(() => boxes[0]?.select());
   });
 
+  /** Close the window, giving back the values typed (OK, Send) or null (Cancel, Escape) */
   function finish(ok: boolean): void {
     const current = asking.current;
     if (!current) return;

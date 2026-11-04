@@ -13,7 +13,9 @@ export interface SendStep {
   delayMs: number;
 }
 
+/** How long to wait after each Enter, as SuperXPuTTY's SendStringParser */
 const ENTER_DELAY_MS = 50;
+/** How long \p waits */
 const PAUSE_MS = 1000;
 
 /** The steps for a send string; `clipboard` is read only if \v is used */

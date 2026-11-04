@@ -119,6 +119,7 @@ export class ScriptRun {
     readonly lineCount: number,
   ) {}
 
+  /** Whether Stop has been pressed for this run */
   get isStopped(): boolean {
     return this.stopped;
   }
@@ -237,6 +238,7 @@ export interface Issue {
 
 /** The commands, for the checker's suggestions; CLOSESESSION is listed but can't run */
 export const COMMANDS = ["SENDLINE", "SENDCHAR", "SENDKEY", "SLEEP", "WAITFOR", "PROMPT", "PWDPROMPT", "OPENSESSION", "SENDBREAK"];
+/** Commands SPSL has that this app can't run: the checker knows them, so it doesn't call them misspelt */
 const UNAVAILABLE = ["CLOSESESSION"];
 
 /**
@@ -330,6 +332,7 @@ function suggest(word: string): string | null {
   return best?.name ?? null;
 }
 
+/** How many single-letter changes turn `a` into `b` (Levenshtein distance), for the checker's suggestions */
 function levenshtein(a: string, b: string): number {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
   for (let j = 0; j <= b.length; j++) d[0][j] = j;

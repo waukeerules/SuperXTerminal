@@ -4,6 +4,7 @@
  */
 import { fillFields, findFields, remember, startValue } from "./snippets";
 
+/** A question for the window: its title and button, the fields asked for, and how the answer gets back */
 interface Question {
   title: string;
   okLabel: string;
@@ -58,6 +59,7 @@ export async function askLogin(title: string, username = ""): Promise<{ username
   return answers ? { username: answers[0].trim(), password: answers[1] } : null;
 }
 
+/** Ask the user to pick one of `choices` (the first chosen to start with); null when cancelled */
 export async function askChoice(title: string, label: string, choices: string[]): Promise<string | null> {
   const answers = await ask({ title, okLabel: "OK", fields: [{ label, value: choices[0] ?? "", secret: false, choices }] });
   return answers ? answers[0] : null;

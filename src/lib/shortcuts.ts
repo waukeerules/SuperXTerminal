@@ -123,8 +123,9 @@ export function pressedKey(event: KeyboardEvent): string | null {
   // Windows' own key (the Windows key) is the system's, never a shortcut here
   if (!isMac && event.metaKey) return null;
   const mods = [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", isMac && event.metaKey && "CmdOrCtrl"].filter(Boolean) as string[];
-  // a plain key would stop it being typed into a terminal; function keys may go alone
-  if (mods.length === 0 && !/^F\d/.test(main)) return null;
+  // a plain key would stop it being typed into a terminal; function keys and Page Up/Down may go alone (a terminal
+  // given one of those as a shortcut no longer gets it)
+  if (mods.length === 0 && !/^F\d/.test(main) && main !== "PageUp" && main !== "PageDown") return null;
   return [...mods, main].join("+");
 }
 

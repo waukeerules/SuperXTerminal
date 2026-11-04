@@ -62,7 +62,8 @@
       const key = pressedKey(event);
       if (!key) {
         if (!["Meta", "Control", "Alt", "Shift"].includes(event.key)) {
-          message = isMac ? "Use a key with ⌘, ⌃ or ⌥ (or a function key alone)." : "Use a key with Ctrl or Alt (or a function key alone).";
+          message = isMac ? "Use a key with ⌘, ⌃ or ⌥ (or a function key, Page Up or Page Down alone)."
+            : "Use a key with Ctrl or Alt (or a function key, Page Up or Page Down alone).";
         }
         return;
       }

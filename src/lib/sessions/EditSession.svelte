@@ -21,6 +21,7 @@
   import SerialLineFields from "./SerialLineFields.svelte";
   import Overrides from "./Overrides.svelte";
   import AlgorithmsDialog from "./AlgorithmsDialog.svelte";
+  import Combobox from "../ui/Combobox.svelte";
   import RdpOptionsForm from "./RdpOptionsForm.svelte";
   import { formatRdpOptions, parseRdpOptions, userDefaults, type RdpOptions } from "./rdpOptions";
   import { settings } from "../settings/store.svelte";
@@ -326,9 +327,8 @@
           </select>
         </label>
         <label class="grow">{@render caption("Profile:", "profile")}
-          <input list="profile-names" bind:value={draft.profile} placeholder={inherited("puttyProfile") || DEFAULT_PROFILE}
+          <Combobox bind:value={draft.profile} options={profileNames} placeholder={inherited("puttyProfile") || DEFAULT_PROFILE}
             disabled={locked("putty_profile")} title={locked("putty_profile") ? lockTip : ""} />
-          <datalist id="profile-names">{#each profileNames as n}<option value={n}></option>{/each}</datalist>
         </label>
         <button onclick={() => onOpenProfiles(draft.profile.trim() || undefined)} title="Settings > Profiles, on this session's profile">Profiles…</button>
       </div>

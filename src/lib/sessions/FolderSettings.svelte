@@ -8,6 +8,7 @@
   import { PALETTE } from "../icons/palette";
   import { highlighting } from "../terminal/highlighting";
   import { listProfiles } from "../settings/profiles";
+  import Combobox from "../ui/Combobox.svelte";
   import { saveFolderSettings, type FolderSetting, type Store } from "./api";
 
   interface Props {
@@ -65,8 +66,7 @@
 
     <label>Login username: <input bind:value={draft.username} placeholder="e.g. netops, or {'{user}'}" /></label>
     <label>Profile:
-      <input list="folder-profiles" bind:value={draft.puttyProfile} placeholder="none" />
-      <datalist id="folder-profiles">{#each profileNames as n}<option value={n}></option>{/each}</datalist>
+      <Combobox bind:value={draft.puttyProfile} options={profileNames} placeholder="none" />
     </label>
     <label>Port: <input class="port" type="number" min="0" max="65535" bind:value={draft.port} /> <span class="hint">0: none</span></label>
     <label>Jump host: <input bind:value={draft.jumpHost} placeholder="none; or a session, or admin@10.0.0.1:22" /></label>

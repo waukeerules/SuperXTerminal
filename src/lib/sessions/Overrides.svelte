@@ -12,6 +12,7 @@
     getSession, loadOverridePresets, loadOverrides, saveOverridePreset, saveOverrides, type Override, type SessionFields, type SessionView,
   } from "./api";
   import Prompt from "../ui/Prompt.svelte";
+  import Combobox from "../ui/Combobox.svelte";
 
   interface Props {
     /** The sessions the overrides are for: one, or several from the tree's selection */
@@ -233,8 +234,7 @@
           <input class="port" type="number" min="1" max="65535" bind:value={values.Port} disabled={use.Port !== "set"} aria-label={f.label} />
         {:else if f.key === "PuttyProfile"}
           <span>
-            <input list="override-profiles" bind:value={values.PuttyProfile} disabled={use.PuttyProfile !== "set"} aria-label={f.label} />
-            <datalist id="override-profiles">{#each profileNames as n}<option value={n}></option>{/each}</datalist>
+            <Combobox bind:value={values.PuttyProfile} options={profileNames} disabled={use.PuttyProfile !== "set"} ariaLabel={f.label} />
           </span>
         {:else}
           <input bind:value={values[f.key]} disabled={use[f.key] !== "set"} placeholder={f.hint} aria-label={f.label} />
@@ -315,10 +315,6 @@
 
   .fields span:not(.stored) {
     display: flex;
-  }
-
-  .fields span input {
-    flex: 1;
   }
 
   .stored {

@@ -12,6 +12,7 @@
   import { PALETTE } from "../icons/palette";
   import { highlighting } from "../terminal/highlighting";
   import { listProfiles, DEFAULT_PROFILE } from "../settings/profiles";
+  import Combobox from "../ui/Combobox.svelte";
   import { PROTOCOLS, bulkEdit, type BulkChange, type SessionView } from "./api";
 
   interface Props {
@@ -121,8 +122,7 @@
 
       <label class="use"><input type="checkbox" bind:checked={use.profile} /> Profile:</label>
       <span>
-        <input list="bulk-profiles" bind:value={values.profile} disabled={!use.profile} />
-        <datalist id="bulk-profiles">{#each profileNames as n}<option value={n}></option>{/each}</datalist>
+        <Combobox bind:value={values.profile} options={profileNames} disabled={!use.profile} ariaLabel="Profile" />
       </span>
 
       <label class="use"><input type="checkbox" bind:checked={use.port} /> Port:</label>
@@ -249,10 +249,6 @@
 
   .fields span {
     display: flex;
-  }
-
-  .fields span input {
-    flex: 1;
   }
 
   input,

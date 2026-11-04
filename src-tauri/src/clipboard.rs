@@ -106,7 +106,16 @@ mod tests {
     fn a_paste_gets_the_text_copied_in_another_app() {
         let before = clipboard_text();
         copy("FastEthernet0/5 – ünïcode");
-        let read = clipboard_text();
+        // read as a paste is, a moment after the copy: right after it, Windows 11 had the clipboard without text for an
+        // instant (a clipboard watcher, such as clipboard history, taking the new copy)
+        let mut read = clipboard_text();
+        for _ in 0..50 {
+            if !read.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            read = clipboard_text();
+        }
         copy(&before);
         assert_eq!(read, "FastEthernet0/5 – ünïcode");
     }

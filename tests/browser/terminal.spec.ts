@@ -275,3 +275,24 @@ test("Line Numbers take a button's colour for its command's lines, until a comma
   await feed(page, "\r\nuptime\r\n$ ");
   await expect.poll(async () => (await coloured()).slice(3)).toEqual(["4", "5", "6"]);
 });
+
+test.describe("Shift+Insert and Ctrl+Shift+V", () => {
+  for (const keys of ["Shift+Insert", "Control+Shift+V"]) {
+    test(`${keys} pastes once, through TerminalControl, not again as the browser's own paste`, async ({ page, context, browserName }) => {
+      // with the clipboard allowed (WebView2 asks once), the browser's own paste has the text too, and pasted it twice
+      if (browserName === "chromium") await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await openTerminal(page, {});
+      await page.evaluate(() => {
+        // what the page sends TerminalControl, through host/webview.js (to the main window: here, the page itself)
+        (window as any).sent = [];
+        window.addEventListener("message", (e) => { if (e.data?.channel === "sxt-page") (window as any).sent.push(e.data.message); });
+      });
+      if (browserName === "chromium") await page.evaluate(() => navigator.clipboard.writeText("FastEthernet0/5"));
+      await page.locator("#terminal").click();
+      await page.keyboard.press(keys);
+      await page.waitForTimeout(200);
+      const pastes = await page.evaluate(() => (window as any).sent.filter((m: any) => m.type === "pasteRequest"));
+      expect(pastes).toEqual([{ type: "pasteRequest" }]);
+    });
+  }
+});

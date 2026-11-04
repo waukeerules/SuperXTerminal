@@ -1391,14 +1391,18 @@
         }
     }
 
-    /** PuTTY's keys that the terminal itself doesn't know; anything else goes to the session as typed */
+    /**
+     * PuTTY's keys that the terminal itself doesn't know; anything else goes to the session as typed. Shift+Insert and
+     * Ctrl+Shift+V stop the browser's own paste too: once WebView2 is allowed to read the clipboard (it asks once, for
+     * PageHost's readText), that paste has the text as well, and the line went in twice.
+     */
     function onKey(e) {
         if (e.type !== 'keydown') { return true; }
         var key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-        if (e.shiftKey && !e.ctrlKey && key === 'Insert') { paste(); return false; }
+        if (e.shiftKey && !e.ctrlKey && key === 'Insert') { e.preventDefault(); paste(); return false; }
         if (e.ctrlKey && !e.shiftKey && key === 'Insert') { copy(); return false; }
         if (e.ctrlKey && e.shiftKey && key === 'c') { copy(); return false; }
-        if (e.ctrlKey && e.shiftKey && key === 'v') { paste(); return false; }
+        if (e.ctrlKey && e.shiftKey && key === 'v') { e.preventDefault(); paste(); return false; }
         if (e.ctrlKey && e.shiftKey && key === 'f') { openFind(); return false; }
         var sequence = profileKey(e);
         if (sequence !== null) {

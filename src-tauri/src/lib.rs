@@ -1908,10 +1908,10 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>, ov
             &plain("environmentVariables", "Environment Variables…")?,
             &plain("environmentColours", "Environment Colours…")?,
             &PredefinedMenuItem::separator(app)?,
-            // Settings' tabs in its order, as the app menu's Settings… opens them: "settings:" and the tab's name (Profiles…
-            // opens on Default Settings)
+            // Settings' tabs in its order, as the app menu's Settings… opens them: "settings:" and the tab's name (Profiles
+            // Settings… opens on Default Settings)
             &plain("settings:General", "General Settings…")?,
-            &plain("profiles", "Profiles…")?,
+            &plain("profiles", "Profiles Settings…")?,
             &plain("settings:Terminal", "Terminal Settings…")?,
             &plain("settings:Remote Desktop", "Remote Desktop Settings…")?,
             &plain("settings:Shortcuts", "Shortcut Settings…")?,

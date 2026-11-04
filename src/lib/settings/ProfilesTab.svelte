@@ -4,7 +4,7 @@
   profile says how this user logs in. Empty fields fall back to Default Settings.
 -->
 <script lang="ts">
-  import { SECRET_STORE } from "../platform";
+  import { SECRET_STORE, SSH_KEYS } from "../platform";
   import { onMount } from "svelte";
   import { ask, open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
@@ -361,7 +361,7 @@
         <select value={triToValue(isDefault ? (draft.offerKeys ?? true) : draft.offerKeys)}
           onchange={(e) => (draft.offerKeys = valueToTri(e.currentTarget.value))}>
           {#if !isDefault}<option value="">From Default Settings</option>{/if}
-          <option value="on">Offer ~/.ssh keys and the agent's</option>
+          <option value="on">Offer {SSH_KEYS} and the agent's</option>
           <option value="off">Don't offer them: ask for the password (switches, routers)</option>
         </select></label>
       <p class="note under">A Cisco closes the connection after 3 failed attempts, and every key offered is one, so with

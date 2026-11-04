@@ -2226,6 +2226,20 @@ fn apply_window_theme(app: &AppHandle, theme: &str) {
     let _ = (app, theme);
 }
 
+/// Whether a window opens where it was last left: the main window only, as the one SuperXTerminal starts with; New
+/// Window's windows each start down and to the right of the one in front, as a Mac app cascades them
+fn remembers_place(label: &str) -> bool {
+    label == "main"
+}
+
+/// What's remembered of the main window (tauri-plugin-window-state, in the app's config folder as .window-state.json):
+/// its position and size, and whether it was maximized or full screen. Not whether it was shown, since it's always
+/// shown at the start, nor its frame, which is always the system's.
+fn remembered_state() -> tauri_plugin_window_state::StateFlags {
+    use tauri_plugin_window_state::StateFlags;
+    StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED | StateFlags::FULLSCREEN
+}
+
 /// A SuperXTerminal window: the first ("main"), or another made by New Window ("window-2", ...) at `at` (logical)
 fn window(app: &tauri::AppHandle, label: &str, at: Option<(f64, f64)>) -> tauri::Result<()> {
     let builder = tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::default())
@@ -2316,6 +2330,13 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| deliver(app, cli::from_args(argv.get(1..).unwrap_or(&[])))))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // the main window opens where it was last, its size, maximized or full screen as it was left
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(remembered_state())
+                .with_filter(remembers_place)
+                .build(),
+        )
         .menu({
             let shortcuts = settings.shortcuts.clone();
             let overrides_on = settings.use_local_overrides;
@@ -2340,6 +2361,11 @@ pub fn run() {
             tauri::WindowEvent::Focused(true) => *FRONT_WINDOW.lock().unwrap() = Some(window.label().to_string()),
             tauri::WindowEvent::Destroyed => {
                 applog::info(format!("Window {} closed; its sessions end", window.label()));
+                // kept now, not only when the app quits: it may stay in the menu bar or tray, and be ended there
+                if remembers_place(window.label()) {
+                    use tauri_plugin_window_state::AppHandleExt;
+                    let _ = window.app_handle().save_window_state(remembered_state());
+                }
                 pty::close_window(&window.state::<pty::Ptys>(), window.label());
                 rdp::close_window(&window.state::<rdp::Rdps>(), window.label());
                 sftp::close_window(&window.state::<sftp::Sftps>(), window.label())
@@ -2521,4 +2547,24 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{remembered_state, remembers_place};
+    use tauri_plugin_window_state::StateFlags;
+
+    #[test]
+    fn only_the_main_window_opens_where_it_was_left() {
+        assert!(remembers_place("main"));
+        // New Window's windows cascade from the one in front instead
+        assert!(!remembers_place("window-2"));
+    }
+
+    #[test]
+    fn the_main_windows_place_size_maximized_and_full_screen_are_remembered_but_not_whether_it_was_shown() {
+        let state = remembered_state();
+        assert!(state.contains(StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED | StateFlags::FULLSCREEN));
+        assert!(!state.intersects(StateFlags::VISIBLE | StateFlags::DECORATIONS));
+    }
 }

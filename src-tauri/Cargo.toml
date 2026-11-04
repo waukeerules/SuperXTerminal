@@ -45,6 +45,7 @@ ironrdp-cliprdr = "0.7"
 ironrdp-core = "0.2"
 russh-sftp = "3.0.1"
 futures-util = "0.3"
+tauri-plugin-window-state = "2"
 
 # Ctrl+C for local shells (console.rs), the login helper finding ssh (askpass.rs), COM ports (streams.rs), and the menus' theme (lib.rs)
 [target.'cfg(windows)'.dependencies]

@@ -36,6 +36,12 @@ would (config, prefs), `feedText` writes output as if a session sent it, and `te
   npx playwright install webkit chromium
   ```
 
+## When something breaks again
+
+Every bug fix comes with a test that fails without the fix, and a bug that comes back (a regression) gets one before
+it's fixed again, so it can't come back unnoticed a third time. `AGENTS.md` has the steps. `src/lib/icons/IconPicker.test.ts`
+is an example: it checks every icon in Choose Icon is drawn in the colour picked.
+
 ## What isn't tested this way
 
 The whole app, windows and all. Tauri's driver for that (`tauri-driver`, WebDriver) works on Windows and Linux only:

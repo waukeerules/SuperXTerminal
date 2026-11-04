@@ -91,6 +91,17 @@
   ];
   /** How many fields have changed; a stored session saves only with changes, a new one (or a copy) any time */
   const changes = $derived(FIELDS.filter(changed).length + (password !== undefined ? 1 : 0));
+  /** The window's tabs, and the fields on each: a tab with one changed shows a dot */
+  const TABS: { name: string; fields: (keyof SessionFields)[] }[] = [
+    { name: "General", fields: ["name", "color", "icon", "protocol", "profile", "host", "port", "username", "note"] },
+    { name: "Connection", fields: ["extraArgs", "rdpOptions", "sshAlgorithms", "jumpHost"] },
+    { name: "Terminal", fields: ["highlightRules", "script"] },
+    { name: "File transfer", fields: ["localPath", "remotePath"] },
+  ];
+  /** The tab shown */
+  let tab = $state("General");
+  /** Whether a tab has a field changed since the window opened (General's also when a password was typed or forgotten) */
+  const tabChanged = (t: (typeof TABS)[number]) => t.fields.some(changed) || (t.name === "General" && password !== undefined);
   /** A -pw password stored in the extra arguments (shown masked), which Move -pw here can take into the Keychain */
   const storedPw = $derived(id !== null && /(^|\s)-pw\s+(••••••|"••••••")(\s|$)/.test(fields.extraArgs) && /(^|\s)-pw\s/.test(draft.extraArgs));
 
@@ -228,10 +239,16 @@
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
     <header>{title}</header>
 
-    <!-- the fields scroll; the title above and Save below stay put -->
+    <div class="tabs" role="tablist">
+      {#each TABS as t (t.name)}
+        <button role="tab" class:active={tab === t.name} aria-selected={tab === t.name} onclick={() => (tab = t.name)}>
+          {t.name}{#if tabChanged(t)}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</button>
+      {/each}
+    </div>
+
+    <!-- every tab's fields are there, the others hidden, so a tab keeps what's typed in it; the window keeps one size -->
     <div class="body">
-    <fieldset>
-      <legend>Connection details</legend>
+    <div class="panel" role="tabpanel" aria-label="General" hidden={tab !== "General"}>
       <div class="row">
         <label class="grow">{@render caption("Session name:", "name")}<input bind:value={draft.name} disabled={locked("name")} title={locked("name") ? lockTip : ""} /></label>
         <span class="colour">{@render caption("Colour:", "color")}
@@ -273,7 +290,6 @@
         <button onclick={() => onOpenProfiles(draft.profile.trim() || undefined)} title="Settings > Profiles, on this session's profile">Profiles…</button>
       </div>
       {#if reason}<p class="note">{reason}</p>{/if}
-      {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}
       {#if profileMissing}<p class="note">Profile "{draft.profile.trim()}" isn't set up on {isMac ? "this Mac" : "this PC"}, so Default Settings is used. Add it in Profiles….</p>{/if}
 
       {#if serial}
@@ -303,27 +319,27 @@
       <div class="row">
         <label class="grow">{@render caption("Login username:", "username")}<input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"}
           disabled={locked("username")} title={locked("username") ? lockTip : ""} /></label>
-        <label>{@render ownCaption()}<input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
-          placeholder={hasOwnPassword && password !== "" ? `Stored in ${SECRET_STORE}` : /(^|\s)-pw\s/.test(draft.extraArgs) ? "none: the -pw below" : "none: the profile's"}
+      </div>
+      <div class="row">
+        <label class="grow">{@render ownCaption()}<input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
+          placeholder={hasOwnPassword && password !== "" ? `Stored in ${SECRET_STORE}` : /(^|\s)-pw\s/.test(draft.extraArgs) ? "none: the -pw on the Connection tab" : "none: the profile's"}
           title={`Kept in ${SECRET_STORE} on ${THIS_COMPUTER} only, never in the session's file; used before its -pw and its profile's`} /></label>
         {#if hasOwnPassword && password !== ""}<button onclick={() => (password = "")} title="Forget the stored password">Forget</button>{/if}
         {#if storedPw}<button onclick={movePassword} title={`Keep the -pw password in ${SECRET_STORE} instead, on ${THIS_COMPUTER} only`}>Move -pw here</button>{/if}
-        <label>{@render caption("Highlight:", "highlightRules")}
-          <select bind:value={draft.highlightRules} disabled={locked("highlight_rules")} title={locked("highlight_rules") ? lockTip : ""}>
-            <option value="">{inherited("highlightRules") ? `From the folder (${inherited("highlightRules")})` : "Default (Settings)"}</option>
-            <option value="auto">Auto (picked from the prompt)</option>
-            {#each ruleSets as r}<option value={r.id}>{r.name}</option>{/each}
-            <option value="none">None</option>
-            {#if draft.highlightRules && !["auto", "none"].includes(draft.highlightRules) && !ruleSets.some((r) => r.id === draft.highlightRules)}
-              <option value={draft.highlightRules}>{draft.highlightRules} (not found)</option>
-            {/if}
-          </select>
-        </label>
       </div>
 
+      <label class="notes">{@render caption("Notes:", "note")}
+        <textarea bind:value={draft.note} rows="4" disabled={locked("notes")} title={locked("notes") ? lockTip : ""}></textarea>
+      </label>
+    </div>
+
+    <div class="panel" role="tabpanel" aria-label="Connection" hidden={tab !== "Connection"}>
       <div class="row">
         <label class="grow">{@render caption("Extra arguments:", "extraArgs")}<input bind:value={draft.extraArgs} placeholder="PuTTY-style, e.g. -pw secret -L 8080:localhost:80"
           disabled={locked("extra_args")} title={locked("extra_args") ? lockTip : ""} /></label>
+      </div>
+      {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}
+      <div class="row">
         <button disabled={draft.protocol.toUpperCase() !== "RDP" || locked("rdp_options")}
           title={locked("rdp_options") ? lockTip : draft.protocol.toUpperCase() !== "RDP" ? "For RDP sessions" : draft.rdpOptions ? `Its own: ${draft.rdpOptions}` : "Using the defaults (Settings > Remote Desktop)"}
           onclick={() => (rdpOptioning = true)}>RDP options…{draft.rdpOptions ? " (own)" : ""}{#if changed("rdpOptions")}<span class="dot" title="Changed: not saved yet"></span>{/if}</button>
@@ -337,19 +353,31 @@
           placeholder={inherited("jumpHost") || "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22"} /></label>
       </div>
 
+    </div>
+
+    <div class="panel" role="tabpanel" aria-label="Terminal" hidden={tab !== "Terminal"}>
+      <div class="row">
+        <label>{@render caption("Highlight:", "highlightRules")}
+          <select bind:value={draft.highlightRules} disabled={locked("highlight_rules")} title={locked("highlight_rules") ? lockTip : ""}>
+            <option value="">{inherited("highlightRules") ? `From the folder (${inherited("highlightRules")})` : "Default (Settings)"}</option>
+            <option value="auto">Auto (picked from the prompt)</option>
+            {#each ruleSets as r}<option value={r.id}>{r.name}</option>{/each}
+            <option value="none">None</option>
+            {#if draft.highlightRules && !["auto", "none"].includes(draft.highlightRules) && !ruleSets.some((r) => r.id === draft.highlightRules)}
+              <option value={draft.highlightRules}>{draft.highlightRules} (not found)</option>
+            {/if}
+          </select>
+        </label>
+      </div>
       <div class="row">
         <label class="grow">{@render caption("SPSL script:", "script")}<input bind:value={draft.script} disabled={locked("spsl_script")} title={locked("spsl_script") ? lockTip : ""} /></label>
         <button onclick={() => (draft.script = "")}>Clear</button>
         <button onclick={browseScript}>Browse…</button>
       </div>
 
-      <label class="notes">{@render caption("Notes:", "note")}
-        <textarea bind:value={draft.note} rows="5" disabled={locked("notes")} title={locked("notes") ? lockTip : ""}></textarea>
-      </label>
-    </fieldset>
+    </div>
 
-    <fieldset>
-      <legend>File transfer options</legend>
+    <div class="panel" role="tabpanel" aria-label="File transfer" hidden={tab !== "File transfer"}>
       <div class="row">
         <label class="grow">{@render caption("Local path:", "localPath")}<input bind:value={draft.localPath} /></label>
         <button onclick={browseLocal}>Browse…</button>
@@ -357,7 +385,7 @@
       <div class="row">
         <label class="grow">{@render caption("Remote path:", "remotePath")}<input bind:value={draft.remotePath} /></label>
       </div>
-    </fieldset>
+    </div>
     </div>
 
     <footer>
@@ -437,6 +465,42 @@
     gap: 10px;
   }
 
+  /* as the other dialogs' tabs (SSH algorithms…): the shown one joins the panel below */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tabs button {
+    background: none;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    padding: 4px 12px;
+    margin-bottom: -1px;
+  }
+
+  .tabs button.active {
+    background: var(--bg-window);
+    border-color: var(--border);
+  }
+
+  /* every tab the same height, so switching doesn't move Save; the fields scroll only on a small screen */
+  .body {
+    min-height: 340px;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .panel[hidden] {
+    display: none;
+  }
+
   .caption {
     display: inline-flex;
     align-items: center;
@@ -457,14 +521,6 @@
 
   .caption .dot {
     margin-left: 0;
-  }
-
-  fieldset {
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    display: grid;
-    gap: 8px;
-    padding: 8px 12px 12px;
   }
 
   .row {

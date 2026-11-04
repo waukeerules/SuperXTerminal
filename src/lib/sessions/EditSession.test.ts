@@ -1,4 +1,4 @@
-// Edit Session's Password: the session's own, kept in the Keychain under its id, and Move -pw here, which takes the
+// Edit Session's tabs, which mark the one with a change unsaved; and its Password: the session's own, kept in the Keychain under its id, and Move -pw here, which takes the
 // stored -pw there and saves the session without it. The Rust side is stood in for by mockIPC: what's saved, and
 // what's stored as the session's password, are recorded.
 import { beforeEach, describe, expect, it } from "vitest";
@@ -72,5 +72,24 @@ describe("Edit Session's password", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await expect.poll(() => stored).toEqual([{ id: "Lab/sw1", password: "s3cret" }]);
     expect(JSON.stringify(saved)).not.toContain("s3cret");
+  });
+});
+
+describe("Edit Session's tabs", () => {
+  it("show one tab's fields at a time, and mark a tab with a change unsaved", async () => {
+    const user = userEvent.setup();
+    open();
+    const general = screen.getByRole("tab", { name: "General" });
+    const connection = screen.getByRole("tab", { name: "Connection" });
+    expect(general.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel", { name: "General" })).toBeTruthy();
+    // the notes are on General
+    expect(screen.getByLabelText(/Notes/).closest("[role=tabpanel]")?.getAttribute("aria-label")).toBe("General");
+    await user.click(connection);
+    expect(connection.getAttribute("aria-selected")).toBe("true");
+    expect(connection.querySelector(".dot")).toBeNull();
+    await user.type(screen.getByLabelText(/Jump host/), "bastion");
+    expect(connection.querySelector(".dot")).not.toBeNull();
+    expect(general.querySelector(".dot")).toBeNull();
   });
 });

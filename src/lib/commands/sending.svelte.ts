@@ -10,6 +10,7 @@ import type { CommandTab, TabArea } from "../layout/TabArea";
 import { settings } from "../settings/store.svelte";
 import { resolveSnippet, askOne } from "../scripting/asking.svelte";
 import { parseSendString } from "../scripting/sendString";
+import { clipboardText } from "../clipboard";
 import { ScriptRun, runScript, type ScriptHost } from "../scripting/spsl";
 
 /** The window's tab area and what scripts need from the window; App sets them once it has them */
@@ -70,7 +71,7 @@ export async function fillPlaceholders(text: string): Promise<string | null> {
  * the numbers of the lines it brings take (Line Numbers)
  */
 export async function sendString(text: string, targets: CommandTab[], color = ""): Promise<void> {
-  const steps = await parseSendString(text, () => navigator.clipboard.readText().catch(() => ""));
+  const steps = await parseSendString(text, clipboardText);
   await Promise.all(
     targets.map(async (tab) => {
       tab.host.markCommand?.(color);

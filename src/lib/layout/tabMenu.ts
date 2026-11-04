@@ -10,6 +10,7 @@ import type { TabArea } from "./TabArea";
 import { specialCommands } from "../terminal/PageHost";
 import type { RdpHost } from "../terminal/RdpHost";
 import { shortcutLabel } from "../shortcuts";
+import { clipboardText } from "../clipboard";
 
 /**
  * A menu item's label with its action's key now, as this system shows it ("Split Right  ⌘D", "Split Right  Ctrl+Shift+D")
@@ -234,7 +235,7 @@ function rdpMenu(host: TabMenuHost, id: string, rdp: RdpHost): MenuItem[] {
       disabled: offline,
       // for where pasting doesn't reach: the login screen, a console without clipboard sharing
       action: async () => {
-        const text = await navigator.clipboard.readText().catch(() => "");
+        const text = await clipboardText();
         if (!text) {
           host.status("The clipboard has no text to type");
           return;

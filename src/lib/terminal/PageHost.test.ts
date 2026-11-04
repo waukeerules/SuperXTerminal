@@ -1,7 +1,7 @@
 // A session's tab when ssh ends: what it says and whether it reconnects by itself, read from ssh's last words, and
 // the profile change it offers (F). The Rust side is stood in for by mockIPC: pty_open hands over the tab's channel,
 // which the test feeds ssh's output and its end. Also the tab's size reaching the pseudo terminal as the session starts,
-// Reconnect, and the anti-idle string typed after a quiet spell.
+// Reconnect, the anti-idle string typed after a quiet spell, and a paste taking the clipboard from the system.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
@@ -32,6 +32,8 @@ let resized: { cols: number; rows: number }[];
 /** pty_open's size, and what it waits for before it answers (the page's messages can come meanwhile); none: at once */
 let openedAt: { cols: number; rows: number } | null;
 let openWaits: Promise<void> | null;
+/** The clipboard's text, as clipboard_text reads it */
+let clipboard: string;
 
 beforeEach(() => {
   channel = null;
@@ -42,6 +44,7 @@ beforeEach(() => {
   written = [];
   openedAt = null;
   openWaits = null;
+  clipboard = "";
   profiles = [emptyProfile(DEFAULT_PROFILE), { ...emptyProfile("root"), username: "admin" }];
   mockIPC(async (cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
@@ -61,6 +64,7 @@ beforeEach(() => {
       resized.push({ cols: Number(payload.cols), rows: Number(payload.rows) });
       return null;
     }
+    if (cmd === "clipboard_text") return clipboard;
     if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
     if (cmd === "profiles_list") return profiles;
     if (cmd === "profiles_save") {
@@ -244,5 +248,18 @@ describe("the anti-idle string", () => {
     await idleSession("", 60);
     await vi.advanceTimersByTimeAsync(120_000);
     expect(written).toEqual([]);
+  });
+});
+
+describe("a paste", () => {
+  it("takes the clipboard from the system, so WebView2 doesn't ask to allow it", async () => {
+    // the page's own read is what made WebView2 ask "localhost wants to see text and images copied to the clipboard"
+    const pageRead = vi.fn(async () => "not this");
+    Object.defineProperty(navigator, "clipboard", { value: { readText: pageRead, writeText: vi.fn() }, configurable: true });
+    clipboard = "FastEthernet0/5";
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "pasteRequest" });
+    await expect.poll(() => posted.filter((m) => m.type === "paste")).toEqual([{ type: "paste", text: "FastEthernet0/5" }]);
+    expect(pageRead).not.toHaveBeenCalled();
   });
 });

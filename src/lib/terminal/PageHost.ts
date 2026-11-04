@@ -21,6 +21,7 @@ import { antiIdleKeys } from "./antiIdle";
 import { running } from "../commands/sending.svelte";
 import { checkPaste } from "./pasting.svelte";
 import { THIS_COMPUTER } from "../platform";
+import { clipboardText } from "../clipboard";
 import { isMac } from "../shortcuts";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
@@ -622,7 +623,7 @@ export class PageHost implements ScriptTarget {
 
   /** Paste the given text, or the clipboard's, into the terminal */
   private async paste(text: string | null): Promise<void> {
-    const value = text ?? (await navigator.clipboard.readText().catch(() => ""));
+    const value = text ?? (await clipboardText());
     if (!value) return;
     // several lines are checked first (paste check), as TerminalControl
     const checked = await checkPaste(value, this.title);

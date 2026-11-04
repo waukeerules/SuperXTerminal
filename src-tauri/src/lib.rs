@@ -5,6 +5,7 @@ mod applog;
 mod askpass;
 mod buttonbars;
 mod cli;
+mod clipboard;
 mod command_tap;
 mod console;
 mod db;
@@ -2543,6 +2544,7 @@ pub fn run() {
             profiles_list,
             profiles_save,
             profiles_delete,
+            clipboard::clipboard_text,
             pty::pty_open,
             pty::pty_write,
             pty::pty_resize,

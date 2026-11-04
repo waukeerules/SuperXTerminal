@@ -150,7 +150,7 @@ impl CliprdrBackend for Backend {
 
 /// The Mac's general pasteboard, as text
 #[cfg(target_os = "macos")]
-mod mac {
+pub(crate) mod mac {
     use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
     use objc2_foundation::NSString;
 
@@ -170,7 +170,7 @@ mod mac {
 }
 
 #[cfg(not(target_os = "macos"))]
-mod mac {
+pub(crate) mod mac {
     /// No Mac clipboard on this system
     pub fn read() -> Option<String> {
         None

@@ -47,6 +47,26 @@ describe("sshFailure", () => {
   });
 });
 
+describe("sshFailure with Windows' ConPTY output", () => {
+  it("reads ssh's words through a window title, cursor hiding and cursor moves for line breaks", () => {
+    const conpty = "\x1b[?25l\x1b[2J\x1b[m\x1b[H\x1b]0;C:\\WINDOWS\\System32\\OpenSSH\\ssh.exe\x07\x1b[?25h"
+      + "(admin@192.168.0.50) Password:\x1b[2;1H\x1b[?25l\x1b[3;1H"
+      + "admin@192.168.0.50: Permission denied (publickey,keyboard-interactive,password).\x1b[?25h\x1b[4;1H";
+    expect(sshFailure(conpty)).toEqual({ kind: "login" });
+  });
+
+  it("keeps a cursor move apart from the line after it, so an earlier line isn't read as ssh's", () => {
+    // the session's own output, then a lost connection, the rows written by cursor moves
+    const conpty = "cat: /etc/shadow: Permission denied (os error 13)\x1b[5;1H" + "lab$ \x1b[6;1H".repeat(8) + "client_loop: send disconnect: Connection reset\x1b[14;1H";
+    expect(sshFailure(conpty).kind).toBe("other");
+  });
+
+  it("reads the device's offer without the escape codes after it", () => {
+    const conpty = "Unable to negotiate with 10.0.0.9 port 22: no matching host key type found. Their offer: ssh-rsa,ssh-dss\x1b[?25h\x1b[3;1H";
+    expect(sshFailure(conpty)).toMatchObject({ kind: "algorithms", offer: "ssh-rsa,ssh-dss" });
+  });
+});
+
 describe("reconnectDelay", () => {
   it("doubles from the delay chosen up to two minutes, riding out a reload", () => {
     expect([0, 1, 2, 3, 4, 5].map((n) => reconnectDelay(10, n))).toEqual([10, 20, 40, 80, 120, 120]);

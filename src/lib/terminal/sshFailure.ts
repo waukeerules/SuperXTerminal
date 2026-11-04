@@ -30,9 +30,25 @@ export function retries(failure: SshFailure): boolean {
 /** Lines at the end of the output read for ssh's last words: earlier ones are the session's own (a remote "Permission denied") */
 const LAST_LINES = 6;
 
+/**
+ * The output's lines as text: escape sequences taken out, and a move of the cursor to a row's start taken as a new
+ * line, as Windows' ConPTY often writes one in place of a line break (with a window title and cursor hiding around)
+ */
+function plainLines(output: string): string[] {
+  return output
+    // a window title or other OSC string, ended by BEL or ST
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+    // the cursor to a row (and its first column): a new line
+    .replace(/\x1b\[\d*(?:;1)?H/g, "\n")
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b[()][0-9A-Za-z]|\x1b[=>78]/g, "")
+    .split(/\r?\n|\r/)
+    .filter((line) => line.trim());
+}
+
 /** What ssh's output, since the session last started, says about how it ended */
 export function sshFailure(all: string): SshFailure {
-  const output = all.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").split(/\r?\n/).filter((l) => l.trim()).slice(-LAST_LINES).join("\n");
+  const output = plainLines(all).slice(-LAST_LINES).join("\n");
   // checked before "Permission denied", which a device may also send as it gives up
   if (/Too many authentication failures/i.test(output)) return { kind: "tooManyAttempts" };
   const negotiate = /Unable to negotiate with \S+ port \d+: no matching (key exchange method|host key type|cipher|MAC) found\. Their offer: (\S+)/i.exec(output);

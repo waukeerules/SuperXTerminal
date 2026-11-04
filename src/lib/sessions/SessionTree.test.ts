@@ -1,5 +1,6 @@
 // The Sessions tree's selection of folders and sessions together: Cmd+click and Shift+click pick both, and the
-// selection's menu moves them to a folder. The Rust side is stood in for by mockIPC; moves are recorded.
+// selection's menu moves them to a folder; and on a clean install, the first session saved shows. The Rust side is
+// stood in for by mockIPC; moves are recorded.
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -32,7 +33,7 @@ beforeEach(() => {
       return { sessions: [session("Imported/Core/sw1"), session("Imported/Core/sw2"), session("Imported/r1"), session("Lab/x")], folders: [], problems: [] };
     if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
     if (cmd === "overrides_get") return {};
-    if (cmd === "custom_icons_list" || cmd === "icons_list") return [];
+    if (cmd === "icons_custom") return [];
     if (cmd === "plugin:dialog|ask") return true;
     if (cmd === "folder_move" || cmd === "session_move") return "moved";
     return null;
@@ -78,5 +79,54 @@ describe("selecting folders and sessions together", () => {
     await user.keyboard("{/Shift}");
     for (const name of [/^Core \(/, "sw1", "sw2", "r1"]) expect(row(name).classList.contains("selected"), String(name)).toBe(true);
     expect(row("x").classList.contains("selected")).toBe(false);
+  });
+});
+
+describe("the first session on a clean install", () => {
+  /**
+   * Show the tree on a clean install: no sessions anywhere, and a settings folder or not. The stand-in files keep what
+   * session_save is given, and sessions_load gives it back, as the Rust side reads the files again
+   */
+  async function cleanInstall(settingsFolder: boolean): Promise<SessionView[]> {
+    const stored: SessionView[] = [];
+    mockIPC((cmd, args) => {
+      const a = (args ?? {}) as { store?: "saved" | "private"; fields?: { name: string; folder: string } };
+      if (cmd === "sessions_load")
+        return { sessions: [...stored], folders: [], problems: [], savedFile: settingsFolder ? "/team/Sessions.xml" : null, privateFile: "/me/PrivateSessions.xml", savedOff: false };
+      if (cmd === "session_save") {
+        const id = a.fields!.folder ? `${a.fields!.folder}/${a.fields!.name}` : a.fields!.name;
+        stored.push({ ...session(id), store: a.store! });
+        return id;
+      }
+      if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
+      if (cmd === "overrides_get") return {};
+      if (cmd === "icons_custom" || cmd === "profiles_list") return [];
+      if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
+      return null;
+    });
+    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    await screen.findByText(/Private sessions/);
+    return stored;
+  }
+
+  /** The toolbar's New session, named and saved as the user does */
+  async function newSession(name: string): Promise<void> {
+    await user.click(screen.getByTitle("New session (in the selected folder)"));
+    await user.type(screen.getByText("Session name:").closest("label")!.querySelector("input")!, name);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+  }
+
+  it("shows in Saved sessions once saved, with a settings folder", async () => {
+    const stored = await cleanInstall(true);
+    await newSession("sw1");
+    await expect.poll(() => stored.map((s) => `${s.store}:${s.id}`)).toEqual(["saved:sw1"]);
+    expect(within(row(/^Saved sessions/).parentElement!).getByText("sw1")).toBeTruthy();
+  });
+
+  it("shows in Private sessions once saved, before a settings folder is chosen", async () => {
+    const stored = await cleanInstall(false);
+    await newSession("sw1");
+    await expect.poll(() => stored.map((s) => `${s.store}:${s.id}`)).toEqual(["private:sw1"]);
+    expect(within(row(/^Private sessions/).parentElement!).getByText("sw1")).toBeTruthy();
   });
 });

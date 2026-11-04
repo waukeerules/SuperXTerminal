@@ -9,17 +9,24 @@
   import { tabStates } from "./tabStates.svelte";
 
   interface Props {
+    /** The tab's title */
     title: string;
+    /** The session's icon key */
     icon: string;
+    /** The environment colour, for the circle behind the icon; null for none */
     environment: string | null;
+    /** The size the icon is drawn at */
     iconSize: number;
+    /** The user's custom icons, for a session using one */
     customs: ReadonlyMap<string, CustomIcon>;
     /** The tab's id: a spinner shows in place of the icon while a script runs in it, as SuperXPuTTY's */
     tabId: string;
+    /** The tab's ✕ */
     onClose: () => void;
   }
 
   let { title, icon, environment, iconSize, customs, tabId, onClose }: Props = $props();
+  /** Whether a script is running in the tab, which shows a spinner in place of the icon */
   const scripting = $derived(running.runs.some((r) => r.tabId === tabId));
   /** The session is down: SuperXPuTTY's disconnected badge on the icon */
   const disconnected = $derived(tabStates[tabId]?.ended ?? false);

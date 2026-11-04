@@ -40,14 +40,17 @@ export async function readLayout(name: string): Promise<Layout | null> {
   }
 }
 
+/** Save a layout under a name, as JSON in the settings folder's layouts-mac (layouts.rs) */
 export function saveLayout(name: string, layout: Layout): Promise<void> {
   return invoke("layout_save", { name, text: JSON.stringify(layout, null, 2) });
 }
 
+/** Delete a saved layout */
 export function deleteLayout(name: string): Promise<void> {
   return invoke("layout_delete", { name });
 }
 
+/** Rename a saved layout */
 export function renameLayout(from: string, to: string): Promise<void> {
   return invoke("layout_rename", { from, to });
 }

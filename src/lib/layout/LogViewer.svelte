@@ -9,11 +9,13 @@
   import { invoke } from "@tauri-apps/api/core";
 
   interface Props {
+    /** The pane's close button */
     onClose: () => void;
   }
 
   let { onClose }: Props = $props();
 
+  /** One entry of the app's log, as applog.rs keeps it */
   interface Entry {
     seq: number;
     time: string;
@@ -27,11 +29,14 @@
   let list: HTMLDivElement;
   let last = 0;
 
+  /** The levels in order, for showing a level and those above it */
   const RANK = { INFO: 0, WARN: 1, ERROR: 2 };
+  /** The entries at the level chosen or above, with the filter's text */
   const shown = $derived(
     entries.filter((e) => RANK[e.level] >= RANK[level] && (!filter.trim() || e.text.toLowerCase().includes(filter.trim().toLowerCase()))),
   );
 
+  /** Add the entries logged since the last pull, keeping the newest 2000, and follow the end if it's showing */
   async function pull(): Promise<void> {
     const fresh = await invoke<Entry[]>("applog_since", { after: last }).catch(() => []);
     if (fresh.length === 0) return;
@@ -51,11 +56,13 @@
     return () => clearInterval(timer);
   });
 
+  /** Clear: empty the log kept in memory and the pane */
   async function clear(): Promise<void> {
     await invoke("applog_clear");
     entries = [];
   }
 
+  /** Copy the entries shown, one per line */
   function copy(): void {
     void navigator.clipboard.writeText(shown.map((e) => `${e.time} ${e.level} ${e.text}`).join("\n"));
   }

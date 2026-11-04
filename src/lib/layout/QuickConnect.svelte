@@ -13,6 +13,7 @@
   import type { QuickConnect } from "../terminal/PageHost";
 
   interface Props {
+    /** Connect: the session typed, its tab's title, and whether it opens as a local shell (a protocol with no host) */
     onConnect: (quick: QuickConnect, title: string, local: boolean) => void;
     /** Shown in the status bar when something can't be opened */
     onProblem: (text: string) => void;

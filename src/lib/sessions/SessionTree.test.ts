@@ -100,7 +100,7 @@ describe("the first session on a clean install", () => {
       }
       if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
       if (cmd === "overrides_get") return {};
-      if (cmd === "icons_custom" || cmd === "profiles_list") return [];
+      if (cmd === "icons_custom" || cmd === "profiles_list" || cmd === "variables_list" || cmd === "variables_built_in") return [];
       if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
       return null;
     });

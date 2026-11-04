@@ -19,7 +19,12 @@
     remoteDelete, remoteMkdir, remoteRename, revealLocal, transfer, type Entry, type Listing, type Opened,
   } from "./api";
 
-  let { store, id }: { store: Store; id: string } = $props();
+  let { store, id }: {
+    /** Which sessions the session is in: Saved, Private or Database */
+    store: Store;
+    /** The session whose files are shown */
+    id: string;
+  } = $props();
 
   let conn = $state<Opened | null>(null);
   let failed = $state("");
@@ -31,6 +36,7 @@
     remote: { listing: null as Listing | null, loading: false, error: "" },
   });
 
+  /** One copy in the transfer list, as SuperXPuTTY's: what and where, its state and progress, and when it ran */
   interface Job {
     id: number;
     upload: boolean;
@@ -84,6 +90,7 @@
     if (conn) void closeTransfer(conn.id);
   });
 
+  /** List a folder on one side, keeping what's shown when it fails */
   async function load(side: "local" | "remote", path: string): Promise<void> {
     const state = sides[side];
     state.loading = true;
@@ -152,10 +159,12 @@
     }
   }
 
+  /** A time taken, for the Message column: "350 ms" or "2.4 s" */
   function seconds(ms: number): string {
     return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
   }
 
+  /** Ask for a name, then make a folder in the side's folder */
   async function mkdir(side: "local" | "remote"): Promise<void> {
     const listing = sides[side].listing;
     if (!listing) return;
@@ -171,6 +180,7 @@
     }
   }
 
+  /** Ask for a new name for an entry, then rename it */
   async function rename(side: "local" | "remote", entry: Entry): Promise<void> {
     const listing = sides[side].listing;
     if (!listing) return;
@@ -185,6 +195,7 @@
     }
   }
 
+  /** Delete entries from the session's side, after asking; over SCP only files can be deleted */
   async function remove(entries: Entry[]): Promise<void> {
     const listing = sides.remote.listing;
     if (!listing || !entries.length) return;
@@ -205,6 +216,7 @@
     await load("remote", listing.path);
   }
 
+  /** A transfer's start or end as a time of day, for the Start and End columns */
   function time(ms: number): string {
     return ms ? new Date(ms).toLocaleTimeString() : "";
   }
@@ -215,9 +227,12 @@
     { label: "End", width: 86 }, { label: "Progress", width: 170 }, { label: "Status", width: 76 }, { label: "Message", width: 300 },
     { label: "", width: 58 },
   ];
+  /** The transfer list's column widths, as the user left them */
   const columns = new ResizableColumns("columns", COLUMNS.map((c) => c.width));
 
+  /** How far a transfer has got, 0 to 100 */
   const percent = (job: Job) => (job.total ? Math.min(100, Math.round((job.done / job.total) * 100)) : job.status === "Done" ? 100 : 0);
+  /** A transfer's sources for its row: the one path, or the first and how many more */
   const describe = (paths: string[]) => (paths.length === 1 ? paths[0] : `${paths[0]} and ${paths.length - 1} more`);
 </script>
 

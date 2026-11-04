@@ -19,11 +19,13 @@ export interface Entry {
   group: string;
 }
 
+/** A folder's contents, at its full path (sftp.rs's Listing) */
 export interface Listing {
   path: string;
   entries: Entry[];
 }
 
+/** An open file transfer (sftp.rs's Opened): its id, the remote home, where each pane starts, and user@host for the tab */
 export interface Opened {
   id: number;
   home: string;
@@ -34,18 +36,30 @@ export interface Opened {
   scp: boolean;
 }
 
+/** A transfer's progress: its total once counted, then the bytes done and the file it's on */
 export type Progress = { type: "total"; bytes: number; files: number } | { type: "done"; bytes: number; file: string };
 
+/** Connect to a session's files */
 export const openTransfer = (store: Store, id: string) => invoke<Opened>("sftp_open", { store, id });
+/** Close a file transfer's connection; one already closed is no matter */
 export const closeTransfer = (id: number) => invoke("sftp_close", { id }).catch(() => {});
+/** List a folder on the session's side */
 export const listRemote = (id: number, path: string) => invoke<Listing>("sftp_list", { id, path });
+/** List a folder on this computer */
 export const listLocal = (path: string) => invoke<Listing>("local_list", { path });
+/** Make a folder on the session's side */
 export const remoteMkdir = (id: number, path: string) => invoke("sftp_mkdir", { id, path });
+/** Rename on the session's side */
 export const remoteRename = (id: number, from: string, to: string) => invoke("sftp_rename", { id, from, to });
+/** Delete on the session's side: a file, or a folder with everything in it */
 export const remoteDelete = (id: number, path: string) => invoke("sftp_delete", { id, path });
+/** Make a folder on this computer */
 export const localMkdir = (path: string) => invoke("local_mkdir", { path });
+/** Rename on this computer */
 export const localRename = (from: string, to: string) => invoke("local_rename", { from, to });
+/** Show a file or folder in the file manager (Finder, File Explorer) */
 export const revealLocal = (path: string) => invoke("local_reveal", { path });
+/** Cancel a transfer under way */
 export const cancelTransfer = (transfer: number) => invoke("sftp_cancel", { transfer });
 
 /**

@@ -407,3 +407,26 @@ test.describe("Windows' pseudo console redrawing its screen after a resize (ConP
     await expect.poll(async () => (await rows(page)).slice(-rowCount, -rowCount + 1)).toEqual([`old ${60 - rowCount + 2}`]);
   });
 });
+
+test("a theme with its own font size resizes the terminal once with Line Numbers on, so the session is told one size", async ({ page }) => {
+  // the gutter's width follows the font: it was set after the terminal was measured, so the terminal was sized for the
+  // new font with the old gutter, then again, and Windows' pseudo console redrew its screen for each
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  const themes = [{ name: "PuTTY", colors: {} }, { name: "Big", colors: {}, font: { size: 22 } }];
+  await page.evaluate((themes) => (window as any).terminalDev.message({ type: "config", prefs: { theme: "PuTTY", lineNumbers: "true" }, themes }), themes);
+  await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+  await feed(page, "$ ");
+  await expect.poll(() => page.evaluate(() => document.body.classList.contains("numbers"))).toBe(true);
+  await page.evaluate(() => {
+    (window as any).sizes = [];
+    (window as any).terminalDev.term.onResize((s: { cols: number; rows: number }) => (window as any).sizes.push(`${s.cols}x${s.rows}`));
+  });
+  for (const theme of ["Big", "PuTTY"]) {
+    await page.evaluate(() => ((window as any).sizes = []));
+    await page.evaluate((theme) => (window as any).terminalDev.message({ type: "prefs", prefs: { theme, lineNumbers: "true" } }), theme);
+    await expect.poll(() => page.evaluate(() => (window as any).sizes.length)).toBeGreaterThan(0);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => (window as any).sizes.length), theme).toBe(1);
+  }
+});

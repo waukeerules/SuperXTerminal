@@ -101,6 +101,15 @@
             return;
         }
         var element = document.getElementById('terminal');
+        // before measuring: the gutter's width follows the font, and measured before it changed the terminal would be
+        // sized twice for a new font (a theme's), the session told of a size in between
+        if (document.body.classList.contains('numbers')) {
+            var width = gutterWidthFor(gutterDigits, dimensions);
+            if (width !== gutterWidth) {
+                gutterWidth = width;
+                document.documentElement.style.setProperty('--gutter', width + 'px');
+            }
+        }
         // before measuring: the side-to-side scroll bar takes its height from the rows
         document.body.classList.toggle('nowrap', wide());
         // a hidden tab has no size yet; wait for the ResizeObserver rather than start the session at 2x1
@@ -235,6 +244,13 @@
     var numbersFrame = 0;
     /** The gutter's width as last set, in pixels */
     var gutterWidth = 0;
+    /** How many digits the gutter last had room for (the highest number's) */
+    var gutterDigits = 4;
+
+    /** The gutter's width for numbers of so many digits in the font's cells: room for 4 at least, so the terminal doesn't narrow at every tenfold */
+    function gutterWidthFor(digits, dimensions) {
+        return Math.ceil(Math.max(4, digits) * dimensions.css.cell.width) + 10;
+    }
     /**
      * Where commands began, oldest first: a line marker (which moves as the scrollback does) and the colour of the
      * button that sent it ("" for a command typed, or a button without one). A line's number takes the colour of
@@ -386,8 +402,8 @@
             text.push(colour ? '<span style="color:' + colour + '">' + n + '</span>' : String(n));
             coloured = coloured || !!colour;
         }
-        // room for 4 digits at least, so the terminal doesn't narrow at every tenfold
-        var width = Math.ceil(Math.max(4, String(widest).length) * dimensions.css.cell.width) + 10;
+        gutterDigits = String(widest).length;
+        var width = gutterWidthFor(gutterDigits, dimensions);
         var style = gutter.style;
         style.fontFamily = term.options.fontFamily;
         style.fontSize = term.options.fontSize + 'px';

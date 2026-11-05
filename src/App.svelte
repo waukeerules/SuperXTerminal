@@ -43,7 +43,7 @@
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
   import { getVersion } from "@tauri-apps/api/app";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-  import { catchShortcuts } from "./lib/shortcuts";
+  import { catchShortcuts, fromMenu } from "./lib/shortcuts";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { askOne } from "./lib/scripting/asking.svelte";
 
@@ -104,8 +104,10 @@
 
   // the menu bar's items (src-tauri/src/lib.rs) arrive as "menu" events with the item's id
   // this window's own: the core sends the menu bar's commands to the window in front only
-  void getCurrentWebviewWindow().listen<string>("menu", (event) => menuAction(event.payload));
-  // Windows' menu keys don't fire while the page has the keyboard: the page catches them itself (lib/shortcuts.ts)
+  // (not the menu's copy of a key a tab's page has just run: fromMenu)
+  void getCurrentWebviewWindow().listen<string>("menu", (event) => fromMenu(event.payload) && menuAction(event.payload));
+  // Windows' menu keys, and some of the Mac's (⌘W, ⌘K), don't fire while a tab's page has the keyboard: the pages
+  // catch them themselves (lib/shortcuts.ts)
   catchShortcuts(menuAction);
 
   /** Run a menu bar item's command by its id, from the menu bar or (on Windows) its key */

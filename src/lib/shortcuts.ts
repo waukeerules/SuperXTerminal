@@ -2,10 +2,11 @@
  * Keyboard shortcuts in the page, and keys as this system shows them.
  *
  * The actions and their keys are src-tauri/src/keys.rs's (Settings > Shortcuts), with the Mac's defaults (⌘ keys) or
- * Windows' (Ctrl+Shift keys, which leave a terminal its Ctrl keys). On the Mac the menu bar catches them wherever the
- * keyboard is. On Windows the menu's keys don't fire while the page has the keyboard, which is nearly always, so
- * `catchShortcuts` catches them in the main window and in every tab's page (same-origin iframes) and runs them as
- * the menu would. Labels in menus and hints come from `keyLabel`, `shortcutLabel` and `commandLabel`.
+ * Windows' (Ctrl+Shift keys, which leave a terminal its Ctrl keys). On Windows the menu's keys don't fire while the
+ * page has the keyboard, which is nearly always, so `catchShortcuts` catches them in the main window and in every
+ * tab's page (same-origin iframes) and runs them as the menu would. On the Mac the menu bar catches them, except some
+ * (⌘W, ⌘K) while a tab's page has the keyboard, so there it catches them in the tabs' pages only; the main window's
+ * own ⌘ keys (Settings' ⌘F) stay its own, and `fromMenu` drops the menu's copy of a key a page has already run. Labels in menus and hints come from `keyLabel`, `shortcutLabel` and `commandLabel`.
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -25,6 +26,23 @@ export interface ShortcutRow {
 let rows: ShortcutRow[] = [];
 /** True while the Shortcuts editor is recording a key, which mustn't run the action it's being given to */
 let paused = false;
+/** The action a tab's page last ran from its key, and when (ms), so the menu bar's copy of that key is dropped */
+let caught: { id: string; at: number } | null = null;
+/** How long after a page runs an action the menu bar's same action is taken as that key again, in ms */
+const SAME_PRESS_MS = 500;
+
+/**
+ * Whether a menu bar item's command should run: not when it's the key a tab's page has just run (the Mac's menu bar
+ * may get the key too), so one press doesn't close two tabs
+ * @param id The menu item's id
+ * @param now The time, in ms (for tests)
+ * @returns true to run it
+ */
+export function fromMenu(id: string, now = Date.now()): boolean {
+  const same = caught !== null && caught.id === id && now - caught.at < SAME_PRESS_MS;
+  if (same) caught = null;
+  return !same;
+}
 
 /** Read the actions' keys again (at the start, and when Settings > Shortcuts changes them) */
 export async function loadShortcuts(): Promise<ShortcutRow[]> {
@@ -130,14 +148,13 @@ export function pressedKey(event: KeyboardEvent): string | null {
 }
 
 /**
- * On Windows, catch the shortcuts in this window and in its tabs' pages, and run each as its menu item would; on the
- * Mac the menu bar does it. Caught before the page sees the key (a terminal would type it).
+ * Catch the shortcuts and run each as its menu item would: on Windows in this window and its tabs' pages, on the Mac
+ * in the tabs' pages only (the menu bar has the rest). Caught before the page sees the key (a terminal would type it).
  * @param run Runs an action by its id, as the window's "menu" events do
  */
 export function catchShortcuts(run: (id: string) => void): void {
   void loadShortcuts();
   void listen("settings-changed", () => void loadShortcuts());
-  if (isMac) return;
   const press = (event: KeyboardEvent) => {
     if (paused || event.repeat) return;
     const key = pressedKey(event);
@@ -147,6 +164,7 @@ export function catchShortcuts(run: (id: string) => void): void {
     if (!row) return;
     event.preventDefault();
     event.stopPropagation();
+    if (isMac) caught = { id: row.id, at: Date.now() };
     run(row.id);
   };
   const watched = new WeakSet<Window>();
@@ -164,7 +182,8 @@ export function catchShortcuts(run: (id: string) => void): void {
     watch(frame.contentWindow);
     frame.addEventListener("load", () => watch(frame.contentWindow));
   };
-  watch(window);
+  // the Mac's menu bar catches the main window's keys itself
+  if (!isMac) watch(window);
   document.querySelectorAll("iframe").forEach(watchFrame);
   new MutationObserver((changes) => {
     for (const change of changes) {

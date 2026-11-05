@@ -1,11 +1,15 @@
 /**
  * The main window's entry point: mounts App.svelte in index.html's #app, with dockview's styles and the app's own
- * (app.css), and turns off the Mac's text helpers in every field.
+ * (app.css), turns off the Mac's text helpers in every field, and stops a dropped file opening in the window.
  */
 import { mount } from "svelte";
 import "virtual:dockview.css";
 import "./app.css";
 import App from "./App.svelte";
+import { stopFileDropsOpening } from "./lib/ui/fileDrops";
+
+// a file dropped where nothing takes it would replace the whole window with it, every tab gone (lib/ui/fileDrops.ts)
+stopFileDropsOpening(window);
 
 // Usernames, hosts and commands must stay as typed: turn off macOS's automatic capitalisation, autocorrect, spell
 // checking and Writing Tools ("Write with Siri", the badge by the cursor) in every text field, including ones added

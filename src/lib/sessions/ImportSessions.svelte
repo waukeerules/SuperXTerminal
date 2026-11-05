@@ -3,12 +3,16 @@
   existing Saved and Private sessions updated, the rest added), another Sessions.xml, a PuTTY CM export, a folder of
   PuTTY portable sessions, PuTTY's and KiTTY's saved sessions, Remote Desktop's recent computers (Windows), a
   MobaXterm sessions file, Remote Desktop (.rdp) files, or ~/.ssh/config, all but CSV into a folder of their own
-  ("Imported", "ImportedFromPuTTY", ...). Asks for the file when there's one to choose, then shows what importing will
-  do before anything changes, as SuperXPuTTY's confirmation.
+  ("Imported", "ImportedFromPuTTY", ...). The file is dropped on the dialog's drop zone from Finder or File Explorer,
+  or chosen by clicking it; then the dialog shows what importing will do before anything changes, as SuperXPuTTY's
+  confirmation.
 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { invoke } from "@tauri-apps/api/core";
+  import DropZone from "../ui/DropZone.svelte";
+  import { base64Of } from "../ui/fileDrops";
   import { applyImport, fileNameOf, importSource, planImport, type ImportKind, type ImportSummary, type Store } from "./api";
 
   interface Props {
@@ -43,6 +47,18 @@
   };
   /** Imports with nothing to choose: they read where the system keeps them */
   const FIXED: ImportKind[] = ["putty", "rdpRegistry"];
+  /** What each kind takes, for its drop zone and file picker: the file's extensions (none for any), in words */
+  const TAKES: Record<ImportKind, { extensions: string[]; what: string; name: string }> = {
+    csv: { extensions: ["csv", "txt"], what: "a CSV file", name: "CSV files" },
+    mobaxterm: { extensions: ["mxtsessions"], what: "a MobaXterm .mxtsessions file", name: "MobaXterm sessions" },
+    rdp: { extensions: ["rdp"], what: "Remote Desktop .rdp files", name: "Remote Desktop files" },
+    superputty: { extensions: ["xml"], what: "a SuperPuTTY .xml file", name: "XML files" },
+    puttycm: { extensions: ["xml"], what: "a PuTTY CM .xml export", name: "XML files" },
+    ssh: { extensions: [], what: "an ssh config file", name: "" },
+    puttyFolder: { extensions: [], what: "PuTTY's portable Sessions folder", name: "" },
+    putty: { extensions: [], what: "", name: "" },
+    rdpRegistry: { extensions: [], what: "", name: "" },
+  };
 
   let paths = $state<string[]>([]);
   // sessions from another app go to Private sessions unless chosen otherwise: Sessions.xml is usually the team's
@@ -66,24 +82,29 @@
     if (source !== null || FIXED.includes(start)) {
       paths = [source ?? ""];
       await plan();
-    } else if (!(await choose())) {
-      onCancel();
     }
+    // the rest wait for a file dropped on the zone, or chosen by clicking it
   });
+
+  /**
+   * Files dropped on the zone: the browser gives their contents, not their paths, so the core saves each where the
+   * import can read it (dropped_file_save); then what importing them would do
+   */
+  async function dropped(files: File[]): Promise<void> {
+    error = "";
+    try {
+      paths = await Promise.all(files.map(async (file) => invoke<string>("dropped_file_save", { name: file.name, data: await base64Of(file) })));
+    } catch (e) {
+      error = `Couldn't read the dropped file: ${e}`;
+      return;
+    }
+    await plan();
+  }
 
   /** Ask for the file (or .rdp files, or a folder of PuTTY sessions); false if cancelled */
   async function choose(): Promise<boolean> {
-    const filters = {
-      csv: [{ name: "CSV files", extensions: ["csv", "txt"] }],
-      mobaxterm: [{ name: "MobaXterm sessions", extensions: ["mxtsessions"] }],
-      rdp: [{ name: "Remote Desktop files", extensions: ["rdp"] }],
-      superputty: [{ name: "XML files", extensions: ["xml"] }],
-      puttycm: [{ name: "XML files", extensions: ["xml"] }],
-      ssh: [],
-      puttyFolder: [],
-      putty: [],
-      rdpRegistry: [],
-    }[kind];
+    const takes = TAKES[kind];
+    const filters = takes.extensions.length ? [{ name: takes.name, extensions: takes.extensions }] : [];
     const chosen = await open({
       title: kind === "puttyFolder" ? "Choose the portable Sessions folder" : TITLES[kind],
       directory: kind === "puttyFolder",
@@ -130,10 +151,12 @@
   <div class="dialog" role="dialog" aria-modal="true" aria-label={TITLES[kind]}>
     <header>{TITLES[kind]}</header>
 
-    <div class="file">
-      <span class="path" title={paths.join("\n")}>{paths.length ? (paths.length === 1 ? paths[0] : `${paths.length} files: ${paths.map(fileName).join(", ")}`) : "Choosing…"}</span>
-      {#if !FIXED.includes(kind)}<button onclick={() => void choose()}>Choose…</button>{/if}
-    </div>
+    {#if FIXED.includes(kind)}
+      <div class="file"><span class="path">{what}</span></div>
+    {:else}
+      <DropZone {paths} extensions={TAKES[kind].extensions} multiple={kind === "rdp"} folder={kind === "puttyFolder"}
+        what={TAKES[kind].what} onChoose={() => void choose()} onDrop={(chosen) => void dropped(chosen)} />
+    {/if}
 
     {#if kind === "csv"}
       <p class="note">Sessions are matched by Source, Folder and Name: existing Saved and Private sessions get the file's

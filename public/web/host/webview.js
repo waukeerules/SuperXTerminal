@@ -58,6 +58,15 @@
             listeners = listeners.filter(function (l) { return l !== listener; });
         }
     };
+    // a file dropped on the page where nothing takes it would open in its place (the browser's own answer): never.
+    // The main window has the same guard (src/lib/ui/fileDrops.ts)
+    ['dragover', 'drop'].forEach(function (type) {
+        window.addEventListener(type, function (event) {
+            var types = event.dataTransfer ? Array.prototype.slice.call(event.dataTransfer.types || []) : [];
+            if (types.indexOf('Files') >= 0) { event.preventDefault(); }
+        });
+    });
+
     window.chrome = window.chrome || {};
     Object.defineProperty(window.chrome, 'webview', { value: shim, writable: false, configurable: false });
 })();

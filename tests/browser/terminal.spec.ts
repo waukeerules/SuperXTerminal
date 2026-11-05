@@ -470,3 +470,16 @@ test.describe("the menu's keys", () => {
     expect([shown["Copy"], shown["Paste"], shown["Find..."]]).toEqual(["Ctrl+Insert", "Shift+Insert", "Ctrl+Shift+F"]);
   });
 });
+
+test("a file dropped on the terminal doesn't open in its place", async ({ page }) => {
+  await openTerminal(page, {});
+  // a real DataTransfer with a file, as Finder's drop gives the page
+  const stopped = await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.items.add(new File(["<ArrayOfSessionData/>"], "Sessions.xml", { type: "text/xml" }));
+    const drop = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data });
+    document.getElementById("terminal")!.dispatchEvent(drop);
+    return drop.defaultPrevented;
+  });
+  expect(stopped).toBe(true);
+});

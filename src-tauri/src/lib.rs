@@ -548,6 +548,26 @@ fn script_output_save(path: String, text: String, append: bool) -> Result<PathBu
     Ok(file)
 }
 
+/// Where a dropped file is saved: a folder of its own under `base` (so two files of one name don't meet), with the
+/// file's own name only (a name with folders in it, or .., can't reach outside it)
+fn dropped_file_path(base: &std::path::Path, name: &str, unique: &str) -> PathBuf {
+    let own = std::path::Path::new(name).file_name().and_then(|n| n.to_str()).filter(|n| !n.is_empty() && *n != "..").unwrap_or("dropped");
+    base.join(unique).join(own)
+}
+
+/// A file dropped on a dialog's drop zone (Import Sessions'): the browser gives its contents but not its path, so it's
+/// saved in the temporary folder for the dialog to read like a chosen file. Its path, under its own name
+#[tauri::command]
+fn dropped_file_save(name: String, data: String) -> Result<PathBuf, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| e.to_string())?;
+    let unique = format!("{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
+    let path = dropped_file_path(&std::env::temp_dir().join("SuperXTerminal-dropped"), &name, &unique);
+    std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(path)
+}
+
 /// A log just started: its id for writing, its file, and whether it goes when the tab closes
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2604,6 +2624,7 @@ pub fn run() {
             text_file_read,
             text_file_write,
             script_output_save,
+            dropped_file_save,
             shortcuts_favorite,
             shortcuts_opened,
             shortcuts_forget_recent,
@@ -2674,6 +2695,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_dropped_file_is_saved_under_its_own_name_in_a_folder_of_its_own() {
+        use std::path::Path;
+        let base = Path::new("/tmp/SuperXTerminal-dropped");
+        assert_eq!(super::dropped_file_path(base, "Sessions.xml", "1-2"), base.join("1-2").join("Sessions.xml"));
+        // a name with folders, or .., stays inside
+        assert_eq!(super::dropped_file_path(base, "../../etc/passwd", "1-2"), base.join("1-2").join("passwd"));
+        assert_eq!(super::dropped_file_path(base, "..", "1-2"), base.join("1-2").join("dropped"));
+    }
+
     #[test]
     fn a_scripts_save_goes_in_the_output_folder_unless_its_path_says_otherwise() {
         use std::path::Path;

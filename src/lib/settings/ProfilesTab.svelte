@@ -133,7 +133,7 @@
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
-    "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar",
+    "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script",
   ];
 
   /** The button bars' names (ButtonBars.xml in the settings folder), for the Button bar box */
@@ -296,6 +296,12 @@
   async function chooseKey(): Promise<void> {
     const path = await open({ title: "Choose a private key (OpenSSH format)", defaultPath: "~/.ssh" });
     if (typeof path === "string") draft.keyFile = path;
+  }
+
+  /** Choose the SPSL script the profile's sessions run as they open */
+  async function chooseScript(): Promise<void> {
+    const path = await open({ title: "Choose the profile's SPSL script", filters: [{ name: "Scripts", extensions: ["spsl", "txt"] }] });
+    if (typeof path === "string") draft.script = path;
   }
 
   /** Examples for the Fetch command, for this system; the one last picked, for its note */
@@ -532,6 +538,13 @@
           {#each barNames as name (name)}<option value={name}>{name}</option>{/each}
           {#if missingBar}<option value={missingBar}>{missingBar} (not in the button bars)</option>{/if}
         </select></label>
+      <label>{@render caption("SPSL script", "script")}<input bind:value={draft.script}
+          placeholder={isDefault ? "none; a file, or an http(s) address" : defaultProfile?.script ? `From Default Settings (${defaultProfile.script})` : "none; a file, or an http(s) address"} />
+        <button onclick={chooseScript}>Choose…</button></label>
+      <p class="note under">Run in each of the profile's tabs as it opens, when the session has no SPSL script of its own
+        (Edit Session > Terminal), so a session can be just a name and a host. The file must start with #!/bin/spsl.
+        It starts as the connection does: begin with WAITPROMPT to run once the login is done. A path that isn't
+        absolute is in the settings folder.{#if isDefault} Default Settings' runs for every session without one.{/if}</p>
     </fieldset>
 
     </div>

@@ -64,6 +64,11 @@ export interface Profile {
    * bar the tab's icon picks
    */
   buttonBar: string;
+  /**
+   * An SPSL script its sessions run as they open, when a session has no script of its own: a file (absolute,
+   * file://, or relative to the settings folder) or an http(s) address. "" for Default Settings', else none
+   */
+  script: string;
   hasPassword: boolean;
 }
 
@@ -71,7 +76,7 @@ export interface Profile {
 export function emptyProfile(name: string): Profile {
   return {
     name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
-    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", hasPassword: false,
+    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", hasPassword: false,
   };
 }
 

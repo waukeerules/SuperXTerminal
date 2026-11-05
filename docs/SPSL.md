@@ -21,6 +21,18 @@ script box's colours are `public/web/script/script.js`.
 | A button (button bar, Action: Run SPSL script) | Click: the active tab. Shift+click: the Send Commands selection | the cursor's line | Yes |
 | Script Editor (Tools > Script Editor), Run as: SPSL script | Send: the Send Commands selection | the cursor's line | Yes |
 | A session's own script (Edit Session > Terminal > SPSL script: a file, a path in the settings folder, or a URL) | Runs as the session starts, if the file starts with `#!/bin/spsl` | everything since the session started | No |
+| A profile's script (Settings > Profiles > Terminal > SPSL script, named the same way), for its sessions that have no script of their own | The same as a session's own | everything since the session started | No |
+
+**A profile's script** lets a session be just a name and a host: the profile logs in and sets up, for every session
+that uses it (or whose folder does). A session's own script wins over its profile's; a profile with none uses Default
+Settings'. It starts as the connection does, so begin with WAITPROMPT to run once the login is done:
+
+```
+#!/bin/spsl
+WAITPROMPT /t:30
+SENDLINE echo "Logged in to {session_name} at {host_address}"
+WAITPROMPT
+```
 
 Each run belongs to one tab. With several tabs selected, the same script runs in each, separately, each with its own
 variables. The status bar shows "name (tab): line 4/40 · WAITFOR … · 12s" while it runs, with Stop, and a line when it
@@ -234,7 +246,8 @@ Filled in before a button's or the Script Editor's script runs, all at once (not
 | `{prompt:Name=default}` | The same, with a default. |
 | `{secret:Name}` | Asked for hidden, never remembered. |
 
-A session's own script isn't filled in: write its values in, or use PROMPT and PWDPROMPT.
+A session's own script, or its profile's, isn't filled in: write its values in, or use PROMPT and PWDPROMPT. The
+session's own values (`{host_address}`, `{session_name}`…) are [variables](#variables), so they work in both.
 
 Braces are the placeholders' own: shell text with braces (`${HOME}`, `awk '{print $1}'`, `{1..5}`) would be read as
 placeholders. Write `$HOME`, `cut -d' ' -f1`, `seq 1 5` instead. `$(...)` and `$((...))` are fine.
@@ -632,5 +645,6 @@ OPENSESSION, and skips SENDBREAK. SuperXTerminal adds:
 - the tab's session's values: `{host_address}`, `{session_name}`…
 - stopping when the session ends or reconnects
 - stepping a line at a time, and hover help in the editor
+- a profile's script, run by its sessions with none of their own
 
 SuperXPuTTY skips the lines it doesn't know, so a script using the additions only runs correctly in SuperXTerminal.

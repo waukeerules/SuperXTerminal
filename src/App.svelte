@@ -345,14 +345,16 @@
   }
 
   /**
-   * The session's own script (Edit Session's SPSL script), as SuperXPuTTY runs it when the session opens: only a
-   * script starting #!/bin/spsl, and its first WAITFOR sees everything since the session started
+   * The session's own script (Edit Session's SPSL script), else its profile's (Settings > Profiles), as SuperXPuTTY
+   * runs a session's when it opens: only a script starting #!/bin/spsl, and its first WAITFOR sees everything since
+   * the session started
    */
   async function runOwnScript(session: SessionView, tabId: string): Promise<void> {
-    const found = await invoke<{ kind: string; text?: string; url?: string; path?: string }>("session_script", { store: session.store, id: session.id });
+    const found = await invoke<{ kind: string; text?: string; url?: string; path?: string; profile?: string | null }>("session_script", { store: session.store, id: session.id });
     let script = found.text ?? "";
     if (found.kind === "url" && found.url) script = await fetch(found.url).then((r) => (r.ok ? r.text() : "")).catch(() => "");
-    if (found.kind === "missing") status = `${session.name}'s script ${found.path} isn't on ${THIS_COMPUTER}`;
+    const whose = found.profile ? `The ${found.profile} profile's` : `${session.name}'s`;
+    if (found.kind === "missing") status = `${whose} script ${found.path} isn't on ${THIS_COMPUTER}`;
     if (!script.startsWith("#!/bin/spsl")) return;
     const tab = tabs?.tabList().find((t) => t.id === tabId);
     if (!tab) return;

@@ -6,6 +6,9 @@
 # To go somewhere else, change the two SETs below, or replace them with
 #   PROMPT /var:target Which host, from {session_name}?
 #
+# Run it from the Script Editor in the jump server's tab, or make it the jump server profile's script, so it runs as
+# each of that profile's sessions opens.
+#
 # It only runs echo, hostname and exit. Nothing is changed on either end.
 #
 # Markers: each check prints, say, HOP-$((1+1)), and the script waits for HOP-2. The shell works the sum out, so the
@@ -27,8 +30,9 @@ END
 ECHO Jumping from {session_name} to {user}@{target}
 
 # ---- 2. On the jump server: note where this login came from ------------------------------------------------------
-SENDLINE
-WAITPROMPT /t:5 /else:noprompt
+# Waits for the prompt rather than pressing Enter, so it also works as the jump server profile's script (Settings >
+# Profiles > SPSL script), which starts while ssh is still logging in
+WAITPROMPT /t:30 /else:noprompt
 SENDLINE echo "HOP-$((0+1)) $(hostname) from=$SSH_CLIENT"
 WAITFOR /re HOP-1 (\S+) from=(\S+)
 SET jumphost {1}
@@ -74,4 +78,4 @@ STOP Done: {jumphost} to {targethost} ({user}@{target}) and back
 STOP no prompt from {target} within 30 s
 
 :noprompt
-STOP no prompt from {session_name}: press Enter in the tab and run it again
+STOP no prompt from {session_name} within 30 s: press Enter in the tab and run it again

@@ -90,6 +90,10 @@ pub struct Profile {
     /// The button bar (a bar's name in ButtonBars.xml) shown while one of its sessions' tabs is active; "" for
     /// Default Settings', else the bar the tab's icon picks. Matched whatever its case
     pub button_bar: String,
+    /// An SPSL script its sessions run as they open, when a session has no script of its own (Edit Session > Terminal):
+    /// a file (absolute, file://, or relative to the settings folder) or an http(s) address, as a session's. "" for
+    /// Default Settings', else none. So a session can be just a name and a host, and its profile logs in and sets up
+    pub script: String,
     /// Whether a password is stored for it (the password itself stays in the Keychain)
     #[serde(skip_deserializing)]
     pub has_password: bool,
@@ -142,6 +146,14 @@ impl Profiles {
     pub fn default_profile(&self) -> &Profile {
         self.get(DEFAULT_PROFILE).expect("Default Settings always exists")
     }
+}
+
+/// The script a session with no script of its own runs: its profile's, else Default Settings'; "" for none. With
+/// the profile's name, for saying whose script it is
+pub fn script_of<'a>(profiles: &'a Profiles, profile_name: &str) -> Option<(&'a str, &'a str)> {
+    let default = profiles.default_profile();
+    let profile = if is_default(profile_name) { default } else { profiles.get(profile_name).unwrap_or(default) };
+    [profile, default].into_iter().find(|p| !p.script.trim().is_empty()).map(|p| (p.script.trim(), p.name.as_str()))
 }
 
 /// Whether a profile name means "Default Settings" (also empty, as SuperXPuTTY's FolderSettings.IsDefaultProfile)
@@ -199,7 +211,7 @@ pub fn import_text(text: &str) -> Result<Vec<Profile>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{export_text, import_text, Profile};
+    use super::{export_text, import_text, script_of, Profile, Profiles};
 
     #[test]
     fn an_exported_profile_has_no_password_and_imports_as_it_was() {
@@ -242,6 +254,31 @@ mod tests {
         // a profile from before them has neither
         let older: Profile = serde_json::from_str(r#"{"name":"root"}"#).unwrap();
         assert_eq!((older.tab_color.as_str(), older.button_bar.as_str()), ("", ""));
+    }
+
+    #[test]
+    fn a_session_with_no_script_runs_its_profiles_else_default_settings() {
+        let mut profiles: Profiles = serde_json::from_str(
+            r#"{"profiles":[{"name":"Linux","script":" omv.spsl "},{"name":"Cisco"},{"name":"Default Settings"}]}"#,
+        )
+        .unwrap();
+        profiles.ensure_default();
+        assert_eq!(script_of(&profiles, "linux"), Some(("omv.spsl", "Linux")));
+        assert_eq!(script_of(&profiles, "Cisco"), None);
+        assert_eq!(script_of(&profiles, ""), None);
+        profiles.profiles[0].script = "https://example.com/all.spsl".into();
+        assert_eq!(script_of(&profiles, "Cisco"), Some(("https://example.com/all.spsl", "Default Settings")));
+        assert_eq!(script_of(&profiles, "Gone"), Some(("https://example.com/all.spsl", "Default Settings")));
+        assert_eq!(script_of(&profiles, "Linux"), Some(("omv.spsl", "Linux")));
+    }
+
+    #[test]
+    fn a_profiles_script_is_kept_and_goes_with_an_export() {
+        let profile: Profile = serde_json::from_str(r#"{"name":"Linux","script":"scripts/omv.spsl"}"#).unwrap();
+        let imported = import_text(&export_text(&profile).unwrap()).unwrap();
+        assert_eq!(imported[0].script, "scripts/omv.spsl");
+        let older: Profile = serde_json::from_str(r#"{"name":"Old"}"#).unwrap();
+        assert_eq!(older.script, "");
     }
 
     #[test]

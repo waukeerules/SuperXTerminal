@@ -466,38 +466,66 @@ fn buttonbars_import(state: State<'_, AppState>, path: PathBuf) -> Result<(Vec<b
     Ok((bars, last))
 }
 
-/// A session's own script (Edit Session's SPSL script), found as SuperXPuTTY finds it
+/// The script a session runs as it opens (Edit Session's SPSL script, else its profile's), found as SuperXPuTTY finds it
 #[derive(serde::Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum SessionScript {
-    /// The session has none
+    /// The session has none, nor has its profile
     None,
     /// An http(s) address, which the window fetches
-    Url { url: String },
-    Text { text: String },
+    Url { url: String, profile: Option<String> },
+    Text { text: String, profile: Option<String> },
     /// A file that isn't there, e.g. a Windows path (C:\...)
-    Missing { path: String },
+    Missing { path: String, profile: Option<String> },
+}
+
+/// Which script a session runs as it opens, and the profile it comes from (None for the session's own): the session's
+/// SPSL script, else its profile's (the session's, else its folders', as a launch picks it; local overrides
+/// included), else Default Settings'
+fn script_spec(sessions: &sessions::Sessions, profiles: &Profiles, store: sessions::Store, session: &sessions::StoredSession) -> Option<(String, Option<String>)> {
+    let own = session.get("SPSLFileName").trim();
+    if !own.is_empty() {
+        return Some((own.to_string(), None));
+    }
+    let mut profile_name = session.get("PuttySession").to_string();
+    for folder in sessions.along(store, session.folder()) {
+        if profiles::is_default(&profile_name) && !folder.putty_profile.is_empty() {
+            profile_name = folder.putty_profile.clone();
+        }
+    }
+    profiles::script_of(profiles, &profile_name).map(|(spec, name)| (spec.to_string(), Some(name.to_string())))
 }
 
 /// The script a session runs when it opens: a file (absolute, file://, or relative to the settings folder), or a URL
 #[tauri::command]
 fn session_script(state: State<'_, AppState>, store: sessions::Store, id: String) -> SessionScript {
-    let spec = {
+    // each lock taken and let go on its own: std's Mutex isn't reentrant
+    let overrides_on = state.settings.lock().unwrap().use_local_overrides;
+    let folder = shared_folder(&state);
+    let profiles = state.profiles.lock().unwrap().clone();
+    let found = {
         let sessions = state.sessions.lock().unwrap();
-        sessions.find(store, &id).map(|s| s.get("SPSLFileName").trim().to_string()).unwrap_or_default()
+        sessions
+            .find(store, &id)
+            .map(|s| overrides::applied(&state.user_folder, s, overrides_on))
+            .and_then(|s| script_spec(&sessions, &profiles, store, &s))
     };
-    if spec.is_empty() {
-        return SessionScript::None;
-    }
+    let Some((spec, profile)) = found else { return SessionScript::None };
+    read_script(&spec, profile, &folder)
+}
+
+/// A script's text from where it's named: an http(s) address is left for the window to fetch; a file is absolute,
+/// file://, or relative to the settings folder
+fn read_script(spec: &str, profile: Option<String>, folder: &std::path::Path) -> SessionScript {
     let lower = spec.to_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {
-        return SessionScript::Url { url: spec };
+        return SessionScript::Url { url: spec.to_string(), profile };
     }
-    let path = PathBuf::from(spec.strip_prefix("file://").unwrap_or(&spec));
-    let path = if path.is_absolute() { path } else { shared_folder(&state).join(path) };
+    let path = PathBuf::from(spec.strip_prefix("file://").unwrap_or(spec));
+    let path = if path.is_absolute() { path } else { folder.join(path) };
     match std::fs::read_to_string(&path) {
-        Ok(text) => SessionScript::Text { text },
-        Err(_) => SessionScript::Missing { path: spec },
+        Ok(text) => SessionScript::Text { text, profile },
+        Err(_) => SessionScript::Missing { path: spec.to_string(), profile },
     }
 }
 
@@ -2773,6 +2801,30 @@ mod tests {
         // a name with folders, or .., stays inside
         assert_eq!(super::dropped_file_path(base, "../../etc/passwd", "1-2"), base.join("1-2").join("passwd"));
         assert_eq!(super::dropped_file_path(base, "..", "1-2"), base.join("1-2").join("dropped"));
+    }
+
+    #[test]
+    fn a_session_with_no_script_runs_its_profiles_found_as_a_launch_finds_the_profile() {
+        use crate::sessions::{FolderSetting, Sessions, Store, StoredSession};
+        let profiles: crate::profiles::Profiles = serde_json::from_str(
+            r#"{"profiles":[{"name":"Default Settings"},{"name":"Linux","script":"linux.spsl"},{"name":"Cisco","script":"cisco.spsl"}]}"#,
+        )
+        .unwrap();
+        let mut sessions = Sessions::default();
+        let folder = FolderSetting { path: "Lab".into(), putty_profile: "Cisco".into(), ..FolderSetting::default() };
+        sessions.folders.entry(Store::Saved).or_default().insert("lab".into(), folder);
+        let at = |attributes: &[(&str, &str)]| {
+            let mut all = vec![("SessionId".to_string(), "Lab/omv".to_string()), ("Host".to_string(), "192.168.0.10".to_string())];
+            all.extend(attributes.iter().map(|(n, v)| (n.to_string(), v.to_string())));
+            StoredSession { attributes: all }
+        };
+        let spec = |session: &StoredSession| super::script_spec(&sessions, &profiles, Store::Saved, session);
+        // just a name and a host: its profile's script
+        assert_eq!(spec(&at(&[("PuttySession", "Linux")])), Some(("linux.spsl".into(), Some("Linux".into()))));
+        // no profile of its own: the folder's profile's
+        assert_eq!(spec(&at(&[("PuttySession", "Default Settings")])), Some(("cisco.spsl".into(), Some("Cisco".into()))));
+        // its own script wins
+        assert_eq!(spec(&at(&[("PuttySession", "Linux"), ("SPSLFileName", "own.spsl")])), Some(("own.spsl".into(), None)));
     }
 
     #[test]

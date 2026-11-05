@@ -31,6 +31,8 @@ export interface Bar {
 export interface BarChoice {
   /** The active tab's icon key; "" for no tab */
   icon: string;
+  /** The active tab's session's own bar (Edit Session > Terminal); "" for none */
+  session: string;
   /** The profile the active tab's session uses; "" for none (no tab, or not started yet) */
   profile: string;
   /** Each profile's name and button bar (Settings > Profiles), Default Settings among them */
@@ -42,8 +44,8 @@ export interface BarChoice {
 }
 
 /**
- * Which bar shows, as ButtonBarStrip.CurrentBar with profiles added: a bar picked by hand while the tab stays; else
- * the profile's own bar; else the first bar whose Tab Icons list the tab's icon (SuperXPuTTY's); else Default
+ * Which bar shows, as ButtonBarStrip.CurrentBar with sessions' and profiles' added: a bar picked by hand while the tab
+ * stays; else the session's own bar; else the profile's own bar; else the first bar whose Tab Icons list the tab's icon (SuperXPuTTY's); else Default
  * Settings' bar; else the bar last picked; else the first. A bar named that isn't there (renamed or deleted) is
  * passed over. Default Settings' comes after the tab icons, so a bar for an icon still shows for profiles without one.
  */
@@ -52,6 +54,8 @@ export function barFor<B extends { name: string; tabIcons: string[] }>(bars: B[]
     name?.trim() ? bars.find((b) => b.name.toLowerCase() === name.trim().toLowerCase()) : undefined;
   const chosen = named(choice.chosen) ?? bars[0];
   if (choice.picked) return chosen;
+  const session = named(choice.session);
+  if (session) return session;
   const profile = (name: string) => choice.profiles.find((p) => p.name.toLowerCase() === name.trim().toLowerCase());
   // a session with no profile of its own reports Default Settings, whose bar comes after the tab icons
   const ownProfile = choice.profile && choice.profile.trim().toLowerCase() !== DEFAULT_PROFILE.toLowerCase();

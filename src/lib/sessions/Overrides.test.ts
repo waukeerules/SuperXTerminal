@@ -11,7 +11,7 @@ import type { Override, SessionFields } from "./api";
 const SESSION: SessionFields = {
   name: "Switch - CyberArk", folder: "Region 4", protocol: "SSH", host: "192.168.0.50", port: 22,
   username: "{email}#{cyberark_region}@…", profile: "CyberArk", color: "", icon: "switch", highlightRules: "",
-  extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "", rdpOptions: "", sshAlgorithms: "",
+  extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "", rdpOptions: "", sshAlgorithms: "", buttonBar: "",
 };
 /** Its id, the key its overrides are kept by */
 const ID = "@db/Region 4/Switch - CyberArk";

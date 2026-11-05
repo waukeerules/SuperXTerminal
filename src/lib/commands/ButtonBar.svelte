@@ -2,7 +2,8 @@
   The button bar at the bottom of the window, as SuperXPuTTY's ButtonBarStrip: the bar picker, then the bar's buttons
   (a session icon or a colour circle, and the label). A click sends the button's string, or runs its script, in the
   active tab; Shift+click sends to the Send Commands selection. The bar shown is the one picked by hand, until the
-  active tab changes; else the active tab's profile's (Settings > Profiles > Button bar); else the first whose tab
+  active tab changes; else the active tab's session's own (Edit Session > Terminal); else its profile's (Settings >
+  Profiles > Button bar); else the first whose tab
   icons include the tab's icon; else Default Settings'; else the one last picked; else the first (barFor in bars.ts). Right-click for New, Edit, Delete and Move buttons, and
   for bars: New, Rename, Delete, Show for Tab Icons, Export, Import, Reload, and Manage Button Bars (ManageBars.svelte)
   for moving, copying and tidying buttons across bars. ButtonBars.xml is in the settings folder, shared by the team,
@@ -30,6 +31,8 @@
   let tabIcon = $state("");
   /** The profile the active tab's session uses, which picks its bar; "" for none */
   let tabProfile = $state("");
+  /** The active tab's session, "store:id", whose own bar wins over its profile's; "" for none */
+  let tabSession = $state("");
   /** Each profile's button bar, read again whenever Settings > Profiles saves */
   let profiles = $state<{ name: string; buttonBar: string }[]>([]);
   /** A bar picked by hand wins over the profile's and the tab icon's until the active tab changes */
@@ -45,7 +48,9 @@
   const size = $derived(Math.round(settings.iconSize * 0.85));
 
   /** Which bar shows, as ButtonBarStrip.CurrentBar, with the profile's bar (barFor) */
-  const current = $derived(barFor(bars, { icon: tabIcon, profile: tabProfile, profiles, chosen: settings.activeButtonBar, picked }));
+  const current = $derived(
+    barFor(bars, { icon: tabIcon, session: tabSession ? context.sessionBar(tabSession) : "", profile: tabProfile, profiles, chosen: settings.activeButtonBar, picked }),
+  );
 
   // the profiles' bars, and again when Settings > Profiles saves one
   $effect(() => {
@@ -70,9 +75,11 @@
       const tab = tabs.commandTabs().find((t) => t.active);
       const icon = tab?.icon ?? "";
       const profile = tab?.profile ?? "";
-      if (icon !== tabIcon || profile !== tabProfile) picked = false;
+      const session = tab?.session ?? "";
+      if (icon !== tabIcon || profile !== tabProfile || session !== tabSession) picked = false;
       tabIcon = icon;
       tabProfile = profile;
+      tabSession = session;
     };
     update();
     return tabs.onChange(update);

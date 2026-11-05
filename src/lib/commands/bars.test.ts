@@ -1,5 +1,5 @@
 // The colour a button's command numbers its lines in: the colour the button shows. And which bar shows for the active
-// tab: picked by hand, the profile's, the tab icon's, Default Settings', the one last picked.
+// tab: picked by hand, the session's own, the profile's, the tab icon's, Default Settings', the one last picked.
 import { describe, expect, it } from "vitest";
 import { barFor, buttonColour, type BarButton, type BarChoice } from "./bars";
 
@@ -36,15 +36,20 @@ describe("barFor", () => {
   const profiles = [{ name: "Default Settings", buttonBar: "" }, { name: "Lab", buttonBar: "linux" }, { name: "Plain", buttonBar: "" }];
   /** The bar's name for a tab with this icon and profile, and the rest as given */
   const shown = (icon: string, profile: string, more: Partial<BarChoice> = {}) =>
-    barFor(bars, { icon, profile, profiles, chosen: "", picked: false, ...more }).name;
+    barFor(bars, { icon, session: "", profile, profiles, chosen: "", picked: false, ...more }).name;
 
   it("shows the profile's bar over the tab icon's, matched whatever its case", () => {
     expect(shown("switch#A371F7", "lab")).toBe("Linux");
     expect(shown("switch", "Plain")).toBe("Cisco");
   });
 
+  it("shows the session's own bar over its profile's, unless it isn't there any more", () => {
+    expect(shown("switch", "Lab", { session: "team" })).toBe("Team");
+    expect(shown("switch", "Lab", { session: "Old" })).toBe("Linux");
+  });
+
   it("shows the bar picked by hand until the tab changes", () => {
-    expect(shown("switch", "Lab", { picked: true, chosen: "Team" })).toBe("Team");
+    expect(shown("switch", "Lab", { picked: true, chosen: "Team", session: "Cisco" })).toBe("Team");
   });
 
   it("passes over a profile's bar that isn't there any more", () => {

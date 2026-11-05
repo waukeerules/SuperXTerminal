@@ -408,7 +408,7 @@
   function blank(folder: string): SessionFields {
     return {
       name: "", folder, protocol: "SSH", host: "", port: 22, username: "", profile: "Default Settings", color: "",
-      icon: "computer", highlightRules: "", extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "", rdpOptions: "", sshAlgorithms: "",
+      icon: "computer", highlightRules: "", extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "", rdpOptions: "", sshAlgorithms: "", buttonBar: "",
     };
   }
 
@@ -1366,6 +1366,11 @@
   /** A session's environment colour, for the Quick Selector's icons */
   export function environmentOf(session: SessionView): string | null {
     return colors.forSession(session);
+  }
+
+  /** A session by its "store:id", for its own button bar; undefined when there's none (gone, or a Quick connect) */
+  export function sessionByKey(key: string): SessionView | undefined {
+    return loaded?.sessions.find((s) => `${s.store}:${s.id}` === key);
   }
 
   /** Every session, for the tab menu's New session and Copy host address */

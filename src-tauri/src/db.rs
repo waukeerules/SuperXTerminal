@@ -238,29 +238,10 @@ pub async fn fetch_all(settings: &DbSettings, user_folder: &Path) -> Result<Fetc
         return Err(format!("The table {} isn't there. Create it from Database sessions (Create / upgrade schema).", settings.table()));
     }
     let has = |c: &str| present.iter().any(|p| p == c);
-    // columns added after the first schema read as their defaults until Create / upgrade schema adds them
-    let or = |c: &str, fallback: &str| if has(c) { format!("{c}::text") } else { fallback.to_string() };
-    let columns = [
-        "id::text", "folder", "name", "protocol", "host", "port::text", "username", "putty_profile", "extra_args",
-        "coalesce(icon, '')", "coalesce(notes, '')", "coalesce(spsl_script, '')", "coalesce(rdp_options, '')",
-        "coalesce(local_path, '')", "coalesce(remote_path, '')",
-        "(extract(epoch FROM updated_at) * 1000000)::bigint::text",
-    ]
-    .iter()
-    .map(|c| c.to_string())
-    .chain([
-        or("locked", "'false'"),
-        if has("locked_fields") { "array_to_string(locked_fields, ',')".into() } else { "''".into() },
-        or("managed_by", "''"),
-        or("updated_by", "''"),
-        or("color", "''"),
-        or("jump_host", "''"),
-        or("highlight_rules", "''"),
-        or("ssh_algorithms", "''"),
-    ])
-    .map(|c| format!("coalesce({c}, '')"))
-    .collect::<Vec<_>>()
-    .join(", ");
+    let selected = select_list(&has);
+    // to_session reads each row by these places: as many as the SELECT has, whatever columns are added to it
+    let width = selected.len();
+    let columns = selected.join(", ");
     let visible = if has("deleted_at") { "deleted_at IS NULL" } else { "true" };
 
     let mut sessions = Vec::new();
@@ -293,7 +274,7 @@ pub async fn fetch_all(settings: &DbSettings, user_folder: &Path) -> Result<Fetc
         for row in &rows {
             let text = |i: usize| row.get::<_, String>(i);
             last = Some((text(1), text(2), text(0)));
-            sessions.push(to_session(&(0..24).map(text).collect::<Vec<_>>()));
+            sessions.push(to_session(&(0..width).map(text).collect::<Vec<_>>()));
         }
         if read < PAGE_SIZE {
             break;
@@ -329,6 +310,35 @@ async fn fetch_folders(client: &Client, settings: &DbSettings) -> Vec<FolderSett
         .collect()
 }
 
+/// The sessions table's SELECT list, in the places `to_session` reads (`c[0]`, `c[1]`...), each coalesced to text.
+/// `has` says which columns the table has: those added after the first schema (SuperXTerminal's own included) read
+/// as their defaults until Create / upgrade schema adds them. Its length is how many values each row gives, so a
+/// column added here is read too (a fixed count once left `c[24]` past the end, and the fetch never finished).
+fn select_list(has: &dyn Fn(&str) -> bool) -> Vec<String> {
+    let or = |c: &str, fallback: &str| if has(c) { format!("{c}::text") } else { fallback.to_string() };
+    [
+        "id::text", "folder", "name", "protocol", "host", "port::text", "username", "putty_profile", "extra_args",
+        "coalesce(icon, '')", "coalesce(notes, '')", "coalesce(spsl_script, '')", "coalesce(rdp_options, '')",
+        "coalesce(local_path, '')", "coalesce(remote_path, '')",
+        "(extract(epoch FROM updated_at) * 1000000)::bigint::text",
+    ]
+    .iter()
+    .map(|c| c.to_string())
+    .chain([
+        or("locked", "'false'"),
+        if has("locked_fields") { "array_to_string(locked_fields, ',')".into() } else { "''".into() },
+        or("managed_by", "''"),
+        or("updated_by", "''"),
+        or("color", "''"),
+        or("jump_host", "''"),
+        or("highlight_rules", "''"),
+        or("ssh_algorithms", "''"),
+        or("button_bar", "''"),
+    ])
+    .map(|c| format!("coalesce({c}, '')"))
+    .collect()
+}
+
 /// One row as a session, with SuperXPuTTY's attributes in its order (as SuperXPuTTY's ToSession)
 fn to_session(c: &[String]) -> StoredSession {
     let folder = c[1].trim_matches('/');
@@ -358,6 +368,7 @@ fn to_session(c: &[String]) -> StoredSession {
     s.set("SPSLFileName", &c[11]);
     s.set("RdpOptions", &c[12]);
     s.set("SshAlgorithms", &c[23]);
+    s.set("ButtonBar", &c[24]);
     s.set("LocalPath", &c[13]);
     s.set("RemotePath", &c[14]);
     s
@@ -385,6 +396,7 @@ pub fn session_of(row: &Row, id: &str, version: &str) -> StoredSession {
     s.set("SPSLFileName", &row.spsl_script);
     s.set("RdpOptions", &row.rdp_options);
     s.set("SshAlgorithms", &row.ssh_algorithms);
+    s.set("ButtonBar", &row.button_bar);
     s.set("LocalPath", &row.local_path);
     s.set("RemotePath", &row.remote_path);
     s
@@ -610,6 +622,20 @@ pub struct ExportFile {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_row_as_wide_as_the_select_reads_every_column_into_its_session() {
+        // the fetch read each row as a fixed 24 values; the button_bar column made the SELECT 25 wide, so reading it
+        // went past the end and Database sessions stayed "loading…". The row's width is now the SELECT list's own
+        for has in [&(|_: &str| true) as &dyn Fn(&str) -> bool, &|_: &str| false] {
+            let width = super::select_list(has).len();
+            let row: Vec<String> = (0..width).map(|i| format!("v{i}")).collect();
+            let session = super::to_session(&row);
+            assert_eq!((session.get("SshAlgorithms"), session.get("ButtonBar")), ("v23", "v24"));
+            // and it reads them all: one value fewer is past what the SELECT gives
+            assert!(std::panic::catch_unwind(|| super::to_session(&row[..width - 1])).is_err());
+        }
+    }
+
     /// How long a read of a big table takes (e.g. lots_of_sessions, 10k rows), and its change token. Run with
     /// SXT_DB_HOST, SXT_DB_USER, SXT_DB_PASSWORD and SXT_DB_TABLE set: `cargo test read_a_big_table -- --ignored --nocapture`
     #[test]
@@ -786,6 +812,9 @@ pub struct Row {
     /// SuperXTerminal's own: its SSH algorithm lists (algorithms.rs); changes queued before it existed read as ""
     #[serde(default)]
     pub ssh_algorithms: String,
+    /// SuperXTerminal's own: the button bar shown while its tab is active; changes queued before it existed read as ""
+    #[serde(default)]
+    pub button_bar: String,
 }
 
 impl Row {
@@ -814,6 +843,7 @@ impl Row {
             jump_host: session.get("JumpHost").to_string(),
             highlight_rules: session.get("HighlightRules").to_string(),
             ssh_algorithms: session.get("SshAlgorithms").to_string(),
+            button_bar: session.get("ButtonBar").to_string(),
         }
     }
 }
@@ -839,13 +869,14 @@ pub fn column_of(row: &Row, column: &str) -> String {
         "jump_host" => row.jump_host.clone(),
         "highlight_rules" => row.highlight_rules.clone(),
         "ssh_algorithms" => row.ssh_algorithms.clone(),
+        "button_bar" => row.button_bar.clone(),
         _ => String::new(),
     }
 }
 
 /// Columns added after the first schema: read and written only when the table has them (Create / upgrade schema
-/// adds them); ssh_algorithms is SuperXTerminal's own, which SuperXPuTTY leaves as it is
-const OPTIONAL_COLUMNS: [&str; 4] = ["color", "jump_host", "highlight_rules", "ssh_algorithms"];
+/// adds them); ssh_algorithms and button_bar are SuperXTerminal's own, which SuperXPuTTY leaves as they are
+const OPTIONAL_COLUMNS: [&str; 5] = ["color", "jump_host", "highlight_rules", "ssh_algorithms", "button_bar"];
 
 /// The columns written, and the optional ones the table has
 fn write_columns(optional: &[String]) -> Vec<&'static str> {
@@ -885,6 +916,7 @@ fn values(row: &Row, columns: &[&str]) -> Vec<Box<dyn tokio_postgres::types::ToS
                 "color" => Box::new(null_if_empty(&row.color)),
                 "jump_host" => Box::new(null_if_empty(&row.jump_host)),
                 "ssh_algorithms" => Box::new(null_if_empty(&row.ssh_algorithms)),
+                "button_bar" => Box::new(null_if_empty(&row.button_bar)),
                 _ => Box::new(null_if_empty(&row.highlight_rules)),
             }
         })
@@ -1073,7 +1105,7 @@ pub async fn set_folder(settings: &DbSettings, user_folder: &Path, f: &FolderSet
 }
 
 /// The sessions table's columns, as SuperXPuTTY's Columns (Create / upgrade schema adds any that are missing)
-const COLUMNS: [(&str, &str); 27] = [
+const COLUMNS: [(&str, &str); 28] = [
     ("id", "uuid PRIMARY KEY DEFAULT gen_random_uuid()"),
     ("folder", "text NOT NULL DEFAULT ''"),
     ("name", "text NOT NULL"),
@@ -1093,6 +1125,7 @@ const COLUMNS: [(&str, &str); 27] = [
     ("jump_host", "text"),
     ("highlight_rules", "text"),
     ("ssh_algorithms", "text"),
+    ("button_bar", "text"),
     ("locked", "boolean NOT NULL DEFAULT false"),
     ("locked_fields", "text[] NOT NULL DEFAULT '{}'"),
     ("managed_by", "text"),

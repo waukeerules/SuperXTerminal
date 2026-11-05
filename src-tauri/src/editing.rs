@@ -34,6 +34,9 @@ pub struct SessionFields {
     pub rdp_options: String,
     /// Its own SSH algorithm lists (algorithms.rs; "" for its profile's)
     pub ssh_algorithms: String,
+    /// SuperXTerminal's own: the button bar shown while its tab is active ("" for its profile's, else the tab icon's)
+    #[serde(default)]
+    pub button_bar: String,
 }
 
 impl SessionFields {
@@ -62,6 +65,7 @@ impl SessionFields {
             remote_path: session.get("RemotePath").to_string(),
             rdp_options: session.get("RdpOptions").to_string(),
             ssh_algorithms: session.get("SshAlgorithms").to_string(),
+            button_bar: session.get("ButtonBar").to_string(),
         }
     }
 
@@ -92,6 +96,7 @@ impl SessionFields {
         session.set("RemotePath", self.remote_path.trim());
         session.set("RdpOptions", self.rdp_options.trim());
         session.set("SshAlgorithms", &crate::algorithms::normalize(&self.ssh_algorithms));
+        session.set("ButtonBar", self.button_bar.trim());
     }
 }
 
@@ -117,6 +122,7 @@ pub fn to_row(fields: &SessionFields, stored: Option<&StoredSession>) -> crate::
         jump_host: fields.jump_host.trim().to_string(),
         highlight_rules: fields.highlight_rules.trim().to_string(),
         ssh_algorithms: crate::algorithms::normalize(&fields.ssh_algorithms),
+        button_bar: fields.button_bar.trim().to_string(),
     }
 }
 
@@ -264,6 +270,27 @@ mod tests {
         assert!(text.contains("SessionId=\"Lab/sw2\" SessionName=\"sw2\""), "{text}");
         delete(&path, "Lab/sw2").unwrap();
         assert!(!std::fs::read_to_string(&path).unwrap().contains("sw2"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_sessions_button_bar_is_saved_and_left_out_when_it_has_none() {
+        let dir = std::env::temp_dir().join(format!("sxt-edit-bar-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Sessions.xml");
+        let core = SessionFields { name: "core1".into(), folder: "Lab".into(), button_bar: " Cisco ".into(), ..Default::default() };
+        let plain = SessionFields { name: "sw1".into(), folder: "Lab".into(), ..Default::default() };
+        save(&path, None, &core, &[]).unwrap();
+        save(&path, None, &plain, &[]).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        // after SshAlgorithms's place, and not at all on a session without one, so SuperXPuTTY's files stay as they were
+        assert!(text.contains(r#"ButtonBar="Cisco""#), "{text}");
+        assert_eq!(text.matches("ButtonBar").count(), 1, "{text}");
+        let read = crate::sessions::read_sessions_file(&path, &mut Vec::new());
+        let fields = SessionFields::of(read.iter().find(|s| s.id() == "Lab/core1").unwrap());
+        assert_eq!(fields.button_bar, "Cisco");
+        // and the Database row's column
+        assert_eq!(to_row(&fields, None).button_bar, "Cisco");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

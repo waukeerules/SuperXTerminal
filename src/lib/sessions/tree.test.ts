@@ -10,7 +10,7 @@ import { ALL_SEARCH_FIELDS, DEFAULT_SEARCH_FIELDS, buildTree, searchFieldsOf, se
 function session(name: string, extra: Partial<SessionView> = {}): SessionView {
   return {
     id: `Lab/${name}`, store: "saved", name, folder: "Lab", protocol: "SSH", host: "", port: 22, username: "", profile: "",
-    icon: "", color: "", note: "", extraArgs: "", script: "", updatedBy: "", locked: false, lockedFields: "", pending: false, pendingNote: "", ...extra,
+    icon: "", color: "", note: "", extraArgs: "", script: "", buttonBar: "", updatedBy: "", locked: false, lockedFields: "", pending: false, pendingNote: "", ...extra,
   } as SessionView;
 }
 

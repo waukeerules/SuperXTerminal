@@ -1,6 +1,7 @@
-// The button bar at the bottom of the window shows the active tab's profile's bar (Settings > Profiles > Button bar)
-// over the bar for the tab's icon, once the tab's session has started and says which profile it uses, and again when
-// the profile is saved; and it follows the tabs though the window gives it them only after it's drawn, as App does.
+// The button bar at the bottom of the window shows the active tab's session's own bar (Edit Session > Terminal),
+// else its profile's (Settings > Profiles > Button bar), over the bar for the tab's icon, once the tab's session has
+// started and says which profile it uses, and again when the session or profile is saved; and it follows the tabs
+// though the window gives it them only after it's drawn, as App does.
 // The tab area is stood in for by `context.tabs` (the active tab, and its change listeners); the Rust side by
 // mockIPC: ButtonBars.xml's bars and the profiles stored.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -49,6 +50,7 @@ beforeEach(() => {
 
 afterEach(() => {
   context.tabs = null;
+  context.sessionBar = () => "";
 });
 
 /** The bar showing: the bar picker's choice */
@@ -65,6 +67,17 @@ describe("the button bar", () => {
     listeners.forEach((l) => l());
     await expect.poll(shown).toBe("Lab");
     expect(buttons()).toEqual(["reload lab"]);
+  });
+
+  it("shows the session's own bar over its profile's, and follows Edit Session's change to it", async () => {
+    active.profile = "Lab switches";
+    // the session's own bar, as the Sessions tree gives it
+    context.sessionBar = (key) => (key === "saved:Lab/sw1" ? "Cisco" : "");
+    render(ButtonBar, { customs: new Map() });
+    await expect.poll(shown).toBe("Cisco");
+    // Edit Session takes it off and the tree reads the sessions again (the tree's list is reactive, as context is)
+    context.sessionBar = () => "";
+    await expect.poll(shown).toBe("Lab");
   });
 
   it("follows the tabs given after it's drawn, as App gives them in its onMount", async () => {

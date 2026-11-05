@@ -24,6 +24,8 @@ export interface SessionView {
   /** The extra arguments with any -pw value masked, and the SPSL script file, for the search */
   extraArgs: string;
   script: string;
+  /** The button bar shown while its tab is active, SuperXTerminal's own; "" for its profile's, else the tab icon's */
+  buttonBar: string;
   /** Database sessions: who changed it last (their SuperXPuTTY nickname) */
   updatedBy: string;
   /** Database sessions: locked against changes in the table */
@@ -123,6 +125,8 @@ export interface SessionFields {
   rdpOptions: string;
   /** Its own SSH algorithm lists ("kex=a,b;mac=c"; "" for its profile's), SuperXTerminal's own */
   sshAlgorithms: string;
+  /** The button bar shown while its tab is active, SuperXTerminal's own; "" for its profile's, else the tab icon's */
+  buttonBar: string;
 }
 
 /** A session's fields for editing */

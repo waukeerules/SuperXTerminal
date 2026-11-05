@@ -19,8 +19,16 @@ import { ScriptRun, runScript, type ScriptHost } from "../scripting/spsl";
  * must run again when they come, or it never follows the active tab. The tab area itself isn't made reactive (a
  * class instance stays as it is), only which one is set.
  */
-export const context: { tabs: TabArea | null; status: (text: string) => void; openSession: (id: string) => boolean; editVariables: () => void } = $state({
+export const context: {
+  tabs: TabArea | null;
+  status: (text: string) => void;
+  openSession: (id: string) => boolean;
+  editVariables: () => void;
+  /** A session's own button bar by its "store:id" (the tree's, so it's read again when Edit Session saves); "" for none */
+  sessionBar: (key: string) => string;
+} = $state({
   tabs: null,
+  sessionBar: () => "",
   status: () => {},
   openSession: () => false,
   editVariables: () => {},

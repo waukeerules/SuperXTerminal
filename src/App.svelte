@@ -178,6 +178,7 @@
     context.status = (text) => (status = text);
     context.openSession = (id) => tree?.openById(id) ?? false;
     context.editVariables = () => (variablesOpen = true);
+    context.sessionBar = (key) => tree?.sessionByKey(key)?.buttonBar ?? "";
     tabs.onAlert = (text, background) => {
       status = text;
       // in the background, the Dock icon bounces once, as Windows flashes the taskbar button

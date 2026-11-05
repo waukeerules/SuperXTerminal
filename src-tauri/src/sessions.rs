@@ -91,6 +91,8 @@ pub struct SessionView {
     /// The extra arguments with any -pw value masked, and the SPSL script file: for the search (Search in…)
     pub extra_args: String,
     pub script: String,
+    /// SuperXTerminal's own: the button bar shown while its tab is active ("" for its profile's, else the tab icon's)
+    pub button_bar: String,
     pub updated_by: String,
     pub locked: bool,
     /// Database sessions: the columns locked in the table, comma-separated ("host,port")
@@ -190,6 +192,7 @@ fn view(session: &StoredSession, store: Store) -> SessionView {
         note: session.get("Note").to_string(),
         extra_args: masked_password(session.get("ExtraArgs")),
         script: session.get("SPSLFileName").to_string(),
+        button_bar: session.get("ButtonBar").to_string(),
         updated_by: session.get("DatabaseUpdatedBy").to_string(),
         pending: session.get("DatabasePending") == "true",
         pending_note: session.get("DatabasePendingNote").to_string(),
@@ -373,16 +376,16 @@ mod tests {
 }
 
 /// SuperXPuTTY's attribute order (SessionData's XmlAttribute order), for placing attributes a session didn't have
-const ATTRIBUTE_ORDER: [&str; 26] = [
+const ATTRIBUTE_ORDER: [&str; 27] = [
     "SessionId", "DatabaseId", "DatabaseVersion", "DatabaseLocked", "DatabaseLockedFields", "DatabaseManagedBy",
     "DatabaseUpdatedBy", "Color", "JumpHost", "HighlightRules", "SessionName", "ImageKey", "Host", "Note", "Port",
-    "Proto", "PuttySession", "Username", "ExtraArgs", "SPSLFileName", "RdpOptions", "SshAlgorithms", "CollectionID",
+    "Proto", "PuttySession", "Username", "ExtraArgs", "SPSLFileName", "RdpOptions", "SshAlgorithms", "ButtonBar", "CollectionID",
     "CollectionLocation", "RemotePath", "LocalPath",
 ];
 
 /// Attributes XmlSerializer only writes when they're set (SessionData's ShouldSerialize methods), and
-/// SuperXTerminal's own SshAlgorithms (algorithms.rs), which SuperXPuTTY doesn't know
-const WRITTEN_ONLY_WHEN_SET: [&str; 6] = ["DatabaseLocked", "Color", "JumpHost", "HighlightRules", "RdpOptions", "SshAlgorithms"];
+/// SuperXTerminal's own SshAlgorithms (algorithms.rs) and ButtonBar, which SuperXPuTTY doesn't know
+const WRITTEN_ONLY_WHEN_SET: [&str; 7] = ["DatabaseLocked", "Color", "JumpHost", "HighlightRules", "RdpOptions", "SshAlgorithms", "ButtonBar"];
 
 impl StoredSession {
     /// A new session with SuperXPuTTY's attributes, as XmlSerializer writes a new SessionData

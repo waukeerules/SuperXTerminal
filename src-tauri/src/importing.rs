@@ -51,6 +51,7 @@ const COLUMNS: &[Column] = &[
     Column { header: "Colour", names: &["colour", "color", "environmentcolour", "environmentcolor"], attribute: "Color", trim: true },
     // SuperXTerminal's own, as the table's ssh_algorithms column
     Column { header: "SSH algorithms", names: &["sshalgorithms", "algorithms"], attribute: "SshAlgorithms", trim: true },
+    Column { header: "Button bar", names: &["buttonbar", "bar"], attribute: "ButtonBar", trim: true },
 ];
 
 /// SuperXPuTTY's connection types, as the Proto attribute writes them

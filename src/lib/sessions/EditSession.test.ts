@@ -15,7 +15,7 @@ import { context } from "../commands/sending.svelte";
 const SESSION: SessionFields = {
   name: "sw1", folder: "Lab", protocol: "SSH", host: "192.168.0.50", port: 22, username: "admin", profile: "", color: "",
   icon: "switch", highlightRules: "", extraArgs: "-pw •••••• -P 2222", jumpHost: "", script: "", note: "", localPath: "",
-  remotePath: "", rdpOptions: "", sshAlgorithms: "",
+  remotePath: "", rdpOptions: "", sshAlgorithms: "", buttonBar: "",
 };
 
 let saved: SessionFields | null;
@@ -58,6 +58,7 @@ beforeEach(() => {
       return [{ key: "kex", label: "Key exchange", supported: ["curve25519-sha256", "diffie-hellman-group14-sha1"], defaults: ["curve25519-sha256"] }];
     }
     if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
+    if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [], tabIcons: [] }, { name: "Cisco", buttons: [], tabIcons: [] }];
     // Move -pw here asks first, with its own button labels: answered with its OK button
     if (cmd === "plugin:dialog|message") return "Move it";
     return null;
@@ -112,6 +113,22 @@ describe("Edit Session's tabs", () => {
     await user.type(screen.getByLabelText(/Jump host/), "bastion");
     expect(connection.querySelector(".dot:not(.off)")).not.toBeNull();
     expect(general.querySelector(".dot:not(.off)")).toBeNull();
+  });
+});
+
+describe("Edit Session's Button bar", () => {
+  it("saves the bar chosen on the Terminal tab, and shows one no longer among the bars", async () => {
+    const user = userEvent.setup();
+    open({ ...SESSION, buttonBar: "Retired" });
+    await user.click(screen.getByRole("tab", { name: "Terminal" }));
+    const bar = screen.getByLabelText(/^Button bar/) as HTMLSelectElement;
+    await expect.poll(() => [...bar.options].map((o) => o.text)).toEqual(
+      ["Its profile's, else the one for its icon", "Default", "Cisco", "Retired (not found)"],
+    );
+    expect(bar.value).toBe("Retired");
+    await user.selectOptions(bar, "Cisco");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await expect.poll(() => saved?.buttonBar).toBe("Cisco");
   });
 });
 

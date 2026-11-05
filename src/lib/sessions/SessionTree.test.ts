@@ -16,7 +16,7 @@ function session(id: string): SessionView {
   const folder = id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : "";
   return {
     id, store: "saved", name, folder, protocol: "SSH", host: "10.0.0.1", port: 22, username: "", profile: "", icon: "switch",
-    color: "", note: "", extraArgs: "", script: "", updatedBy: "", locked: false, lockedFields: "", pending: false, pendingNote: "",
+    color: "", note: "", extraArgs: "", script: "", buttonBar: "", updatedBy: "", locked: false, lockedFields: "", pending: false, pendingNote: "",
   };
 }
 

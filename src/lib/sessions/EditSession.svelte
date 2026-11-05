@@ -16,6 +16,7 @@
   import type { CustomIcon } from "../icons/custom";
   import { PALETTE } from "../icons/palette";
   import { highlighting } from "../terminal/highlighting";
+  import { loadBars } from "../commands/bars";
   import { listProfiles, DEFAULT_PROFILE, PROFILES_CHANGED } from "../settings/profiles";
   import { settingsShown } from "../settings/Settings.svelte";
   import { variablesShown, VARIABLES_CHANGED } from "../settings/EnvironmentVariables.svelte";
@@ -100,7 +101,7 @@
   /** The fields that count as changes, for the count by Save */
   const FIELDS: (keyof SessionFields)[] = [
     "name", "color", "icon", "protocol", "profile", "host", "port", "username", "highlightRules", "extraArgs", "rdpOptions",
-    "sshAlgorithms", "jumpHost", "script", "note", "localPath", "remotePath",
+    "sshAlgorithms", "jumpHost", "script", "buttonBar", "note", "localPath", "remotePath",
   ];
   /** How many fields have changed; a stored session saves only with changes, a new one (or a copy) any time */
   const changes = $derived(FIELDS.filter(changed).length + (password !== undefined ? 1 : 0));
@@ -110,7 +111,7 @@
     { name: "Connection", fields: ["extraArgs", "jumpHost"] },
     { name: "SSH", fields: ["sshAlgorithms"], for: (p) => p === "SSH" || p === "" },
     { name: "Remote Desktop", fields: ["rdpOptions"], for: (p) => p === "RDP" },
-    { name: "Terminal", fields: ["highlightRules", "script"] },
+    { name: "Terminal", fields: ["highlightRules", "script", "buttonBar"] },
     { name: "File transfer", fields: ["localPath", "remotePath"] },
   ];
   /** The tabs for the connection type: SSH's own algorithms, or RDP's own options, only for those */
@@ -192,6 +193,12 @@
     if (id !== null) hasOwnPassword = await invoke<boolean>("session_password_has", { id }).catch(() => false);
     await loadProfileNames();
     ruleSets = (await highlighting()).ruleSets.map((r) => ({ id: String(r.id ?? ""), name: String(r.name ?? r.id ?? "") }));
+  });
+
+  /** The button bars' names (ButtonBars.xml), for the Button bar box */
+  let barNames = $state<string[]>([]);
+  onMount(() => {
+    void loadBars().then((bars) => (barNames = bars.map((b) => b.name))).catch(() => {});
   });
 
   /** What a field inherits from the session's folders, as "value (from Folder)", for its placeholder */
@@ -478,6 +485,18 @@
         <label class="grow">{@render caption("SPSL script:", "script")}<input bind:value={draft.script} disabled={locked("spsl_script")} title={locked("spsl_script") ? lockTip : ""} /></label>
         <button onclick={() => (draft.script = "")}>Clear</button>
         <button onclick={browseScript}>Browse…</button>
+      </div>
+      <!-- the bar shown while its tab is active, over its profile's and the tab icon's; one picked by hand still wins -->
+      <div class="row">
+        <label>{@render caption("Button bar:", "buttonBar")}
+          <select bind:value={draft.buttonBar} disabled={locked("button_bar")} title={locked("button_bar") ? lockTip : ""}>
+            <option value="">Its profile's, else the one for its icon</option>
+            {#each barNames as name (name)}<option value={name}>{name}</option>{/each}
+            {#if draft.buttonBar && !barNames.some((n) => n.toLowerCase() === draft.buttonBar.toLowerCase())}
+              <option value={draft.buttonBar}>{draft.buttonBar} (not found)</option>
+            {/if}
+          </select>
+        </label>
       </div>
 
     </div>

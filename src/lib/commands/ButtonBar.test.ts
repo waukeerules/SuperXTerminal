@@ -1,7 +1,8 @@
 // The button bar at the bottom of the window shows the active tab's profile's bar (Settings > Profiles > Button bar)
 // over the bar for the tab's icon, once the tab's session has started and says which profile it uses, and again when
-// the profile is saved. The tab area is stood in for by `context.tabs` (the active tab, and its change listeners);
-// the Rust side by mockIPC: ButtonBars.xml's bars and the profiles stored.
+// the profile is saved; and it follows the tabs though the window gives it them only after it's drawn, as App does.
+// The tab area is stood in for by `context.tabs` (the active tab, and its change listeners); the Rust side by
+// mockIPC: ButtonBars.xml's bars and the profiles stored.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -64,6 +65,17 @@ describe("the button bar", () => {
     listeners.forEach((l) => l());
     await expect.poll(shown).toBe("Lab");
     expect(buttons()).toEqual(["reload lab"]);
+  });
+
+  it("follows the tabs given after it's drawn, as App gives them in its onMount", async () => {
+    // App's onMount runs after the bar's own effects: the bar first sees no tabs
+    const tabs = context.tabs;
+    context.tabs = null;
+    active.profile = "Lab switches";
+    render(ButtonBar, { customs: new Map() });
+    await expect.poll(shown).toBe("Default");
+    context.tabs = tabs;
+    await expect.poll(shown).toBe("Lab");
   });
 
   it("shows the bar for the tab's icon again when the profile's bar is taken off", async () => {

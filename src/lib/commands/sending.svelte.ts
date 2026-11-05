@@ -13,13 +13,18 @@ import { parseSendString } from "../scripting/sendString";
 import { clipboardText } from "../clipboard";
 import { ScriptRun, runScript, type ScriptHost } from "../scripting/spsl";
 
-/** The window's tab area and what scripts need from the window; App sets them once it has them */
-export const context: { tabs: TabArea | null; status: (text: string) => void; openSession: (id: string) => boolean; editVariables: () => void } = {
+/**
+ * The window's tab area and what scripts need from the window; App sets them once it has them. Reactive: App sets
+ * them in its onMount, which runs after its children's effects, so the button bar's effect first sees no tabs and
+ * must run again when they come, or it never follows the active tab. The tab area itself isn't made reactive (a
+ * class instance stays as it is), only which one is set.
+ */
+export const context: { tabs: TabArea | null; status: (text: string) => void; openSession: (id: string) => boolean; editVariables: () => void } = $state({
   tabs: null,
   status: () => {},
   openSession: () => false,
   editVariables: () => {},
-};
+});
 
 /** Send Commands' icon group: only tabs with this session icon; "" for every tab */
 export const selection = $state({ iconGroup: "" });

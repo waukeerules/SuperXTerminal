@@ -1,9 +1,9 @@
 # CyberArk sessions
 
 How SuperXTerminal connects through CyberArk's SSH gateway (Privileged Session Manager for SSH) while the session
-itself keeps naming the real device. The app's side is built and covered by tests (`launch.rs`); CyberArk itself
-can only be tried on the production network, so the parts that are guesses are marked as such, with
-[what to check there](#to-check-in-production).
+itself keeps naming the real device. The app's side is built and covered by tests (`launch.rs`), and it has been
+tried with CyberArk on the production network, on Windows (November 2026): see
+[what's been checked there, and what hasn't](#to-check-in-production).
 
 ## What CyberArk needs
 
@@ -209,19 +209,30 @@ which are per user.
 
 ## To check in production
 
-- The connection string's exact parts and order for this tenant (region, connector), and whether `-l` with `#` and
-  `@` reaches the gateway unchanged.
-- The key: its format, its lifetime, and what the gateway says when it has expired (so the tab can say "fetch a new
-  key").
-- The fetch in a tab: that CyberArk's link and PIN prompt show as they do in Terminal, that the link opens with
-  Ctrl+click on the Mac (where Ctrl+click is also a right-click) or else by copying it, and that a pasted PIN is
-  taken.
+Checked on Windows, November 2026, with the CyberArk profile's Fetch command:
+
+- ✅ A session with no key file fetches one first, in its own tab: the fetch reached CyberArk, the key file was made
+  and saved, and the session then went on to connect through the gateway to the device.
+- ✅ The connection string's parts and order for this tenant, and `-l` with `#` and `@` reaching the gateway
+  unchanged: the session logged in to the device and it could be managed over SSH (its CLI).
+- ✅ The key, once fetched, works outside the app too: a connection from another shell, with the same key, logged in
+  to the device as well.
+- ✅ An expired key: the session asks to reconnect, and reconnecting fetches and saves a new key, then connects.
+- ✅ The fetch's sign-in in the tab: CyberArk's link opens with Ctrl+click.
+
+Still to check:
+
+- The PIN prompt: the PIN doesn't show as it's typed, where PuTTY showed it. The tab doesn't hide or show typing
+  itself; it shows what the fetch's program echoes. The prompt is CyberArk's (a keyboard-interactive question to
+  OpenSSH's `sftp`), which says whether the answer is echoed; PuTTY honours that, and Windows' OpenSSH seems to hide
+  every answer whatever it says. Not something the app controls; pasting the PIN works either way.
+- The Mac: all of the above. The link there opens with Ctrl+click too, though on the Mac Ctrl+click is also a
+  right-click (or else by copying it).
 - The gateway's host key: one key for every target, so known_hosts gets a single entry for the gateway.
 - MFA or other keyboard-interactive prompts at the gateway, and whether the app's automatic password typing must stay
   out of them.
 - File transfer and SCP through the gateway: probably not offered by PSM for SSH; the file transfer tab should say so
   rather than fail.
-- Windows: the same profile fields, with the `.ppk` from the existing `.bat`.
 
 ## Done, and still to do
 
@@ -237,5 +248,7 @@ which are per user.
   there's none; no Fetch command is as before; the command gets `{key_file}` and the variables filled in, and an
   undefined one says so; the editor's key state.
 - ✅ Log in & cache key: the fetch on its own, in a tab, from the profile.
-- To do: tried in production with CyberArk; the hint after "Permission denied (publickey)" and Forget key;
-  then a section in a user guide.
+- ✅ Tried in production with CyberArk, on Windows: the key fetched when missing or expired, then the session
+  connected to the device ([To check in production](#to-check-in-production) has what's left).
+- To do: the rest of [To check in production](#to-check-in-production), the Mac among it; the hint after "Permission
+  denied (publickey)" and Forget key; then a section in a user guide.

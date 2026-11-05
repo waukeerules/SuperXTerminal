@@ -249,6 +249,19 @@ describe("Settings > Profiles", () => {
     await expect.poll(() => script().value).toBe("/Users/me/scripts/omv-login.spsl");
   });
 
+  it("ticks Log in here for a jump server, and doesn't offer it on Default Settings", async () => {
+    await open("root");
+    const box = () => screen.getByRole("checkbox", { name: /Log in here/ }) as HTMLInputElement;
+    expect(box().checked).toBe(false);
+    await userEvent.click(box());
+    expect(dots()).toHaveLength(1);
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", logInHere: true });
+    // Default Settings is every session's, so it would send them all to one host
+    await userEvent.click(screen.getByRole("option", { name: DEFAULT_PROFILE }));
+    expect(screen.queryByRole("checkbox", { name: /Log in here/ })).toBeNull();
+  });
+
   it("greys the colours again for Dark, and keeps them for later", async () => {
     stored = stored.map((p) => (p.name === "root" ? { ...p, background: "#3a0000" } : p));
     await open("root");

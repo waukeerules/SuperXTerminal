@@ -1,0 +1,69 @@
+#!/bin/spsl
+# cisco-jump.spsl: a jump server profile's script, for Cisco switches and routers reached through a Linux jump server.
+# Make it the SPSL script of a profile with "Log in here" ticked (Settings > Profiles), and give that profile the jump
+# server as its Host. A session using the profile is then just a name, the switch's address and your username on it:
+# its tab logs in to the jump server, and this script goes on with ssh {session_username}@{host_address}.
+#
+# Read only: on the switch it runs terminal length 0 (this login only), show clock and show version, then exits back
+# to the jump server. Nothing on either end is changed.
+#
+# The switch's password is asked for (PWDPROMPT), never stored by the script.
+#
+# Older switches offer only key exchanges and host keys a newer OpenSSH turns down ("Unable to negotiate ... no
+# matching key exchange method found"). The ssh line below allows those for this one hop (the + adds them to ssh's own
+# list), so the jump server's ~/.ssh/config needn't change. Take the options off for switches that don't need them.
+
+# ---- 0. Ground rules: 2 minutes at most, and stop at once if the jump server's ssh can't get there --------------------
+LIMIT 2m
+FAILON /re ^ssh: .*(Could not resolve|Connection refused|Connection timed out|No route to host)
+FAILON Unable to negotiate
+
+# ---- 1. Where to go: the session's own values ------------------------------------------------------------------
+SET target {host_address}
+SET user {session_username}
+IF {user} !~ /./
+  PROMPT /var:user Which username on {target}?
+END
+
+# ---- 2. The jump server's prompt, once its own login is done ----------------------------------------------------
+WAITPROMPT /t:30 /else:nojump
+ECHO Through the jump server to {user}@{target}
+
+# ---- 3. The hop: answer whatever ssh asks, until the switch's prompt (a name ending in > or #) --------------------
+SET older -o KexAlgorithms=+diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa
+SENDLINE ssh {older} {user}@{target}
+EXPECT /t:40 /else:noswitch
+  CASE "(yes/no"
+    SENDLINE yes
+    AGAIN
+  CASE /password:/i
+    PWDPROMPT
+    AGAIN
+  CASE /Permission denied|Authentication failed|Connection closed/
+    STOP {user}@{target} turned the login down
+  CASE /^([\w.-]+)[>#]\s?$/
+    SET switch {1}
+END
+
+# ---- 4. On the switch: read only ---------------------------------------------------------------------------------
+SENDLINE terminal length 0
+WAITPROMPT
+SENDLINE show clock
+WAITPROMPT
+SENDLINE show version | include uptime
+WAITFOR /t:10 /re uptime is ([^\r\n]+)
+SET uptime {1}
+WAITPROMPT
+ECHO {switch} has been up {uptime}
+
+# ---- 5. Back to the jump server ---------------------------------------------------------------------------------
+SENDLINE exit
+WAITFOR /t:10 /re Connection to \S+ closed
+WAITPROMPT
+STOP Done: {switch} ({target}) through the jump server, up {uptime}
+
+:nojump
+STOP no prompt from the jump server within 30 s: is its login (the profile's username, password or key) right?
+
+:noswitch
+STOP no prompt from {target} within 40 s

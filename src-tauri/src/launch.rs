@@ -576,6 +576,14 @@ fn ssh(
         ));
         default
     };
+    // a jump server profile (Log in here): the tab logs in to the profile's host as the profile, and the session's
+    // own login (username, port, jump host, ssh arguments, algorithms, password) is the target's, left to the script
+    let log_in_here = profile.log_in_here;
+    if log_in_here {
+        username = String::new();
+        port = 0;
+        jump_host = String::new();
+    }
     if username.is_empty() {
         username = first(&profile.username, &default.username).to_string();
     }
@@ -594,7 +602,7 @@ fn ssh(
     let values = &with_builtins;
 
     // {key} placeholders, after the folder and profile defaults (a folder's "{user}" counts), as SessionVariables
-    let raw_extra = session.get("ExtraArgs");
+    let raw_extra = if log_in_here { "" } else { session.get("ExtraArgs") };
     let mut missing = Vec::new();
     for text in [session.get("Host"), username.as_str(), raw_extra, jump_host.as_str()] {
         for key in variables::missing(text, values) {
@@ -619,7 +627,18 @@ fn ssh(
     let jump_host = variables::substitute(&jump_host, values);
     let profile_host = variables::substitute(first(&profile.host, &default.host).trim(), values);
     let profile_port = [profile.port, default.port].into_iter().find(|p| *p != 0);
-    if host.is_empty() {
+    if log_in_here {
+        if profile_host.is_empty() {
+            return Err(format!(
+                "Profile \"{}\" logs in to its own Host (Log in here), but it has none. Set one in Settings > Profiles.",
+                profile.name
+            ));
+        }
+        let target = if host.is_empty() { "the session's host".to_string() } else { host.clone() };
+        notices.push(format!("Logging in to {profile_host} (profile \"{}\"); its SPSL script goes on to {target}.", profile.name));
+        host = profile_host;
+        port = profile_port.unwrap_or(22);
+    } else if host.is_empty() {
         if through_gateway {
             return Err(format!(
                 "This session's username names its host ({{{HOST_ADDRESS}}}), but the session has no host to put there."
@@ -648,7 +667,7 @@ fn ssh(
     let mut args: Vec<String> = vec!["-tt".into()];
     // the session's own algorithm lists, else its profile's, else Default Settings', each kind on its own
     // (algorithms.rs); a kind set there is that exact list, so the older ones aren't added to it
-    let own = crate::algorithms::chosen(&[session.get("SshAlgorithms"), &profile.algorithms, &default.algorithms]);
+    let own = crate::algorithms::chosen(&[if log_in_here { "" } else { session.get("SshAlgorithms") }, &profile.algorithms, &default.algorithms]);
     if profile.older_algorithms.or(default.older_algorithms).unwrap_or(true) {
         let older = older_algorithm_args();
         for pair in older.chunks(2) {
@@ -672,9 +691,10 @@ fn ssh(
     }
     // Quick connect's password (never stored), else the session's own (Edit Session's Password, this computer's
     // only), else its -pw, else its profile's, else Default Settings'
+    // (with Log in here, the session's are the target's: only the profile's log in to the jump server)
     let password = Some(session.get(QUICK_PASSWORD).to_string())
-        .filter(|p| !p.is_empty())
-        .or_else(|| Some(session.id()).filter(|id| !id.is_empty()).and_then(crate::session_passwords::get))
+        .filter(|p| !p.is_empty() && !log_in_here)
+        .or_else(|| Some(session.id()).filter(|id| !id.is_empty() && !log_in_here).and_then(crate::session_passwords::get))
         .or_else(|| extra.password.clone())
         .or_else(|| profiles::password(&profile.name))
         .or_else(|| if profile.name == default.name { None } else { profiles::password(&default.name) });
@@ -1027,6 +1047,50 @@ mod tests {
         // following the theme
         let look = super::look(&Profile { colours: "theme".into(), ..Profile::default() }, &default);
         assert_eq!((look.theme.as_str(), look.background.as_str()), ("", ""));
+    }
+
+    /// Profiles with a "Jump Server" one that logs in to its own host (Log in here), as the user's jump server
+    fn jump_server(host: &str) -> Profiles {
+        let mut profiles = profiles();
+        profiles.profiles.push(Profile {
+            name: "Jump Server".into(),
+            username: "tj".into(),
+            host: host.into(),
+            log_in_here: true,
+            script: "jump-host.spsl".into(),
+            ..Profile::default()
+        });
+        profiles
+    }
+
+    #[test]
+    fn a_jump_server_profile_logs_in_to_its_own_host_and_leaves_the_sessions_to_its_script() {
+        // the session is the target: a switch, with its own username, port, arguments and algorithms
+        let sw = at(
+            "192.168.0.50",
+            &[("PuttySession", "Jump Server"), ("Username", "admin"), ("Port", "2200"), ("ExtraArgs", "-A"), ("SshAlgorithms", "kex=diffie-hellman-group14-sha1")],
+        );
+        let launch = launch(&Sessions::default(), &jump_server("192.168.3.2"), &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).unwrap();
+        let args: Vec<String> = launch.command.get_argv().iter().skip(1).map(|a| a.to_string_lossy().to_string()).collect();
+        // ssh logs in to the jump server as the profile, on ssh's usual port
+        assert_eq!(args.last().unwrap(), "192.168.3.2");
+        assert!(args.windows(2).any(|w| w == ["-l", "tj"]), "{args:?}");
+        // nothing of the target's goes to the jump server's login
+        for target in ["192.168.0.50", "admin", "-p", "-A", "diffie-hellman-group14-sha1"] {
+            assert!(!args.iter().any(|a| a.contains(target)), "{target} in {args:?}");
+        }
+        assert!(launch.notices.iter().any(|n| n.contains("192.168.3.2") && n.contains("192.168.0.50")), "{:?}", launch.notices);
+    }
+
+    #[test]
+    fn a_jump_server_profile_with_no_host_says_so() {
+        let sw = at("192.168.0.50", &[("PuttySession", "Jump Server")]);
+        let error = launched(&jump_server(""), &[], &sw).unwrap_err();
+        assert!(error.contains("Log in here") && error.contains("Jump Server"), "{error}");
+        // without Log in here, the session's own host wins over the profile's, as before
+        let mut profiles = jump_server("192.168.3.2");
+        profiles.profiles[2].log_in_here = false;
+        assert_eq!(launched(&profiles, &[], &sw).unwrap().last().unwrap(), "192.168.0.50");
     }
 
     #[test]

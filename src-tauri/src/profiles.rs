@@ -94,6 +94,11 @@ pub struct Profile {
     /// a file (absolute, file://, or relative to the settings folder) or an http(s) address, as a session's. "" for
     /// Default Settings', else none. So a session can be just a name and a host, and its profile logs in and sets up
     pub script: String,
+    /// Its sessions' tabs log in to this profile's Host (its port, username, password and key), not the session's,
+    /// and leave the session's host to the SPSL script: a jump server whose script goes on with
+    /// `ssh {session_username}@{host_address}`. The session's own login (its username, password, ssh arguments and
+    /// algorithms) is the target's, for the script. Not taken from Default Settings: it's this profile's alone
+    pub log_in_here: bool,
     /// Whether a password is stored for it (the password itself stays in the Keychain)
     #[serde(skip_deserializing)]
     pub has_password: bool,

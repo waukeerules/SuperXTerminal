@@ -69,6 +69,11 @@ export interface Profile {
    * file://, or relative to the settings folder) or an http(s) address. "" for Default Settings', else none
    */
   script: string;
+  /**
+   * A jump server: its sessions' tabs log in to this profile's Host, as this profile, and leave the session's host,
+   * username and port to the SPSL script. This profile's alone, not taken from Default Settings
+   */
+  logInHere: boolean;
   hasPassword: boolean;
 }
 
@@ -76,7 +81,7 @@ export interface Profile {
 export function emptyProfile(name: string): Profile {
   return {
     name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
-    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", hasPassword: false,
+    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
   };
 }
 

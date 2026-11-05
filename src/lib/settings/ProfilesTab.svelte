@@ -133,7 +133,7 @@
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
-    "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script",
+    "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
   ];
 
   /** The button bars' names (ButtonBars.xml in the settings folder), for the Button bar box */
@@ -453,7 +453,17 @@
       <label>{@render caption("Host", "host")}<input bind:value={draft.host} placeholder="none; e.g. example.cyberark.cloud" /></label>
       <p class="note under">Used, at the Port above, by sessions with no host of their own, as a PuTTY saved session's
         Host Name; and by sessions whose username names their host as {"{host_address}"} (a CyberArk SSH gateway, which
-        takes the target in the username). Otherwise a session's own host wins. See docs/CYBERARK.md.</p>
+        takes the target in the username). Otherwise a session's own host wins{#if !isDefault}, unless Log in here is
+        ticked{/if}. See docs/CYBERARK.md.</p>
+      <!-- not on Default Settings: every session would then log in to one host -->
+      {#if !isDefault}
+        <label>{@render caption("Log in here", "logInHere")}<span class="check"><input type="checkbox" bind:checked={draft.logInHere} />
+          a jump server: its sessions log in to this Host, and the SPSL script goes on to theirs</span></label>
+        <p class="note under">Each tab logs in to this Host with this profile's username, password and key. The
+          session's own host, username and port are left for the profile's SPSL script (Terminal, below), as
+          {"{host_address}"}, {"{host_port}"} and {"{session_username}"}: for example
+          SENDLINE ssh {"{session_username}@{host_address}"}. See docs/SPSL.md.</p>
+      {/if}
       <label>{@render caption("Keep-alive", "keepalive")}<input class="short" type="number" min="0" bind:value={draft.keepalive} /> <span class="note">{isDefault ? "seconds (0: 15, so a lost connection ends the session in about 45 s)" : "seconds (0: Default Settings')"}</span></label>
       <label>{@render caption("Internet protocol", "addressFamily")}
         <select value={draft.addressFamily || (isDefault ? "auto" : "")} onchange={(e) => (draft.addressFamily = e.currentTarget.value)}>
@@ -698,6 +708,14 @@
     grid-template-columns: 130px 1fr auto;
     align-items: center;
     gap: 8px;
+  }
+
+  /* a checkbox with what it does beside it, in the field's column */
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    grid-column: 2 / -1;
   }
 
   label:has(.short) {

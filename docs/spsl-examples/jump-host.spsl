@@ -20,6 +20,8 @@
 # ---- 0. Ground rules: 2 minutes at most, and stop at once if ssh can't get there ----------------------------------
 LIMIT 2m
 FAILON /re ^ssh: .*(Could not resolve|Connection refused|Connection timed out|No route to host)
+# a host offering only older algorithms (a Cisco switch: cisco-jump.spsl allows them)
+FAILON Unable to negotiate
 
 # ---- 1. Where to go: the session's own values, asked for when there's no username ---------------------------------
 SET target {host_address}

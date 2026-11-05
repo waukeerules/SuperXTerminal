@@ -34,6 +34,30 @@ SENDLINE echo "Logged in to {session_name} at {host_address}"
 WAITPROMPT
 ```
 
+**A jump server profile.** Tick **Log in here** on a profile (Settings > Profiles, beside Host) and its sessions' tabs
+log in to the profile's Host, with the profile's username, password and key, rather than to the session's host. The
+session's host, username and port are left to the profile's script, as `{host_address}`, `{session_username}` and
+`{host_port}`, so it can go on from the jump server:
+
+```
+#!/bin/spsl
+WAITPROMPT /t:30
+SENDLINE ssh {session_username}@{host_address}
+EXPECT /t:40
+  CASE "(yes/no"
+    SENDLINE yes
+    AGAIN
+  CASE /password:/i
+    PWDPROMPT
+    AGAIN
+  CASE /^([\w.-]+)[>#]\s?$/
+END
+```
+
+A session is then just a name, the target's address and your username there. `docs/spsl-examples/cisco-jump.spsl`
+does it for a Cisco switch, and `jump-host.spsl` for a Linux host. (A profile's **Jump host** field is the other way
+through a jump server: ssh's own `-J`, with both logins made from this computer and no script.)
+
 Each run belongs to one tab. With several tabs selected, the same script runs in each, separately, each with its own
 variables. The status bar shows "name (tab): line 4/40 · WAITFOR … · 12s" while it runs, with Stop, and a line when it
 ends saying how. Saved scripts live in the settings folder's `scripts` folder (`.spsl` for SPSL, `.txt` for plain lines
@@ -645,6 +669,6 @@ OPENSESSION, and skips SENDBREAK. SuperXTerminal adds:
 - the tab's session's values: `{host_address}`, `{session_name}`…
 - stopping when the session ends or reconnects
 - stepping a line at a time, and hover help in the editor
-- a profile's script, run by its sessions with none of their own
+- a profile's script, run by its sessions with none of their own, and Log in here for a jump server
 
 SuperXPuTTY skips the lines it doesn't know, so a script using the additions only runs correctly in SuperXTerminal.

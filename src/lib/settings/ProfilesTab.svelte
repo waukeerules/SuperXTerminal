@@ -18,6 +18,7 @@
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
   import { drawnTheme, pref } from "../terminal/prefs";
   import { highlighting } from "../terminal/highlighting";
+  import { loadBars } from "../commands/bars";
   import { settings } from "./store.svelte";
 
   interface Props {
@@ -63,6 +64,9 @@
     // a session's or folder's environment colour still wins for its cursor
     { field: "cursorColor", theme: "cursor", label: "Cursor colour", pref: "colorCursor", putty: "#00ff00" },
   ];
+
+  /** Where the Tab colour picker starts when the profile has none: a mid grey, which reads on a light or dark tab bar */
+  const NO_TAB_COLOUR = "#808080";
 
   /** The Colours box's value: the profile's own choice, else "default" (Default Settings', which itself has "theme") */
   function shownChoice(profile: Profile): string {
@@ -129,8 +133,16 @@
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
-    "colours", "background", "foreground", "selection", "cursorColor",
+    "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar",
   ];
+
+  /** The button bars' names (ButtonBars.xml in the settings folder), for the Button bar box */
+  let barNames = $state<string[]>([]);
+  onMount(() => {
+    void loadBars().then((bars) => (barNames = bars.map((b) => b.name))).catch(() => {});
+  });
+  /** The profile's bar when it isn't among the bars (renamed or deleted, or another computer's), so it still shows */
+  const missingBar = $derived(draft.buttonBar && !barNames.some((n) => n.toLowerCase() === draft.buttonBar.toLowerCase()) ? draft.buttonBar : "");
   /** How many fields have changed since the profile was loaded or saved */
   const changes = $derived(FIELDS.filter(changed).length);
   onMount(async () => {
@@ -504,6 +516,22 @@
               title={isDefault ? "Use Settings > Terminal's colour" : "Use Default Settings' colour"}>{isDefault ? "Settings'" : "Default's"}</button>
           </span></label>
       {/each}
+      <!-- not a terminal colour, so it can be set whatever the Colours choice; an environment colour wins over it -->
+      <label>{@render caption("Tab colour", "tabColor")}
+        <span class="colour">
+          <input type="color" value={draft.tabColor || (!isDefault && defaultProfile?.tabColor) || NO_TAB_COLOUR} aria-label="Tab colour"
+            oninput={(e) => (draft.tabColor = e.currentTarget.value)} />
+          <span class="hint">{draft.tabColor || (!isDefault && defaultProfile?.tabColor ? `From Default Settings (${defaultProfile.tabColor})` : "None")}</span>
+          <button disabled={!draft.tabColor} onclick={(e) => { e.preventDefault(); draft.tabColor = ""; }}
+            title={isDefault ? "No tab colour" : "Use Default Settings' tab colour"}>{isDefault ? "None" : "Default's"}</button>
+        </span></label>
+      <!-- the bar shown while one of the profile's tabs is active; a bar picked by hand still wins until the tab changes -->
+      <label>{@render caption("Button bar", "buttonBar")}
+        <select value={draft.buttonBar} onchange={(e) => (draft.buttonBar = e.currentTarget.value)}>
+          <option value="">{isDefault || !defaultProfile?.buttonBar ? "The one for the tab's icon" : `From Default Settings (${defaultProfile.buttonBar})`}</option>
+          {#each barNames as name (name)}<option value={name}>{name}</option>{/each}
+          {#if missingBar}<option value={missingBar}>{missingBar} (not in the button bars)</option>{/if}
+        </select></label>
     </fieldset>
 
     </div>

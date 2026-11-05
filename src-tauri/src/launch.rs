@@ -43,6 +43,9 @@ pub struct Look {
     pub selection: String,
     /// The profile's cursor colour, else "Default Settings'"; the session's environment colour wins over it
     pub cursor_color: String,
+    /// The profile's tab colour, else Default Settings', whatever the Colours choice; "" for none. The session's
+    /// environment colour wins over it
+    pub tab_color: String,
     /// The profile's anti-idle string as written (KiTTY's escapes), else Default Settings'; "" for none
     pub anti_idle: String,
     /// Seconds without typing before it's sent: the profile's, else Default Settings', else KiTTY's 180; 0 with no string
@@ -468,6 +471,8 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         foreground: own(&profile.foreground, &default.foreground),
         selection: own(&profile.selection, &default.selection),
         cursor_color: own(&profile.cursor_color, &default.cursor_color),
+        // not a terminal colour, so not only when the colours are custom
+        tab_color: colour(&profile.tab_color, &default.tab_color),
         anti_idle: anti_idle.to_string(),
         anti_idle_seconds: if anti_idle.is_empty() {
             0
@@ -981,6 +986,20 @@ mod tests {
         assert_eq!(look.cursor_color, "#00ff00");
         let look = super::look(&Profile::default(), &Profile::default());
         assert_eq!(look.background, "");
+    }
+
+    #[test]
+    fn a_profiles_tab_colour_reaches_its_tabs_whatever_its_colours_choice() {
+        let default = Profile { tab_color: "#1F6FEB".into(), ..Profile::default() };
+        // its own, though its terminal colours follow the theme
+        let lab = Profile { colours: "theme".into(), tab_color: "#2DA44E".into(), ..Profile::default() };
+        let page = serde_json::to_value(super::look(&lab, &default)).unwrap();
+        assert_eq!(page["tabColor"], "#2da44e");
+        // none of its own: Default Settings'
+        assert_eq!(super::look(&Profile::default(), &default).tab_color, "#1f6feb");
+        // none anywhere, or not a colour: none
+        assert_eq!(super::look(&Profile::default(), &Profile::default()).tab_color, "");
+        assert_eq!(super::look(&Profile { tab_color: "green".into(), ..Profile::default() }, &Profile::default()).tab_color, "");
     }
 
     #[test]

@@ -1,6 +1,8 @@
 <!--
   A document tab's label: the session's icon, its name and a close button. Its environment colour fills the tab
-  when it's selected and tints it, with a stripe along the top, when it isn't, as SuperXPuTTY's TabIcons.
+  when it's selected and tints it, with a stripe along the top, when it isn't, as SuperXPuTTY's TabIcons. With no
+  environment colour, its profile's tab colour does the same, but leaves the icon without a circle: the circle marks
+  an environment, as in the Sessions tree.
 -->
 <script lang="ts">
   import Icon from "../icons/Icon.svelte";
@@ -32,9 +34,11 @@
   const disconnected = $derived(tabStates[tabId]?.ended ?? false);
   /** Watch for Activity's orange dot, or Watch for Silence's grey pause */
   const alert = $derived(tabStates[tabId]?.alert ?? null);
+  /** The tab's colour: the environment's, else its profile's (Settings > Profiles > Tab colour); null for none */
+  const colour = $derived(environment ?? tabStates[tabId]?.tabColor ?? null);
 </script>
 
-<span class="tab" class:coloured={!!environment} style:--env={environment ?? "transparent"}>
+<span class="tab" class:coloured={!!colour} style:--env={colour ?? "transparent"}>
   {#if scripting}
     <!-- the icon's cell, so the label doesn't move -->
     <span class="cell" style:width="{Math.round(Math.round(iconSize * 0.75) * 1.36)}px" style:height="{Math.round(Math.round(iconSize * 0.75) * 1.36)}px">

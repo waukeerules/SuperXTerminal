@@ -1,8 +1,9 @@
 <!--
   The button bar at the bottom of the window, as SuperXPuTTY's ButtonBarStrip: the bar picker, then the bar's buttons
   (a session icon or a colour circle, and the label). A click sends the button's string, or runs its script, in the
-  active tab; Shift+click sends to the Send Commands selection. The bar shown is the first whose tab icons include
-  the active tab's icon, else the one picked, else the first. Right-click for New, Edit, Delete and Move buttons, and
+  active tab; Shift+click sends to the Send Commands selection. The bar shown is the one picked by hand, until the
+  active tab changes; else the active tab's profile's (Settings > Profiles > Button bar); else the first whose tab
+  icons include the tab's icon; else Default Settings'; else the one last picked; else the first (barFor in bars.ts). Right-click for New, Edit, Delete and Move buttons, and
   for bars: New, Rename, Delete, Show for Tab Icons, Export, Import, Reload, and Manage Button Bars (ManageBars.svelte)
   for moving, copying and tidying buttons across bars. ButtonBars.xml is in the settings folder, shared by the team,
   and read again whenever the menu opens.
@@ -15,7 +16,8 @@
   import EditButton from "./EditButton.svelte";
   import ManageBars from "./ManageBars.svelte";
   import TabIcons from "./TabIcons.svelte";
-  import { buttonColour, exportBar, importBars, loadBars, saveBars, type Bar, type BarButton } from "./bars";
+  import { barFor, buttonColour, exportBar, importBars, loadBars, saveBars, type Bar, type BarButton } from "./bars";
+  import { listProfiles, PROFILES_CHANGED } from "../settings/profiles";
   import { activeTarget, context, fillPlaceholders, runScriptIn, running, selectedTargets, sendString } from "./sending.svelte";
   import { resolveSnippet } from "../scripting/asking.svelte";
   import { saveSettings, settings } from "../settings/store.svelte";
@@ -26,7 +28,11 @@
   let bars = $state<Bar[]>([{ name: "Default", buttons: [], tabIcons: [] }]);
   /** The active tab's icon, which picks a bar that lists it */
   let tabIcon = $state("");
-  /** A bar picked by hand wins over the tab icon until the active tab changes */
+  /** The profile the active tab's session uses, which picks its bar; "" for none */
+  let tabProfile = $state("");
+  /** Each profile's button bar, read again whenever Settings > Profiles saves */
+  let profiles = $state<{ name: string; buttonBar: string }[]>([]);
+  /** A bar picked by hand wins over the profile's and the tab icon's until the active tab changes */
   let picked = $state(false);
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let editing = $state<{ index: number | null; button: BarButton | null } | null>(null);
@@ -38,12 +44,15 @@
   /** The buttons' icon size: smaller than the tree's, as SuperXPuTTY's toolbars */
   const size = $derived(Math.round(settings.iconSize * 0.85));
 
-  /** Which bar shows, as ButtonBarStrip.CurrentBar */
-  const current = $derived.by(() => {
-    const icon = tabIcon.toLowerCase();
-    const base = icon.split("#")[0];
-    const forTab = !picked && icon ? bars.find((b) => b.tabIcons.some((t) => t.toLowerCase() === icon || t.toLowerCase() === base)) : undefined;
-    return forTab ?? bars.find((b) => b.name.toLowerCase() === settings.activeButtonBar.toLowerCase()) ?? bars[0];
+  /** Which bar shows, as ButtonBarStrip.CurrentBar, with the profile's bar (barFor) */
+  const current = $derived(barFor(bars, { icon: tabIcon, profile: tabProfile, profiles, chosen: settings.activeButtonBar, picked }));
+
+  // the profiles' bars, and again when Settings > Profiles saves one
+  $effect(() => {
+    const read = () => void listProfiles().then((list) => (profiles = list)).catch(() => {});
+    read();
+    window.addEventListener(PROFILES_CHANGED, read);
+    return () => window.removeEventListener(PROFILES_CHANGED, read);
   });
 
   // read ButtonBars.xml once the settings are in, and again when the settings folder changes
@@ -53,14 +62,17 @@
     void reload();
   });
 
-  // follow the active tab's icon
+  // follow the active tab's icon and profile (known once its session starts)
   $effect(() => {
     const tabs = context.tabs;
     if (!tabs) return;
     const update = () => {
-      const icon = tabs.commandTabs().find((t) => t.active)?.icon ?? "";
-      if (icon !== tabIcon) picked = false;
+      const tab = tabs.commandTabs().find((t) => t.active);
+      const icon = tab?.icon ?? "";
+      const profile = tab?.profile ?? "";
+      if (icon !== tabIcon || profile !== tabProfile) picked = false;
       tabIcon = icon;
+      tabProfile = profile;
     };
     update();
     return tabs.onChange(update);

@@ -84,6 +84,12 @@ pub struct Profile {
     pub selection: String,
     /// The cursor's colour; a session's or folder's environment colour still wins
     pub cursor_color: String,
+    /// The colour of its sessions' tabs, "#rrggbb", whatever the Colours choice; "" for Default Settings', else none.
+    /// A session's or folder's environment colour still wins, as it marks production
+    pub tab_color: String,
+    /// The button bar (a bar's name in ButtonBars.xml) shown while one of its sessions' tabs is active; "" for
+    /// Default Settings', else the bar the tab's icon picks. Matched whatever its case
+    pub button_bar: String,
     /// Whether a password is stored for it (the password itself stays in the Keychain)
     #[serde(skip_deserializing)]
     pub has_password: bool,
@@ -224,6 +230,18 @@ mod tests {
         assert_eq!(import_text(r#"{"profiles":[]}"#).unwrap_err(), "There are no profiles in the file.");
         assert_eq!(import_text(r#"{"profiles":[{"name":"  "}]}"#).unwrap_err(), "A profile in the file has no name.");
         assert!(import_text(r#"{"profiles":"root"}"#).is_err());
+    }
+
+    #[test]
+    fn a_profiles_tab_colour_and_button_bar_are_kept_and_go_with_an_export() {
+        // the page sends them in its own names; a field Rust didn't know was dropped when Profiles.json was written
+        let profile: Profile = serde_json::from_str(r##"{"name":"Lab","tabColor":"#2da44e","buttonBar":"Cisco"}"##).unwrap();
+        assert_eq!((profile.tab_color.as_str(), profile.button_bar.as_str()), ("#2da44e", "Cisco"));
+        let imported = import_text(&export_text(&profile).unwrap()).unwrap();
+        assert_eq!((imported[0].tab_color.as_str(), imported[0].button_bar.as_str()), ("#2da44e", "Cisco"));
+        // a profile from before them has neither
+        let older: Profile = serde_json::from_str(r#"{"name":"root"}"#).unwrap();
+        assert_eq!((older.tab_color.as_str(), older.button_bar.as_str()), ("", ""));
     }
 
     #[test]

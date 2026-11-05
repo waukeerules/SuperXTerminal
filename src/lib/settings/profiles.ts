@@ -54,6 +54,16 @@ export interface Profile {
   selection: string;
   /** The cursor's colour; a session's or folder's environment colour wins over it */
   cursorColor: string;
+  /**
+   * The colour of its sessions' tabs, "#rrggbb", whatever the Colours choice; "" for Default Settings', else none. A
+   * session's or folder's environment colour wins over it
+   */
+  tabColor: string;
+  /**
+   * The button bar (a bar's name) shown while one of its sessions' tabs is active; "" for Default Settings', else the
+   * bar the tab's icon picks
+   */
+  buttonBar: string;
   hasPassword: boolean;
 }
 
@@ -61,7 +71,7 @@ export interface Profile {
 export function emptyProfile(name: string): Profile {
   return {
     name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
-    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", hasPassword: false,
+    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", hasPassword: false,
   };
 }
 
@@ -111,7 +121,7 @@ export function coloursChoice(profile: Profile | undefined, fallback: Profile | 
  * choice names ("Dark", "Light" or "" for Settings > Terminal's), and when it's custom, each colour the profile's,
  * else Default Settings', when it's "#rrggbb"; "" for Settings > Terminal's or the theme's
  */
-export function profileColours(profiles: Profile[], name: string): { theme: string; background: string; foreground: string; selection: string; cursor: string } {
+export function profileColours(profiles: Profile[], name: string): { theme: string; background: string; foreground: string; selection: string; cursor: string; tab: string } {
   const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
   const fallback = find(DEFAULT_PROFILE);
   const profile = find(name) ?? fallback;
@@ -121,5 +131,7 @@ export function profileColours(profiles: Profile[], name: string): { theme: stri
   return {
     theme: choice === "dark" ? "Dark" : choice === "light" ? "Light" : "",
     background: pick("background"), foreground: pick("foreground"), selection: pick("selection"), cursor: pick("cursorColor"),
+    // not a terminal colour, so whatever the Colours choice
+    tab: hexColour(profile?.tabColor) || hexColour(fallback?.tabColor),
   };
 }

@@ -47,6 +47,8 @@ interface Look {
   foreground?: string;
   selection?: string;
   cursorColor?: string;
+  /** The profile's tab colour ("#rrggbb"), else Default Settings'; "" or absent for none */
+  tabColor?: string;
   /** The profile's anti-idle string, as KiTTY writes it; "" or absent for none */
   antiIdle?: string;
   /** Seconds without typing before it's typed; 0 with no string */
@@ -244,13 +246,26 @@ export class PageHost implements ScriptTarget {
   /** The profile the session uses, once it has started; null for none */
   private profile: string | null = null;
 
-  /** A profile was saved or removed: the tab takes its profile's colours again */
+  /** The profile the session uses, once it has started (the button bar shows its bar); "" for none */
+  get profileName(): string {
+    return this.profile ?? "";
+  }
+
+  /**
+   * The profile's tab colour ("#rrggbb"), for the tab's label when the session has no environment colour; null for
+   * none, or before the session has started
+   */
+  tabColor: string | null = null;
+
+  /** A profile was saved or removed: the tab takes its profile's colours again, its tab's colour included */
   private readonly onProfilesChanged = (): void => {
     const name = this.profile;
     if (name === null) return;
     void listProfiles().then((profiles) => {
-      const { theme, ...colors } = profileColours(profiles, name);
+      const { theme, tab, ...colors } = profileColours(profiles, name);
       this.post({ type: "colors", colors, theme });
+      this.tabColor = tab || null;
+      this.onState();
     }).catch(() => {});
   };
 
@@ -638,6 +653,8 @@ export class PageHost implements ScriptTarget {
   /** The page's settings: the highlighting rules and themes, and the profile's cursor and bell */
   private async sendConfig(look: Look): Promise<void> {
     if (look.profile !== undefined) this.profile = look.profile;
+    this.tabColor = look.tabColor || null;
+    this.onState();
     this.startAntiIdle(look.antiIdle ?? "", look.antiIdleSeconds ?? 0);
     const dark = isDark();
     const files = await highlighting();

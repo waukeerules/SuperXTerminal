@@ -42,6 +42,7 @@ beforeEach(() => {
     if (cmd === "plugin:dialog|save") return "/tmp/root profile.json";
     if (cmd === "plugin:dialog|open") return "/tmp/profiles.json";
     if (cmd === "profiles_read_file") return inFile;
+    if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [], tabIcons: [] }, { name: "Cisco", buttons: [], tabIcons: [] }];
     // the key fetch's key file: 37 minutes old, or 5 hours for the "old" one
     if (cmd === "profile_key_age") return String(payload.keyFile).includes("old") ? 5 * 3600 : 37 * 60;
     return null;
@@ -195,6 +196,41 @@ describe("Settings > Profiles", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Default's" })[0]);
     expect(dots()).toHaveLength(1);
     expect(background().value).toBe("#000000");
+  });
+
+  it("sets a Tab colour whatever Colours is, and puts Default Settings' back", async () => {
+    await open("root");
+    const tab = () => screen.getByLabelText("Tab colour") as HTMLInputElement;
+    /** What the hint beside the picker says */
+    const hint = () => tab().nextElementSibling!.textContent;
+    // Colours is From Default Settings (the theme), and the Tab colour can still be set
+    expect(tab().disabled).toBe(false);
+    expect(hint()).toBe("None");
+    await fireEvent.input(tab(), { target: { value: "#2da44e" } });
+    expect(hint()).toBe("#2da44e");
+    expect(dots()).toHaveLength(1);
+    await userEvent.click(button("Save"));
+    const save = calls.find((c) => c.cmd === "profiles_save");
+    expect(save?.args.profile).toMatchObject({ name: "root", colours: "", tabColor: "#2da44e" });
+    // its last "Default's" button is the Tab colour's
+    await userEvent.click(screen.getAllByRole("button", { name: "Default's" }).at(-1)!);
+    expect(dots()).toHaveLength(1);
+    expect(hint()).toBe("None");
+  });
+
+  it("saves the Button bar chosen, and keeps showing one that's no longer among the bars", async () => {
+    stored = [...stored, { ...emptyProfile("Old"), buttonBar: "Retired" }];
+    await open("root");
+    const bar = () => screen.getByRole("combobox", { name: /^Button bar/ }) as HTMLSelectElement;
+    expect([...bar().options].map((o) => o.text)).toEqual(["The one for the tab's icon", "Default", "Cisco"]);
+    await userEvent.selectOptions(bar(), "Cisco");
+    expect(dots()).toHaveLength(1);
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", buttonBar: "Cisco" });
+    // a bar since renamed or deleted
+    await userEvent.click(screen.getByRole("option", { name: "Old" }));
+    expect(bar().value).toBe("Retired");
+    expect(bar().selectedOptions[0].text).toBe("Retired (not in the button bars)");
   });
 
   it("greys the colours again for Dark, and keeps them for later", async () => {

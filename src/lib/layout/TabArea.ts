@@ -336,6 +336,8 @@ export interface TabInfo {
   /** The session it runs, "store:id"; "" for a Local Shell or Quick connect */
   session: string;
   icon: string;
+  /** The profile its session uses, once it has started (its button bar shows while the tab is active); "" for none */
+  profile: string;
   host: PageHost;
   /** The tab's "Accept commands" (on by default), which Select sessions to send to sets */
   acceptCommands: boolean;
@@ -377,7 +379,7 @@ class TerminalPanel implements IContentRenderer {
       () => parameters.api.close(),
       (command) => this.tabs.command(id, command),
       () => {
-        tabStates[id] = { ...tabStates[id], ended: this.host?.isEnded ?? false };
+        tabStates[id] = { ...tabStates[id], ended: this.host?.isEnded ?? false, tabColor: this.host?.tabColor ?? null };
         this.tabs.notify();
       },
     );
@@ -910,6 +912,7 @@ export class TabArea {
           title: panel.title ?? "",
           session: this.sessions.get(panel.id) ?? "",
           icon: params.icon,
+          profile: host.profileName,
           host,
           acceptCommands: !this.refusing.has(panel.id),
           visible: group.activePanel === panel,
@@ -933,6 +936,7 @@ export class TabArea {
           title: panel.title ?? "",
           session: this.sessions.get(panel.id) ?? "",
           icon: params.icon,
+          profile: rdp ? "" : (host as PageHost).profileName,
           host,
           rdp: !!rdp,
           acceptCommands: !this.refusing.has(panel.id),

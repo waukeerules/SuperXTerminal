@@ -4,6 +4,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { CUSTOM_PREFIX, parseKey, resolveIcon } from "../icons/library";
+import { DEFAULT_PROFILE } from "../settings/profiles";
 
 /** One button on a bar, as ButtonBars.xml holds it (SuperXPuTTY's) */
 export interface BarButton {
@@ -24,6 +25,45 @@ export interface Bar {
   buttons: BarButton[];
   /** Session icons whose tabs show this bar */
   tabIcons: string[];
+}
+
+/** What picks the bar shown: the active tab, the profiles, and the bar picked by hand */
+export interface BarChoice {
+  /** The active tab's icon key; "" for no tab */
+  icon: string;
+  /** The profile the active tab's session uses; "" for none (no tab, or not started yet) */
+  profile: string;
+  /** Each profile's name and button bar (Settings > Profiles), Default Settings among them */
+  profiles: { name: string; buttonBar: string }[];
+  /** The bar last picked from the bar picker (Settings' activeButtonBar); "" for none */
+  chosen: string;
+  /** Whether it was picked by hand since the active tab changed, which wins until it changes again */
+  picked: boolean;
+}
+
+/**
+ * Which bar shows, as ButtonBarStrip.CurrentBar with profiles added: a bar picked by hand while the tab stays; else
+ * the profile's own bar; else the first bar whose Tab Icons list the tab's icon (SuperXPuTTY's); else Default
+ * Settings' bar; else the bar last picked; else the first. A bar named that isn't there (renamed or deleted) is
+ * passed over. Default Settings' comes after the tab icons, so a bar for an icon still shows for profiles without one.
+ */
+export function barFor<B extends { name: string; tabIcons: string[] }>(bars: B[], choice: BarChoice): B {
+  const named = (name: string | undefined) =>
+    name?.trim() ? bars.find((b) => b.name.toLowerCase() === name.trim().toLowerCase()) : undefined;
+  const chosen = named(choice.chosen) ?? bars[0];
+  if (choice.picked) return chosen;
+  const profile = (name: string) => choice.profiles.find((p) => p.name.toLowerCase() === name.trim().toLowerCase());
+  // a session with no profile of its own reports Default Settings, whose bar comes after the tab icons
+  const ownProfile = choice.profile && choice.profile.trim().toLowerCase() !== DEFAULT_PROFILE.toLowerCase();
+  const own = ownProfile ? named(profile(choice.profile)?.buttonBar) : undefined;
+  if (own) return own;
+  const icon = choice.icon.toLowerCase();
+  const base = icon.split("#")[0];
+  const forIcon = icon ? bars.find((b) => b.tabIcons.some((t) => t.toLowerCase() === icon || t.toLowerCase() === base)) : undefined;
+  if (forIcon) return forIcon;
+  // Default Settings' only for a tab with a session (not when there's no tab at all)
+  const fallback = choice.profile || choice.icon ? named(profile(DEFAULT_PROFILE)?.buttonBar) : undefined;
+  return fallback ?? chosen;
 }
 
 /**

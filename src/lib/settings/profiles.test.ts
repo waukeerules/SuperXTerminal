@@ -1,4 +1,5 @@
-// A profile's terminal colours as its tabs take them again when it's saved: its own, else Default Settings'.
+// A profile's terminal colours and Tab colour as its tabs take them again when it's saved: its own, else Default
+// Settings'.
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PROFILE, emptyProfile, profileColours } from "./profiles";
 
@@ -9,19 +10,33 @@ describe("profileColours", () => {
   ];
 
   it("takes the profile's own, else Default Settings', leaving out what isn't #rrggbb", () => {
-    expect(profileColours(profiles, "production")).toEqual({ theme: "", background: "#3a0000", foreground: "#eeeeee", selection: "", cursor: "#00ff00" });
+    expect(profileColours(profiles, "production")).toEqual({ theme: "", background: "#3a0000", foreground: "#eeeeee", selection: "", cursor: "#00ff00", tab: "" });
   });
 
   it("takes Default Settings' for a profile that isn't there any more", () => {
-    expect(profileColours(profiles, "Gone")).toEqual({ theme: "", background: "#101010", foreground: "#eeeeee", selection: "", cursor: "" });
+    expect(profileColours(profiles, "Gone")).toEqual({ theme: "", background: "#101010", foreground: "#eeeeee", selection: "", cursor: "", tab: "" });
   });
 
   it("names the Dark or Light theme for those choices, and leaves the colours out", () => {
     const withChoice = [...profiles, { ...emptyProfile("Lab"), colours: "light", background: "#3a0000" }, { ...emptyProfile("Night"), colours: "dark" }];
-    expect(profileColours(withChoice, "Lab")).toEqual({ theme: "Light", background: "", foreground: "", selection: "", cursor: "" });
+    expect(profileColours(withChoice, "Lab")).toEqual({ theme: "Light", background: "", foreground: "", selection: "", cursor: "", tab: "" });
     expect(profileColours(withChoice, "Night").theme).toBe("Dark");
     // following the theme: none of Default Settings' colours either
     const following = [...profiles, { ...emptyProfile("Plain"), colours: "theme" }];
-    expect(profileColours(following, "Plain")).toEqual({ theme: "", background: "", foreground: "", selection: "", cursor: "" });
+    expect(profileColours(following, "Plain")).toEqual({ theme: "", background: "", foreground: "", selection: "", cursor: "", tab: "" });
+  });
+
+  it("takes the Tab colour whatever the Colours choice: the profile's own, else Default Settings'", () => {
+    const tabbed = [
+      { ...emptyProfile(DEFAULT_PROFILE), tabColor: "#1F6FEB" },
+      { ...emptyProfile("Lab"), colours: "theme", tabColor: "#2DA44E" },
+      { ...emptyProfile("Plain"), colours: "dark" },
+      { ...emptyProfile("Odd"), tabColor: "green" },
+    ];
+    expect(profileColours(tabbed, "Lab").tab).toBe("#2da44e");
+    expect(profileColours(tabbed, "Plain").tab).toBe("#1f6feb");
+    // not #rrggbb: Default Settings'
+    expect(profileColours(tabbed, "Odd").tab).toBe("#1f6feb");
+    expect(profileColours([emptyProfile(DEFAULT_PROFILE)], "Gone").tab).toBe("");
   });
 });

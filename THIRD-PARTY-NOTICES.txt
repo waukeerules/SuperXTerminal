@@ -7,8 +7,8 @@ distinct licence text appears once, with the components it belongs to. Generated
 COMPONENTS (491)
 ==============================================================================
 
-@tauri-apps/api 2.12.4  [Apache-2.0 OR MIT]  https://www.npmjs.com/package/@tauri-apps/api
-@tauri-apps/plugin-dialog 2.8.4  [MIT OR Apache-2.0]  https://www.npmjs.com/package/@tauri-apps/plugin-dialog
+@tauri-apps/api 2.12.4  [Apache-2.0 OR MIT]  https://github.com/tauri-apps/tauri.git
+@tauri-apps/plugin-dialog 2.8.4  [MIT OR Apache-2.0]  https://github.com/tauri-apps/plugins-workspace
 addchain 0.2.1  [MIT OR Apache-2.0]  https://github.com/str4d/addchain
 adler2 2.0.1  [0BSD OR MIT OR Apache-2.0]  https://github.com/oyvindln/adler2
 aead 0.6.1  [MIT OR Apache-2.0]  https://github.com/RustCrypto/traits
@@ -112,7 +112,7 @@ dirs 7.0.0  [MIT OR Apache-2.0]  https://codeberg.org/dirs/dirs-rs
 dirs-sys 0.5.0  [MIT OR Apache-2.0]  https://github.com/dirs-dev/dirs-sys-rs
 dispatch2 0.3.1  [Zlib OR Apache-2.0 OR MIT]  https://github.com/madsmtm/objc2
 displaydoc 0.2.7  [MIT OR Apache-2.0]  https://github.com/yaahc/displaydoc
-dockview-core 8.8.3  [MIT]  https://www.npmjs.com/package/dockview-core
+dockview-core 8.8.3  [MIT]  https://github.com/dockview/dockview.git
 dom_query 0.28.0  [MIT]  https://github.com/niklak/dom_query
 downcast-rs 1.2.1  [MIT/Apache-2.0]  https://github.com/marcianx/downcast-rs
 dpi 0.1.2  [Apache-2.0 AND MIT]  https://github.com/rust-windowing/winit

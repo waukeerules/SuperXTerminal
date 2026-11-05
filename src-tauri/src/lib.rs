@@ -514,6 +514,40 @@ fn text_file_write(path: PathBuf, text: String) -> Result<(), String> {
     std::fs::write(path, text.replace("\r\n", "\n").replace('\n', "\r\n")).map_err(|e| e.to_string())
 }
 
+/// Where a script's SAVE writes: a full path as it is, `~/…` in the home folder, anything else in `output`
+/// (Documents/SuperXTerminal/output, beside the session logs' own folder)
+fn script_output_path(path: &str, home: &std::path::Path, output: &std::path::Path) -> PathBuf {
+    let path = path.trim();
+    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
+        return home.join(rest);
+    }
+    let given = PathBuf::from(path);
+    if given.is_absolute() { given } else { output.join(given) }
+}
+
+/// A script's SAVE: write (or with `append`, add to) a text file, making its folder; its full path, for messages.
+/// Lines end as this system's do (CRLF on Windows), as the output came with LF
+#[tauri::command]
+fn script_output_save(path: String, text: String, append: bool) -> Result<PathBuf, String> {
+    let home = dirs::home_dir().unwrap_or_else(std::env::temp_dir);
+    let output = dirs::document_dir().unwrap_or_else(|| home.clone()).join("SuperXTerminal").join("output");
+    let file = script_output_path(&path, &home, &output);
+    if let Some(folder) = file.parent() {
+        std::fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
+    }
+    let text = if cfg!(windows) { text.replace("\r\n", "\n").replace('\n', "\r\n") } else { text };
+    use std::io::Write;
+    let mut handle = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(append)
+        .truncate(!append)
+        .open(&file)
+        .map_err(|e| format!("{}: {e}", file.display()))?;
+    handle.write_all(text.as_bytes()).map_err(|e| format!("{}: {e}", file.display()))?;
+    Ok(file)
+}
+
 /// A log just started: its id for writing, its file, and whether it goes when the tab closes
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2569,6 +2603,7 @@ pub fn run() {
             script_delete,
             text_file_read,
             text_file_write,
+            script_output_save,
             shortcuts_favorite,
             shortcuts_opened,
             shortcuts_forget_recent,
@@ -2639,6 +2674,17 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_scripts_save_goes_in_the_output_folder_unless_its_path_says_otherwise() {
+        use std::path::Path;
+        let (home, output) = (Path::new("/home/me"), Path::new("/home/me/Documents/SuperXTerminal/output"));
+        assert_eq!(super::script_output_path("sw1-run.txt", home, output), output.join("sw1-run.txt"));
+        assert_eq!(super::script_output_path("lab/sw1.txt", home, output), output.join("lab/sw1.txt"));
+        assert_eq!(super::script_output_path("~/Desktop/run.txt", home, output), home.join("Desktop/run.txt"));
+        let full = if cfg!(windows) { "C:\\backups\\run.txt" } else { "/tmp/backups/run.txt" };
+        assert_eq!(super::script_output_path(full, home, output), Path::new(full));
+    }
+
     use super::{loading_colour, remembered_state, remembers_place, window_changes, WindowChanges};
     use crate::settings::AppSettings;
     use tauri_plugin_window_state::StateFlags;

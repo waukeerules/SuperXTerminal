@@ -43,6 +43,8 @@ export const PREF_DEFAULTS: Record<string, string> = {
   logTimestamps: "30",
   /** "webgl" or "dom" */
   renderer: "webgl",
+  /** Whether the script box (Edit Button, the Script Editor) wraps long lines: "true" or "false" */
+  scriptWrap: "true",
 };
 
 /** Every preference, with its default where it isn't set */

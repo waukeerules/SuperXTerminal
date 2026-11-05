@@ -1,0 +1,155 @@
+#!/bin/spsl
+# omv-tour-2.spsl: a second read-only tour of an OpenMediaVault (Debian) server, for SPSL's newer commands:
+# LIMIT, FAILON, the session's own variables, CHECK and REQUIRE, PROMPT /var:, IF and ELSE, EXPECT, WAITQUIET,
+# COLLECT and FOREACH, PAGER, /idle:, REPEAT and SAVE.
+#
+# On the server it only reads: echo, uname, grep, id, test, ls, df, seq | more, sleep, date, uptime, free, docker ps.
+# Nothing there is changed. SAVE writes one summary file on this computer, in Documents/SuperXTerminal/output.
+# What it finds is said with the shell's echo (in the terminal) and with ECHO (in the status bar).
+#
+# Markers: a command ends by printing, say, DIR-$((3*3)), and the script waits for DIR-9. The shell works the sum out,
+# so the typed command (echoed back) never matches; only the shell's answer does.
+
+# ---- 0. Ground rules: 10 minutes at most, and stop at once if the shell doesn't know a command ----------------------
+LIMIT 10m
+FAILON /re ^(bash|sh): .*: command not found
+ECHO Touring {session_name} at {host_address} port {host_port}
+
+# ---- 1. A prompt to start from ----------------------------------------------------------------------------------------
+SENDLINE
+WAITPROMPT /t:5 /else:noprompt
+
+# ---- 2. Prerequisites: defined first, looked for, then judged -----------------------------------------------------
+CHECK linux /re ^Linux\b
+CHECK kernel /re ^Linux \S+ (\S+)
+CHECK debian /re ^ID=debian$
+SENDLINE uname -a
+WAITPROMPT
+SENDLINE grep '^ID=' /etc/os-release
+WAITPROMPT
+REQUIRE linux kernel
+SENDLINE echo "Prerequisite met: Linux, kernel {kernel}"
+WAITPROMPT
+REQUIRE /else:notdebian debian
+SENDLINE echo "Debian underneath, as OpenMediaVault is"
+WAITPROMPT
+GOTO who
+:notdebian
+SENDLINE echo "Not Debian: carrying on anyway, as the tour only reads"
+WAITPROMPT
+
+# ---- 3. Who are we? A match's group kept with SET straight away, then IF -------------------------------------------
+:who
+SENDLINE echo "USER-$(id -un)"
+WAITFOR /re USER-(\w+)
+SET me {1}
+WAITPROMPT
+IF {me} == root
+  SENDLINE echo "Running as root: the tour still only reads"
+ELSE
+  SENDLINE echo "Running as {me}: some folders may be closed to us"
+END
+WAITPROMPT
+
+# ---- 4. A folder of your choosing (Enter for /srv); EXPECT picks whichever answer comes first ----------------------
+PROMPT /var:folder Which folder should the tour list? (leave empty for /srv)
+IF {folder} !~ /./
+  SET folder /srv
+END
+SENDLINE test -d "{folder}" && echo "DIR-$((3*3))" || echo "NODIR-$((3*3))"
+EXPECT /t:5
+  # NODIR-9 also contains DIR-9, but starts earlier in the output, so it wins
+  CASE NODIR-9
+    WAITPROMPT
+    SENDLINE echo "{folder} isn't a folder here: listing /srv instead"
+    WAITPROMPT
+    SET folder /srv
+  CASE DIR-9
+    WAITPROMPT
+END
+SENDLINE ls -la "{folder}" | head -25
+# no marker: wait until the listing has stopped coming
+WAITQUIET 800
+ECHO listed {folder}
+
+# ---- 5. Every filesystem: COLLECT their mount points, FOREACH one, IF it's nearly full ------------------------------
+SENDLINE df -h --output=pcent,target -x tmpfs -x devtmpfs -x overlay | tail -n +2
+WAITPROMPT
+COLLECT mounts /re ^\s*\d+%\s+(/\S*)$
+SENDLINE echo "{mounts_count} filesystems: {mounts}"
+WAITPROMPT
+FOREACH mount IN mounts
+  SENDLINE df --output=pcent "{mount}" | tail -1 | tr -d ' %'
+  WAITFOR /re ^(\d+)\s*$
+  SET used {1}
+  WAITPROMPT
+  IF {used} >= 90
+    SENDLINE echo "WARNING: {mount} is {used}% full"
+  ELSE
+    SENDLINE echo "ok: {mount} is {used}% full"
+  END
+  WAITPROMPT
+END
+
+# ---- 6. PAGER: more pauses at --More--; every wait after PAGER presses Space for it --------------------------------
+# On Debian, more can be less: it pages at ":" (or --More--) and at the end shows (END) and waits for q
+PAGER --More--
+PAGER /re ^:\s*$
+PAGER /key:q (END)
+SENDLINE seq 1 300 | more
+WAITPROMPT /t:30
+PAGER OFF
+SENDLINE echo "PAGER paged through the 300 lines and quit the pager by itself"
+WAITPROMPT
+
+# ---- 7. /idle: progress that keeps coming is fine; progress that stops is a stall ------------------------------------
+SENDLINE for i in 1 2 3 4 5; do printf '!'; sleep 1; done; echo; echo "COPIED-$((40+2))"
+WAITFOR /t:60 /idle:3 COPIED-42
+WAITPROMPT
+SENDLINE echo "Progress came every second: /idle:3 never fired"
+WAITPROMPT
+SENDLINE printf '!!'; sleep 6; echo; echo "LATE-$((50+5))"
+WAITFOR /t:60 /idle:2 /else:stalled LATE-55
+WAITPROMPT
+SENDLINE echo "No stall noticed (the server answered within 2 s?)"
+WAITPROMPT
+GOTO rounds
+:stalled
+ECHO /idle: noticed the output stop for 2 s; waiting for the slow command to finish
+WAITFOR /t:15 LATE-55
+WAITPROMPT
+SENDLINE echo "/idle:2 caught the 6-second silence; the command then finished"
+WAITPROMPT
+
+# ---- 8. REPEAT with {repeat}, then a summary SAVEd on this computer ------------------------------------------------
+:rounds
+REPEAT 3
+  SENDLINE echo "Round {repeat} of 3 at $(date +%T)"
+  WAITPROMPT
+  SLEEP 500
+END
+SENDLINE uname -a; uptime; free -h
+WAITPROMPT
+SAVE omv-tour-{session_name}-summary.txt
+ECHO saved a summary in Documents/SuperXTerminal/output
+
+# ---- 9. Docker, if it's there: a look at the containers --------------------------------------------------------------
+SENDLINE command -v docker >/dev/null && echo "DOCKER-$((5+5))" || echo "NODOCKER-$((5+5))"
+EXPECT /t:5
+  CASE NODOCKER-10
+    WAITPROMPT
+    SENDLINE echo "No Docker here"
+  CASE DOCKER-10
+    WAITPROMPT
+    SENDLINE docker ps -a 2>&1 | head -10
+END
+WAITPROMPT
+
+# ---- The end ---------------------------------------------------------------------------------------------------------
+FAILON OFF
+SENDLINE echo "Tour 2 finished: read only, nothing changed on this server"
+WAITPROMPT
+STOP Tour 2 finished on {session_name}
+
+:noprompt
+STOP No shell prompt (a line ending in # or $) appeared: is this tab at a Linux shell?

@@ -1,15 +1,18 @@
 <!--
   The Script Editor, as SuperXPuTTY's dlgScriptEditor: the saved scripts on the left (the settings folder's scripts
-  folder: Insert, Save as, Delete; double-click inserts), the script in the middle, the SPSL panel on the right, and
-  Open file, Save to file, Run as (Send lines or SPSL script) and Send at the bottom. Send goes to the Send Commands
-  selection and closes the editor. It floats over the window without blocking it; drag it by its title.
+  folder: Insert, Save as, Delete; double-click inserts), the script in the middle (the script box: Monaco, with SPSL's
+  colours when it runs as an SPSL script, and Wrap lines), the SPSL panel on the right, and
+  Open file, Save to file, Run as (Send lines or SPSL script), Step and Send at the bottom. Send goes to the Send
+  Commands selection and closes the editor; Step does the same, the script pausing before each line until Next line in
+  the status bar. It floats over the window without blocking it; drag it by its title.
 -->
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { ask, open, save } from "@tauri-apps/plugin-dialog";
   import Prompt from "../ui/Prompt.svelte";
   import SpslHelp from "../scripting/SpslHelp.svelte";
-  import { context, fillPlaceholders, runScriptIn, selectedTargets } from "./sending.svelte";
+  import ScriptBox from "../scripting/ScriptBox.svelte";
+  import { context, fillScriptPlaceholders, runScriptIn, selectedTargets } from "./sending.svelte";
   import { resolveSnippet } from "../scripting/asking.svelte";
   import { lineFeedsAsEnter } from "../scripting/spsl";
 
@@ -24,7 +27,7 @@
   let chosen = $state<Entry | null>(null);
   let naming = $state(false);
   let help: SpslHelp | undefined = $state();
-  let box: HTMLTextAreaElement;
+  let box: ScriptBox | undefined = $state();
   let at = $state({ x: 120, y: 90 });
 
   void refresh();
@@ -36,9 +39,7 @@
 
   /** Put text in the script at the cursor, in place of what's selected */
   function insert(more: string): void {
-    const start = box.selectionStart ?? text.length;
-    text = text.slice(0, start) + more + text.slice(box.selectionEnd ?? start);
-    queueMicrotask(() => box.focus());
+    box?.insert(more);
   }
 
   /** Insert a saved script's text at the cursor */
@@ -81,8 +82,11 @@
     if (path) await invoke("text_file_write", { path, text });
   }
 
-  /** Send to the selected tabs, as frmSuperPutty's Editor_ScriptReady, and close */
-  async function send(): Promise<void> {
+  /**
+   * Send to the selected tabs, as frmSuperPutty's Editor_ScriptReady, and close
+   * @param stepping An SPSL script pauses before each line until Next line (Step)
+   */
+  async function send(stepping = false): Promise<void> {
     const targets = selectedTargets();
     if (targets.length === 0) {
       context.status("No selected sessions to send to");
@@ -92,11 +96,11 @@
       const issues = help ? await help.check() : [];
       const errors = issues.filter((i) => i.error).length;
       if (errors && !(await ask(`The script has ${errors} problem${errors === 1 ? "" : "s"} (see Check script). Send it anyway?`, { title: "Script Editor", kind: "warning" }))) return;
-      const filled = await fillPlaceholders(text);
+      const filled = await fillScriptPlaceholders(text);
       if (filled === null) return;
       const script = await resolveSnippet(filled, "Script Editor");
       if (script === null) return;
-      for (const tab of targets) runScriptIn(tab, script, "Script");
+      for (const tab of targets) runScriptIn(tab, script, "Script", false, "", stepping);
     } else {
       // each line as the toolbar sends it: the text, then Enter; no placeholders or prompts
       for (const line of text.split("\n")) {
@@ -146,8 +150,8 @@
         <button disabled={!chosen} onclick={() => void remove()}>Delete</button>
       </div>
     </div>
-    <textarea bind:this={box} bind:value={text} spellcheck="false"
-      placeholder={kind === "spsl" ? "#!/bin/spsl\nWAITFOR #\nSENDLINE show version" : "one line per command"}></textarea>
+    <ScriptBox bind:this={box} bind:value={text} language={kind === "spsl" ? "spsl" : "plain"} label="Script"
+      placeholder={kind === "spsl" ? "#!/bin/spsl\nWAITFOR #\nSENDLINE show version" : "one line per command"} />
     {#if kind === "spsl"}
       <SpslHelp bind:this={help} script={text} onInsert={insert} />
     {/if}
@@ -162,6 +166,9 @@
         <option value="spsl">SPSL script</option>
       </select>
     </label>
+    {#if kind === "spsl"}
+      <button onclick={() => void send(true)} title="Run it a line at a time: Next line in the status bar runs each one">Step</button>
+    {/if}
     <button class="primary" onclick={() => void send()}>Send</button>
   </footer>
 </div>
@@ -260,14 +267,6 @@
     flex: 1;
   }
 
-  textarea {
-    min-height: 0;
-    resize: none;
-    font-family: Menlo, "Lucida Console", monospace;
-    font-size: 12px;
-  }
-
-  textarea,
   select,
   button {
     background: var(--bg-input);

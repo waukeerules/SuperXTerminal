@@ -66,8 +66,20 @@ and works the same on the Mac and on Windows. It's built with [Tauri 2](https://
 **Commands and scripts**
 
 - A button bar and a Send Commands bar that send to the tab you're in, or to every tab you choose.
-- SPSL, SuperPuTTY's scripting language (SENDLINE, WAITFOR, SENDKEY, SENDBREAK and more), with a Script Editor, and a
-  script run when a session opens.
+- SPSL, SuperPuTTY's scripting language, extended: everything SuperPuTTY's scripts do (SENDLINE, WAITFOR, SENDKEY,
+  SENDBREAK and more), plus the tools to cope with a device that doesn't always answer the same way:
+  - EXPECT, for whichever prompt comes first (a login asked in any order)
+  - regular expressions and any-case matching
+  - timeouts that branch rather than stop, and `/idle:` for transfers that stall
+  - variables (the session's own `{host_address}` and `{session_name}` among them) and the parts of what a wait matched
+  - IF, FOREACH over a list of matches, and REPEAT
+  - prerequisite CHECKs that a script REQUIREs before it changes anything
+  - FAILON, to stop at the device's first refusal
+  - PAGER, to answer `--More--` by itself
+  - SAVE a command's output to a file, and CALL a shared script
+- The Script Editor: Monaco with SPSL's colours and hover help, Check script, and Step to run a script a line at a
+  time. A script can also run when a session opens, and stops if its session drops. The whole language, with patterns
+  and examples, is in **[docs/SPSL.md](docs/SPSL.md)**.
 - `{prompt:...}` and `{secret:...}` snippets that ask before sending.
 
 **File transfer**
@@ -118,6 +130,8 @@ the app and choose Open; Windows SmartScreen warns about the unsigned installer 
 - **[docs/PLAN.md](docs/PLAN.md):** the plan: the chosen stack (Tauri 2 and Svelte 5, with xterm.js and Monaco),
   licensing, the feature matrix, data compatibility and open questions.
 - **[docs/ROADMAP.md](docs/ROADMAP.md):** one line per feature, ticked as each is delivered.
+- **[docs/SPSL.md](docs/SPSL.md):** SPSL, the script language: how a script sees the output, every command, patterns
+  that work, pitfalls and complete examples. Written so a person or an LLM can write a working script from it alone.
 
 The short version, on a Mac with Rust and Node:
 

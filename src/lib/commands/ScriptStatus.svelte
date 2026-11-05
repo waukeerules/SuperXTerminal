@@ -1,6 +1,7 @@
 <!--
   The running scripts in the status bar, as SuperXPuTTY's: "▶ Name (tab): line i/n · STEP · Ns", or "▶ N scripts
-  running"; click for Stop per script, and Stop all. Hidden when none runs.
+  running"; click for Stop per script, and Stop all. A script being stepped through (the Script Editor's Step) shows
+  Next line while it's paused before a line; the menu has it too. Hidden when none runs.
 -->
 <script lang="ts">
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
@@ -30,6 +31,7 @@
       x: rect.left,
       y: rect.top - 8,
       items: [
+        ...running.runs.filter((entry) => entry.run.paused).map((entry) => ({ label: `Next line  ${entry.run.name} (${entry.tab})`, action: () => entry.run.next() })),
         ...running.runs.map((entry) => ({ label: `Stop  ${entry.run.name} (${entry.tab})`, action: () => entry.run.stop() })),
         ...(running.runs.length > 1 ? [{ separator: true } as MenuItem, { label: "Stop all", action: () => running.runs.forEach((e) => e.run.stop()) }] : []),
       ],
@@ -41,6 +43,10 @@
   <button class="scripts" title="Click to stop" onclick={showMenu}>
     ▶ {running.runs.length === 1 ? describe(running.runs[0]) : `${running.runs.length} scripts running`}
   </button>
+  <!-- read again at each tick: a run's pause isn't reactive state -->
+  {#each running.runs.filter((entry) => (void now, entry.run.paused)) as entry (entry)}
+    <button class="next" title="Run line {entry.run.line} of {entry.run.name} ({entry.tab})" onclick={() => entry.run.next()}>Next line ▸</button>
+  {/each}
 {/if}
 
 {#if menu}
@@ -60,5 +66,13 @@
 
   .scripts:hover {
     text-decoration: underline;
+  }
+
+  .next {
+    font-size: 12px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-input);
   }
 </style>

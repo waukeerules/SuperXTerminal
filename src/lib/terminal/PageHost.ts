@@ -468,6 +468,14 @@ export class PageHost implements ScriptTarget {
     return this.ptyId !== null && !this.ended;
   }
 
+  /**
+   * The connection a script is typing into: its pseudo terminal's id, a new one at each reconnect; null while the
+   * session is down. A script stops when this changes, rather than type into a dropped or different connection.
+   */
+  connection(): number | null {
+    return this.canReceiveCommands ? this.ptyId : null;
+  }
+
   /** A button's command starts on the cursor's line: the page colours the numbers of its lines (none: "") */
   markCommand(color: string): void {
     this.post({ type: "commandColor", color });
@@ -478,10 +486,20 @@ export class PageHost implements ScriptTarget {
   }
 
   outputSinceMark(): string {
-    if (this.mark >= this.committedTotal) {
-      return this.currentLine.slice(Math.min(this.currentLine.length, this.mark - this.committedTotal));
+    return this.outputFrom(this.mark);
+  }
+
+  /** Where the output has got to: the finished lines' characters, then the cursor's line's (a script's SAVE) */
+  position(): number {
+    return this.committedTotal + this.currentLine.length;
+  }
+
+  /** The output since a position, as far back as it's kept (finished lines, then the cursor's line) */
+  outputFrom(position: number): string {
+    if (position >= this.committedTotal) {
+      return this.currentLine.slice(Math.min(this.currentLine.length, position - this.committedTotal));
     }
-    const from = Math.max(0, this.mark - this.recentStart);
+    const from = Math.max(0, position - this.recentStart);
     return this.recent.slice(from) + this.currentLine;
   }
 

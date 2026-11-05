@@ -24,6 +24,9 @@ const NAMES: Record<string, string> = {
   F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5", F6: "F6", F7: "F7", F8: "F8", F9: "F9", F10: "F10", F11: "F11",
   F12: "F12", F13: "F13", F14: "F14", F15: "F15", F16: "F16",
   MULTIPLY: "*", ADD: "+", SUBTRACT: "-", DIVIDE: "/", "+": "+", "%": "%", "^": "^",
+  // SuperXTerminal's own: a lone space can't be written after SENDCHAR (the line's end is trimmed), and --More--
+  // pages on with Space
+  SPACE: " ",
 };
 
 /** Every SENDKEY key name, for the reference and the checker */

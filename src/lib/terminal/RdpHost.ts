@@ -467,6 +467,21 @@ export class RdpHost {
     return this.id !== null && !this.ended;
   }
 
+  /** A remote desktop has no output to save: always at its start */
+  position(): number {
+    return 0;
+  }
+
+  /** A remote desktop has no output to save */
+  outputFrom(): string {
+    return "";
+  }
+
+  /** The connection a script is typing into, a new one at each reconnect; null while it's down (as PageHost's) */
+  connection(): number | null {
+    return this.canReceiveCommands ? this.id : null;
+  }
+
   /** Whether the session has ended */
   get isEnded(): boolean {
     return this.ended;

@@ -1,7 +1,8 @@
 <!--
   New Button / Edit Button, as SuperXPuTTY's dlgEditCommandButton: Label (required), Tooltip, Action (Send string or
-  Run SPSL script), Icon (none, a colour circle, or a session icon), and the text to send or the script. For a script
-  the SPSL panel shows beside it, and OK checks the script first.
+  Run SPSL script), Icon (none, a colour circle, or a session icon), and the text to send or the script, in the script
+  box (Monaco, with SPSL's colours for a script, and Wrap lines). For a script the SPSL panel shows beside it, and OK
+  checks the script first.
 -->
 <script lang="ts">
   import { untrack } from "svelte";
@@ -9,6 +10,7 @@
   import Icon from "../icons/Icon.svelte";
   import IconPicker from "../icons/IconPicker.svelte";
   import SpslHelp from "../scripting/SpslHelp.svelte";
+  import ScriptBox from "../scripting/ScriptBox.svelte";
   import { SEND_STRING_HELP } from "../scripting/sendString";
   import type { CustomIcon } from "../icons/custom";
   import type { BarButton } from "./bars";
@@ -36,7 +38,7 @@
   let draft = $state<BarButton>(untrack(() => (button ? { ...button } : { label: "", tooltip: "", color: "", icon: "", action: "SendString", text: "" })));
   let error = $state("");
   let picking = $state(false);
-  let textBox: HTMLTextAreaElement;
+  let textBox: ScriptBox | undefined = $state();
   let help: SpslHelp | undefined = $state();
 
   /** Whether the command is an SPSL script, which shows the SPSL panel */
@@ -44,9 +46,7 @@
 
   /** Put text in the command at the cursor, in place of what's selected */
   function insert(text: string): void {
-    const at = textBox.selectionStart ?? draft.text.length;
-    draft.text = draft.text.slice(0, at) + text + draft.text.slice(textBox.selectionEnd ?? at);
-    queueMicrotask(() => textBox.focus());
+    textBox?.insert(text);
   }
 
   /** Check the button has a label and a command, then give it back */
@@ -97,9 +97,9 @@
             {#if draft.icon}<Icon key={draft.icon} size={18} {customs} />{/if}Choose icon…
           </button>
         </div>
-        <label class="text"><span>{spsl ? "Script:" : "Send:"}</span>
-          <textarea bind:this={textBox} bind:value={draft.text} rows="9" spellcheck="false"></textarea>
-        </label>
+        <div class="text"><span>{spsl ? "Script:" : "Send:"}</span>
+          <ScriptBox bind:this={textBox} bind:value={draft.text} language={spsl ? "spsl" : "plain"} label={spsl ? "Script" : "Send"} />
+        </div>
         <p class="hint">{spsl ? "SPSL: one command per line; see the panel on the right." : SEND_STRING_HELP}</p>
       </div>
       {#if spsl}
@@ -156,10 +156,12 @@
     height: 440px;
   }
 
+  /* a column, so the script box takes the height the other fields leave */
   .fields {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 8px;
-    align-content: start;
+    min-height: 0;
   }
 
   header,
@@ -189,19 +191,16 @@
     width: 70px;
   }
 
-  label.text {
-    align-items: start;
-  }
-
-  textarea {
-    font-family: Menlo, "Lucida Console", monospace;
-    font-size: 12px;
-    resize: vertical;
+  .text {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    gap: 8px;
+    flex: 1;
+    min-height: 200px;
   }
 
   input,
   select,
-  textarea,
   button {
     background: var(--bg-input);
     border: 1px solid var(--border);

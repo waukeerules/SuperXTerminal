@@ -11,7 +11,8 @@ import { settings } from "../settings/store.svelte";
 import { resolveSnippet, askOne } from "../scripting/asking.svelte";
 import { parseSendString } from "../scripting/sendString";
 import { clipboardText } from "../clipboard";
-import { ScriptRun, runScript, type ScriptHost } from "../scripting/spsl";
+import { ScriptRun, runScript, scriptVariables, type ScriptHost } from "../scripting/spsl";
+import type { SessionView } from "../sessions/api";
 
 /**
  * The window's tab area and what scripts need from the window; App sets them once it has them. Reactive: App sets
@@ -26,9 +27,12 @@ export const context: {
   editVariables: () => void;
   /** A session's own button bar by its "store:id" (the tree's, so it's read again when Edit Session saves); "" for none */
   sessionBar: (key: string) => string;
+  /** A session by its "store:id", as the Sessions tree has it; undefined for none (a Local Shell, Quick connect) */
+  sessionOf: (key: string) => SessionView | undefined;
 } = $state({
   tabs: null,
   sessionBar: () => "",
+  sessionOf: () => undefined,
   status: () => {},
   openSession: () => false,
   editVariables: () => {},
@@ -97,23 +101,60 @@ export async function sendString(text: string, targets: CommandTab[], color = ""
   );
 }
 
-/** What scripts ask the window for: PROMPT and PWDPROMPT, OPENSESSION, the status bar */
+/** What scripts ask the window for: PROMPT and PWDPROMPT, OPENSESSION, the status bar, SAVE's file and CALL's script */
 const host: ScriptHost = {
   ask: askOne,
   openSession: (id) => context.openSession(id),
   status: (text) => context.status(text),
+  save: (path, text, append) => invoke<string>("script_output_save", { path, text, append }),
+  loadScript: (name) => invoke<string>("script_load", { name, kind: "spsl" }),
 };
+
+/**
+ * Fill a script's Environment Variables in before it runs, as fillPlaceholders, leaving the script's own {variables}
+ * (SET, /var:, a match's {0}…{9} and named groups) for it to fill as it runs: they aren't Environment Variables, and
+ * asking to define them would stop the script. Null when one is missing (the window offers Environment Variables).
+ */
+export async function fillScriptPlaceholders(script: string): Promise<string | null> {
+  const own = scriptVariables(script);
+  // kept aside as text no Environment Variable can match, then put back
+  const hidden = script.replace(/\{(\w+)\}/g, (whole, name: string) => (own.has(name.toLowerCase()) ? `\u0000${name}\u0001` : whole));
+  const filled = await fillPlaceholders(hidden);
+  return filled === null ? null : filled.replace(/\u0000(\w+)\u0001/g, "{$1}");
+}
+
+/**
+ * The session's values a script in its tab starts with (SESSION_VARIABLES), as the Sessions tree has it; none for a
+ * tab without a session (a Local Shell, Quick connect)
+ */
+export function sessionValues(key: string): Record<string, string> {
+  const session = key ? context.sessionOf(key) : undefined;
+  if (!session) return {};
+  return {
+    host_address: session.host,
+    // a session saved without a port connects on its protocol's usual one
+    host_port: session.port ? String(session.port) : ({ SSH: "22", TELNET: "23", RDP: "3389" } as Record<string, string>)[session.protocol.toUpperCase() || "SSH"] ?? "",
+    session_name: session.name,
+    session_id: session.id,
+    session_folder: session.folder,
+    session_username: session.username,
+    session_profile: session.profile,
+    session_protocol: session.protocol,
+  };
+}
 
 /**
  * Run an SPSL script in a tab, as ctlPuttyPanel.RunScript; `fromStart` for a session's own script (its first WAITFOR
  * sees everything since the session started). `source` is what started it (a button's label), for its spinner.
+ * `stepping` (the Script Editor's Step) pauses before each line until Next line in the status bar.
  */
-export function runScriptIn(tab: CommandTab, script: string, name: string, fromStart = false, source = ""): void {
-  const lines = script.split("\n").filter((l) => l.trim() && !l.trimStart().startsWith("#")).length;
-  const run = new ScriptRun(name, tab.title, lines);
+export function runScriptIn(tab: CommandTab, script: string, name: string, fromStart = false, source = "", stepping = false): void {
+  // the script's own lines, comments included, as the editor numbers them and the run reports them
+  const lines = script.replace(/\s+$/, "").split("\n").length;
+  const run = new ScriptRun(name, tab.title, lines, stepping);
   const entry = { run, tab: tab.title, tabId: tab.id, started: Date.now(), source };
   running.runs = [...running.runs, entry];
-  void runScript(tab.host, host, run, script, fromStart).finally(() => {
+  void runScript(tab.host, host, run, script, fromStart, sessionValues(tab.session)).finally(() => {
     // the list holds proxies of the entries, so compare the run (a class, which isn't proxied)
     running.runs = running.runs.filter((r) => r.run !== run);
   });

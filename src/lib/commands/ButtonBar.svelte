@@ -19,7 +19,7 @@
   import TabIcons from "./TabIcons.svelte";
   import { barFor, buttonColour, exportBar, importBars, loadBars, saveBars, type Bar, type BarButton } from "./bars";
   import { listProfiles, PROFILES_CHANGED } from "../settings/profiles";
-  import { activeTarget, context, fillPlaceholders, runScriptIn, running, selectedTargets, sendString } from "./sending.svelte";
+  import { activeTarget, context, fillPlaceholders, fillScriptPlaceholders, runScriptIn, running, selectedTargets, sendString } from "./sending.svelte";
   import { resolveSnippet } from "../scripting/asking.svelte";
   import { saveSettings, settings } from "../settings/store.svelte";
   import type { CustomIcon } from "../icons/custom";
@@ -124,7 +124,8 @@
       context.status(toSelected ? "No selected sessions to send to" : "No active session to send to");
       return;
     }
-    const filled = await fillPlaceholders(button.text);
+    // a script's own {variables} are its to fill as it runs
+    const filled = button.action === "SpslScript" ? await fillScriptPlaceholders(button.text) : await fillPlaceholders(button.text);
     if (filled === null) return;
     const text = await resolveSnippet(filled, `Button "${button.label}"`);
     if (text === null) return;

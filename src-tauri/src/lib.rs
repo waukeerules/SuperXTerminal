@@ -514,6 +514,55 @@ fn session_script(state: State<'_, AppState>, store: sessions::Store, id: String
     read_script(&spec, profile, &folder)
 }
 
+/// What a Quick connect tab's script needs: the script its profile runs, and the values the typed fields give it in
+/// place of a saved session's ({host_address}, {session_username}...), so a jump server profile's script (Log in here)
+/// goes on to the host typed
+#[derive(serde::Serialize)]
+struct QuickScript {
+    script: SessionScript,
+    values: std::collections::BTreeMap<String, String>,
+}
+
+/// The script a Quick connect tab runs as it opens (its profile's, else Default Settings'), and the typed fields as
+/// the session's values, parsed as the launch parses them ("user@host:port")
+#[tauri::command]
+fn quick_connect_script(state: State<'_, AppState>, quick: launch::QuickConnect) -> Result<QuickScript, String> {
+    let session = quick.session()?;
+    let folder = shared_folder(&state);
+    let profiles = state.profiles.lock().unwrap().clone();
+    // a one-off session is in no folder, so no folder's profile applies
+    let script = match script_spec(&sessions::Sessions::default(), &profiles, sessions::Store::Saved, &session) {
+        Some((spec, profile)) => read_script(&spec, profile, &folder),
+        None => SessionScript::None,
+    };
+    Ok(QuickScript { script, values: quick_values(&session) })
+}
+
+/// A Quick connect session's values for its scripts, as a saved session's are (sending.svelte.ts's sessionValues):
+/// its host, port (the protocol's usual one when none is typed), username, profile and protocol, named by its host
+fn quick_values(session: &sessions::StoredSession) -> std::collections::BTreeMap<String, String> {
+    let protocol = session.get("Proto").to_string();
+    let port = match session.port() {
+        0 => match protocol.to_ascii_uppercase().as_str() {
+            "" | "SSH" => "22".to_string(),
+            "TELNET" => "23".to_string(),
+            _ => String::new(),
+        },
+        port => port.to_string(),
+    };
+    [
+        ("host_address", session.get("Host").to_string()),
+        ("host_port", port),
+        ("session_name", session.get("Host").to_string()),
+        ("session_username", session.get("Username").to_string()),
+        ("session_profile", session.get("PuttySession").to_string()),
+        ("session_protocol", protocol),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect()
+}
+
 /// A script's text from where it's named: an http(s) address is left for the window to fetch; a file is absolute,
 /// file://, or relative to the settings folder
 fn read_script(spec: &str, profile: Option<String>, folder: &std::path::Path) -> SessionScript {
@@ -2671,6 +2720,7 @@ pub fn run() {
             buttonbars_import,
             scripts_list,
             session_script,
+            quick_connect_script,
             script_load,
             script_save,
             script_delete,
@@ -2825,6 +2875,28 @@ mod tests {
         assert_eq!(spec(&at(&[("PuttySession", "Default Settings")])), Some(("cisco.spsl".into(), Some("Cisco".into()))));
         // its own script wins
         assert_eq!(spec(&at(&[("PuttySession", "Linux"), ("SPSLFileName", "own.spsl")])), Some(("own.spsl".into(), None)));
+    }
+
+    #[test]
+    fn a_quick_connects_typed_fields_are_its_scripts_session_values() {
+        let quick = crate::launch::QuickConnect {
+            protocol: "SSH".into(),
+            host: "admin@192.168.0.50".into(),
+            username: String::new(),
+            password: "never shown".into(),
+            profile: "Jump Host".into(),
+        };
+        let values = super::quick_values(&quick.session().unwrap());
+        let get = |k: &str| values.get(k).map(String::as_str).unwrap_or("?");
+        assert_eq!(
+            [get("host_address"), get("host_port"), get("session_name"), get("session_username"), get("session_profile"), get("session_protocol")],
+            ["192.168.0.50", "22", "192.168.0.50", "admin", "Jump Host", "SSH"]
+        );
+        // the password typed stays out of the script's values
+        assert!(!values.values().any(|v| v.contains("never shown")));
+        let typed_port = crate::launch::QuickConnect { host: "sw1:2222".into(), username: "me".into(), ..quick };
+        let values = super::quick_values(&typed_port.session().unwrap());
+        assert_eq!((values["host_address"].as_str(), values["host_port"].as_str(), values["session_username"].as_str()), ("sw1", "2222", "me"));
     }
 
     #[test]

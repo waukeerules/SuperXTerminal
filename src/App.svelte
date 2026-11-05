@@ -33,7 +33,7 @@
   import SearchOutput from "./lib/terminal/SearchOutput.svelte";
   import SerialSettings from "./lib/terminal/SerialSettings.svelte";
   import QuickSelector, { type QuickItem } from "./lib/sessions/QuickSelector.svelte";
-  import type { PageHost } from "./lib/terminal/PageHost";
+  import type { PageHost, QuickConnect as QuickFields } from "./lib/terminal/PageHost";
   import type { MovingTab } from "./lib/layout/TabArea";
   import LayoutsList from "./lib/layout/LayoutsList.svelte";
   import LogViewer from "./lib/layout/LogViewer.svelte";
@@ -325,6 +325,12 @@
     return () => window.removeEventListener("blur", blurred);
   });
 
+  /**
+   * The script a tab opens with, as the core finds it (session_script, quick_connect_script): none, its text, an
+   * http(s) address to fetch, or a file that isn't there; with the profile it's from, when it's a profile's
+   */
+  type FoundScript = { kind: string; text?: string; url?: string; path?: string; profile?: string | null };
+
   /** Open a session from the tree in a new tab */
   function openSession(session: SessionView, environment: string | null): void {
     if (settings.sessionsAutoHide) slideIn();
@@ -345,15 +351,38 @@
   }
 
   /**
+   * Open Quick connect's one-off session in a tab, and run its profile's SPSL script there, as a saved session's
+   * (a jump server profile's goes on to the host typed: the typed fields are the script's session values)
+   */
+  function openQuickConnect(quick: QuickFields, title: string, local: boolean): void {
+    const id = tabs?.openQuickConnect(quick, title, local);
+    if (!id || local) return;
+    void invoke<{ script: FoundScript; values: Record<string, string> }>("quick_connect_script", { quick })
+      .then(({ script, values }) => {
+        tabs?.setScriptValues(id, values);
+        return runOpeningScript(script, title, id);
+      })
+      .catch(() => {});
+  }
+
+  /**
    * The session's own script (Edit Session's SPSL script), else its profile's (Settings > Profiles), as SuperXPuTTY
    * runs a session's when it opens: only a script starting #!/bin/spsl, and its first WAITFOR sees everything since
    * the session started
    */
   async function runOwnScript(session: SessionView, tabId: string): Promise<void> {
-    const found = await invoke<{ kind: string; text?: string; url?: string; path?: string; profile?: string | null }>("session_script", { store: session.store, id: session.id });
+    const found = await invoke<FoundScript>("session_script", { store: session.store, id: session.id });
+    await runOpeningScript(found, session.name, tabId);
+  }
+
+  /**
+   * Run the script a tab opens with (a session's own or its profile's, as the core found it) once the tab has started:
+   * only a script starting #!/bin/spsl; a file that isn't there is told in the status bar
+   */
+  async function runOpeningScript(found: FoundScript, name: string, tabId: string): Promise<void> {
     let script = found.text ?? "";
     if (found.kind === "url" && found.url) script = await fetch(found.url).then((r) => (r.ok ? r.text() : "")).catch(() => "");
-    const whose = found.profile ? `The ${found.profile} profile's` : `${session.name}'s`;
+    const whose = found.profile ? `The ${found.profile} profile's` : `${name}'s`;
     if (found.kind === "missing") status = `${whose} script ${found.path} isn't on ${THIS_COMPUTER}`;
     if (!script.startsWith("#!/bin/spsl")) return;
     const tab = tabs?.tabList().find((t) => t.id === tabId);
@@ -487,7 +516,7 @@
         const scheme = request.host.includes("://") ? request.host.slice(0, request.host.indexOf("://")).toUpperCase() : request.protocol.toUpperCase();
         const local = opensAsLocalShell(scheme);
         const title = request.host.replace(/^\w+:\/\//, "").replace(/^[^@]*@/, "") || "Local Shell";
-        tabs?.openQuickConnect({ protocol: request.protocol, host: request.host, username: request.username, password: request.password, profile: request.profile || "Default Settings" }, title, local);
+        openQuickConnect({ protocol: request.protocol, host: request.host, username: request.username, password: request.password, profile: request.profile || "Default Settings" }, title, local);
         status = `Opened session: ${title} [${scheme}]`;
       }
     }
@@ -702,7 +731,7 @@
 
 <div class="window">
   <QuickConnect onProblem={(text) => (status = text)} onEditProfile={(name) => void openProfiles(name)} onConnect={(quick, title, local) => {
-    tabs?.openQuickConnect(quick, title, local);
+    openQuickConnect(quick, title, local);
     status = `Opened session: ${title} [${quick.protocol}]`;
   }} />
   {#if settings.showSendCommands}

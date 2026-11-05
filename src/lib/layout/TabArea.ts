@@ -339,6 +339,8 @@ export interface TabInfo {
   title: string;
   /** The session it runs, "store:id"; "" for a Local Shell or Quick connect */
   session: string;
+  /** Session values its scripts get in place of a saved session's: Quick connect's typed host and login; none else */
+  values?: Record<string, string>;
   icon: string;
   /** The profile its session uses, once it has started (its button bar shows while the tab is active); "" for none */
   profile: string;
@@ -415,6 +417,8 @@ export class TabArea {
   customs: ReadonlyMap<string, CustomIcon> = new Map();
   /** The session ("store:id") each open tab runs, by panel id, for marking open sessions in the tree */
   private readonly sessions = new Map<string, string>();
+  /** Quick connect tabs' typed fields as session values for their scripts ({host_address}...), by panel id */
+  private readonly scriptValues = new Map<string, Record<string, string>>();
   /** Each tab's page host, by panel id */
   readonly hosts = new Map<string, PageHost>();
   /** Highlighted Output panels, by the tab they follow */
@@ -462,6 +466,7 @@ export class TabArea {
       this.outputs.delete(panel.id);
       this.hosts.delete(panel.id);
       this.refusing.delete(panel.id);
+      this.scriptValues.delete(panel.id);
       if (this.sessions.delete(panel.id)) this.onOpenChanged(new Set(this.sessions.values()));
       this.changed();
     });
@@ -547,9 +552,14 @@ export class TabArea {
     return panelId;
   }
 
-  /** Open a tab for Quick connect's one-off session */
-  openQuickConnect(quick: QuickConnect, title: string, local: boolean): void {
-    this.add(title, { target: { kind: "quickConnect", ...quick }, local, icon: local ? "terminal" : "computer", environment: null });
+  /** Open a tab for Quick connect's one-off session; returns its panel id */
+  openQuickConnect(quick: QuickConnect, title: string, local: boolean): string {
+    return this.add(title, { target: { kind: "quickConnect", ...quick }, local, icon: local ? "terminal" : "computer", environment: null });
+  }
+
+  /** Give a tab's scripts these session values (Quick connect's typed fields), as a saved session's tab has its own */
+  setScriptValues(panelId: string, values: Record<string, string>): void {
+    this.scriptValues.set(panelId, values);
   }
 
   /** Each tab's title as opened, by panel id */
@@ -915,6 +925,7 @@ export class TabArea {
           id: panel.id,
           title: panel.title ?? "",
           session: this.sessions.get(panel.id) ?? "",
+          values: this.scriptValues.get(panel.id),
           icon: params.icon,
           profile: host.profileName,
           host,
@@ -939,6 +950,7 @@ export class TabArea {
           id: panel.id,
           title: panel.title ?? "",
           session: this.sessions.get(panel.id) ?? "",
+          values: this.scriptValues.get(panel.id),
           icon: params.icon,
           profile: rdp ? "" : (host as PageHost).profileName,
           host,

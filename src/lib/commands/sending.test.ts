@@ -1,9 +1,9 @@
 // What a script starts with in a tab: the tab's session's values (sessionValues, from the Sessions tree through
-// context.sessionOf), and Environment Variables filled in without touching the script's own {variables} or the
-// session's (fillScriptPlaceholders). The Rust side is stood in for by mockIPC: variables_fill knows {site} only.
+// context.sessionOf; a Quick connect tab's typed fields, tabValues), and Environment Variables filled in without
+// touching the script's own {variables} or the session's (fillScriptPlaceholders). The Rust side is stood in for by mockIPC: variables_fill knows {site} only.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { context, fillScriptPlaceholders, sessionValues } from "./sending.svelte";
+import { context, fillScriptPlaceholders, sessionValues, tabValues } from "./sending.svelte";
 import type { SessionView } from "../sessions/api";
 
 /** A saved SSH session, as the tree has it */
@@ -40,6 +40,14 @@ describe("a script's start", () => {
     });
     // a Local Shell or Quick connect has no session
     expect(sessionValues("")).toEqual({});
+  });
+
+  it("has a Quick connect tab's typed host and login, which has no saved session", () => {
+    const typed = { host_address: "192.168.0.50", host_port: "22", session_name: "192.168.0.50", session_username: "admin", session_profile: "Jump Host", session_protocol: "SSH" };
+    expect(tabValues({ session: "", values: typed })).toEqual(typed);
+    // a saved session's tab has its own, and a Local Shell none
+    expect(tabValues({ session: "saved:Lab/core-sw1" }).host_address).toBe("10.0.0.5");
+    expect(tabValues({ session: "" })).toEqual({});
   });
 
   it("fills Environment Variables in, but leaves the session's and the script's own {variables} for it", async () => {

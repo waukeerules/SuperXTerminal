@@ -144,6 +144,14 @@ export function sessionValues(key: string): Record<string, string> {
 }
 
 /**
+ * The session values a script in a tab starts with: its saved session's, or for a Quick connect tab the host and
+ * login typed (TabArea.setScriptValues), so a jump server profile's script goes on to the host typed
+ */
+export function tabValues(tab: { session: string; values?: Record<string, string> }): Record<string, string> {
+  return { ...sessionValues(tab.session), ...tab.values };
+}
+
+/**
  * Run an SPSL script in a tab, as ctlPuttyPanel.RunScript; `fromStart` for a session's own script (its first WAITFOR
  * sees everything since the session started). `source` is what started it (a button's label), for its spinner.
  * `stepping` (the Script Editor's Step) pauses before each line until Next line in the status bar.
@@ -154,7 +162,7 @@ export function runScriptIn(tab: CommandTab, script: string, name: string, fromS
   const run = new ScriptRun(name, tab.title, lines, stepping);
   const entry = { run, tab: tab.title, tabId: tab.id, started: Date.now(), source };
   running.runs = [...running.runs, entry];
-  void runScript(tab.host, host, run, script, fromStart, sessionValues(tab.session)).finally(() => {
+  void runScript(tab.host, host, run, script, fromStart, tabValues(tab)).finally(() => {
     // the list holds proxies of the entries, so compare the run (a class, which isn't proxied)
     running.runs = running.runs.filter((r) => r.run !== run);
   });

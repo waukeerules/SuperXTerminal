@@ -173,6 +173,8 @@ class OutputPanel implements IContentRenderer {
     const frame = document.createElement("iframe");
     frame.className = "terminal-frame";
     frame.setAttribute("aria-label", `Highlighted output of ${title}`);
+    // Monaco's own find (⌘F, Ctrl+F) rather than the terminal's (shortcuts.ts)
+    frame.dataset.ownKeys = "find";
     this.host = new OutputHost(id, frame, logPath, title);
     this.tabs.outputs.set(source, this.host);
     frame.src = `/web/output/index.html?tab=${encodeURIComponent(id)}`;
@@ -288,6 +290,8 @@ class ComparePanel implements IContentRenderer {
     const frame = document.createElement("iframe");
     frame.className = "terminal-frame";
     frame.setAttribute("aria-label", parameters.api.title ?? "Compare Output");
+    // Monaco's own find (⌘F, Ctrl+F) rather than the terminal's (shortcuts.ts)
+    frame.dataset.ownKeys = "find";
     frame.src = `/web/compare/index.html?tab=${encodeURIComponent(this.id)}`;
     this.tabs.watchFrame(frame, this.id);
     this.frame = frame;

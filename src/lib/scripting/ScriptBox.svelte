@@ -124,7 +124,8 @@
 
 <div class="script-box" class:popped role="group" aria-label={popped ? `${label} box, popped out` : `${label} box`}>
   <div class="area">
-    <iframe bind:this={frame} src="/web/script/index.html?tab={id}" title={label} class:hidden={!ready}></iframe>
+    <!-- every key is Monaco's (its own ⌘F find among them), none the app's: data-own-keys (shortcuts.ts) -->
+    <iframe bind:this={frame} src="/web/script/index.html?tab={id}" title={label} class:hidden={!ready} data-own-keys="*"></iframe>
     {#if !ready}
       <textarea bind:this={plainBox} bind:value aria-label={label} {placeholder} spellcheck="false" wrap={wrap ? "soft" : "off"}></textarea>
     {/if}

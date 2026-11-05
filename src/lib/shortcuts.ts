@@ -150,28 +150,33 @@ export function pressedKey(event: KeyboardEvent): string | null {
 /**
  * Catch the shortcuts and run each as its menu item would: on Windows in this window and its tabs' pages, on the Mac
  * in the tabs' pages only (the menu bar has the rest). Caught before the page sees the key (a terminal would type it).
+ * A page that handles some keys itself says which in its iframe's `data-own-keys`: action ids, space-separated, or
+ * "*" for all (the script box's Monaco keeps ⌘F, its own find; Highlighted Output keeps Find too).
  * @param run Runs an action by its id, as the window's "menu" events do
  */
 export function catchShortcuts(run: (id: string) => void): void {
   void loadShortcuts();
   void listen("settings-changed", () => void loadShortcuts());
-  const press = (event: KeyboardEvent) => {
+  /** The key handler for one window; `own` says which actions its page handles itself */
+  const pressIn = (own: () => string) => (event: KeyboardEvent) => {
     if (paused || event.repeat) return;
     const key = pressedKey(event);
     if (!key) return;
     const wanted = normalKey(key);
     const row = rows.find((r) => r.key && normalKey(r.key) === wanted);
     if (!row) return;
+    const keeps = own().trim();
+    if (keeps === "*" || keeps.split(/\s+/).includes(row.id)) return;
     event.preventDefault();
     event.stopPropagation();
     if (isMac) caught = { id: row.id, at: Date.now() };
     run(row.id);
   };
   const watched = new WeakSet<Window>();
-  const watch = (target: Window | null) => {
+  const watch = (target: Window | null, own: () => string = () => "") => {
     if (!target || watched.has(target)) return;
     try {
-      target.addEventListener("keydown", press, true);
+      target.addEventListener("keydown", pressIn(own), true);
       watched.add(target);
     } catch {
       // a page from elsewhere (none today) can't be listened to
@@ -179,8 +184,10 @@ export function catchShortcuts(run: (id: string) => void): void {
   };
   // each tab's page is an iframe, whose window is new each time it loads
   const watchFrame = (frame: HTMLIFrameElement) => {
-    watch(frame.contentWindow);
-    frame.addEventListener("load", () => watch(frame.contentWindow));
+    // read as each key comes, so it can be set after the frame is in the page
+    const own = () => frame.dataset.ownKeys ?? "";
+    watch(frame.contentWindow, own);
+    frame.addEventListener("load", () => watch(frame.contentWindow, own));
   };
   // the Mac's menu bar catches the main window's keys itself
   if (!isMac) watch(window);

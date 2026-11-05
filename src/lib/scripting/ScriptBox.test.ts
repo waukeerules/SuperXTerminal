@@ -47,6 +47,8 @@ describe("the script box", () => {
     expect(box.value).toBe("WAITFOR #\nSENDLINE show clock");
     // no size handle: the box can't be dragged past its dialog
     expect(getComputedStyle(box).resize).toBe("none");
+    // every key is Monaco's (⌘F its own find), none caught for the app's shortcuts
+    expect(document.querySelector("iframe")!.dataset.ownKeys).toBe("*");
     box.setSelectionRange(10, 10);
     harness.insert("SLEEP 500\n");
     expect(harness.current()).toBe("WAITFOR #\nSLEEP 500\nSENDLINE show clock");

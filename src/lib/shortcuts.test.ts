@@ -1,19 +1,29 @@
 // Shortcuts caught in the page (catchShortcuts): on the Mac, ⌘W in a tab's page closes the tab once, though the
 // menu bar may get the key too (fromMenu drops its copy), and the main window's own ⌘ keys stay its own; on Windows,
-// the main window's keys are caught too. The system is stood in for by the user agent, read when shortcuts.ts loads
-// (so it's loaded again for each); the Rust side by mockIPC, giving Close Tab's key; a tab's page by an iframe.
+// the main window's keys are caught too; and a page that handles keys itself (the script box's Monaco: ⌘F) keeps
+// them. The system is stood in for by the user agent, read when shortcuts.ts loads (so it's loaded again for each);
+// the Rust side by mockIPC, giving Close Tab's and Find's keys; a tab's page by an iframe.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 
-/** Load shortcuts.ts as on the Mac or Windows, with Close Tab on its key, and catch shortcuts into `ran` */
-async function catching(mac: boolean): Promise<{ ran: string[]; shortcuts: typeof import("./shortcuts"); frame: HTMLIFrameElement }> {
+/**
+ * Load shortcuts.ts as on the Mac or Windows, with Close Tab and Find on their keys, and catch shortcuts into `ran`
+ * @param ownKeys The iframe's data-own-keys: the actions its page handles itself
+ */
+async function catching(mac: boolean, ownKeys?: string): Promise<{ ran: string[]; shortcuts: typeof import("./shortcuts"); frame: HTMLIFrameElement }> {
   vi.resetModules();
   vi.stubGlobal("navigator", { ...navigator, userAgent: mac ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" : "Mozilla/5.0 (Windows NT 10.0)" });
   mockIPC((cmd) => {
-    if (cmd === "shortcuts_keys") return [{ id: "closeTab", label: "Close Tab", default: "", key: mac ? "CmdOrCtrl+W" : "Ctrl+Shift+W" }];
+    if (cmd === "shortcuts_keys") {
+      return [
+        { id: "closeTab", label: "Close Tab", default: "", key: mac ? "CmdOrCtrl+W" : "Ctrl+Shift+W" },
+        { id: "find", label: "Find…", default: "", key: mac ? "CmdOrCtrl+F" : "Ctrl+Shift+F" },
+      ];
+    }
     return null;
   });
   const frame = document.createElement("iframe");
+  if (ownKeys !== undefined) frame.dataset.ownKeys = ownKeys;
   document.body.append(frame);
   const shortcuts = await import("./shortcuts");
   const ran: string[] = [];
@@ -59,5 +69,21 @@ describe("on Windows", () => {
     press(frame.contentWindow!, { code: "KeyW", key: "W", ctrlKey: true, shiftKey: true });
     expect(ran).toEqual(["closeTab", "closeTab"]);
     expect(shortcuts.fromMenu("closeTab")).toBe(true);
+  });
+});
+
+describe("a page that handles keys itself", () => {
+  it("keeps every key when its frame says *: the script box's ⌘F is Monaco's find", async () => {
+    const { ran, frame } = await catching(true, "*");
+    expect(press(frame.contentWindow!, { code: "KeyF", key: "f", metaKey: true })).toBe(false);
+    expect(press(frame.contentWindow!, { code: "KeyW", key: "w", metaKey: true })).toBe(false);
+    expect(ran).toEqual([]);
+  });
+
+  it("keeps only the actions its frame names: Highlighted Output's Find, while ⌘W still closes the tab", async () => {
+    const { ran, frame } = await catching(true, "find");
+    expect(press(frame.contentWindow!, { code: "KeyF", key: "f", metaKey: true })).toBe(false);
+    expect(press(frame.contentWindow!, { code: "KeyW", key: "w", metaKey: true })).toBe(true);
+    expect(ran).toEqual(["closeTab"]);
   });
 });

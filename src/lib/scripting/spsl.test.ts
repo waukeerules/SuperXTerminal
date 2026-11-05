@@ -675,7 +675,7 @@ describe("the guide and the example scripts", () => {
     const examples = [...guide.matchAll(/```\r?\n([\s\S]*?)```/g)].map((m) => m[1]).filter((b) => !b.includes("script     =") && !b.startsWith("EXPECT [/t:"));
     const tours = Object.values(import.meta.glob<string>("/docs/spsl-examples/*.spsl", { query: "?raw", import: "default", eager: true }));
     expect(examples.length).toBeGreaterThan(10);
-    expect(tours.length).toBe(2);
+    expect(tours.length).toBe(3);
     // {username} and {ftp_user} are Environment Variables the reader defines
     const problems = [...examples, ...tours].flatMap((script) =>
       checkScript(script, () => true, (text) => (text.match(/\{\w+\}/g) ?? []).filter((m) => !["{username}", "{ftp_user}"].includes(m)), () => true)

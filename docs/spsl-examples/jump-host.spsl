@@ -1,0 +1,77 @@
+#!/bin/spsl
+# jump-host.spsl: from a Linux jump server's tab, SSH on to another host with the session's own values, run a
+# command there, and come back. Written to try on an OpenMediaVault (Debian) server: with no other host to go to, it
+# hops from the server to itself ({host_address}), which is a real second SSH login, so it shows every step.
+#
+# To go somewhere else, change the two SETs below, or replace them with
+#   PROMPT /var:target Which host, from {session_name}?
+#
+# It only runs echo, hostname and exit. Nothing is changed on either end.
+#
+# Markers: each check prints, say, HOP-$((1+1)), and the script waits for HOP-2. The shell works the sum out, so the
+# typed command (echoed back) never matches; only the shell's answer does.
+#
+# How it tells the hop worked: $SSH_CLIENT is the address an SSH login came from. On the jump server that's this
+# computer; on the target it's the jump server. So the two differ even when the target is the same server.
+
+# ---- 0. Ground rules: 2 minutes at most, and stop at once if ssh can't get there ----------------------------------
+LIMIT 2m
+FAILON /re ^ssh: .*(Could not resolve|Connection refused|Connection timed out|No route to host)
+
+# ---- 1. Where to go: the session's own values, asked for when there's no username ---------------------------------
+SET target {host_address}
+SET user {session_username}
+IF {user} !~ /./
+  PROMPT /var:user Which username on {target}?
+END
+ECHO Jumping from {session_name} to {user}@{target}
+
+# ---- 2. On the jump server: note where this login came from ------------------------------------------------------
+SENDLINE
+WAITPROMPT /t:5 /else:noprompt
+SENDLINE echo "HOP-$((0+1)) $(hostname) from=$SSH_CLIENT"
+WAITFOR /re HOP-1 (\S+) from=(\S+)
+SET jumphost {1}
+SET jumpfrom {2}
+WAITPROMPT
+
+# ---- 3. The hop: answer whatever ssh asks, in whatever order --------------------------------------------------------
+SENDLINE ssh {user}@{target}
+EXPECT /t:30 /else:nologin
+  CASE "(yes/no"
+    SENDLINE yes
+    AGAIN
+  CASE /password:/i
+    PWDPROMPT
+    AGAIN
+  CASE /Permission denied/
+    STOP {user}@{target} turned the login down
+  CASE PROMPT
+END
+
+# ---- 4. On the target: prove it, and run the command ---------------------------------------------------------------
+SENDLINE echo "HOP-$((1+1)) $(hostname) from=$SSH_CLIENT"
+WAITFOR /t:10 /re HOP-2 (\S+) from=(\S+)
+SET targethost {1}
+SET targetfrom {2}
+WAITPROMPT
+IF {targetfrom} == {jumpfrom}
+  STOP still on {jumphost}: the ssh to {target} didn't log in
+END
+SENDLINE echo "Hello from $(hostname), reached through {jumphost}"
+WAITPROMPT
+
+# ---- 5. Back to the jump server ---------------------------------------------------------------------------------
+SENDLINE exit
+WAITFOR /t:10 /re Connection to \S+ closed
+WAITPROMPT
+SENDLINE echo "HOP-$((1+2)) back on $(hostname)"
+WAITFOR /re HOP-3 back on
+WAITPROMPT
+STOP Done: {jumphost} to {targethost} ({user}@{target}) and back
+
+:nologin
+STOP no prompt from {target} within 30 s
+
+:noprompt
+STOP no prompt from {session_name}: press Enter in the tab and run it again

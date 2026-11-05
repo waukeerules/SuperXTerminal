@@ -1501,9 +1501,13 @@
         }
     }
 
-    /** The tab menu's PuTTY items (Clear Scrollback, Reset Terminal, Copy All to Clipboard), sent by TerminalControl */
+    /**
+     * The tab menu's PuTTY items (Clear Scrollback, Reset Terminal, Copy All to Clipboard), sent by TerminalControl, and
+     * SuperXTerminal's Find… (its shortcut is caught before the page sees it, so it can't come as the page's own key)
+     */
     function runAction(name) {
         switch (name) {
+            case 'find': openFind(); break;
             case 'clearScrollback': clearScrollback(); break;
             case 'reset':
                 term.reset();

@@ -659,15 +659,18 @@ export class PageHost implements ScriptTarget {
     this.onState();
   }
 
-  /** One of the page's actions: "copyAll", "clearScrollback" or "reset" */
+  /** One of the page's actions: "copyAll", "clearScrollback", "reset" or "find" */
   action(name: string): void {
     this.post({ type: "action", name });
   }
 
-  /** Edit > Find… (Cmd+F): the page's own find bar, which it opens on Ctrl+Shift+F */
+  /**
+   * Edit > Find… (Cmd+F, Ctrl+Shift+F on Windows): the page's own find bar. Asked for as an action, not as the
+   * Ctrl+Shift+F the page opens it on: on Windows that's Find's shortcut too, which the app catches in the page
+   * (shortcuts.ts), so the key came back here as Find again, round and round, and never reached the page
+   */
   find(): void {
-    const input = this.frame.contentDocument?.querySelector(".xterm-helper-textarea");
-    input?.dispatchEvent(new KeyboardEvent("keydown", { key: "F", code: "KeyF", keyCode: 70, ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    this.action("find");
   }
 
   /** Refresh tab: fit the terminal to the tab again and redraw it */

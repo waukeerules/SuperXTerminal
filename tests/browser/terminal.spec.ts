@@ -483,3 +483,13 @@ test("a file dropped on the terminal doesn't open in its place", async ({ page }
   });
   expect(stopped).toBe(true);
 });
+
+test.describe("Find", () => {
+  test("opens on the app's Find, which comes as an action: on Windows its key never reaches the page", async ({ page }) => {
+    await openTerminal(page, {});
+    await expect(page.locator("#find")).toBeHidden();
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "action", name: "find" }));
+    await expect(page.locator("#find")).toBeVisible();
+    await expect(page.locator("#findText")).toBeFocused();
+  });
+});

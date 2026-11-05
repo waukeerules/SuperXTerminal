@@ -1,11 +1,13 @@
 // A session's tab when ssh ends: what it says and whether it reconnects by itself, read from ssh's last words, and
 // the profile change it offers (F). The Rust side is stood in for by mockIPC: pty_open hands over the tab's channel,
 // which the test feeds ssh's output and its end. Also the tab's size reaching the pseudo terminal as the session starts,
-// Reconnect, the anti-idle string typed after a quiet spell, and a paste taking the clipboard from the system.
+// Reconnect, the anti-idle string typed after a quiet spell, a paste taking the clipboard from the system, and Find
+// (Ctrl+Shift+F) opening the page's find bar on Windows, where the app catches that key in the page itself.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import { PageHost } from "./PageHost";
+import { catchShortcuts, loadShortcuts } from "../shortcuts";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "../settings/profiles";
 import { settings } from "../settings/store.svelte";
 import { running } from "../commands/sending.svelte";
@@ -276,5 +278,24 @@ describe("the terminal's menu keys", () => {
     });
     // jsdom isn't the Mac, so Copy and Paste keep PuTTY's keys there; Find is the app's
     expect(config.keyLabels).toEqual({ find: "Ctrl+Shift+F" });
+  });
+});
+
+describe("Find", () => {
+  it("opens the page's find bar for Ctrl+Shift+F in the tab, where Windows' shortcut is that key too", async () => {
+    // on Windows the app catches its shortcuts in the tab's page (shortcuts.ts; jsdom isn't the Mac), and Find's is
+    // Ctrl+Shift+F, the key the page opens its find bar on. Find sent the page that key, which the app caught as Find
+    // again, round and round, and the page never had it
+    const pageKeys: string[] = [];
+    const typing = frame.contentDocument!.createElement("textarea");
+    typing.className = "xterm-helper-textarea";
+    typing.addEventListener("keydown", (e) => pageKeys.push(e.key));
+    frame.contentDocument!.body.append(typing);
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    catchShortcuts((id) => { if (id === "find") host?.find(); });
+    await loadShortcuts();
+    frame.contentWindow!.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyF", key: "F", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    expect(posted.filter((m) => m.type === "action")).toEqual([{ type: "action", name: "find" }]);
+    expect(pageKeys).toEqual([]);
   });
 });

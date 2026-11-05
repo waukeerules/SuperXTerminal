@@ -441,6 +441,9 @@ export class TabArea {
         : new TerminalPanel(this),
       // dockview only uses createTabComponent for a named tab component, so make ours the default
       defaultTabComponent: "session",
+      // dockview's own "⌄ 3" list of the tabs that don't fit: the ▾ beside it (TabListButton) lists all of the split's
+      // tabs already, so it only doubled it. The tabs that don't fit stay in the strip, which scrolls sideways
+      disableTabsOverflowList: true,
       createTabComponent: () => new TabLabel(this),
       createRightHeaderActionComponent: () => new TabListButton(this),
       // each tab's page stays where it is in the window and is only placed over its group, so moving a tab to

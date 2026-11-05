@@ -485,11 +485,43 @@ test("a file dropped on the terminal doesn't open in its place", async ({ page }
 });
 
 test.describe("Find", () => {
+  /** Watch what the page sends TerminalControl (through host/webview.js, to the page itself here) */
+  async function watchSent(page: Page) {
+    await page.evaluate(() => {
+      (window as any).sent = [];
+      window.addEventListener("message", (e) => { if (e.data?.channel === "sxt-page") (window as any).sent.push(e.data.message); });
+    });
+  }
+  /** The text of each copy the page asked for */
+  const copies = (page: Page) => page.evaluate(() => (window as any).sent.filter((m: any) => m.type === "copy").map((m: any) => m.text));
+
   test("opens on the app's Find, which comes as an action: on Windows its key never reaches the page", async ({ page }) => {
     await openTerminal(page, {});
     await expect(page.locator("#find")).toBeHidden();
     await page.evaluate(() => (window as any).terminalDev.message({ type: "action", name: "find" }));
     await expect(page.locator("#find")).toBeVisible();
     await expect(page.locator("#findText")).toBeFocused();
+  });
+
+  test("leaves Copy on Select on: text selected while the find bar is open is copied, Find's own match isn't", async ({ page }) => {
+    await openTerminal(page, { copyOnSelect: "true" });
+    await feed(page, "\x1b[2J\x1b[H" + "interface GigabitEthernet1/0/24\r\n description uplink\r\n");
+    await expect.poll(() => page.evaluate(() => (window as any).terminalDev.term.buffer.active.cursorY)).toBe(2);
+    await watchSent(page);
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "action", name: "find" }));
+    await page.locator("#findText").fill("uplink");
+    // Find selects the match it shows: that's not the user's to copy
+    await expect(page.locator("#findCount")).toHaveText("1 of 1");
+    await page.waitForTimeout(300);
+    expect(await copies(page)).toEqual([]);
+    // the user drags across "interface" on the first row
+    const cell = await page.evaluate(() => (window as any).terminalDev.term._core._renderService.dimensions.css.cell.width as number);
+    const box = (await page.locator("#terminal").boundingBox())!;
+    const y = box.y + 8;
+    await page.mouse.move(box.x + 1, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + cell * 9 - 1, y, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(() => copies(page)).toEqual(["interface"]);
   });
 });

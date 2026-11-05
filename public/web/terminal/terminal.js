@@ -58,7 +58,7 @@
     var logged = null;          // marker: first line not yet sent to the log
     var lastCurrent = null;     // the cursor's line as last sent to the log
     var entries = [];           // highlighted lines: {marker, decorations, text}
-    var find = { matches: [], index: -1, decorations: [], current: null };
+    var find = { matches: [], index: -1, decorations: [], current: null, selected: null };
     var menuSelection = null;   // the selection when the right button went down: {text, position}
     var selectionMatches = [];  // marks ({marker, decoration}) on the other places the selected text appears
     var flushMarker = null;     // the marker flushDecorations adds its throwaway decoration on
@@ -868,6 +868,17 @@
         term.focus();
     }
 
+    /**
+     * Whether the selection is the match Find selected to show it, rather than one the user made while the find bar
+     * is open: Copy on Select copies the user's, and would otherwise put each match found on the clipboard
+     */
+    function selectionIsFinds() {
+        var p = term.getSelectionPosition();
+        var f = find.selected;
+        if (document.getElementById('find').hidden || !p || !f) { return false; }
+        return p.start.x === f.start.x && p.start.y === f.start.y && p.end.x === f.end.x && p.end.y === f.end.y;
+    }
+
     /** Remove the marks on every match, and on the current one */
     function clearFindMarks() {
         unmark(find.decorations.filter(Boolean).concat(find.current && find.current.mark ? [find.current.mark] : []));
@@ -926,6 +937,8 @@
         find.index = (index + find.matches.length) % find.matches.length;
         var m = find.matches[find.index];
         term.select(m.col, m.row, m.length);
+        // Find's own selection, which Copy on Select leaves alone (selectionIsFinds)
+        find.selected = term.getSelectionPosition() || null;
         // marks cover the selection, so the current match gets a brighter mark instead of its usual one (with both,
         // xterm.js draws the one registered first on top, which is the usual one)
         if (find.current) {
@@ -1622,13 +1635,14 @@
             }));
         }
 
-        // PuTTY copies as soon as text is selected (an option in the menu), and the selection's other matches are marked
+        // PuTTY copies as soon as text is selected (an option in the menu), the find bar open or not, and the
+        // selection's other matches are marked
         var selectionTimer = null;
         term.onSelectionChange(function () {
             window.clearTimeout(selectionTimer);
             selectionTimer = window.setTimeout(function () {
                 markSelectionMatches();
-                if (document.getElementById('find').hidden && prefOn('copyOnSelect') && term.hasSelection()) { copy(); }
+                if (prefOn('copyOnSelect') && term.hasSelection() && !selectionIsFinds()) { copy(); }
             }, 150);
         });
 

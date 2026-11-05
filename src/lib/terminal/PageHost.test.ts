@@ -65,6 +65,8 @@ beforeEach(() => {
       return null;
     }
     if (cmd === "clipboard_text") return clipboard;
+    // Settings > Shortcuts' Find, for the terminal menu's key
+    if (cmd === "shortcuts_keys") return [{ id: "find", label: "Find…", default: "", key: "Ctrl+Shift+F" }];
     if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
     if (cmd === "profiles_list") return profiles;
     if (cmd === "profiles_save") {
@@ -261,5 +263,18 @@ describe("a paste", () => {
     page({ type: "pasteRequest" });
     await expect.poll(() => posted.filter((m) => m.type === "paste")).toEqual([{ type: "paste", text: "FastEthernet0/5" }]);
     expect(pageRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("the terminal's menu keys", () => {
+  it("are given to the page with its settings: Find's key in Settings > Shortcuts", async () => {
+    await sshEnds("");
+    const config = await vi.waitFor(() => {
+      const found = posted.find((m) => m.type === "config") as unknown as { keyLabels: Record<string, string> } | undefined;
+      if (!found) throw new Error("no config yet");
+      return found;
+    });
+    // jsdom isn't the Mac, so Copy and Paste keep PuTTY's keys there; Find is the app's
+    expect(config.keyLabels).toEqual({ find: "Ctrl+Shift+F" });
   });
 });

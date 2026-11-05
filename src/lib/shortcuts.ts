@@ -46,7 +46,9 @@ export function fromMenu(id: string, now = Date.now()): boolean {
 
 /** Read the actions' keys again (at the start, and when Settings > Shortcuts changes them) */
 export async function loadShortcuts(): Promise<ShortcutRow[]> {
-  rows = await invoke<ShortcutRow[]>("shortcuts_keys").catch(() => rows);
+  const found = await invoke<ShortcutRow[] | null>("shortcuts_keys").catch(() => null);
+  // kept as they were unless a list comes back: anything else would leave every shortcut lookup failing
+  if (Array.isArray(found)) rows = found;
   return rows;
 }
 

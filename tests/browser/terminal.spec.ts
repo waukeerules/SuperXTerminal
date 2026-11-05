@@ -433,3 +433,40 @@ test("a theme with its own font size resizes the terminal once with Line Numbers
     expect(await page.evaluate(() => (window as any).sizes.length), theme).toBe(1);
   }
 });
+
+test.describe("the menu's keys", () => {
+  /** Each menu item's key as the menu shows it, by its label */
+  async function keysShown(page: Page): Promise<Record<string, string>> {
+    await page.locator("#terminal").click({ button: "right", position: { x: 20, y: 20 } });
+    return page.evaluate(() => {
+      const shown: Record<string, string> = {};
+      document.querySelectorAll("#menu .item").forEach((item) => {
+        // the row's first span is its label, the .key span its key
+        const label = item.querySelector("span")?.textContent?.trim();
+        if (label) shown[label] = item.querySelector(".key")?.textContent?.trim() ?? "";
+      });
+      return shown;
+    });
+  }
+
+  test("are the app's: the Mac's ⌘C, ⌘V and ⌘F rather than PuTTY's Windows keys", async ({ page }) => {
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    await page.evaluate(() => (window as any).terminalDev.message({
+      type: "config", prefs: {}, themes: [{ name: "PuTTY", colors: {} }], keyLabels: { copy: "⌘C", paste: "⌘V", find: "⌘F" },
+    }));
+    await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+    const shown = await keysShown(page);
+    expect([shown["Copy"], shown["Paste"], shown["Find..."]]).toEqual(["⌘C", "⌘V", "⌘F"]);
+    // a shortcut changed in Settings > Shortcuts: the menu, opened again, says the new one
+    await page.locator("#terminal").click({ position: { x: 600, y: 300 } });
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "keyLabels", keyLabels: { copy: "⌘C", paste: "⌘V", find: "⇧⌘F" } }));
+    expect((await keysShown(page))["Find..."]).toBe("⇧⌘F");
+  });
+
+  test("stay PuTTY's when the app gives none (SuperXPuTTY on Windows)", async ({ page }) => {
+    await openTerminal(page, {});
+    const shown = await keysShown(page);
+    expect([shown["Copy"], shown["Paste"], shown["Find..."]]).toEqual(["Ctrl+Insert", "Shift+Insert", "Ctrl+Shift+F"]);
+  });
+});

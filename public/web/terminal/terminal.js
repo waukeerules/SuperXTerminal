@@ -44,6 +44,9 @@
     var serialSession = false;      // a serial port: Open in PuTTY replaces this tab, as the port can only be open once
     var specials = [];              // Special Commands the host sends itself ({label, command}): then no Open in PuTTY
     var menuKeys = [];              // Send Key's keys ({key, label, hint}), from TerminalKeys.MenuKeys
+    // the keys the menu shows for Copy, Paste and Find, as the app has them (SuperXTerminal: the Mac's ⌘C, ⌘V and its
+    // Settings > Shortcuts Find); PuTTY's Windows keys where the app gives none (SuperXPuTTY)
+    var keyLabels = {};
     var keysFromProfile = { backspace: 'del', homeEnd: 'standard', functionKeys: 'tilde' }; // the PuTTY profile's keys, from TerminalControl
     var sessionRules = '';          // the session's or its folder's highlighting rules; empty: Options > Terminal's
     var tabRules = null;            // rules chosen in this tab's menu, for this tab only; null: the session's or default
@@ -839,6 +842,11 @@
 
     // ---- find -----------------------------------------------------------------------------------------------------
 
+    /** The key the menu shows for an item: the app's (keyLabels, even "" for none), else PuTTY's own */
+    function menuKey(name, putty) {
+        return Object.prototype.hasOwnProperty.call(keyLabels, name) ? keyLabels[name] : putty;
+    }
+
     /** Open the find bar with the selection (if any) as the text */
     function openFind() {
         var bar = document.getElementById('find');
@@ -1005,12 +1013,12 @@
                 return { label: choice[1], checked: chosenBell === choice[0], action: function () { savePref('bell', choice[0]); } };
             });
         return [
-            { label: 'Copy', key: 'Ctrl+Insert', enabled: selected, action: copy },
-            { label: 'Paste', key: 'Shift+Insert', action: paste },
+            { label: 'Copy', key: menuKey('copy', 'Ctrl+Insert'), enabled: selected, action: copy },
+            { label: 'Paste', key: menuKey('paste', 'Shift+Insert'), action: paste },
             // through TerminalControl, like every paste, so several lines are asked about first
             { label: 'Copy and Paste', enabled: selected, action: function () { var text = selectedText(); copy(); post({ type: 'pasteRequest', text: text }); } },
             '-',
-            { label: 'Find...', key: 'Ctrl+Shift+F', action: openFind },
+            { label: 'Find...', key: menuKey('find', 'Ctrl+Shift+F'), action: openFind },
             { label: 'Select All', action: function () { term.selectAll(); } },
             '-',
             { label: 'Clear Scrollback', action: clearScrollback },
@@ -1441,6 +1449,7 @@
         serialSession = !!config.serial;
         specials = config.specials || [];
         menuKeys = config.menuKeys || [];
+        keyLabels = config.keyLabels || {};
         if (config.keys) { keysFromProfile = config.keys; }
         sessionRules = config.sessionRules || '';
         if (config.unlimitedScrollback) { unlimitedScrollback = config.unlimitedScrollback; }
@@ -1483,6 +1492,8 @@
             // the app went light or dark (SuperXTerminal): a theme that follows it changes with it
             case 'look': darkDefault = !!message.dark; applyTheme(); break;
             case 'prefs': applyPrefs(message.prefs); break;
+            // Settings > Shortcuts changed: the menu shows the new keys (SuperXTerminal)
+            case 'keyLabels': keyLabels = message.keyLabels || {}; break;
             // a button's command (SuperXTerminal): its lines' numbers in the button's colour
             case 'commandColor': markCommand(message.color); break;
             // the profile was saved with other colours (SuperXTerminal)

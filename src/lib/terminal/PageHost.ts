@@ -22,7 +22,8 @@ import { running } from "../commands/sending.svelte";
 import { checkPaste } from "./pasting.svelte";
 import { THIS_COMPUTER } from "../platform";
 import { clipboardText } from "../clipboard";
-import { isMac } from "../shortcuts";
+import { isMac, loadShortcuts, shortcutLabel } from "../shortcuts";
+import { listen } from "@tauri-apps/api/event";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
 type PtyEvent =
@@ -85,6 +86,16 @@ const MENU_KEYS = [
   { key: "^\\", label: "Ctrl+\\", hint: "quit" },
   { key: "ESC", label: "Esc", hint: "" },
 ];
+
+/**
+ * The keys the terminal's menu shows for Copy, Paste and Find, as this app has them: the Mac's ⌘C and ⌘V (the menu
+ * bar's), and Find's key in Settings > Shortcuts ("" for none). On Windows Copy and Paste keep PuTTY's Ctrl+Insert
+ * and Shift+Insert, which work there (as Ctrl+Shift+C and V do)
+ */
+function menuKeyLabels(): Record<string, string> {
+  const find = shortcutLabel("find");
+  return isMac ? { copy: "⌘C", paste: "⌘V", find } : { find };
+}
 
 /**
  * A stand-in theme for when no theme files are found (SuperXPuTTY's defaults are missing from its Git repository):
@@ -238,10 +249,18 @@ export class PageHost implements ScriptTarget {
   ) {
     window.addEventListener("message", this.onWindowMessage);
     this.stopPrefs = onPrefsChanged((prefs) => this.post({ type: "prefs", prefs }));
+    // Settings > Shortcuts changed: the terminal's menu shows the new keys
+    const stopKeys = listen("settings-changed", async () => {
+      await loadShortcuts();
+      this.post({ type: "keyLabels", keyLabels: menuKeyLabels() });
+    });
+    this.stopKeys = () => void stopKeys.then((stop) => stop());
     window.addEventListener(PROFILES_CHANGED, this.onProfilesChanged);
   }
 
   private readonly stopPrefs: () => void;
+  /** Stop following Settings > Shortcuts for the menu's keys */
+  private readonly stopKeys: () => void;
 
   /** The profile the session uses, once it has started; null for none */
   private profile: string | null = null;
@@ -274,6 +293,7 @@ export class PageHost implements ScriptTarget {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.antiIdleTimer) clearInterval(this.antiIdleTimer);
     this.stopPrefs();
+    this.stopKeys();
     window.removeEventListener(PROFILES_CHANGED, this.onProfilesChanged);
     if (this.log) void invoke("log_close", { id: this.log.id, temporary: this.log.temporary });
     this.log = null;
@@ -694,6 +714,7 @@ export class PageHost implements ScriptTarget {
       bellOverload: { on: true, count: 5, windowMs: 2000, quietMs: 5000 },
       profileFont: { family: "Menlo", points: 12 },
       menuKeys: MENU_KEYS,
+      keyLabels: (await loadShortcuts(), menuKeyLabels()),
       sessionRules: look.rules,
       unlimitedScrollback: 1000000,
       cursorColor: this.cursorColor,

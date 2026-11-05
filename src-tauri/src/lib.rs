@@ -35,6 +35,7 @@ mod streams;
 mod tray;
 mod variables;
 mod settings;
+mod saving;
 mod sftp;
 
 use std::collections::BTreeMap;

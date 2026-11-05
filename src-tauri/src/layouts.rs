@@ -64,9 +64,7 @@ pub fn save(shared_folder: &Path, user_folder: &Path, name: &str, text: &str) ->
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let temp = path.with_extension("json.saving");
-    std::fs::write(&temp, text).map_err(|e| e.to_string())?;
-    std::fs::rename(&temp, &path).map_err(|e| e.to_string())
+    crate::saving::save(&path, "json.saving", text)
 }
 
 /// Delete a saved layout (not the auto-restore one)

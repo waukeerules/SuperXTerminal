@@ -211,9 +211,7 @@ fn update_folders(path: &Path, change: impl FnOnce(&mut Vec<Vec<(String, String)
         out.push_str("</Folders>");
     }
     sessions::back_up(path);
-    let temp = path.with_extension("xml.saving");
-    std::fs::write(&temp, out).map_err(|e| e.to_string())?;
-    std::fs::rename(&temp, path).map_err(|e| e.to_string())
+    crate::saving::save(path, "xml.saving", out)
 }
 
 #[cfg(test)]

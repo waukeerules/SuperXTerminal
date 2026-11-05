@@ -59,14 +59,18 @@ pub fn load(settings_folder: &Path, name: &str, kind: &str) -> Result<String, St
     std::fs::read_to_string(path_of(settings_folder, name, kind)).map(|t| t.replace("\r\n", "\n")).map_err(|e| e.to_string())
 }
 
-/// Save a script with CRLF; a script of the other kind with the same name goes
+/// Save a script with CRLF, whole (saving.rs: tried again while OneDrive or antivirus holds it, as they may in a
+/// settings folder in Documents); a script of the other kind with the same name goes
 pub fn save(settings_folder: &Path, name: &str, kind: &str, text: &str) -> Result<(), String> {
     if let Some(problem) = name_problem(name) {
         return Err(problem);
     }
     std::fs::create_dir_all(folder(settings_folder)).map_err(|e| e.to_string())?;
     let text = text.replace("\r\n", "\n").replace('\n', "\r\n");
-    std::fs::write(path_of(settings_folder, name, kind), text).map_err(|e| e.to_string())?;
+    let path = path_of(settings_folder, name, kind);
+    // beside it as name.spsl.saving (or .txt.saving), which the list of scripts doesn't show
+    let temp_extension = format!("{}.saving", path.extension().and_then(|e| e.to_str()).unwrap_or("txt"));
+    crate::saving::save(&path, &temp_extension, text)?;
     let other = path_of(settings_folder, name, if kind == "spsl" { "lines" } else { "spsl" });
     if other.exists() {
         std::fs::remove_file(other).map_err(|e| e.to_string())?;

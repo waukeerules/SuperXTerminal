@@ -187,12 +187,10 @@ pub fn to_xml(bars: &[Bar]) -> String {
     out
 }
 
-/// Save through a temporary file, as ButtonBarStore.Save; no backup is kept
+/// Save through a temporary file, as ButtonBarStore.Save (saving.rs: tried again while OneDrive or antivirus holds
+/// it); no backup is kept
 pub fn save(path: &Path, bars: &[Bar]) -> Result<(), String> {
-    let temp = path.with_extension("xml.tmp");
-    let explain = |e: std::io::Error| format!("Couldn't save {}: {e}. The settings folder may be read-only.", path.display());
-    std::fs::write(&temp, to_xml(bars)).map_err(explain)?;
-    std::fs::rename(&temp, path).map_err(explain)
+    crate::saving::save(path, "xml.tmp", to_xml(bars))
 }
 
 /// SuperXPuTTY's export file

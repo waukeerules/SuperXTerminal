@@ -445,10 +445,7 @@ pub fn update_file(path: &Path, change: impl FnOnce(&mut Vec<StoredSession>) -> 
     }
     change(&mut sessions)?;
     back_up(path);
-    let text = write_sessions(&sessions);
-    let temp = path.with_extension("xml.saving");
-    std::fs::write(&temp, text).map_err(|e| e.to_string())?;
-    std::fs::rename(&temp, path).map_err(|e| e.to_string())
+    crate::saving::save(path, "xml.saving", write_sessions(&sessions))
 }
 
 /// Put a session where SuperXPuTTY's sort would (by id, ignoring case), leaving the others in file order

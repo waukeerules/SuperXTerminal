@@ -121,9 +121,7 @@ fn save(user_folder: &Path, mut outbox: OutboxFile) -> Result<(), String> {
             Err(e) => Err(e.to_string()),
         };
     }
-    let temp = path.with_extension("json.tmp");
-    std::fs::write(&temp, serde_json::to_string_pretty(&outbox).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    std::fs::rename(&temp, &path).map_err(|e| e.to_string())
+    crate::saving::save(&path, "json.tmp", serde_json::to_string_pretty(&outbox).map_err(|e| e.to_string())?)
 }
 
 /// Change one connection's list and save it

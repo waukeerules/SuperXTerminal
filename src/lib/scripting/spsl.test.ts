@@ -670,8 +670,9 @@ describe("the guide and the example scripts", () => {
   it("pass Check script: every example in docs/SPSL.md and docs/spsl-examples", () => {
     // read as text through Vite, which the tests run in
     const guide = Object.values(import.meta.glob<string>("/docs/SPSL.md", { query: "?raw", import: "default", eager: true }))[0];
-    // the runnable examples: not the grammar, nor EXPECT's outline
-    const examples = [...guide.matchAll(/```\n([\s\S]*?)```/g)].map((m) => m[1]).filter((b) => !b.includes("script     =") && !b.startsWith("EXPECT [/t:"));
+    // the runnable examples: not the grammar, nor EXPECT's outline. Lines end in \r\n where Git checks the guide out
+    // that way on Windows (core.autocrlf)
+    const examples = [...guide.matchAll(/```\r?\n([\s\S]*?)```/g)].map((m) => m[1]).filter((b) => !b.includes("script     =") && !b.startsWith("EXPECT [/t:"));
     const tours = Object.values(import.meta.glob<string>("/docs/spsl-examples/*.spsl", { query: "?raw", import: "default", eager: true }));
     expect(examples.length).toBeGreaterThan(10);
     expect(tours.length).toBe(2);

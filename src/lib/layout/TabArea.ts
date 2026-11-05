@@ -103,8 +103,9 @@ class TabLabel implements ITabRenderer {
 }
 
 /**
- * The ▾ at the right of the tab strip, as DockPanelSuite's document list button in SuperXPuTTY: it lists the open
- * tabs, the active one ticked, and a click switches to one (App draws the list)
+ * The ▾ at the right of the tab strip, as DockPanelSuite's document list button in SuperXPuTTY: it lists the tabs of
+ * its own split (a split side by side has its own ▾), the one in front ticked, and a click switches to one (App draws
+ * the list)
  */
 class TabListButton implements IHeaderActionsRenderer {
   readonly element = document.createElement("div");
@@ -132,7 +133,7 @@ class TabListButton implements IHeaderActionsRenderer {
       // not a click elsewhere, which closes menus
       event.stopPropagation();
       const rect = list.getBoundingClientRect();
-      this.tabs.onTabList?.(rect.right, rect.bottom);
+      if (this.group) this.tabs.onTabList?.(rect.right, rect.bottom, this.group.id);
     });
     this.element.append(close, list);
   }
@@ -416,8 +417,8 @@ export class TabArea {
   private readonly refusing = new Set<string>();
   /** Told when the active tab changes, or tabs open or close */
   private readonly listeners = new Set<() => void>();
-  /** The tab strip's ▾ was clicked at (right, bottom): App shows the open tabs */
-  onTabList: ((right: number, bottom: number) => void) | null = null;
+  /** A tab strip's ▾ was clicked at (right, bottom): App shows the tabs of its split (`group`, for allTabs) */
+  onTabList: ((right: number, bottom: number, group: string) => void) | null = null;
   /** A tab was right-clicked: App shows its menu */
   onTabMenu: ((id: string, x: number, y: number) => void) | null = null;
   /** An output alert to show in the status bar (Watch for Activity and Silence) */
@@ -734,11 +735,16 @@ export class TabArea {
     this.changed();
   }
 
-  /** Every open tab (Highlighted Output too) in the order they show, group by group, for the ▾ list */
-  allTabs(): { id: string; title: string; icon: string; environment: string | null; active: boolean; session: string }[] {
-    const active = this.api.activePanel?.id;
-    return this.api.groups.flatMap((group) =>
+  /**
+   * Every open tab (Highlighted Output too) in the order they show, group by group, for the tab switcher and Next Tab
+   * @param inGroup only this split's tabs (a group's id), for its ▾ list; `active` is then the one in front in it,
+   *   which is ticked whether or not the split has the keyboard
+   */
+  allTabs(inGroup?: string): { id: string; title: string; icon: string; environment: string | null; active: boolean; session: string }[] {
+    const groups = inGroup === undefined ? this.api.groups : this.api.groups.filter((g) => g.id === inGroup);
+    return groups.flatMap((group) =>
       group.panels.map((panel) => {
+        const active = inGroup === undefined ? this.api.activePanel?.id : group.activePanel?.id;
         const params = panel.params as unknown as { icon?: string; environment?: string | null };
         return {
           id: panel.id,

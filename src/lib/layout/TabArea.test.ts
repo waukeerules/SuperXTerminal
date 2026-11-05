@@ -1,6 +1,7 @@
-// The tab area (dockview) with two session tabs: switching tabs puts the keyboard in the chosen tab's terminal. The
-// terminal pages are stood in for by their iframes' postMessage (jsdom loads no page), which records the "focus" the
-// tab area sends the page; the Rust side by mockIPC, answering every command with nothing.
+// The tab area (dockview) with session tabs: switching tabs puts the keyboard in the chosen tab's terminal, and each
+// split's ▾ lists only its own tabs. The terminal pages are stood in for by their iframes' postMessage (jsdom loads
+// no page), which records the "focus" the tab area sends the page; the Rust side by mockIPC, answering every command
+// with nothing.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { TabArea } from "./TabArea";
@@ -67,5 +68,25 @@ describe("switching tabs", () => {
     await expect.poll(() => focused).toEqual([sw1]);
     tabs.cycle(1);
     await expect.poll(() => focused).toEqual([sw1, sw2]);
+  });
+});
+
+describe("a split's ▾ list", () => {
+  it("lists only the tabs in its own split, its front one ticked", async () => {
+    const sw1 = open("sw1");
+    const sw2 = open("sw2");
+    const sw3 = open("sw3");
+    // sw3 moved to a split on the right, as dragging it there does
+    const right = tabs.api.addGroup({ referenceGroup: tabs.api.getPanel(sw1)!.group, direction: "right" });
+    tabs.api.getPanel(sw3)!.api.moveTo({ group: right });
+    /** The titles App's ▾ list shows when a split's ▾ is clicked, the ticked one marked */
+    const listed: string[][] = [];
+    tabs.onTabList = (_right, _bottom, group) => listed.push(tabs.allTabs(group).map((t) => t.title + (t.active ? " ✓" : "")));
+    const arrows = [...element.querySelectorAll<HTMLButtonElement>("button[aria-label='Open tabs']")];
+    expect(arrows).toHaveLength(2);
+    arrows.forEach((arrow) => arrow.click());
+    expect(listed).toEqual([["sw1", "sw2 ✓"], ["sw3 ✓"]]);
+    // the tab switcher and Next Tab still go through them all
+    expect(tabs.allTabs().map((t) => t.id)).toEqual([sw1, sw2, sw3]);
   });
 });

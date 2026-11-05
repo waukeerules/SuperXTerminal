@@ -188,14 +188,14 @@
       const open = new Set(tabs?.tabList().map((t) => t.id));
       if (searches.some((s) => !open.has(s.id))) searches = searches.filter((s) => open.has(s.id));
     });
-    // the tab strip's ▾: the open tabs, the active one ticked; a click switches to it
-    tabs.onTabList = (right, bottom) => {
+    // a tab strip's ▾: its split's tabs, the one in front ticked; a click switches to it
+    tabs.onTabList = (right, bottom, group) => {
       if (!tabs) return;
       const t = tabs;
       menu = {
         x: right - 240,
         y: bottom + 2,
-        items: t.allTabs().map((tab) => ({ label: tab.title, icon: tab.icon, environment: tab.environment, checked: tab.active, action: () => t.activate(tab.id) })),
+        items: t.allTabs(group).map((tab) => ({ label: tab.title, icon: tab.icon, environment: tab.environment, checked: tab.active, action: () => t.activate(tab.id) })),
       };
     };
     tabs.onTabMenu = (id, x, y) => {

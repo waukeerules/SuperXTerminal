@@ -1,5 +1,5 @@
 // The Sessions tree's selection of folders and sessions together: Cmd+click and Shift+click pick both, and the
-// selection's menu moves them to a folder; Show in Sessions tree opens a Recent session's folders and scrolls to it;
+// selection's menu moves them to a folder; a search hides the roots it leaves no matches in; Show in Sessions tree opens a Recent session's folders and scrolls to it;
 // and on a clean install, the first session saved shows. The Rust side is stood in for by mockIPC; moves are
 // recorded. jsdom doesn't scroll, so scrollIntoView is stood in for, recording the rows it's asked to show.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -80,6 +80,32 @@ describe("selecting folders and sessions together", () => {
     await user.keyboard("{/Shift}");
     for (const name of [/^Core \(/, "sw1", "sw2", "r1"]) expect(row(name).classList.contains("selected"), String(name)).toBe(true);
     expect(row("x").classList.contains("selected")).toBe(false);
+  });
+});
+
+describe("searching", () => {
+  /** The roots' rows the tree shows, by their names */
+  const rootsShown = () => [...document.querySelectorAll(".row.folder.root .label")].map((l) => l.textContent?.replace(/\s*\(.*$/, ""));
+
+  it("shows only the roots with matches, and none at all when nothing matches", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "sessions_load") return { sessions: [session("Imported/r1"), { ...session("Home/nas"), store: "private" }], folders: [], problems: [] };
+      if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
+      if (cmd === "overrides_get") return {};
+      if (cmd === "icons_custom" || cmd === "profiles_list") return [];
+      return null;
+    });
+    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    await expect.poll(rootsShown).toEqual(["Saved sessions", "Private sessions"]);
+    const search = screen.getByPlaceholderText(/Type to search/);
+    await user.type(search, "r1");
+    await expect.poll(rootsShown).toEqual(["Saved sessions"]);
+    await user.clear(search);
+    await user.type(search, "sdfsdfsdf");
+    await expect.poll(rootsShown).toEqual([]);
+    // and back when the search is cleared
+    await user.clear(search);
+    await expect.poll(rootsShown).toEqual(["Saved sessions", "Private sessions"]);
   });
 });
 

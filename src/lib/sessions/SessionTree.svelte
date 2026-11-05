@@ -187,20 +187,29 @@
   }
   /** Why the search can't be run (a bad regex), shown under it */
   const searchError = $derived(searchProblem(query, searchOptions));
+  /**
+   * A root as the tree shows it: none while a search leaves it no matches, rather than "Saved sessions (0)", which read
+   * as though the root itself were empty
+   */
+  function unlessEmptySearch(root: FolderNode | null): FolderNode | null {
+    return root && query.trim() !== "" && root.count === 0 ? null : root;
+  }
   /** The Saved sessions root, as the search leaves it */
-  const saved = $derived(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending, searchOptions) : null);
+  const saved = $derived(unlessEmptySearch(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending, searchOptions) : null));
   /** The Private sessions root, as the search leaves it */
   const privateRoot = $derived(
-    loaded ? buildTree("private", "Private sessions", shown, query, newFolders.private, descending, searchOptions) : null,
+    unlessEmptySearch(loaded ? buildTree("private", "Private sessions", shown, query, newFolders.private, descending, searchOptions) : null),
   );
   /** The Database sessions root, when they're on */
   const databaseRoot = $derived(
-    loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), shown, query, newFolders.database, descending, searchOptions) : null,
+    unlessEmptySearch(
+      loaded && db?.enabled ? buildTree("database", dbLabel(db, dbLoading), shown, query, newFolders.database, descending, searchOptions) : null,
+    ),
   );
   /** Favorites, as the search leaves it */
-  const favorites = $derived(loaded ? buildGroup("favorites", "Favorites", shortcuts.Favorites, shown, query, searchOptions) : null);
+  const favorites = $derived(unlessEmptySearch(loaded ? buildGroup("favorites", "Favorites", shortcuts.Favorites, shown, query, searchOptions) : null));
   /** Recent, as the search leaves it */
-  const recent = $derived(loaded ? buildGroup("recent", "Recent", shortcuts.Recent, shown, query, searchOptions) : null);
+  const recent = $derived(unlessEmptySearch(loaded ? buildGroup("recent", "Recent", shortcuts.Recent, shown, query, searchOptions) : null));
   /** Every root, in the tree's order */
   const roots = $derived([favorites, recent, saved, privateRoot, databaseRoot].filter((r): r is FolderNode => r !== null));
   /** Whether there's a search */

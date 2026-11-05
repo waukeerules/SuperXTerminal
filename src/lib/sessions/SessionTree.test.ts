@@ -109,6 +109,70 @@ describe("searching", () => {
   });
 });
 
+describe("with Private sessions turned off", () => {
+  it("shows no Private sessions, offers none to copy to, and makes new sessions in Saved sessions", async () => {
+    let made: string | null = null;
+    mockIPC((cmd, args) => {
+      if (cmd === "sessions_load") return { sessions: [session("Lab/sw1")], folders: [], problems: [], savedFile: "/team/Sessions.xml", privateFile: "/me/PrivateSessions.xml", savedOff: false, privateOff: true };
+      if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
+      if (cmd === "overrides_get") return {};
+      if (cmd === "icons_custom" || cmd === "profiles_list" || cmd === "variables_list" || cmd === "variables_built_in" || cmd === "buttonbars_load") return [];
+      if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
+      if (cmd === "session_save") {
+        made = (args as { store: string }).store;
+        return "Lab/new";
+      }
+      return null;
+    });
+    Object.assign(settings, { settingsFolder: "/team", useSessionsXml: true, usePrivateSessions: false });
+    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    await screen.findByText(/^Saved sessions/);
+    expect(screen.queryByText(/^Private sessions/)).toBeNull();
+    // Copy to lists only the roots in use
+    await user.click(screen.getByRole("button", { name: "Expand all" }));
+    await user.pointer({ keys: "[MouseRight]", target: row("sw1") });
+    await user.hover(within(screen.getByRole("menu")).getByRole("menuitem", { name: /^Copy to/ }));
+    expect(screen.queryByRole("menuitem", { name: /Private sessions/ })).toBeNull();
+    await user.keyboard("{Escape}");
+    // nothing selected: the toolbar's New session goes in Saved sessions
+    await user.click(row(/^Saved sessions/));
+    await user.click(screen.getByRole("button", { name: "New session (in the selected folder)" }));
+    await user.type(await screen.findByRole("textbox", { name: /Session name/ }), "sw9");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await expect.poll(() => made).toBe("saved");
+    Object.assign(settings, { usePrivateSessions: true });
+  });
+});
+
+describe("turning Private sessions off and on", () => {
+  it("takes effect at once, without restarting", async () => {
+    /** Whether Private sessions are on, as the core answers sessions_load */
+    let privateOn = true;
+    mockIPC((cmd) => {
+      if (cmd === "sessions_load") {
+        return {
+          sessions: [session("Lab/sw1"), { ...session("Home/nas"), store: "private" }], folders: [], problems: [],
+          savedFile: "/team/Sessions.xml", privateFile: "/me/PrivateSessions.xml", savedOff: false, privateOff: !privateOn,
+        };
+      }
+      if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
+      if (cmd === "overrides_get") return {};
+      if (cmd === "icons_custom" || cmd === "profiles_list") return [];
+      return null;
+    });
+    Object.assign(settings, { loaded: true, settingsFolder: "/team", useSessionsXml: true, usePrivateSessions: true });
+    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    await screen.findByText(/^Private sessions/);
+    // Settings > General saves the change, as the core then answers
+    privateOn = false;
+    settings.usePrivateSessions = false;
+    await expect.poll(() => screen.queryByText(/^Private sessions/)).toBeNull();
+    privateOn = true;
+    settings.usePrivateSessions = true;
+    await screen.findByText(/^Private sessions/);
+  });
+});
+
 describe("Show in Sessions tree", () => {
   /** The rows scrollIntoView was asked to show */
   let scrolled: Element[];

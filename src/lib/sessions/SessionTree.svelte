@@ -198,7 +198,7 @@
   const saved = $derived(unlessEmptySearch(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending, searchOptions) : null));
   /** The Private sessions root, as the search leaves it */
   const privateRoot = $derived(
-    unlessEmptySearch(loaded ? buildTree("private", "Private sessions", shown, query, newFolders.private, descending, searchOptions) : null),
+    unlessEmptySearch(loaded && !loaded.privateOff ? buildTree("private", "Private sessions", shown, query, newFolders.private, descending, searchOptions) : null),
   );
   /** The Database sessions root, when they're on */
   const databaseRoot = $derived(
@@ -281,11 +281,13 @@
     });
   });
 
-  // read again whenever the settings folder changes (Settings > General); the first run reads them at start
+  // read again whenever the settings folder changes, or Saved or Private sessions are turned on or off (Settings >
+  // General), so it shows at once; the first run reads them at start
   $effect(() => {
     if (!settings.loaded) return;
     void settings.settingsFolder;
     void settings.useSessionsXml;
+    void settings.usePrivateSessions;
     void reload();
   });
 
@@ -898,7 +900,8 @@
   /** Move to and Copy to, each listing the other roots; the table only when it can be written, and no move of locked rows */
   function transferItems(sessions: SessionView[], from: Store, locked: boolean): MenuItem[] {
     const targets: Store[] = (["saved", "private", "database"] as Store[]).filter(
-      (t) => t !== from && (t !== "database" || db?.enabled) && (t !== "saved" || (settings.settingsFolder && settings.useSessionsXml)),
+      (t) => t !== from && (t !== "database" || db?.enabled) && (t !== "saved" || (settings.settingsFolder && settings.useSessionsXml))
+        && (t !== "private" || !loaded?.privateOff),
     );
     const item = (move: boolean): MenuItem => ({
       label: move ? "Move to" : "Copy to",
@@ -1382,7 +1385,7 @@
   export async function saveSessionAs(store: Store, id: string, title: string): Promise<void> {
     try {
       const fields = await getSession(store, id);
-      editing = { store: savedInUse() ? "saved" : "private", id: null, fields: { ...fields, name: title }, copyOf: [store, id] };
+      editing = { store: savedInUse() || loaded?.privateOff ? "saved" : "private", id: null, fields: { ...fields, name: title }, copyOf: [store, id] };
     } catch (e) {
       error = String(e);
     }
@@ -1424,7 +1427,7 @@
       !node ? null : node.path === path ? node : node.folders.map((f) => find(f, path)).find(Boolean) ?? null;
     const rootOf = (store: string) => (store === "saved" ? saved : store === "private" ? privateRoot : store === "database" ? databaseRoot : null);
     const [store, ...rest] = selected.split(":");
-    const fallback = savedInUse() ? saved : privateRoot;
+    const fallback = savedInUse() || !privateRoot ? saved : privateRoot;
     if (!rootOf(store)) return fallback;
     if (rest[0] === "folder") return find(rootOf(store), rest.slice(1).join(":")) ?? fallback;
     const id = rest.join(":");
@@ -1596,7 +1599,7 @@
 {/if}
 
 {#if importing}
-  <ImportSessions kind={importing} savedAvailable={savedInUse()} onCancel={() => (importing = null)}
+  <ImportSessions kind={importing} savedAvailable={savedInUse()} privateAvailable={!loaded?.privateOff} onCancel={() => (importing = null)}
     onDone={async (text) => { importing = null; await reload(); context.status(text); }} />
 {/if}
 

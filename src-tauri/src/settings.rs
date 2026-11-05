@@ -58,6 +58,9 @@ pub struct AppSettings {
     /// Saved sessions (Sessions.xml and Folders.xml in the settings folder) are read and written, as SuperXPuTTY's
     /// UseSessionsXml; off, only Private and Database sessions are used and the files are left as they are
     pub use_sessions_xml: bool,
+    /// Private sessions (PrivateSessions.xml in the user's own folder) are read and written; off, only Saved and
+    /// Database sessions are used and the file is left as it is. One of the two stays on (Settings > General)
+    pub use_private_sessions: bool,
     /// The Sessions pane's width in points, as dragged at its edge
     pub sessions_pane_width: u32,
     /// The Sessions pane is auto-hidden, as DockPanelSuite's unpinned pane in SuperXPuTTY: a tab at the window's left
@@ -134,6 +137,7 @@ impl Default for AppSettings {
             session_log_folder: String::new(),
             serial_devices: std::collections::BTreeMap::new(),
             use_sessions_xml: true,
+            use_private_sessions: true,
             sessions_pane_width: 280,
             sessions_auto_hide: false,
             default_layout_name: String::new(),

@@ -167,9 +167,15 @@ fn profiles_read_file(path: String) -> Result<Vec<Profile>, String> {
 fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
     let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
     let saved_off = !state.settings.lock().unwrap().use_sessions_xml;
+    let private_off = private_off(&state);
     *state.files_seen.lock().unwrap() = files_fingerprint(&state);
     let mut problems = Vec::new();
     let mut loaded = Sessions::load(saved_folder(&state).as_deref(), &state.user_folder, &mut problems);
+    // Private sessions turned off: not shown or used (PrivateSessions.xml is left as it is)
+    if private_off {
+        loaded.private.clear();
+        loaded.folders.remove(&sessions::Store::Private);
+    }
     // Database sessions come from the table (or its cache), not the files: keep them
     {
         let mut current = state.sessions.lock().unwrap();
@@ -189,6 +195,7 @@ fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
         saved_file: settings_folder.map(|f| f.join("Sessions.xml").display().to_string()),
         private_file: state.user_folder.join("PrivateSessions.xml").display().to_string(),
         saved_off,
+        private_off,
     };
     let counts = (loaded.saved.len(), loaded.private.len(), loaded.database.len());
     *state.sessions.lock().unwrap() = loaded;
@@ -246,8 +253,26 @@ fn store_file(state: &AppState, store: sessions::Store) -> Result<PathBuf, Strin
     if store == sessions::Store::Saved && !state.settings.lock().unwrap().use_sessions_xml {
         return Err("Saved sessions are turned off (Settings > General > Use Sessions.xml).".into());
     }
+    if store == sessions::Store::Private && private_off(state) {
+        return Err("Private sessions are turned off (Settings > General > Use PrivateSessions.xml).".into());
+    }
     let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
     sessions::file_of(store, settings_folder.as_deref(), &state.user_folder).ok_or_else(|| "Choose the settings folder first.".into())
+}
+
+/// Whether Private sessions are turned off: Use PrivateSessions.xml unticked, and Saved sessions in use (without them,
+/// Private sessions stay on whatever the setting says, so sessions always have somewhere to be, as when the settings
+/// folder has gone since it was turned off)
+fn private_off(state: &AppState) -> bool {
+    // read, and the lock let go, before saved_folder takes it: the settings' Mutex can't be taken twice, and taking it
+    // in one statement with saved_folder hung the app as it first read the sessions
+    let use_private = state.settings.lock().unwrap().use_private_sessions;
+    private_off_when(use_private, saved_folder(state).is_some())
+}
+
+/// `private_off`'s rule: off only when it's turned off and Saved sessions are in use
+fn private_off_when(use_private: bool, saved_in_use: bool) -> bool {
+    !use_private && saved_in_use
 }
 
 /// The settings folder when Saved sessions are in use (Sessions.xml and Folders.xml are read from it); None when
@@ -2695,6 +2720,51 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    /// An app's state with these settings, the user's folder a temporary one
+    fn state_with(settings: crate::settings::AppSettings) -> super::AppState {
+        use std::sync::Mutex;
+        super::AppState {
+            user_folder: std::env::temp_dir().join("sxt-state-test"),
+            settings: Mutex::new(settings),
+            sessions: Mutex::new(Default::default()),
+            profiles: Mutex::new(Default::default()),
+            database: Mutex::new(Default::default()),
+            db_server: Mutex::new(Vec::new()),
+            files_seen: Mutex::new(0),
+        }
+    }
+
+    #[test]
+    fn whether_private_sessions_are_off_is_read_without_hanging() {
+        // private_off once took the settings' lock twice in one statement, and the app hung as it read the sessions:
+        // run it (and store_file, which asks it) on a thread of its own, and fail rather than hang
+        let settings = crate::settings::AppSettings {
+            settings_folder: Some(std::env::temp_dir()),
+            use_sessions_xml: true,
+            use_private_sessions: false,
+            ..Default::default()
+        };
+        let state = std::sync::Arc::new(state_with(settings));
+        let (done, finished) = std::sync::mpsc::channel();
+        let running = std::sync::Arc::clone(&state);
+        std::thread::spawn(move || {
+            let off = super::private_off(&running);
+            let refused = super::store_file(&running, crate::sessions::Store::Private).is_err();
+            let _ = done.send((off, refused));
+        });
+        let (off, refused) = finished.recv_timeout(std::time::Duration::from_secs(2)).expect("private_off hung: a lock taken twice");
+        assert!(off);
+        assert!(refused, "Private sessions turned off: nothing is written there");
+    }
+
+    #[test]
+    fn private_sessions_are_off_only_while_saved_sessions_are_in_use() {
+        assert!(super::private_off_when(false, true));
+        // no Saved sessions (no settings folder, or Use Sessions.xml off): Private stay on, whatever the setting
+        assert!(!super::private_off_when(false, false));
+        assert!(!super::private_off_when(true, true));
+    }
+
     #[test]
     fn a_dropped_file_is_saved_under_its_own_name_in_a_folder_of_its_own() {
         use std::path::Path;

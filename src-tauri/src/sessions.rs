@@ -123,6 +123,8 @@ pub struct SessionsLoaded {
     pub private_file: String,
     /// Saved sessions are turned off (Settings > General > Use Sessions.xml)
     pub saved_off: bool,
+    /// Private sessions are turned off (Settings > General > Use PrivateSessions.xml)
+    pub private_off: bool,
 }
 
 impl Sessions {

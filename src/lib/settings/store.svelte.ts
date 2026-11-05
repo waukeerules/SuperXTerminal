@@ -42,6 +42,8 @@ export interface AppSettings {
   sessionLogFolder: string;
   /** Saved sessions (Sessions.xml and Folders.xml in the settings folder) are used, as SuperXPuTTY's UseSessionsXml */
   useSessionsXml: boolean;
+  /** Private sessions (PrivateSessions.xml, only yours) are used; one of the two stays on */
+  usePrivateSessions: boolean;
   /** The Sessions pane's width in points, as dragged at its edge */
   sessionsPaneWidth: number;
   /** The Sessions pane is auto-hidden: a tab at the left edge slides it out */
@@ -107,6 +109,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   sessionLogEnabled: false,
   sessionLogFolder: "",
   useSessionsXml: true,
+  usePrivateSessions: true,
   sessionsPaneWidth: 280,
   sessionsAutoHide: false,
   defaultLayoutName: "",

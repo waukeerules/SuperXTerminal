@@ -37,6 +37,9 @@
 
   /** The Sessions search's fields, as its ⋯ button shows them */
   const searchFields = $derived(searchFieldsOf(settings.treeSearchFields));
+
+  /** Whether Saved sessions are in use: a settings folder chosen and Use Sessions.xml on (then Private can be turned off) */
+  const savedInUse = $derived(!!settings.settingsFolder && settings.useSessionsXml);
 </script>
 
 <div class="general">
@@ -50,7 +53,16 @@
     </div>
     <label class="check" title="Untick to use only Private and Database sessions: Sessions.xml and Folders.xml are then neither read nor written (they're left as they are), and imports go to Private sessions">
       <input type="checkbox" checked={settings.useSessionsXml}
-        onchange={(e) => void saveSettings({ useSessionsXml: e.currentTarget.checked })} /> Use Sessions.xml (Saved sessions)</label>
+        onchange={(e) => void saveSettings({ useSessionsXml: e.currentTarget.checked })}
+        disabled={settings.useSessionsXml && !settings.usePrivateSessions} /> Use Sessions.xml (Saved sessions)</label>
+    <label class="check" title="Untick to use only Saved and Database sessions: PrivateSessions.xml (only yours, on this computer) is then neither read nor written (it's left as it is), and nothing offers Private sessions">
+      <input type="checkbox" checked={settings.usePrivateSessions}
+        onchange={(e) => void saveSettings({ usePrivateSessions: e.currentTarget.checked })}
+        disabled={settings.usePrivateSessions && !savedInUse} /> Use PrivateSessions.xml (Private sessions)</label>
+    {#if !settings.usePrivateSessions || !savedInUse}
+      <!-- sessions need somewhere to go: one of the two stays on -->
+      <p class="hint">{savedInUse ? "Private sessions are off, so Saved sessions stay on." : "Private sessions stay on until a settings folder is chosen with Use Sessions.xml on."}</p>
+    {/if}
   </fieldset>
 
   <fieldset>

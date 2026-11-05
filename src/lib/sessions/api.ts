@@ -58,6 +58,8 @@ export interface SessionsLoaded {
   privateFile: string;
   /** Saved sessions are turned off (Settings > General > Use Sessions.xml) */
   savedOff: boolean;
+  /** Private sessions are turned off (Settings > General > Use PrivateSessions.xml) */
+  privateOff?: boolean;
 }
 
 /** Read the session files (again) */

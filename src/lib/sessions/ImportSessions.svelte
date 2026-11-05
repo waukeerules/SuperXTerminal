@@ -20,13 +20,15 @@
     kind: ImportKind;
     /** Whether Saved sessions are in use, so they can be chosen */
     savedAvailable: boolean;
+    /** Whether Private sessions are in use (Settings > General), so they can be chosen */
+    privateAvailable?: boolean;
     /** Imported: the status bar's text */
     onDone: (status: string) => void;
     /** Cancel, or Escape: nothing is imported */
     onCancel: () => void;
   }
 
-  let { kind, savedAvailable, onDone, onCancel }: Props = $props();
+  let { kind, savedAvailable, privateAvailable = true, onDone, onCancel }: Props = $props();
 
   /** Each kind's window title */
   const TITLES: Record<ImportKind, string> = {
@@ -62,7 +64,8 @@
 
   let paths = $state<string[]>([]);
   // sessions from another app go to Private sessions unless chosen otherwise: Sessions.xml is usually the team's
-  let store = $state<Store>("private");
+  // (to Saved sessions when Private sessions are turned off)
+  let store = $state<Store>(untrack(() => (privateAvailable ? "private" : "saved")));
   let summary = $state<ImportSummary | null>(null);
   let error = $state("");
   let busy = $state(false);
@@ -164,8 +167,8 @@
         skipped; a -pw written as ******** keeps the session's password.</p>
     {:else}
       <label class="store">Add them to
-        <select bind:value={store} onchange={() => void plan()} disabled={!savedAvailable}>
-          <option value="private">Private sessions (only you)</option>
+        <select bind:value={store} onchange={() => void plan()} disabled={!savedAvailable || !privateAvailable}>
+          {#if privateAvailable}<option value="private">Private sessions (only you)</option>{/if}
           {#if savedAvailable}<option value="saved">Saved sessions (Sessions.xml, the team's)</option>{/if}
         </select>
         in the folder {FOLDERS[kind]}

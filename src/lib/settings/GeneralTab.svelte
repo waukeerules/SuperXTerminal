@@ -106,6 +106,14 @@
   </fieldset>
 
   <fieldset>
+    <legend>Button bar</legend>
+    <label class="check"><input type="checkbox" checked={settings.confirmButtons}
+      onchange={(e) => void saveSettings({ confirmButtons: e.currentTarget.checked })} /> Ask before a button runs</label>
+    <p class="hint">A click on a button at the bottom of the window, meant for something else, would type its command
+      into the session. With this on, each button asks first, naming where it will run.</p>
+  </fieldset>
+
+  <fieldset>
     <legend>Look</legend>
     <label>Theme
       <select value={settings.theme} onchange={(e) => void saveSettings({ theme: e.currentTarget.value })}>

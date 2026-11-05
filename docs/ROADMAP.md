@@ -111,6 +111,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 
 **Done when:** the existing button bars and scripts run unchanged.
 
+- ✅ A button asks before it runs ("Run \"show clock\" in core-sw1?"), so a click at the bottom of the window meant for something else doesn't type into a device; on by default, Settings > General > Button bar turns it off. Checked: ButtonBar.test.ts. Not yet checked in the app
 - ✅ Button bar (`ButtonBars.xml` in the settings folder, written as XmlSerializer writes it; the Windows file reads and writes back byte for byte): bar picker, bars per tab icon (Show for Tab Icons), buttons with a colour circle or session icon; click sends to the active tab, Shift+click to the Send Commands selection; Send string escapes (\r \n \t \b \e \p \v \\) and SPSL scripts; New, Edit, Delete, Move Left/Right; New, Rename, Delete bar; JSON export/import; Reload. Checked: the Windows buttons in a Local Shell, and a test button added and removed (file back to identical)
 - ✅ Send Commands toolbar: Command box (Enter sends with Enter; Up/Down history; Ctrl+key sent at once), Send, mask, Script Editor, Select sessions to send to (Accept commands per tab, Send to visible tabs only), icon group. History lasts until the app closes (SuperXPuTTY's default; saving it comes with Options)
 - ✅ `{prompt:...}` and `{secret:...}` snippet prompts (one window, each name once, last value offered); `{key}` placeholders filled first for buttons and scripts, offering Environment Variables when one has no value

@@ -3,7 +3,7 @@
 // started and says which profile it uses, and again when the session or profile is saved; and it follows the tabs
 // though the window gives it them only after it's drawn, as App does.
 // The tab area is stood in for by `context.tabs` (the active tab, and its change listeners); the Rust side by
-// mockIPC: ButtonBars.xml's bars and the profiles stored.
+// mockIPC: ButtonBars.xml's bars and the profiles stored. And a button asks before it runs, unless that's turned off.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -45,6 +45,7 @@ beforeEach(() => {
       listeners.push(listener);
       return () => {};
     },
+    focusActive: () => {},
   } as unknown as TabArea;
 });
 
@@ -57,6 +58,63 @@ afterEach(() => {
 const shown = () => (screen.getByTitle("Button bar") as HTMLSelectElement).value;
 /** The labels of the buttons showing */
 const buttons = () => [...document.querySelectorAll(".bar-button")].map((b) => b.textContent?.trim());
+
+describe("asking before a button runs", () => {
+  /** What the button typed into the tab */
+  let typed: string[];
+  /** The question asked, and the answer given: "Run" or "Cancel" */
+  let asked: string[];
+  let reply: string;
+
+  beforeEach(() => {
+    typed = [];
+    asked = [];
+    reply = "Run";
+    mockIPC((cmd, args) => {
+      if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [button("show clock")], tabIcons: [] }];
+      if (cmd === "profiles_list") return [];
+      if (cmd === "variables_fill") return { text: (args as { text: string }).text, missing: [] };
+      // the dialog plugin's ask(): its message, answered with a button's label
+      if (cmd === "plugin:dialog|message") {
+        asked.push((args as { message: string }).message);
+        return reply;
+      }
+      return null;
+    });
+    const host = { canReceiveCommands: true, markOutput: () => {}, markCommand: () => {}, type: async (text: string) => void typed.push(text) };
+    context.tabs = {
+      commandTabs: () => [{ id: "t1", title: "core-sw1", session: "", icon: "switch", profile: "", active: true, host } as unknown as CommandTab],
+      onChange: () => () => {},
+      focusActive: () => {},
+    } as unknown as TabArea;
+  });
+
+  it("asks first, naming the button, its command and the tab; Cancel types nothing", async () => {
+    Object.assign(settings, { loaded: true, activeButtonBar: "", confirmButtons: true });
+    render(ButtonBar, { customs: new Map() });
+    const show = await screen.findByRole("button", { name: /show clock/ });
+    reply = "Cancel";
+    show.click();
+    await expect.poll(() => asked.length).toBe(1);
+    expect(asked[0]).toMatch(/^Run "show clock" \("show clock"\) in core-sw1\?/);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(typed).toEqual([]);
+    reply = "Run";
+    show.click();
+    await expect.poll(() => typed.join("")).toBe("show clock\r");
+    // the click's run finishes (its status and focus) before the next test's tab area comes
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  it("runs at once with the question turned off (Settings > General > Button bar)", async () => {
+    Object.assign(settings, { loaded: true, activeButtonBar: "", confirmButtons: false });
+    render(ButtonBar, { customs: new Map() });
+    (await screen.findByRole("button", { name: /show clock/ })).click();
+    await expect.poll(() => typed.join("")).toBe("show clock\r");
+    expect(asked).toEqual([]);
+    await new Promise((r) => setTimeout(r, 50));
+  });
+});
 
 describe("the button bar", () => {
   it("shows the bar for the tab's icon, then its profile's once the session starts", async () => {

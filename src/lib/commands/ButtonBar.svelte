@@ -124,6 +124,7 @@
       context.status(toSelected ? "No selected sessions to send to" : "No active session to send to");
       return;
     }
+    if (settings.confirmButtons && !(await confirmRun(button, targets.map((t) => t.title)))) return;
     // a script's own {variables} are its to fill as it runs
     const filled = button.action === "SpslScript" ? await fillScriptPlaceholders(button.text) : await fillPlaceholders(button.text);
     if (filled === null) return;
@@ -136,6 +137,25 @@
     }
     context.status(`Sent "${button.label}" to ${targets.length} session${targets.length === 1 ? "" : "s"}`);
     context.tabs?.focusActive();
+  }
+
+  /**
+   * Ask before a button runs (Settings > General > Button bar), so a click meant for something else doesn't type into a
+   * device: which button, what it does and where. True to run it.
+   */
+  function confirmRun(button: BarButton, tabs: string[]): Promise<boolean> {
+    const where = tabs.length === 1 ? tabs[0] : `${tabs.length} tabs (${tabs.join(", ")})`;
+    // a command's trailing line break is its Enter, not more to show
+    const command = button.text.replace(/(\\[rn]|[\r\n])+$/, "");
+    const what = button.action === "SpslScript"
+      ? "its script"
+      : `"${command.split("\n")[0].slice(0, 60)}${command.length > 60 || command.includes("\n") ? "…" : ""}"`;
+    return ask(`Run "${button.label}" (${what}) in ${where}?\n\nSettings > General > Button bar can stop this question.`, {
+      title: "Button bar",
+      kind: "info",
+      okLabel: "Run",
+      cancelLabel: "Cancel",
+    });
   }
 
   /** Whether a button's script is running in some tab (it shows a spinner) */

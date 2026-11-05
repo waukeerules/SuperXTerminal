@@ -21,6 +21,8 @@ export interface AppSettings {
   /** View > Button Bar and View > Send Commands */
   showButtonBar: boolean;
   showSendCommands: boolean;
+  /** A button bar button asks before it runs (Settings > General > Button bar; on by default) */
+  confirmButtons: boolean;
   /** Send Commands goes to every visible tab rather than the ticked ones */
   sendToVisibleOnly: boolean;
   /** The Script Editor stays above the tabs */
@@ -92,6 +94,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   database: { checkSeconds: 30, enabled: false },
   activeButtonBar: "",
   showButtonBar: true,
+  confirmButtons: true,
   showSendCommands: true,
   sendToVisibleOnly: false,
   scriptEditorOnTop: false,

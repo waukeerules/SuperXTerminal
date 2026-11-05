@@ -29,6 +29,9 @@ pub struct AppSettings {
     /// View > Button Bar and View > Send Commands, as ShowButtonBar and ShowToolBarCommands
     pub show_button_bar: bool,
     pub show_send_commands: bool,
+    /// A button bar button asks before it runs (on by default): a click meant for something else, at the bottom of the
+    /// window, mustn't type into a device
+    pub confirm_buttons: bool,
     /// Send Commands goes to every visible tab rather than the ticked ones, as SendCommandsToVisibleOnly
     pub send_to_visible_only: bool,
     /// The Script Editor stays on top, as ScriptEditorTopMost
@@ -118,6 +121,7 @@ impl Default for AppSettings {
             active_button_bar: String::new(),
             show_button_bar: true,
             show_send_commands: true,
+            confirm_buttons: true,
             send_to_visible_only: false,
             script_editor_on_top: false,
             auto_reconnect: true,

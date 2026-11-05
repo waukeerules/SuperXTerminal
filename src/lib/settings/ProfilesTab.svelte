@@ -478,7 +478,7 @@
         KiTTY's: a device's own idle timeout (a Cisco's exec-timeout) doesn't see ssh's keep-alives and logs the session
         out. KiTTY's escapes: \xHH a character by its hex code (\x05 is Ctrl+E, the end of the line on a Cisco, which
         shows nothing), \kHH a key, \r, \n, \t, \h (backspace) and \\; a \ at the end only ends it. Not while a
-        script runs in the tab.</p>
+        script runs in the tab, nor in a local shell, cmd or PowerShell tab: only sessions to another device.</p>
       <label>{@render caption("Older algorithms", "olderAlgorithms")}
         <select value={triToValue(draft.olderAlgorithms)} onchange={(e) => (draft.olderAlgorithms = valueToTri(e.currentTarget.value))}>
           {#if !isDefault}<option value="">From Default Settings</option>{/if}

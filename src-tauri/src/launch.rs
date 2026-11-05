@@ -329,7 +329,7 @@ pub fn key_fetch(profiles: &Profiles, values: &HashMap<String, String>, profile_
         password: None,
         local: true,
         notices: vec![format!("Fetching a new key for profile \"{}\" into {key_file}.", profile.name)],
-        look: look(profile, default),
+        look: shell_look(profile, default),
         stream: None,
         login: None,
     })
@@ -433,7 +433,8 @@ fn stream(
     })
 }
 
-/// The user's login shell, as for the New Local Shell button; it takes "Default Settings"' cursor and bell
+/// The user's login shell, as for the New Local Shell button (and cmd, PowerShell and WSL sessions); it takes
+/// "Default Settings"' cursor and bell, but not its anti-idle string (see [`shell_look`])
 pub fn local_shell(profiles: &Profiles) -> Launch {
     let default = profiles.default_profile();
     Launch {
@@ -441,7 +442,7 @@ pub fn local_shell(profiles: &Profiles) -> Launch {
         password: None,
         local: true,
         notices: Vec::new(),
-        look: look(default, default),
+        look: shell_look(default, default),
         stream: None,
         login: None,
     }
@@ -480,6 +481,13 @@ fn look(profile: &Profile, default: &Profile) -> Look {
             [profile.anti_idle_seconds, default.anti_idle_seconds].into_iter().find(|s| *s != 0).unwrap_or(ANTI_IDLE_SECONDS)
         },
     }
+}
+
+/// The look of a tab running on this computer (a local shell, cmd, PowerShell, a key fetch): as [`look`], without the
+/// anti-idle string. That's for a remote device's idle timeout (Cisco's exec-timeout); a local shell has none to keep
+/// awake, and cmd and PowerShell would only show it, ^E after ^E, at the prompt.
+fn shell_look(profile: &Profile, default: &Profile) -> Look {
+    Look { anti_idle: String::new(), anti_idle_seconds: 0, ..look(profile, default) }
 }
 
 /// Seconds without typing before the anti-idle string is sent when no profile says: KiTTY's (6 of its 30 s ticks)
@@ -1392,6 +1400,17 @@ mod tests {
         telnet.set("Proto", "Telnet");
         let launch = launch(&Sessions::default(), &with("ipv6", ""), &HashMap::new(), &BTreeMap::new(), Store::Saved, &telnet).unwrap();
         assert!(matches!(launch.stream, Some(Target::Telnet { family: Family::V6, .. })));
+    }
+
+    #[test]
+    fn a_tab_on_this_computer_is_sent_no_anti_idle_string() {
+        let mut profiles = Profiles::default();
+        profiles.profiles.push(Profile { name: "Default Settings".into(), anti_idle: r"\x05\".into(), ..Profile::default() });
+        let shell = super::local_shell(&profiles).look;
+        assert_eq!((shell.anti_idle.as_str(), shell.anti_idle_seconds), ("", 0));
+        // cmd is on every Windows PC, and opens the user's shell on the Mac
+        let cmd = super::windows_shell(&profiles, "WINCMD", "WinCmd").unwrap().look;
+        assert_eq!((cmd.anti_idle.as_str(), cmd.anti_idle_seconds), ("", 0));
     }
 
     #[test]

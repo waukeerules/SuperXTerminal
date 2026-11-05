@@ -198,6 +198,37 @@
    * profile's Host, and this session's host, username and port are left to the profile's SPSL script
    */
   const jumpServer = $derived((draft.protocol.toUpperCase() || "SSH") === "SSH" && openingProfile?.logInHere ? openingProfile : undefined);
+  /** Default Settings, which every profile falls back to */
+  const defaultProfile = $derived(profileNamed(DEFAULT_PROFILE));
+  /** Whether the session is SSH, the only kind that logs in through a gateway, a jump server or a key */
+  const isSsh = $derived((draft.protocol.toUpperCase() || "SSH") === "SSH");
+  /** The username a launch uses: the session's, else its folders', else its profile's, else Default Settings' */
+  const openingUsername = $derived(
+    draft.username.trim() || folders.find((f) => f.username)?.username || openingProfile?.username || defaultProfile?.username || "",
+  );
+  /**
+   * The gateway the session connects through (CyberArk's, docs/CYBERARK.md): its username names its host as
+   * {host_address}, so the tab connects to the profile's Host (else Default Settings') and the target travels in the
+   * username. "" for the host when neither has one, which doesn't open
+   */
+  const gateway = $derived.by(() => {
+    // not before the profiles have been read, when every gateway would look like Default Settings' with no Host
+    if (profileNames === null || !isSsh || jumpServer || !/\{host_address\}/i.test(openingUsername)) return undefined;
+    return { host: openingProfile?.host?.trim() || defaultProfile?.host?.trim() || "", profile: openingProfile?.name ?? DEFAULT_PROFILE };
+  });
+  /**
+   * The key file the session logs in with (its profile's, else Default Settings'), and whether that profile's Fetch
+   * command gets it (a short-lived key, CyberArk's: fetched in the tab when it's missing or older than its Lifetime)
+   */
+  const loginKey = $derived.by(() => {
+    if (!isSsh || !openingProfile) return undefined;
+    const owner = openingProfile.keyFile?.trim() ? openingProfile : defaultProfile;
+    if (!owner?.keyFile?.trim()) return undefined;
+    return { file: owner.keyFile.trim(), owner: owner.name, fetched: !!owner.keyFetch?.trim(), lifetime: Number(owner.keyLifetime) || 0 };
+  });
+  /** Whether the profile, or Default Settings, has a password stored, which is tried before a key */
+  const profilePassword = $derived(!!openingProfile?.hasPassword || !!defaultProfile?.hasPassword);
+
   /** The SPSL script the session runs with none of its own: its profile's, else Default Settings', with whose it is */
   const profileScript = $derived.by(() => {
     // (a profile saved before profiles had scripts has none)
@@ -433,9 +464,19 @@
         {@render missing(missingVariables.host)}
       {/if}
       {#if jumpServer}
-        <p class="note jump" role="note">Through the jump server: the tab logs in to {jumpServer.host || "(no Host set)"}{jumpServer.username ? ` as ${jumpServer.username}` : ""}
+        <p class="note jump" role="note" aria-label="Jump server">Through the jump server: the tab logs in to {jumpServer.host || "(no Host set)"}{jumpServer.username ? ` as ${jumpServer.username}` : ""}
           (profile "{jumpServer.name}", Log in here). This session's host, username and port are where its SPSL script goes
           on to{profileScript ? `: ${profileScript}` : ", but no SPSL script is set"}.</p>
+      {/if}
+      {#if gateway}
+        <p class="note jump" role="note" aria-label="Gateway">Through the gateway: the tab connects to
+          {gateway.host ? `${gateway.host} (profile "${gateway.profile}"'s Host)` : `profile "${gateway.profile}"'s Host, but it has none: set one in Profiles…`},
+          and this session's host, {draft.host.trim() || "(none)"}, goes in the username as {"{host_address}"}.</p>
+      {/if}
+      {#if loginKey?.fetched}
+        <p class="note jump" role="note" aria-label="Key">Logs in with the key {loginKey.file} (profile "{loginKey.owner}"), fetched by
+          its Fetch command when it's missing{loginKey.lifetime ? ` or older than ${loginKey.lifetime} minutes` : ""}: the
+          sign-in (a link, a PIN) happens in the tab.</p>
       {/if}
 
       <div class="row">
@@ -445,7 +486,7 @@
       {@render missing(missingVariables.username)}
       <div class="row">
         <label class="grow">{@render ownCaption()}<input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
-          placeholder={hasOwnPassword && password !== "" ? `Stored in ${SECRET_STORE}` : jumpServer ? `not used: the tab logs in as profile "${jumpServer.name}"` : /(^|\s)-pw\s/.test(draft.extraArgs) ? "none: the -pw on the Connection tab" : "none: the profile's"}
+          placeholder={hasOwnPassword && password !== "" ? `Stored in ${SECRET_STORE}` : jumpServer ? `not used: the tab logs in as profile "${jumpServer.name}"` : /(^|\s)-pw\s/.test(draft.extraArgs) ? "none: the -pw on the Connection tab" : loginKey && !profilePassword ? `none: the key ${loginKey.file} logs in` : "none: the profile's"}
           title={`Kept in ${SECRET_STORE} on ${THIS_COMPUTER} only, never in the session's file; used before its -pw and its profile's`} /></label>
         {#if hasOwnPassword && password !== ""}<button onclick={() => (password = "")} title="Forget the stored password">Forget</button>{/if}
         {#if storedPw}<button onclick={movePassword} title={`Keep the -pw password in ${SECRET_STORE} instead, on ${THIS_COMPUTER} only`}>Move -pw here</button>{/if}

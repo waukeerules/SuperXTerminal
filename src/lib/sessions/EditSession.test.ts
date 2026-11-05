@@ -4,7 +4,7 @@
 // side is stood in for by mockIPC: what's saved, what's stored as the session's password, the profiles and the
 // variables, which can be held back to show the window before they arrive.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/svelte";
+import { cleanup, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import EditSession from "./EditSession.svelte";
@@ -246,7 +246,7 @@ describe("Edit Session with a jump server profile", () => {
 
   it("says the tab logs in to the jump server, and the session's host is where its script goes", async () => {
     open({ ...SESSION, extraArgs: "", profile: "Jump Server" });
-    const note = await screen.findByRole("note");
+    const note = await screen.findByRole("note", { name: "Jump server" });
     expect(note.textContent?.replace(/\s+/g, " ")).toBe(
       'Through the jump server: the tab logs in to 192.168.3.2 as root (profile "Jump Server", Log in here). This session\'s host, username and port are where its SPSL script goes on to: cisco-jump.spsl (Jump Server\'s).',
     );
@@ -260,5 +260,39 @@ describe("Edit Session with a jump server profile", () => {
     await user.click(screen.getByRole("tab", { name: "Terminal" }));
     await expect.poll(() => (screen.getByLabelText(/SPSL script/) as HTMLInputElement).placeholder).toBe("none: the profile's, omv.spsl (Linux's)");
     expect(screen.queryByRole("note")).toBeNull();
+  });
+});
+
+describe("Edit Session with a CyberArk profile", () => {
+  /** The CyberArk profile: a gateway as its Host, and a key its Fetch command gets, good for 240 minutes */
+  const CYBERARK = { name: "CyberArk", username: "unknown", host: "gw.example.test", keyFile: "~/.ssh/cyberark_key", keyFetch: "sftp ...", keyLifetime: 240, script: "", hasPassword: false };
+  /** The session: a switch, its username CyberArk's connection string naming its host */
+  const SWITCH = { ...SESSION, extraArgs: "", profile: "CyberArk", username: "{ad_username}#{cyberark_region}@{cyberark_username}#{cyberark_address}@{host_address}#{cyberark_vault}" };
+
+  beforeEach(() => {
+    profileList = [{ name: "Default Settings", script: "" }, CYBERARK];
+  });
+
+  it("says the tab connects to the gateway with the host in the username, and logs in with the fetched key", async () => {
+    variables = ["ad_username", "cyberark_region", "cyberark_username", "cyberark_address", "cyberark_vault"];
+    open(SWITCH);
+    const text = async (name: string) => (await screen.findByRole("note", { name })).textContent?.replace(/\s+/g, " ").trim();
+    expect(await text("Gateway")).toBe(
+      'Through the gateway: the tab connects to gw.example.test (profile "CyberArk"\'s Host), and this session\'s host, 192.168.0.50, goes in the username as {host_address}.',
+    );
+    expect(await text("Key")).toBe(
+      'Logs in with the key ~/.ssh/cyberark_key (profile "CyberArk"), fetched by its Fetch command when it\'s missing or older than 240 minutes: the sign-in (a link, a PIN) happens in the tab.',
+    );
+    expect((screen.getByLabelText(/Password/) as HTMLInputElement).placeholder).toBe("none: the key ~/.ssh/cyberark_key logs in");
+  });
+
+  it("says the gateway has no Host, and nothing of a gateway for a username without {host_address}", async () => {
+    profileList = [{ name: "Default Settings", script: "" }, { ...CYBERARK, host: "" }];
+    open(SWITCH);
+    expect((await screen.findByRole("note", { name: "Gateway" })).textContent).toContain('profile "CyberArk"\'s Host, but it has none');
+    cleanup();
+    open({ ...SWITCH, username: "admin" });
+    await screen.findByRole("note", { name: "Key" });
+    expect(screen.queryByRole("note", { name: "Gateway" })).toBeNull();
   });
 });

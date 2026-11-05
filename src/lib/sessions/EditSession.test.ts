@@ -25,6 +25,8 @@ let moved: string[];
 let profilesWait: Promise<void> | null;
 /** The Environment Variables' names, as variables_list gives them */
 let variables: string[];
+/** The profiles profiles_list gives */
+let profileList: Record<string, unknown>[];
 
 beforeEach(() => {
   saved = null;
@@ -32,6 +34,7 @@ beforeEach(() => {
   moved = [];
   profilesWait = null;
   variables = [];
+  profileList = [{ name: "Default Settings" }, { name: "root" }];
   mockIPC(async (cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (cmd === "session_password_has") return false;
@@ -49,7 +52,7 @@ beforeEach(() => {
     }
     if (cmd === "profiles_list") {
       if (profilesWait) await profilesWait;
-      return [{ name: "Default Settings" }, { name: "root" }];
+      return profileList;
     }
     if (cmd === "variables_list") return variables.map((key) => ({ key, value: "", secret: false }));
     if (cmd === "variables_built_in") return [["host_address", ""], ["host_port", ""], ["key_file", ""]];
@@ -229,5 +232,33 @@ describe("Edit Session's notes", () => {
     variables = ["domain", "user"];
     window.dispatchEvent(new Event(VARIABLES_CHANGED));
     await expect.poll(() => screen.queryByText("{user}")).toBeNull();
+  });
+});
+
+describe("Edit Session with a jump server profile", () => {
+  beforeEach(() => {
+    profileList = [
+      { name: "Default Settings", script: "" },
+      { name: "Jump Server", host: "192.168.3.2", username: "root", logInHere: true, script: "cisco-jump.spsl" },
+      { name: "Linux", host: "192.168.3.2", script: "omv.spsl" },
+    ];
+  });
+
+  it("says the tab logs in to the jump server, and the session's host is where its script goes", async () => {
+    open({ ...SESSION, extraArgs: "", profile: "Jump Server" });
+    const note = await screen.findByRole("note");
+    expect(note.textContent?.replace(/\s+/g, " ")).toBe(
+      'Through the jump server: the tab logs in to 192.168.3.2 as root (profile "Jump Server", Log in here). This session\'s host, username and port are where its SPSL script goes on to: cisco-jump.spsl (Jump Server\'s).',
+    );
+    // the session's own password isn't the one that logs in
+    expect((screen.getByLabelText(/Password/) as HTMLInputElement).placeholder).toBe('not used: the tab logs in as profile "Jump Server"');
+  });
+
+  it("says nothing for a profile without Log in here, and the SPSL script field shows the profile's", async () => {
+    const user = userEvent.setup();
+    open({ ...SESSION, extraArgs: "", profile: "Linux" });
+    await user.click(screen.getByRole("tab", { name: "Terminal" }));
+    await expect.poll(() => (screen.getByLabelText(/SPSL script/) as HTMLInputElement).placeholder).toBe("none: the profile's, omv.spsl (Linux's)");
+    expect(screen.queryByRole("note")).toBeNull();
   });
 });

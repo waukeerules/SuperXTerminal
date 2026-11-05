@@ -17,7 +17,7 @@
   import { PALETTE } from "../icons/palette";
   import { highlighting } from "../terminal/highlighting";
   import { loadBars } from "../commands/bars";
-  import { listProfiles, DEFAULT_PROFILE, PROFILES_CHANGED } from "../settings/profiles";
+  import { listProfiles, DEFAULT_PROFILE, PROFILES_CHANGED, type Profile } from "../settings/profiles";
   import { settingsShown } from "../settings/Settings.svelte";
   import { variablesShown, VARIABLES_CHANGED } from "../settings/EnvironmentVariables.svelte";
   import { context } from "../commands/sending.svelte";
@@ -71,6 +71,8 @@
   let draft = $state<SessionFields>(untrack(() => ({ ...fields })));
   /** The user's profiles' names; null until they've been read, when no profile can be said to be missing */
   let profileNames = $state<string[] | null>(null);
+  /** The user's profiles themselves, for what the session's profile does (Log in here, its SPSL script) */
+  let profiles = $state<Profile[]>([]);
   /** The Environment Variables' names and the built-in placeholders', lower-cased; null until they've been read */
   let variableNames = $state<Set<string> | null>(null);
   let ruleSets = $state<{ id: string; name: string }[]>([]);
@@ -174,10 +176,34 @@
     variableNames = new Set([...rows.map((r) => r.key.trim().toLowerCase()), ...builtIn.map(([n]) => n.toLowerCase())]);
   }
 
-  /** The profiles' names, again whenever Settings > Profiles changes them */
+  /** The profiles and their names, again whenever Settings > Profiles changes them */
   async function loadProfileNames(): Promise<void> {
-    profileNames = (await listProfiles()).map((p) => p.name);
+    profiles = await listProfiles();
+    profileNames = profiles.map((p) => p.name);
   }
+
+  /** A profile by name, whatever its case */
+  const profileNamed = (name: string) => profiles.find((p) => p.name.toLowerCase() === name.trim().toLowerCase());
+  /**
+   * The profile the session opens with, as a launch picks it: its own, else its folders', else Default Settings
+   * (and Default Settings for one that isn't set up)
+   */
+  const openingProfile = $derived.by(() => {
+    const own = draft.profile.trim();
+    const name = own && own.toLowerCase() !== DEFAULT_PROFILE.toLowerCase() ? own : folders.find((f) => f.puttyProfile)?.puttyProfile ?? "";
+    return profileNamed(name) ?? profileNamed(DEFAULT_PROFILE);
+  });
+  /**
+   * The jump server profile the session logs in through (its profile's Log in here, SSH only): the tab logs in to the
+   * profile's Host, and this session's host, username and port are left to the profile's SPSL script
+   */
+  const jumpServer = $derived((draft.protocol.toUpperCase() || "SSH") === "SSH" && openingProfile?.logInHere ? openingProfile : undefined);
+  /** The SPSL script the session runs with none of its own: its profile's, else Default Settings', with whose it is */
+  const profileScript = $derived.by(() => {
+    // (a profile saved before profiles had scripts has none)
+    const owner = [openingProfile, profileNamed(DEFAULT_PROFILE)].find((p) => p?.script?.trim());
+    return owner ? `${owner.script.trim()} (${owner.name}'s)` : "";
+  });
 
   onMount(() => {
     window.addEventListener(PROFILES_CHANGED, loadProfileNames);
@@ -406,6 +432,11 @@
         </div>
         {@render missing(missingVariables.host)}
       {/if}
+      {#if jumpServer}
+        <p class="note jump" role="note">Through the jump server: the tab logs in to {jumpServer.host || "(no Host set)"}{jumpServer.username ? ` as ${jumpServer.username}` : ""}
+          (profile "{jumpServer.name}", Log in here). This session's host, username and port are where its SPSL script goes
+          on to{profileScript ? `: ${profileScript}` : ", but no SPSL script is set"}.</p>
+      {/if}
 
       <div class="row">
         <label class="grow">{@render caption("Login username:", "username")}<input bind:value={draft.username} placeholder={inherited("username") || "e.g. admin, or {user}"}
@@ -414,7 +445,7 @@
       {@render missing(missingVariables.username)}
       <div class="row">
         <label class="grow">{@render ownCaption()}<input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
-          placeholder={hasOwnPassword && password !== "" ? `Stored in ${SECRET_STORE}` : /(^|\s)-pw\s/.test(draft.extraArgs) ? "none: the -pw on the Connection tab" : "none: the profile's"}
+          placeholder={hasOwnPassword && password !== "" ? `Stored in ${SECRET_STORE}` : jumpServer ? `not used: the tab logs in as profile "${jumpServer.name}"` : /(^|\s)-pw\s/.test(draft.extraArgs) ? "none: the -pw on the Connection tab" : "none: the profile's"}
           title={`Kept in ${SECRET_STORE} on ${THIS_COMPUTER} only, never in the session's file; used before its -pw and its profile's`} /></label>
         {#if hasOwnPassword && password !== ""}<button onclick={() => (password = "")} title="Forget the stored password">Forget</button>{/if}
         {#if storedPw}<button onclick={movePassword} title={`Keep the -pw password in ${SECRET_STORE} instead, on ${THIS_COMPUTER} only`}>Move -pw here</button>{/if}
@@ -482,7 +513,7 @@
         </label>
       </div>
       <div class="row">
-        <label class="grow">{@render caption("SPSL script:", "script")}<input bind:value={draft.script} disabled={locked("spsl_script")} title={locked("spsl_script") ? lockTip : ""} /></label>
+        <label class="grow">{@render caption("SPSL script:", "script")}<input bind:value={draft.script} placeholder={profileScript ? `none: the profile's, ${profileScript}` : "none"} disabled={locked("spsl_script")} title={locked("spsl_script") ? lockTip : ""} /></label>
         <button onclick={() => (draft.script = "")}>Clear</button>
         <button onclick={browseScript}>Browse…</button>
       </div>
@@ -768,6 +799,12 @@
     position: absolute;
     inset: 0;
     opacity: 0;
+  }
+
+  /* the jump server note: where the tab really logs in, so it stands out from the other notes */
+  .note.jump {
+    border-left: 3px solid var(--accent);
+    padding-left: 8px;
   }
 
   .note {

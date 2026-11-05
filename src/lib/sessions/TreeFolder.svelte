@@ -155,8 +155,9 @@
   {#each node.sessions as session, i (session.store + ":" + session.id)}
     {@const reason = unavailableReason(session.protocol)}
     {@const key = node.group ? `${node.group}:${session.store}:${session.id}` : `${session.store}:${session.id}`}
+    <!-- data-key: Show in Sessions tree finds the row by it, to scroll it into view -->
     <div class="row session" class:dimmed={reason !== null} class:pending={session.pending} class:selected={selected === key || multi.has(key)}
-      onclick={(e) => onSelect(key, e)} draggable={!session.locked && !node.group}
+      data-key={key} onclick={(e) => onSelect(key, e)} draggable={!session.locked && !node.group}
       ondragstart={(e) => drag(e, dragOf(key, { kind: "session", store: session.store, id: session.id }))}
       ondragover={dragOver} ondragleave={() => (over = false)} ondrop={drop}
       oncontextmenu={(e) => { e.preventDefault(); onSelect(key); onMenu(e, { session, group: node.group }); }} style:padding-left="{(depth + 1) * 18 + (lines ? 22 : 14)}px"

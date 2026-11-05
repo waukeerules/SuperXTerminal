@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import { MOD } from "../platform";
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import TreeFolder from "./TreeFolder.svelte";
   import {
@@ -457,7 +457,7 @@
       const { session, group } = target;
       items = [
         { label: "Connect", bold: true, action: () => open(session) },
-        { label: "Show in Sessions tree", action: () => showInTree(session) },
+        { label: "Show in Sessions tree", action: () => void showInTree(session) },
         { separator: true },
         ...(group === "recent" ? [favoriteItem(session)] : []),
         group === "favorites"
@@ -862,8 +862,11 @@
     }
   }
 
-  /** Select a session in its own root, opening the folders above it (SuperXPuTTY's Show in Sessions tree) */
-  function showInTree(session: SessionView): void {
+  /**
+   * Select a session in its own root, opening the folders above it, and scroll it into view (SuperXPuTTY's Show in
+   * Sessions tree): it's often far below Recent or Favorites, where it was right-clicked
+   */
+  async function showInTree(session: SessionView): Promise<void> {
     query = "";
     const keys = [`${session.store}:`];
     let path = "";
@@ -873,6 +876,11 @@
     }
     expanded = new Set([...expanded, ...keys]);
     selected = `${session.store}:${session.id}`;
+    // once the opened folders have drawn its row
+    await tick();
+    const key = selected;
+    // compared rather than put in a selector: a session's id can hold quotes
+    [...(treeElement?.querySelectorAll<HTMLElement>(".row.session") ?? [])].find((r) => r.dataset.key === key)?.scrollIntoView({ block: "nearest" });
   }
 
   /** The roots' names, for Move to / Copy to */

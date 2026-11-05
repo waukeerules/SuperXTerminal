@@ -1,7 +1,8 @@
 // The Sessions tree's selection of folders and sessions together: Cmd+click and Shift+click pick both, and the
-// selection's menu moves them to a folder; and on a clean install, the first session saved shows. The Rust side is
-// stood in for by mockIPC; moves are recorded.
-import { beforeEach, describe, expect, it } from "vitest";
+// selection's menu moves them to a folder; Show in Sessions tree opens a Recent session's folders and scrolls to it;
+// and on a clean install, the first session saved shows. The Rust side is stood in for by mockIPC; moves are
+// recorded. jsdom doesn't scroll, so scrollIntoView is stood in for, recording the rows it's asked to show.
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -79,6 +80,38 @@ describe("selecting folders and sessions together", () => {
     await user.keyboard("{/Shift}");
     for (const name of [/^Core \(/, "sw1", "sw2", "r1"]) expect(row(name).classList.contains("selected"), String(name)).toBe(true);
     expect(row("x").classList.contains("selected")).toBe(false);
+  });
+});
+
+describe("Show in Sessions tree", () => {
+  /** The rows scrollIntoView was asked to show */
+  let scrolled: Element[];
+  /** jsdom's Element has no scrollIntoView of its own */
+  const own = Element.prototype.scrollIntoView;
+  beforeEach(() => {
+    scrolled = [];
+    Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this); };
+  });
+  afterEach(() => {
+    Element.prototype.scrollIntoView = own;
+  });
+
+  it("opens a Recent session's folders, selects it there and scrolls it into view", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "sessions_load") return { sessions: [session("Imported/Core/sw1"), session("Imported/r1"), session("Lab/x")], folders: [], problems: [] };
+      if (cmd === "shortcuts_get") return { Favorites: [], Recent: ["Imported/Core/sw1"], FavoritesExpanded: false, RecentExpanded: true };
+      if (cmd === "overrides_get") return {};
+      if (cmd === "icons_custom" || cmd === "profiles_list") return [];
+      return null;
+    });
+    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    // only Recent's sw1 shows: its folders are closed
+    const inRecent = await screen.findByText("sw1");
+    await user.pointer({ keys: "[MouseRight]", target: inRecent });
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Show in Sessions tree" }));
+    const inFolder = document.querySelector<HTMLElement>('.row.session[data-key="saved:Imported/Core/sw1"]');
+    expect(inFolder?.classList.contains("selected")).toBe(true);
+    await expect.poll(() => scrolled).toEqual([inFolder]);
   });
 });
 

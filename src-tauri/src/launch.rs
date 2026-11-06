@@ -625,6 +625,22 @@ fn ssh(
             }
         }
     }
+    // the profile's Host (docs/CYBERARK.md), at the profile's port: for a session with no host of its own, as a PuTTY
+    // saved session's Host Name; and for a username naming the session's host ({host_address}), a gateway's, which
+    // takes the target in the username. Any other username connects to the session's host, so a local override's
+    // own username (and profile) goes straight there.
+    let through_gateway = username.to_ascii_lowercase().contains(&format!("{{{HOST_ADDRESS}}}"));
+    // its placeholders count only when it's used: unfilled, ssh was given "{cyberark_gateway}" as the host
+    let raw_profile_host = first(&profile.host, &default.host).trim();
+    if log_in_here || through_gateway || session.get("Host").trim().is_empty() {
+        let mut in_profile = variables::missing(raw_profile_host, values);
+        in_profile.retain(|key| !missing.contains(key));
+        if !in_profile.is_empty() {
+            // the profile with no Host of its own takes Default Settings'
+            let name = if profile.host.trim().is_empty() { &default.name } else { &profile.name };
+            missing.push(format!("{} (in the Host of profile \"{name}\")", in_profile.join(", ")));
+        }
+    }
     if !missing.is_empty() {
         return Err(format!(
             "This session uses placeholders that have no value yet: {}. Define them in Tools > Environment Variables.",
@@ -632,14 +648,9 @@ fn ssh(
         ));
     }
     let mut host = variables::substitute(session.get("Host").trim(), values);
-    // the profile's Host (docs/CYBERARK.md), at the profile's port: for a session with no host of its own, as a PuTTY
-    // saved session's Host Name; and for a username naming the session's host ({host_address}), a gateway's, which
-    // takes the target in the username. Any other username connects to the session's host, so a local override's
-    // own username (and profile) goes straight there.
-    let through_gateway = username.to_ascii_lowercase().contains(&format!("{{{HOST_ADDRESS}}}"));
     let username = variables::substitute(&username, values);
     let jump_host = variables::substitute(&jump_host, values);
-    let profile_host = variables::substitute(first(&profile.host, &default.host).trim(), values);
+    let profile_host = variables::substitute(raw_profile_host, values);
     let profile_port = [profile.port, default.port].into_iter().find(|p| *p != 0);
     if log_in_here {
         if profile_host.is_empty() {
@@ -1124,6 +1135,23 @@ mod tests {
         let mut profiles = jump_server("192.168.3.2");
         profiles.profiles[2].log_in_here = false;
         assert_eq!(launched(&profiles, &[], &sw).unwrap().last().unwrap(), "192.168.0.50");
+    }
+
+    #[test]
+    fn a_profiles_host_with_a_placeholder_with_no_value_says_so_when_its_used() {
+        // the gateway as an Environment Variable: with none defined, ssh was given "{cyberark_gateway}" to connect to
+        let mut profiles = cyberark();
+        profiles.profiles.last_mut().unwrap().host = "{cyberark_gateway}".into();
+        let sw = at("192.168.0.50", &[("PuttySession", "CyberArk")]);
+        let error = launched(&profiles, &CYBERARK_VALUES, &sw).unwrap_err();
+        assert!(error.contains("cyberark_gateway") && error.contains("Environment Variables"), "{error}");
+        assert!(error.contains("CyberArk"), "names the profile whose Host it is: {error}");
+        // defined, it's where ssh connects
+        let values: Vec<(&str, &str)> = CYBERARK_VALUES.iter().copied().chain([("cyberark_gateway", "gw.example.test")]).collect();
+        assert_eq!(launched(&profiles, &values, &sw).unwrap().last().unwrap(), "gw.example.test");
+        // a session that doesn't use the profile's Host (its own username, straight to its own host) opens as before
+        let straight = at("192.168.0.50", &[("PuttySession", "CyberArk"), ("Username", "admin")]);
+        assert_eq!(launched(&profiles, &[], &straight).unwrap().last().unwrap(), "192.168.0.50");
     }
 
     #[test]

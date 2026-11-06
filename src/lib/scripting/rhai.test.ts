@@ -86,11 +86,11 @@ class FakeCore implements RhaiCore {
   }
 }
 
-/** Run a stand-in script in a device; its status lines */
-async function run(core: FakeCore, device: Device, script = new ScriptRun("Script", "sw1", 3)): Promise<string[]> {
+/** Run a stand-in script in a device (`fromStart`: as a login script, seeing all the output so far); its status lines */
+async function run(core: FakeCore, device: Device, script = new ScriptRun("Script", "sw1", 3), fromStart = false): Promise<string[]> {
   const status: string[] = [];
   const host: ScriptHost = { ask: async () => "answer", openSession: () => true, status: (t) => status.push(t), save: async () => "", loadScript: async () => "" };
-  await runRhai(device, host, script, "(the script)", false, {}, core);
+  await runRhai(device, host, script, "(the script)", fromStart, {}, core);
   return status;
 }
 
@@ -169,5 +169,25 @@ describe("a button's colour", () => {
     script.color = "#E5534B";
     await run(core, device, script);
     expect(log).toEqual(["mark #E5534B", "type show clock\r", "mark #E5534B", "type q"]);
+  });
+});
+
+describe("a Rhai login script", () => {
+  it("sees everything the session printed before it started, as an SPSL one does (a button's sees the cursor's line on)", async () => {
+    /** Wait for the login banner, which came before the script started */
+    const waitBanner = () => new FakeCore(async (call) => {
+      found = await call("wait", waitFor("Welcome", 50));
+    });
+    let found: unknown;
+    const banner = () => {
+      const device = new Device();
+      device.output = "Welcome to sw1\r\nlogin: ";
+      return device;
+    };
+    await run(waitBanner(), banner(), undefined, true);
+    expect(found).toEqual({ index: 0, groups: ["Welcome"] });
+    // from a button: only the cursor's line and after
+    await run(waitBanner(), banner(), undefined, false);
+    expect(found).toBeNull();
   });
 });

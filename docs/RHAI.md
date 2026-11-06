@@ -20,8 +20,26 @@ tab's half); examples are in [rhai-examples](rhai-examples).
 |---|---|---|
 | A button (button bar, Edit Button > Action: Run Rhai script) | Click: the active tab. Shift+click: the Send Commands selection | the cursor's line |
 | Script Editor (Tools > Script Editor), Run as: Rhai script | Send: the Send Commands selection | the cursor's line |
+| A session's own login script (Edit Session > Terminal > Login script: a file, a path in the settings folder, or a URL) | Runs as the session starts | everything since the session started |
+| A profile's login script (Settings > Profiles > Login script, named the same way), for its sessions that have no script of their own | The same as a session's own | everything since the session started |
 
-Not yet as a session's own script or a profile's (those are SPSL only).
+**A login script** is told to be Rhai by its first line, `#!/bin/rhai`, or by its name ending `.rhai`; one starting
+`#!/bin/spsl` is SPSL, and anything else isn't run. It starts as the connection does, so begin by waiting for the
+prompt:
+
+```rhai
+#!/bin/rhai
+if !wait_prompt(30) {
+    throw "the login didn't finish";
+}
+send_line("terminal length 0");
+wait_prompt();
+status(`Logged in to ${session.session_name}`);
+```
+
+A session's own script wins over its profile's, as for SPSL ([SPSL.md](SPSL.md#where-scripts-run) has the rest:
+Default Settings', jump server profiles). An Environment Variable the script reads with no value is offered before
+it runs, as for a button's.
 
 **Before it runs**, it's checked, as you write it (the problems under the script box) and again when you press OK
 or Send:
@@ -344,7 +362,7 @@ There's no PAGER yet: turn the device's paging off for this login first (`termin
 
 ## Not there yet
 
-What SPSL has that Rhai scripts don't yet: running as a session's or a profile's own script; Step (a line at a time);
+What SPSL has that Rhai scripts don't yet: Step (a line at a time);
 FAILON; PAGER; WAITQUIET; SAVE; CALL (Saved scripts > Insert puts a saved script's text in instead); LIMIT (Stop
 ends one); CHECK and REQUIRE; SENDBREAK; OPENSESSION.
 
@@ -354,6 +372,9 @@ ends one); CHECK and REQUIRE; SENDBREAK; OPENSESSION.
 - **`session` and `env` are different.** The tab's host is `session.host_address`; `env` is Environment Variables.
 - **`trim()` and `replace()` give nothing back**: they change the variable itself.
 - **The echo of what you typed is output.** Anchor with `^`, or wait for something only the answer has.
+- **A wait uses up what it finds.** After `wait_for("#")` finds the `#` at the end of a prompt, a `wait_prompt()` looks
+  at what comes after it, which is nothing yet, so it waits out its time. To check the prompt, wait for the prompt
+  (`wait_prompt()`) and look at `matched()[0]`: `if !matched()[0].ends_with("#") { … }`.
 - **`#`, `>` and `$` anywhere.** `wait_for("#")` matches the first `#` in any output; `wait_prompt()` or an anchored
   regular expression is safer.
 - **Regular expressions in `"double quotes"`** need every `\` doubled (`"\\d+"`). Write them in `` `backquotes` ``.

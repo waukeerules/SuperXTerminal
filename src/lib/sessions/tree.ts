@@ -138,7 +138,7 @@ export type SearchField =
 export const SEARCH_FIELDS: [SearchField, string][] = [
   ["name", "Session name"], ["folder", "Folder"], ["host", "Host address"], ["username", "Login username"],
   ["port", "TCP port"], ["protocol", "Connection type"], ["profile", "Profile"], ["extraArgs", "Extra arguments"],
-  ["note", "Notes"], ["script", "SPSL script file"], ["icon", "Icon"],
+  ["note", "Notes"], ["script", "Login script file"], ["icon", "Icon"],
 ];
 
 /** Every field, for All fields */

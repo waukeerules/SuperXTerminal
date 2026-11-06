@@ -165,6 +165,18 @@ export function runScriptIn(tab: CommandTab, script: string, name: string, fromS
 }
 
 /**
+ * Which language a session's or profile's login script is in, as it opens in a tab: SPSL for one starting #!/bin/spsl
+ * (SuperXPuTTY's marker, so a file meant for something else is never run as SPSL), Rhai for one starting #!/bin/rhai
+ * or named .rhai (a file or an address); null for anything else, which isn't run
+ * @param source Where the script is from as written (a path or an http(s) address), for its .rhai
+ */
+export function openingLanguage(text: string, source = ""): "spsl" | "rhai" | null {
+  if (text.startsWith("#!/bin/spsl")) return "spsl";
+  if (text.startsWith("#!/bin/rhai") || /\.rhai$/i.test(source.trim().replace(/[?#].*$/, ""))) return "rhai";
+  return null;
+}
+
+/**
  * Whether the Environment Variables a Rhai script reads (`env.name`) all have values; for one that hasn't, offers to
  * open Environment Variables as a missing {key} does for SPSL (fillPlaceholders), and the script doesn't run. A
  * session value read as one (`env.host_address`) stops it too, saying to write `session.host_address`. Its

@@ -299,9 +299,9 @@
     if (typeof path === "string") draft.keyFile = path;
   }
 
-  /** Choose the SPSL script the profile's sessions run as they open */
+  /** Choose the login script (SPSL or Rhai) the profile's sessions run as they open */
   async function chooseScript(): Promise<void> {
-    const path = await open({ title: "Choose the profile's SPSL script", filters: [{ name: "Scripts", extensions: ["spsl", "txt"] }] });
+    const path = await open({ title: "Choose the profile's login script", filters: [{ name: "Scripts", extensions: ["spsl", "rhai", "txt"] }] });
     if (typeof path === "string") draft.script = path;
   }
 
@@ -459,7 +459,7 @@
       <!-- not on Default Settings: every session would then log in to one host -->
       {#if !isDefault}
         <label>{@render caption("Log in here", "logInHere")}<span class="check"><input type="checkbox" bind:checked={draft.logInHere} />
-          a jump server: its sessions log in to this Host, and the SPSL script goes on to theirs</span></label>
+          a jump server: its sessions log in to this Host, and the login script goes on to theirs</span></label>
         <p class="note under">Each tab logs in to this Host with this profile's username, password and key. The
           session's own host, username and port are left for the profile's SPSL script (Terminal, below), as
           {"{host_address}"}, {"{host_port}"} and {"{session_username}"}: for example
@@ -562,12 +562,13 @@
           {#each barNames as name (name)}<option value={name}>{name}</option>{/each}
           {#if missingBar}<option value={missingBar}>{missingBar} (not in the button bars)</option>{/if}
         </select></label>
-      <label>{@render caption("SPSL script", "script")}<input bind:value={draft.script}
+      <label>{@render caption("Login script", "script")}<input bind:value={draft.script}
           placeholder={isDefault ? "none; a file, or an http(s) address" : defaultProfile?.script ? `From Default Settings (${defaultProfile.script})` : "none; a file, or an http(s) address"} />
         <button onclick={chooseScript}>Choose…</button></label>
-      <p class="note under">Run in each of the profile's tabs as it opens, when the session has no SPSL script of its own
-        (Edit Session > Terminal), so a session can be just a name and a host. The file must start with #!/bin/spsl.
-        It starts as the connection does: begin with WAITPROMPT to run once the login is done. A path that isn't
+      <p class="note under">Run in each of the profile's tabs as it opens, when the session has no login script of its
+        own (Edit Session > Terminal), so a session can be just a name and a host. SPSL, starting with #!/bin/spsl; or
+        Rhai, starting with #!/bin/rhai or named .rhai. It starts as the connection does: begin with WAITPROMPT (Rhai:
+        wait_prompt()) to run once the login is done. A path that isn't
         absolute is in the settings folder.{#if isDefault} Default Settings' runs for every session without one.{/if}</p>
     </fieldset>
 

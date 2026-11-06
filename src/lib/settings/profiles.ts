@@ -70,13 +70,14 @@ export interface Profile {
    */
   buttonBar: string;
   /**
-   * An SPSL script its sessions run as they open, when a session has no script of its own: a file (absolute,
+   * A login script (SPSL, or Rhai: #!/bin/rhai or a .rhai file) its sessions run as they open, when a session has no
+   * script of its own: a file (absolute,
    * file://, or relative to the settings folder) or an http(s) address. "" for Default Settings', else none
    */
   script: string;
   /**
    * A jump server: its sessions' tabs log in to this profile's Host, as this profile, and leave the session's host,
-   * username and port to the SPSL script. This profile's alone, not taken from Default Settings
+   * username and port to the login script. This profile's alone, not taken from Default Settings
    */
   logInHere: boolean;
   hasPassword: boolean;

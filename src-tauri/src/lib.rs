@@ -469,7 +469,8 @@ fn buttonbars_import(state: State<'_, AppState>, path: PathBuf) -> Result<(Vec<b
     Ok((bars, last))
 }
 
-/// The script a session runs as it opens (Edit Session's SPSL script, else its profile's), found as SuperXPuTTY finds it
+/// The script a session runs as it opens (Edit Session's login script, else its profile's), found as SuperXPuTTY finds
+/// it: SPSL (#!/bin/spsl) or Rhai (#!/bin/rhai, or a .rhai file), which the window tells apart
 #[derive(serde::Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum SessionScript {
@@ -477,7 +478,8 @@ enum SessionScript {
     None,
     /// An http(s) address, which the window fetches
     Url { url: String, profile: Option<String> },
-    Text { text: String, profile: Option<String> },
+    /// The script's text, and where it's from as written (`source`: a path), whose .rhai says it's a Rhai script
+    Text { text: String, profile: Option<String>, source: String },
     /// A file that isn't there, e.g. a Windows path (C:\...)
     Missing { path: String, profile: Option<String> },
 }
@@ -576,7 +578,7 @@ fn read_script(spec: &str, profile: Option<String>, folder: &std::path::Path) ->
     let path = PathBuf::from(spec.strip_prefix("file://").unwrap_or(spec));
     let path = if path.is_absolute() { path } else { folder.join(path) };
     match std::fs::read_to_string(&path) {
-        Ok(text) => SessionScript::Text { text, profile },
+        Ok(text) => SessionScript::Text { text, profile, source: spec.to_string() },
         Err(_) => SessionScript::Missing { path: spec.to_string(), profile },
     }
 }

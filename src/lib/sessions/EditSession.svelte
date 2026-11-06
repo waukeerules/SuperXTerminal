@@ -229,7 +229,7 @@
   /** Whether the profile, or Default Settings, has a password stored, which is tried before a key */
   const profilePassword = $derived(!!openingProfile?.hasPassword || !!defaultProfile?.hasPassword);
 
-  /** The SPSL script the session runs with none of its own: its profile's, else Default Settings', with whose it is */
+  /** The login script the session runs with none of its own: its profile's, else Default Settings', with whose it is */
   const profileScript = $derived.by(() => {
     // (a profile saved before profiles had scripts has none)
     const owner = [openingProfile, profileNamed(DEFAULT_PROFILE)].find((p) => p?.script?.trim());
@@ -368,9 +368,9 @@
     if (!TABS.some((t) => t.name === tab)) tab = "General";
   });
 
-  /** Choose an SPSL script file */
+  /** Choose a login script file: SPSL (#!/bin/spsl) or Rhai (#!/bin/rhai, or .rhai) */
   async function browseScript(): Promise<void> {
-    const path = await open({ title: "Choose the session's SPSL script", filters: [{ name: "Scripts", extensions: ["spsl", "txt"] }] });
+    const path = await open({ title: "Choose the session's login script", filters: [{ name: "Scripts", extensions: ["spsl", "rhai", "txt"] }] });
     if (typeof path === "string") draft.script = path;
   }
 
@@ -465,8 +465,8 @@
       {/if}
       {#if jumpServer}
         <p class="note jump" role="note" aria-label="Jump server">Through the jump server: the tab logs in to {jumpServer.host || "(no Host set)"}{jumpServer.username ? ` as ${jumpServer.username}` : ""}
-          (profile "{jumpServer.name}", Log in here). This session's host, username and port are where its SPSL script goes
-          on to{profileScript ? `: ${profileScript}` : ", but no SPSL script is set"}.</p>
+          (profile "{jumpServer.name}", Log in here). This session's host, username and port are where its login script goes
+          on to{profileScript ? `: ${profileScript}` : ", but no login script is set"}.</p>
       {/if}
       {#if gateway}
         <p class="note jump" role="note" aria-label="Gateway">Through the gateway: the tab connects to
@@ -554,7 +554,7 @@
         </label>
       </div>
       <div class="row">
-        <label class="grow">{@render caption("SPSL script:", "script")}<input bind:value={draft.script} placeholder={profileScript ? `none: the profile's, ${profileScript}` : "none"} disabled={locked("spsl_script")} title={locked("spsl_script") ? lockTip : ""} /></label>
+        <label class="grow" title="SPSL (starting #!/bin/spsl) or Rhai (starting #!/bin/rhai, or a .rhai file), run as the session opens">{@render caption("Login script:", "script")}<input bind:value={draft.script} placeholder={profileScript ? `none: the profile's, ${profileScript}` : "none"} disabled={locked("spsl_script")} title={locked("spsl_script") ? lockTip : ""} /></label>
         <button onclick={() => (draft.script = "")}>Clear</button>
         <button onclick={browseScript}>Browse…</button>
       </div>

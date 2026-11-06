@@ -56,14 +56,14 @@ if prompt.ends_with(">") {
     } else {
         send_line(enable_secret);
     }
-    // whichever comes first: in, or turned down
-    let answer = wait_for_any(["#", "% Access denied", "% Bad secrets"], 10);
-    if answer != 0 {
-        throw "the enable secret was turned down";
-    }
-    must(wait_prompt(5), "The enable prompt");
+    // the prompt after it says how it went: # is in; a refused secret ("% Access denied") comes back to >. Waiting for
+    // the prompt itself, not its "#": a wait moves past what it finds, so wait_for("#") would use up the prompt
+    must(wait_prompt(10), "The prompt after the enable secret");
     prompt = matched()[0];
     prompt.trim();
+    if !prompt.ends_with("#") {
+        throw "the enable secret was turned down";
+    }
 }
 // "core-sw1#" -> "core-sw1"
 let host = prompt.sub_string(0, prompt.len - 1);

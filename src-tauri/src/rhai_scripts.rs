@@ -124,9 +124,19 @@ pub struct Issue {
 /// when it runs, so a misspelt one isn't found here.
 pub fn check(source: &str) -> Vec<Issue> {
     let (engine, scope) = configured(Engine::new(), BTreeMap::new(), HashMap::new());
-    match engine.compile_with_scope(&scope, source) {
+    match engine.compile_with_scope(&scope, &without_marker(source)) {
         Ok(_) => Vec::new(),
         Err(error) => vec![Issue { line: error.1.line().unwrap_or(0), message: error.0.to_string() }],
+    }
+}
+
+/// A script with its `#!` first line (`#!/bin/rhai`, which marks a session's or profile's login script as Rhai, as
+/// `#!/bin/spsl` does an SPSL one) read as a comment: Rhai itself refuses `#!` ("a reserved symbol"). The line stays,
+/// so the script's line numbers are as the editor shows them
+fn without_marker(source: &str) -> std::borrow::Cow<'_, str> {
+    match source.strip_prefix("#!") {
+        Some(rest) => format!("//{rest}").into(),
+        None => source.into(),
     }
 }
 
@@ -372,7 +382,7 @@ fn run(source: &str, session: BTreeMap<String, String>, env: HashMap<String, Str
             }
         });
 
-        engine.run_with_scope(&mut scope, source)
+        engine.run_with_scope(&mut scope, &without_marker(source))
     };
     match result {
         Ok(()) => RhaiEvent::Done { stopped: false, error: None, line: 0 },
@@ -609,6 +619,15 @@ mod tests {
     }
 
     #[test]
+    fn a_login_scripts_rhai_marker_is_read_as_a_comment_keeping_the_lines() {
+        assert!(check("#!/bin/rhai\nsend_line(\"x\");").is_empty());
+        // a mistake on line 3 is still said to be on line 3
+        assert_eq!(check("#!/bin/rhai\nlet a = 1;\nlet = 2;")[0].line, 3);
+        let fake = Fake::start("#!/bin/rhai\nstatus(\"ran\");", &[]);
+        assert_eq!(fake.next(), RhaiEvent::Status { line: 2, text: "ran".into() });
+    }
+
+    #[test]
     fn functions_see_session_and_env() {
         let fake = Fake::start_with_env("fn login() { send_line(`${env.ad_user}@${session.host_address}`); }\nlogin();", &[("host_address", "10.0.0.1")], &[("ad_user", "jdoe")]);
         let (id, _, _, args) = fake.call();
@@ -674,5 +693,6 @@ mod tests {
         let fake = Fake::start("send_line(\"configure terminal\");\nsend_line(hots);", &[]);
         assert!(matches!(fake.next(), RhaiEvent::Done { error: Some(e), line: 2, .. } if e.contains("hots")));
     }
+
 
 }

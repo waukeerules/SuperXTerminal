@@ -248,17 +248,17 @@ describe("Edit Session with a jump server profile", () => {
     open({ ...SESSION, extraArgs: "", profile: "Jump Server" });
     const note = await screen.findByRole("note", { name: "Jump server" });
     expect(note.textContent?.replace(/\s+/g, " ")).toBe(
-      'Through the jump server: the tab logs in to 192.168.3.2 as root (profile "Jump Server", Log in here). This session\'s host, username and port are where its SPSL script goes on to: cisco-jump.spsl (Jump Server\'s).',
+      'Through the jump server: the tab logs in to 192.168.3.2 as root (profile "Jump Server", Log in here). This session\'s host, username and port are where its login script goes on to: cisco-jump.spsl (Jump Server\'s).',
     );
     // the session's own password isn't the one that logs in
     expect((screen.getByLabelText(/Password/) as HTMLInputElement).placeholder).toBe('not used: the tab logs in as profile "Jump Server"');
   });
 
-  it("says nothing for a profile without Log in here, and the SPSL script field shows the profile's", async () => {
+  it("says nothing for a profile without Log in here, and the login script field shows the profile's", async () => {
     const user = userEvent.setup();
     open({ ...SESSION, extraArgs: "", profile: "Linux" });
     await user.click(screen.getByRole("tab", { name: "Terminal" }));
-    await expect.poll(() => (screen.getByLabelText(/SPSL script/) as HTMLInputElement).placeholder).toBe("none: the profile's, omv.spsl (Linux's)");
+    await expect.poll(() => (screen.getByLabelText(/Login script/) as HTMLInputElement).placeholder).toBe("none: the profile's, omv.spsl (Linux's)");
     expect(screen.queryByRole("note")).toBeNull();
   });
 });

@@ -41,7 +41,7 @@ beforeEach(() => {
     // the dialog plugin's "Are you sure?": yes; the file chosen to save to or open
     if (cmd === "plugin:dialog|ask") return true;
     if (cmd === "plugin:dialog|save") return "/tmp/root profile.json";
-    if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("SPSL script") ? "/Users/me/scripts/omv-login.spsl" : "/tmp/profiles.json";
+    if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("login script") ? "/Users/me/scripts/omv-login.spsl" : "/tmp/profiles.json";
     if (cmd === "profiles_read_file") return inFile;
     if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [], tabIcons: [] }, { name: "Cisco", buttons: [], tabIcons: [] }];
     // the key fetch's key file: 37 minutes old, or 5 hours for the "old" one
@@ -251,7 +251,7 @@ describe("Settings > Profiles", () => {
   it("saves an SPSL script for the profile's sessions, typed or chosen, and shows Default Settings' when it has none", async () => {
     stored = stored.map((p) => (p.name === DEFAULT_PROFILE ? { ...p, script: "every.spsl" } : p));
     await open("root");
-    const script = () => screen.getByLabelText("SPSL script") as HTMLInputElement;
+    const script = () => screen.getByLabelText("Login script") as HTMLInputElement;
     expect(script().value).toBe("");
     expect(script().placeholder).toBe("From Default Settings (every.spsl)");
     await userEvent.type(script(), "linux-login.spsl");

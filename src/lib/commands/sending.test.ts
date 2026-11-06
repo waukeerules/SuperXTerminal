@@ -1,9 +1,10 @@
 // What a script starts with in a tab: the tab's session's values (sessionValues, from the Sessions tree through
 // context.sessionOf; a Quick connect tab's typed fields, tabValues), and Environment Variables filled in without
-// touching the script's own {variables} or the session's (fillScriptPlaceholders). The Rust side is stood in for by mockIPC: variables_fill knows {site} only.
+// touching the script's own {variables} or the session's (fillScriptPlaceholders); and which language a session's
+// login script is in (openingLanguage). The Rust side is stood in for by mockIPC: variables_fill knows {site} only.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { context, fillScriptPlaceholders, sessionValues, tabValues } from "./sending.svelte";
+import { context, fillScriptPlaceholders, openingLanguage, sessionValues, tabValues } from "./sending.svelte";
 import type { SessionView } from "../sessions/api";
 
 /** A saved SSH session, as the tree has it */
@@ -55,5 +56,18 @@ describe("a script's start", () => {
     expect(await fillScriptPlaceholders(script)).toBe("SENDLINE ssh {host_address} # lab-a\nSET vlan 20\nSENDLINE vlan {vlan} {1} {repeat}");
     // none of them was asked about: no "define {host_address}?" question
     expect(asked[0]).not.toMatch(/\{(host_address|vlan|1|repeat)\}/);
+  });
+});
+
+describe("a session's or profile's login script", () => {
+  it("is SPSL starting #!/bin/spsl, Rhai starting #!/bin/rhai or named .rhai, and not run otherwise", () => {
+    expect(openingLanguage("#!/bin/spsl\nWAITPROMPT", "login.spsl")).toBe("spsl");
+    expect(openingLanguage("#!/bin/rhai\nwait_prompt();", "login.txt")).toBe("rhai");
+    expect(openingLanguage("wait_prompt();", "scripts/Login.RHAI")).toBe("rhai");
+    expect(openingLanguage("wait_prompt();", "https://example.test/login.rhai?v=2")).toBe("rhai");
+    // SPSL still needs its marker, as SuperXPuTTY's: a file meant for something else is never run
+    expect(openingLanguage("WAITPROMPT", "login.spsl")).toBeNull();
+    expect(openingLanguage("echo hi", "notes.txt")).toBeNull();
+    expect(openingLanguage("", "")).toBeNull();
   });
 });

@@ -25,7 +25,7 @@
   import ScriptStatus from "./lib/commands/ScriptStatus.svelte";
   import Ask from "./lib/scripting/Ask.svelte";
   import PasteCheck from "./lib/terminal/PasteCheck.svelte";
-  import { context, runScriptIn } from "./lib/commands/sending.svelte";
+  import { context, openingLanguage, rhaiEnvReady, runRhaiIn, runScriptIn } from "./lib/commands/sending.svelte";
   import { saveSettings } from "./lib/settings/store.svelte";
   import type { CustomIcon } from "./lib/icons/custom";
   import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
@@ -336,7 +336,7 @@
    * The script a tab opens with, as the core finds it (session_script, quick_connect_script): none, its text, an
    * http(s) address to fetch, or a file that isn't there; with the profile it's from, when it's a profile's
    */
-  type FoundScript = { kind: string; text?: string; url?: string; path?: string; profile?: string | null };
+  type FoundScript = { kind: string; text?: string; url?: string; path?: string; source?: string; profile?: string | null };
 
   /** Open a session from the tree in a new tab */
   function openSession(session: SessionView, environment: string | null): void {
@@ -373,9 +373,9 @@
   }
 
   /**
-   * The session's own script (Edit Session's SPSL script), else its profile's (Settings > Profiles), as SuperXPuTTY
-   * runs a session's when it opens: only a script starting #!/bin/spsl, and its first WAITFOR sees everything since
-   * the session started
+   * The session's own login script (Edit Session), else its profile's (Settings > Profiles), as SuperXPuTTY runs a
+   * session's when it opens: SPSL starting #!/bin/spsl, or Rhai (#!/bin/rhai, or a .rhai file); its first wait sees
+   * everything since the session started
    */
   async function runOwnScript(session: SessionView, tabId: string): Promise<void> {
     const found = await invoke<FoundScript>("session_script", { store: session.store, id: session.id });
@@ -384,18 +384,26 @@
 
   /**
    * Run the script a tab opens with (a session's own or its profile's, as the core found it) once the tab has started:
-   * only a script starting #!/bin/spsl; a file that isn't there is told in the status bar
+   * SPSL or Rhai, as openingLanguage tells them apart, else nothing; a file that isn't there is told in the status bar
    */
   async function runOpeningScript(found: FoundScript, name: string, tabId: string): Promise<void> {
     let script = found.text ?? "";
     if (found.kind === "url" && found.url) script = await fetch(found.url).then((r) => (r.ok ? r.text() : "")).catch(() => "");
     const whose = found.profile ? `The ${found.profile} profile's` : `${name}'s`;
     if (found.kind === "missing") status = `${whose} script ${found.path} isn't on ${THIS_COMPUTER}`;
-    if (!script.startsWith("#!/bin/spsl")) return;
+    const language = openingLanguage(script, found.url ?? found.source ?? "");
+    if (!language) return;
     const tab = tabs?.tabList().find((t) => t.id === tabId);
     if (!tab) return;
     await tab.host.started;
-    runScriptIn(tab, script.replace(/\r\n/g, "\n"), "Login script", true);
+    const text = script.replace(/\r\n/g, "\n");
+    if (language === "spsl") {
+      runScriptIn(tab, text, "Login script", true);
+      return;
+    }
+    // an Environment Variable it reads with no value: offered, as a button's script, rather than stopping halfway
+    if (!(await rhaiEnvReady(text))) return;
+    runRhaiIn(tab, text, "Login script", true);
   }
 
   /** Where a session is, for the Quick Selector's detail: its path, after Private/ or Database/ outside Saved sessions */

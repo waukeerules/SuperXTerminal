@@ -23,8 +23,11 @@ script box's colours are `public/web/script/script.js`.
 |---|---|---|---|
 | A button (button bar, Action: Run SPSL script) | Click: the active tab. Shift+click: the Send Commands selection | the cursor's line | Yes |
 | Script Editor (Tools > Script Editor), Run as: SPSL script | Send: the Send Commands selection | the cursor's line | Yes |
-| A session's own script (Edit Session > Terminal > SPSL script: a file, a path in the settings folder, or a URL) | Runs as the session starts, if the file starts with `#!/bin/spsl` | everything since the session started | No |
-| A profile's script (Settings > Profiles > Terminal > SPSL script, named the same way), for its sessions that have no script of their own | The same as a session's own | everything since the session started | No |
+| A session's own script (Edit Session > Terminal > Login script: a file, a path in the settings folder, or a URL) | Runs as the session starts, if the file starts with `#!/bin/spsl` | everything since the session started | No |
+| A profile's script (Settings > Profiles > Terminal > Login script, named the same way), for its sessions that have no script of their own | The same as a session's own | everything since the session started | No |
+
+The Login script fields take Rhai scripts too ([RHAI.md](RHAI.md#where-scripts-run)): one starting `#!/bin/rhai`, or
+named `.rhai`.
 
 **A profile's script** lets a session be just a name and a host: the profile logs in and sets up, for every session
 that uses it (or whose folder does). A session's own script wins over its profile's; a profile with none uses Default

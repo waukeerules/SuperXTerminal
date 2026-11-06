@@ -27,6 +27,12 @@ pub struct Button {
     /// "SendString", "SpslScript" or "RhaiScript"
     pub action: String,
     pub text: String,
+    /// Runs at once, without Settings > General > Button bar's "Ask before a button runs" question (Edit Button's
+    /// "Ask before it runs" unticked), for a harmless command such as `show clock`. SuperXTerminal's own: written as
+    /// `SkipConfirm="true"` only when set, so a file without it is byte for byte as before, and SuperXPuTTY, which
+    /// doesn't know it, reads the button as it always has
+    #[serde(default)]
+    pub skip_confirm: bool,
 }
 
 /// One bar
@@ -84,6 +90,7 @@ pub fn parse(text: &str) -> Result<Vec<Bar>, String> {
                         "Color" => button.color = v,
                         "ImageKey" => button.icon = v,
                         "Action" => button.action = v,
+                        "SkipConfirm" => button.skip_confirm = v.eq_ignore_ascii_case("true"),
                         _ => {}
                     }
                 }
@@ -169,7 +176,11 @@ pub fn to_xml(bars: &[Bar]) -> String {
                     }
                 }
                 let action = action_of(&b.action);
-                out.push_str(&format!(" Action=\"{action}\">\r\n"));
+                out.push_str(&format!(" Action=\"{action}\""));
+                if b.skip_confirm {
+                    out.push_str(" SkipConfirm=\"true\"");
+                }
+                out.push_str(">\r\n");
                 out.push_str(&format!("        <Text>{}</Text>\r\n", escape_text(&b.text)));
                 out.push_str("      </Button>\r\n");
             }
@@ -229,6 +240,9 @@ struct ExportButton {
     action: String,
     #[serde(default)]
     text: String,
+    /// SuperXTerminal's own [`Button::skip_confirm`], only when set; SuperXPuTTY ignores it
+    #[serde(default, rename = "skipConfirm", skip_serializing_if = "std::ops::Not::not")]
+    skip_confirm: bool,
 }
 
 /// The export's "format", which SuperXPuTTY checks before it imports a file
@@ -253,6 +267,7 @@ pub fn export(bar: &Bar) -> String {
                     icon: some(&b.icon),
                     action: b.action.clone(),
                     text: b.text.clone(),
+                    skip_confirm: b.skip_confirm,
                 })
                 .collect(),
         }],
@@ -297,6 +312,7 @@ pub fn import(bars: &mut Vec<Bar>, json: &str) -> Result<String, String> {
                     icon: b.icon.unwrap_or_default(),
                     action: action_of(&b.action).into(),
                     text: b.text,
+                    skip_confirm: b.skip_confirm,
                 })
                 .collect(),
         });
@@ -331,6 +347,28 @@ mod tests {
         let mut more = bars.clone();
         assert_eq!(import(&mut more, &export(&bars[0])).unwrap(), "Default (2)");
         assert_eq!(more[2].buttons, bars[0].buttons);
+    }
+
+    /// A button that runs without asking keeps that through the file and an export, written only on that button
+    #[test]
+    fn a_button_that_runs_without_asking_keeps_it_and_the_others_are_written_as_before() {
+        let bars = vec![Bar {
+            name: "Linux".into(),
+            buttons: vec![
+                Button { label: "date".into(), action: "SendString".into(), text: "date\n".into(), skip_confirm: true, ..Button::default() },
+                Button { label: "reboot".into(), action: "SendString".into(), text: "reboot\n".into(), ..Button::default() },
+            ],
+            tab_icons: vec![],
+        }];
+        let xml = to_xml(&bars);
+        assert!(xml.contains("<Button Label=\"date\" Action=\"SendString\" SkipConfirm=\"true\">\r\n"), "{xml}");
+        assert!(xml.contains("<Button Label=\"reboot\" Action=\"SendString\">\r\n"), "{xml}");
+        assert_eq!(parse(&xml).unwrap(), bars);
+        let json = export(&bars[0]);
+        assert_eq!(json.matches("skipConfirm").count(), 1, "{json}");
+        let mut more = vec![];
+        import(&mut more, &json).unwrap();
+        assert_eq!(more[0].buttons, bars[0].buttons);
     }
 
     /// The real file from Windows (reference/, git-ignored) reads and writes back byte for byte

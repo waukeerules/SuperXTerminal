@@ -1,6 +1,7 @@
 <!--
   New Button / Edit Button, as SuperXPuTTY's dlgEditCommandButton: Label (required), Tooltip, Action (Send string or
-  Run SPSL script, Run Rhai script), Icon (none, a colour circle, or a session icon), and the text to send or the script, in the script
+  Run SPSL script, Run Rhai script), Ask before it runs (SuperXTerminal's own: unticked, the button skips Settings >
+  General > Button bar's question; greyed while that's off), Icon (none, a colour circle, or a session icon), and the text to send or the script, in the script
   box (Monaco, with SPSL's or Rhai's colours for a script, and Wrap lines). For a script, its problems show under it
   as it's written (click one to go to its line) and the script panel beside it, and OK
   checks the script first. A new button's Action starts on Settings > General > Scripts' choice (Run Rhai script unless
@@ -18,7 +19,7 @@
   import { SEND_STRING_HELP } from "../scripting/sendString";
   import type { CustomIcon } from "../icons/custom";
   import type { BarButton } from "./bars";
-  import { newScriptLanguage, type ScriptLanguage } from "../settings/store.svelte";
+  import { newScriptLanguage, settings, type ScriptLanguage } from "../settings/store.svelte";
 
   interface Props {
     /** The button edited; null for a new one */
@@ -92,6 +93,11 @@
             <option value="RhaiScript">Run Rhai script</option>
           </select>
         </label>
+        <label class="ask" title={settings.confirmButtons
+          ? "Unticked, a click runs it at once: for a harmless command such as show clock. Kept in the button, so it's the same for everyone using these bars"
+          : "No button asks: Settings > General > Button bar has Ask before a button runs off"}>
+          <input type="checkbox" checked={!draft.skipConfirm} disabled={!settings.confirmButtons}
+            onchange={(e) => (draft.skipConfirm = !e.currentTarget.checked)} /> Ask before it runs</label>
         <div class="icon-row">
           <span>Icon:</span>
           <button class="swatch" class:on={!draft.color && !draft.icon} title="None" aria-label="None"
@@ -211,6 +217,13 @@
   .icon-row {
     display: flex;
     flex-wrap: wrap;
+  }
+
+  /* Ask before it runs: under Action's box, lined up with the fields rather than their names */
+  label.ask {
+    display: flex;
+    gap: 6px;
+    padding-left: 78px;
   }
 
   .icon-row > span {

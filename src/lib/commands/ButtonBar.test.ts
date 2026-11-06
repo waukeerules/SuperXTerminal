@@ -4,10 +4,12 @@
 // though the window gives it them only after it's drawn, as App does.
 // The tab area is stood in for by `context.tabs` (the active tab, and its change listeners); the Rust side by
 // mockIPC: ButtonBars.xml's bars and the profiles stored. And a button asks before it runs, unless that's turned off;
+// a button whose Ask before it runs is unticked (Edit Button, kept in ButtonBars.xml) runs at once while the others ask;
 // a Rhai script button's script goes to the core (rhai_run) as written, its braces not taken for placeholders, once
 // the Environment Variables it reads (env.name) have values.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/svelte";
+import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import ButtonBar from "./ButtonBar.svelte";
 import { context } from "./sending.svelte";
@@ -115,6 +117,65 @@ describe("asking before a button runs", () => {
     await expect.poll(() => typed.join("")).toBe("show clock\r");
     expect(asked).toEqual([]);
     await new Promise((r) => setTimeout(r, 50));
+  });
+});
+
+describe("a button that doesn't ask (Edit Button's Ask before it runs)", () => {
+  it("runs at once once it's unticked, while the other buttons still ask, and keeps it in ButtonBars.xml", async () => {
+    const typed: string[] = [];
+    const asked: string[] = [];
+    let stored: Bar[] = [{ name: "Default", buttons: [button("show clock"), button("reload")], tabIcons: [] }];
+    mockIPC((cmd, args) => {
+      if (cmd === "buttonbars_load") return structuredClone(stored);
+      if (cmd === "buttonbars_save") {
+        stored = structuredClone((args as { bars: Bar[] }).bars);
+        return null;
+      }
+      if (cmd === "profiles_list" || cmd === "scripts_list") return [];
+      if (cmd === "variables_fill") return { text: (args as { text: string }).text, missing: [] };
+      if (cmd === "plugin:dialog|message") {
+        asked.push((args as { message: string }).message);
+        return "Cancel";
+      }
+      return null;
+    });
+    const host = { canReceiveCommands: true, markOutput: () => {}, markCommand: () => {}, type: async (text: string) => void typed.push(text) };
+    context.tabs = {
+      commandTabs: () => [{ id: "t1", title: "core-sw1", session: "", icon: "switch", profile: "", active: true, host } as unknown as CommandTab],
+      onChange: () => () => {},
+      focusActive: () => {},
+    } as unknown as TabArea;
+    Object.assign(settings, { loaded: true, activeButtonBar: "", confirmButtons: true });
+    const user = userEvent.setup();
+    render(ButtonBar, { customs: new Map() });
+
+    await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /show clock/ }) });
+    await user.click(await screen.findByRole("menuitem", { name: "Edit Button…" }));
+    const ask = screen.getByRole("checkbox", { name: "Ask before it runs" }) as HTMLInputElement;
+    expect(ask.checked).toBe(true);
+    await user.click(ask);
+    await user.click(screen.getByRole("button", { name: "OK" }));
+    await expect.poll(() => stored[0].buttons[0].skipConfirm).toBe(true);
+    expect(stored[0].buttons[1].skipConfirm).toBeFalsy();
+
+    (await screen.findByRole("button", { name: /show clock/ })).click();
+    await expect.poll(() => typed.join("")).toBe("show clock\r");
+    expect(asked).toEqual([]);
+    (await screen.findByRole("button", { name: /reload/ })).click();
+    await expect.poll(() => asked.length).toBe(1);
+    expect(asked[0]).toMatch(/^Run "reload"/);
+    expect(typed.join("")).toBe("show clock\r");
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  it("is greyed in Edit Button while no button asks (Settings > General > Button bar)", async () => {
+    Object.assign(settings, { loaded: true, activeButtonBar: "", confirmButtons: false });
+    const user = userEvent.setup();
+    render(ButtonBar, { customs: new Map() });
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByRole("toolbar", { name: "Button bar" }) });
+    await user.click(await screen.findByRole("menuitem", { name: "New Button…" }));
+    expect((screen.getByRole("checkbox", { name: "Ask before it runs" }) as HTMLInputElement).disabled).toBe(true);
+    Object.assign(settings, { confirmButtons: true });
   });
 });
 

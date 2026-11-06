@@ -17,6 +17,11 @@ export interface BarButton {
   /** "SendString", "SpslScript" or "RhaiScript" (SuperXTerminal's own) */
   action: string;
   text: string;
+  /**
+   * Runs at once, without the "Run …?" question Settings > General > Button bar asks for (Edit Button's "Ask before
+   * it runs" unticked), for a harmless command. Kept in the button, so it's the same for everyone using the bars
+   */
+  skipConfirm?: boolean;
 }
 
 /** One button bar, as ButtonBars.xml holds it */

@@ -124,7 +124,7 @@
       context.status(toSelected ? "No selected sessions to send to" : "No active session to send to");
       return;
     }
-    if (settings.confirmButtons && !(await confirmRun(button, targets.map((t) => t.title)))) return;
+    if (settings.confirmButtons && !button.skipConfirm && !(await confirmRun(button, targets.map((t) => t.title)))) return;
     // a Rhai script as written: its braces are its own, not {key} placeholders or {prompt:} snippets
     if (button.action === "RhaiScript") {
       if (!(await rhaiEnvReady(button.text))) return;
@@ -159,7 +159,7 @@
     const what = button.action === "SpslScript" || button.action === "RhaiScript"
       ? "its script"
       : `"${command.split("\n")[0].slice(0, 60)}${command.length > 60 || command.includes("\n") ? "…" : ""}"`;
-    return ask(`Run "${button.label}" (${what}) in ${where}?\n\nSettings > General > Button bar can stop this question.`, {
+    return ask(`Run "${button.label}" (${what}) in ${where}?\n\nUntick Ask before it runs in Edit Button to stop it for this button, or Settings > General > Button bar for every button.`, {
       title: "Button bar",
       kind: "info",
       okLabel: "Run",

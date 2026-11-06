@@ -237,6 +237,23 @@ describe("connecting, until the far end answers", () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(host.isConnecting).toBe(true);
   });
+
+  it("stays connecting on Windows from ssh's \"timed out\" until its end, which the core tells up to 750 ms later", async () => {
+    // jsdom isn't the Mac. ConPTY keeps ssh's output open after ssh exits, so the core finds the end by looking every
+    // 250 ms and then leaving 500 ms for the last output (pty.rs): the tab went green in between, then red
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    started();
+    send({ type: "data", data: btoa(CONPTY_START) });
+    send({ type: "data", data: btoa("ssh: connect to host 192.168.0.50 port 22: Connection timed out\r\n") });
+    const seen = new Set<boolean>();
+    const watching = setInterval(() => seen.add(host!.isConnecting), 20);
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    send({ type: "exit", code: 255 });
+    clearInterval(watching);
+    expect([...seen]).toEqual([true]);
+  });
 });
 
 /** KiTTY's anti-idle string for Ctrl+E as a profile keeps it, backslashes and all (\x05\): it types Ctrl+E */

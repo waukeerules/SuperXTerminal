@@ -151,10 +151,13 @@ const keyFetches = new Map<string, Promise<boolean>>();
  * How long a session must go on after its first output with text in it (hasText) to count as connected (the far end answering): an ssh that
  * fails at once ("Network is unreachable", "Connection refused") prints its message and ends within a few
  * milliseconds, well inside this, so its tab and Sessions tree entry go from connecting straight to disconnected,
- * without a moment of connected between. Short, so a good connection's yellow turns green without a felt lag (it was
- * a second, which showed)
+ * without a moment of connected between. Short on the Mac, so a good connection's yellow turns green without a felt
+ * lag (it was a second, which showed). On Windows the end comes later: ConPTY keeps ssh's output open after it exits,
+ * so the core finds the end by looking every 250 ms and then leaving 500 ms for the last output (EXIT_POLL and
+ * EXIT_GRACE in pty.rs). Inside that, a reconnect that timed out went green between ssh's "Connection timed out" and
+ * its end; so on Windows it's longer than both, with a little over for the message to arrive
  */
-const ANSWERED_AFTER_MS = 300;
+const ANSWERED_AFTER_MS = isMac ? 300 : 1000;
 
 /**
  * Whether output holds text, not only terminal codes: what's left once escape sequences (a window title's included,

@@ -32,6 +32,7 @@
     forgetRecent,
     setGroupExpanded,
     loadOverrides,
+    folderOverridesSwitch,
     overridesInUse,
     saveOverrides,
     type Override,
@@ -120,6 +121,21 @@
     const current = overrides[id];
     if (!current) return;
     overrides = await saveOverrides([[id, { ...current, Disabled: !current.Disabled }]]);
+  }
+  /**
+   * A folder's Use Local Overrides ✓, as a session's: ticked while every session in it (and the folders below) that
+   * has overrides uses them; a click turns them all off, or all on, keeping their values. None when no session there
+   * has any.
+   */
+  function folderOverridesItem(folder: FolderNode): MenuItem[] {
+    const toggle = folderOverridesSwitch(sessionsIn(folder).map((s) => s.id), overrides);
+    if (!toggle) return [];
+    return [{
+      label: "Use Local Overrides",
+      checked: toggle.checked,
+      disabled: !settings.useLocalOverrides && "Tools > Use Local Overrides is off",
+      action: () => void saveOverrides(toggle.changes).then((all) => (overrides = all)),
+    }];
   }
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   /** The session being edited: its store, its id (null for new) and its fields */
@@ -634,6 +650,9 @@
                 disabled: sessionsIn(folder).length === 0 ? "No sessions here" : dbBlock(folder.store),
                 action: () => void editSessions(`in ${folder.name}`, sessionsIn(folder)),
               },
+              // every session in it and the folders below, as Local overrides for N sessions…
+              { label: "Local overrides…", disabled: sessionsIn(folder).length === 0 && "No sessions here", action: () => (overriding = sessionsIn(folder)) },
+              ...folderOverridesItem(folder),
               { label: "Delete folder", disabled: block, action: () => void removeFolder(folder) },
               ...transferItems(sessionsIn(folder), folder.store, sessionsIn(folder).some((s) => s.locked)),
             ] as MenuItem[])),

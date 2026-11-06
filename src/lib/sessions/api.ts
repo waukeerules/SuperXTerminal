@@ -332,6 +332,21 @@ export function overridesInUse(o: Override | undefined, globallyOn: boolean): bo
   return globallyOn && !!o && !o.Disabled;
 }
 
+/**
+ * A folder's Use Local Overrides, for the sessions in it that have overrides: ticked when they're all on, and the
+ * changes a click makes (all off when they're all on, otherwise all on), their values kept. Sessions with none are
+ * left without.
+ * @param ids The sessions in the folder and the folders below it
+ * @param overrides Everyone's overrides, by session id
+ * @returns null when none of the sessions has overrides
+ */
+export function folderOverridesSwitch(ids: string[], overrides: Record<string, Override>): { checked: boolean; changes: [string, Override][] } | null {
+  const having = ids.filter((id) => overrides[id]);
+  if (having.length === 0) return null;
+  const checked = having.every((id) => !overrides[id].Disabled);
+  return { checked, changes: having.map((id) => [id, { ...overrides[id], Disabled: checked }]) };
+}
+
 /** The user's override presets, by name (OverridePresets.json in their own folder) */
 export function loadOverridePresets(): Promise<Record<string, Override>> {
   return invoke("override_presets_get");

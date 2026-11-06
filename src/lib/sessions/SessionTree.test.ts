@@ -1,7 +1,8 @@
 // The Sessions tree's selection of folders and sessions together; an open session's state on its icon (a yellow dot
 // while connecting, green once connected, or the tab's red cross once its session has dropped); Cmd+click and Shift+click pick both, and the
 // selection's menu moves them to a folder; a search hides the roots it leaves no matches in; Show in Sessions tree opens a Recent session's folders and scrolls to it;
-// and on a clean install, the first session saved shows. The Rust side is stood in for by mockIPC; moves are
+// on a clean install, the first session saved shows; and a folder's menu edits and turns on or off the local
+// overrides of every session in it. The Rust side is stood in for by mockIPC; moves are
 // recorded. jsdom doesn't scroll, so scrollIntoView is stood in for, recording the rows it's asked to show.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/svelte";
@@ -280,5 +281,64 @@ describe("an open session's state on its icon", () => {
     expect(row("r1").querySelector(".open")).toBeNull();
     expect(within(row("r1")).queryByLabelText("Disconnected")).toBeNull();
     expect(within(row("r1")).queryByLabelText("Connecting")).toBeNull();
+  });
+});
+
+describe("a folder's local overrides", () => {
+  /** The overrides stored, by session id, as overrides_get gives them and overrides_set changes them */
+  let stored: Record<string, { Port: number; Username?: string; Disabled?: boolean }>;
+
+  beforeEach(() => {
+    stored = { "Imported/Core/sw1": { Port: 0, Username: "tim" }, "Imported/Core/sw2": { Port: 2222, Disabled: true } };
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "sessions_load")
+        return { sessions: [session("Imported/Core/sw1"), session("Imported/Core/sw2"), session("Imported/r1"), session("Lab/x")], folders: [], problems: [] };
+      if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
+      if (cmd === "overrides_get") return stored;
+      if (cmd === "overrides_set") {
+        for (const [id, o] of (args as { changes: [string, { Port: number }][] }).changes) stored[id] = o;
+        return { ...stored };
+      }
+      if (cmd === "icons_custom") return [];
+      return null;
+    });
+    Object.assign(settings, { useLocalOverrides: true });
+  });
+
+  /** The folder's menu item with this name (after its tick, when it has one) */
+  async function folderItem(folder: RegExp, name: string) {
+    await user.pointer({ keys: "[MouseRight]", target: row(folder) });
+    return within(screen.getByRole("menu")).getByRole("menuitem", { name: new RegExp(`^(✓\\s*)?${name}`) });
+  }
+
+  it("edits the overrides of every session in the folder and the folders below it", async () => {
+    await open();
+    await user.click(await folderItem(/^Imported \(/, "Local overrides…"));
+    expect(screen.getByRole("dialog", { name: "Local overrides for 3 sessions" })).toBeTruthy();
+  });
+
+  it("turns the folder's overrides all on, then all off, keeping their values", async () => {
+    await open();
+    // one on and one off: not ticked, and a click turns them all on
+    const mixed = await folderItem(/^Core \(/, "Use Local Overrides");
+    expect(mixed.textContent).not.toContain("✓");
+    await user.click(mixed);
+    expect(stored["Imported/Core/sw1"]).toEqual({ Port: 0, Username: "tim", Disabled: false });
+    expect(stored["Imported/Core/sw2"]).toEqual({ Port: 2222, Disabled: false });
+    // all on: ticked, and a click turns them all off
+    const on = await folderItem(/^Core \(/, "Use Local Overrides");
+    expect(on.textContent).toContain("✓");
+    await user.click(on);
+    expect(stored["Imported/Core/sw1"].Disabled).toBe(true);
+    expect(stored["Imported/Core/sw2"]).toEqual({ Port: 2222, Disabled: true });
+    // a session with none (r1) is never given any
+    expect(stored["Imported/r1"]).toBeUndefined();
+  });
+
+  it("has no Use Local Overrides for a folder whose sessions have none", async () => {
+    await open();
+    await user.pointer({ keys: "[MouseRight]", target: row(/^Lab \(/) });
+    expect(within(screen.getByRole("menu")).queryByRole("menuitem", { name: /^Use Local Overrides/ })).toBeNull();
   });
 });

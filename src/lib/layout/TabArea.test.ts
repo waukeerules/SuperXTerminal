@@ -99,6 +99,26 @@ describe("switching tabs", () => {
     tabs.cycle(1);
     await expect.poll(() => focused).toEqual([sw1, sw2]);
   });
+
+  it("puts the keyboard in the tab left in front when Close Tab (Cmd+W) closes one, so it can close the next", async () => {
+    const sw1 = open("sw1");
+    const sw2 = open("sw2");
+    const sw3 = open("sw3");
+    focused = [];
+    tabs.closeActive();
+    expect(tabs.api.getPanel(sw3)).toBeUndefined();
+    await expect.poll(() => focused).toEqual([sw2]);
+    tabs.closeActive();
+    await expect.poll(() => focused).toEqual([sw2, sw1]);
+  });
+
+  it("puts the keyboard in the tab left in front when a tab's menu closes it", async () => {
+    const sw1 = open("sw1");
+    const sw2 = open("sw2");
+    focused = [];
+    tabs.command(sw2, "close");
+    await expect.poll(() => focused).toEqual([sw1]);
+  });
 });
 
 describe("a profile's Tab colour", () => {

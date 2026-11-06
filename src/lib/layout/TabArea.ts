@@ -731,9 +731,13 @@ export class TabArea {
     return id ? this.hosts.get(id) ?? null : null;
   }
 
-  /** File > Close Tab (Cmd+W) */
+  /**
+   * File > Close Tab (Cmd+W), with the keyboard then in the tab left in front. The keyboard was in the closed tab's
+   * page, which goes with it, so it was nowhere and a second Cmd+W never reached the app
+   */
   closeActive(): void {
     this.api.activePanel?.api.close();
+    setTimeout(() => this.focusActive(), 0);
   }
 
   /** A tab's watches */
@@ -1062,7 +1066,7 @@ export class TabArea {
     for (const host of this.hosts.values()) host.setDark(dark);
   }
 
-  /** The tab menu's commands, from a tab's page: close it, the others, those to its right, or all */
+  /** The tab menu's commands, from a tab's page: close it, the others, those to its right, or all (the keyboard then in the tab left in front) */
   command(id: string, command: string): void {
     const panel = this.api.getPanel(id);
     if (!panel) return;
@@ -1079,6 +1083,8 @@ export class TabArea {
       : command === "closeAll" ? [...siblings]
       : [];
     closing.forEach((p) => p.api.close());
+    // the keyboard may have been in a tab just closed: put it in the one left in front, as Close Tab does
+    if (closing.length) setTimeout(() => this.focusActive(), 0);
   }
 
   /** Free the tab area when the window goes */

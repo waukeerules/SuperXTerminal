@@ -6,7 +6,7 @@
 <script lang="ts">
   import { SEARCH_FIELDS, searchFieldsOf, toggledSearchFields } from "../sessions/tree";
   import { SYSTEM, THIS_COMPUTER } from "../platform";
-  import { chooseSettingsFolder, saveSettings, settings } from "./store.svelte";
+  import { chooseSettingsFolder, saveSettings, settings, type ScriptLanguage } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { checkForUpdates } from "./updates";
@@ -123,6 +123,21 @@
       onchange={(e) => void saveSettings({ confirmButtons: e.currentTarget.checked })} /> Ask before a button runs</label>
     <p class="hint">A click on a button at the bottom of the window, meant for something else, would type its command
       into the session. With this on, each button asks first, naming where it will run.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Scripts</legend>
+    <div class="row">
+      <label for="script-language">New scripts are</label>
+      <select id="script-language" value={settings.scriptLanguage}
+        onchange={(e) => void saveSettings({ scriptLanguage: e.currentTarget.value as ScriptLanguage })}>
+        <option value="rhai">Rhai scripts</option>
+        <option value="spsl">SPSL scripts</option>
+        <option value="lines">Lines to send</option>
+      </select>
+    </div>
+    <p class="hint">What the Script Editor's Run as starts on, and a new button's Action. A script opened from a file,
+      and a button already made, keep their own; either can still be changed there.</p>
   </fieldset>
 
   <fieldset>

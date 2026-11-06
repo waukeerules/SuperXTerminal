@@ -121,6 +121,7 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ Script Editor: saved scripts (`<SettingsFolder>/scripts`, .spsl and .txt, CRLF), Insert, Save as, Delete, Open file, Save to file, Run as (Send lines / SPSL script), the SPSL panel (commands, saved scripts, Check script). It floats over the window without blocking it, so Always on top isn't needed
 - ✅ Session's own script on open: a file (absolute, file://, or relative to the settings folder) or a URL, run when it starts #!/bin/spsl, its first WAITFOR seeing everything since the session started; a Windows path is reported as not on this Mac. Checked on the lab switch (WAITFOR the prompt, show clock, SLEEP, show version); the tab shows a spinner while a script runs
 - ✅ Send Key (`TerminalKeys`): the tab menu's keys and Other Key… (any key as SENDKEY writes it)
+- ✅ New scripts are Rhai by default (Settings > General > Scripts: Rhai scripts, SPSL scripts or Lines to send): the Script Editor's Run as as it opens, and a new button's Action (Run Rhai script, Run SPSL script, Send string); a file opened and a button already made keep their own. Checked: a Rust test for the setting's default, component tests choosing it in Settings and opening the Script Editor and New Button. Not yet checked in the app
 
 ## M4 Terminal extras
 

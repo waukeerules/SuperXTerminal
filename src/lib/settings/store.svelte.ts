@@ -83,6 +83,20 @@ export interface AppSettings {
   treeSearchRegex: boolean;
   /** Where the Sessions search looks (Search in…); empty for name, host, username, folder and note */
   treeSearchFields: string[];
+  /**
+   * What a new script is (Settings > General > Scripts): the Script Editor's Run as when it opens, and a new button's
+   * Action. "rhai" by default; "spsl", or "lines" for lines to send (a button's Send string)
+   */
+  scriptLanguage: ScriptLanguage;
+}
+
+/** A script's kind, as the Script Editor's Run as names it: Rhai, SPSL, or lines sent as they are */
+export type ScriptLanguage = "rhai" | "spsl" | "lines";
+
+/** What a new script is, from Settings > General > Scripts; Rhai for a value this version doesn't know */
+export function newScriptLanguage(): ScriptLanguage {
+  const chosen = settings.scriptLanguage;
+  return chosen === "spsl" || chosen === "lines" ? chosen : "rhai";
 }
 
 /** The settings now, for every component; `loaded` once they've been read at the start */
@@ -132,6 +146,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   treeSearchCase: false,
   treeSearchRegex: false,
   treeSearchFields: [],
+  scriptLanguage: "rhai",
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

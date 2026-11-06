@@ -3,7 +3,8 @@
   Run SPSL script, Run Rhai script), Icon (none, a colour circle, or a session icon), and the text to send or the script, in the script
   box (Monaco, with SPSL's or Rhai's colours for a script, and Wrap lines). For a script, its problems show under it
   as it's written (click one to go to its line) and the script panel beside it, and OK
-  checks the script first.
+  checks the script first. A new button's Action starts on Settings > General > Scripts' choice (Run Rhai script unless
+  changed); a button already made keeps its own.
 -->
 <script lang="ts">
   import { untrack } from "svelte";
@@ -17,6 +18,7 @@
   import { SEND_STRING_HELP } from "../scripting/sendString";
   import type { CustomIcon } from "../icons/custom";
   import type { BarButton } from "./bars";
+  import { newScriptLanguage, type ScriptLanguage } from "../settings/store.svelte";
 
   interface Props {
     /** The button edited; null for a new one */
@@ -38,7 +40,10 @@
     { name: "Purple", color: "#A371F7" }, { name: "Gray", color: "#8B949E" },
   ];
 
-  let draft = $state<BarButton>(untrack(() => (button ? { ...button } : { label: "", tooltip: "", color: "", icon: "", action: "SendString", text: "" })));
+  /** A button's Action for each kind of new script in Settings > General > Scripts */
+  const ACTION_FOR: Record<ScriptLanguage, BarButton["action"]> = { rhai: "RhaiScript", spsl: "SpslScript", lines: "SendString" };
+
+  let draft = $state<BarButton>(untrack(() => (button ? { ...button } : { label: "", tooltip: "", color: "", icon: "", action: ACTION_FOR[newScriptLanguage()], text: "" })));
   let error = $state("");
   let picking = $state(false);
   let textBox: ScriptBox | undefined = $state();

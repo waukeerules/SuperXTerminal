@@ -4,12 +4,14 @@
   colours when it runs as an SPSL script, and Wrap lines; under it the script's problems, checked as it's written), the
   script panel on the right (SPSL's commands, or Rhai's
   functions for a Rhai script), and
-  Open file, Save to file, Run as (Send lines, SPSL script or Rhai script), Step and Send at the bottom. Send goes to the Send
+  Open file, Save to file, Run as (Send lines, SPSL script or Rhai script; it starts on Settings > General > Scripts'
+  choice, Rhai unless changed), Step and Send at the bottom. Send goes to the Send
   Commands selection and closes the editor; Step does the same, the script pausing before each line until Next line in
   the status bar. It floats over the window without blocking it; drag it by its title, and its bottom-right corner to
   make it bigger or smaller.
 -->
 <script lang="ts">
+  import { untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { ask, open, save } from "@tauri-apps/plugin-dialog";
   import Prompt from "../ui/Prompt.svelte";
@@ -20,6 +22,7 @@
   import { context, fillScriptPlaceholders, rhaiEnvReady, runRhaiIn, runScriptIn, selectedTargets } from "./sending.svelte";
   import { resolveSnippet } from "../scripting/asking.svelte";
   import { lineFeedsAsEnter } from "../scripting/spsl";
+  import { newScriptLanguage } from "../settings/store.svelte";
 
   let { onClose }: { /** Close, or after Send */ onClose: () => void } = $props();
 
@@ -27,7 +30,8 @@
   type Entry = { name: string; kind: string };
 
   let text = $state("");
-  let kind = $state<"spsl" | "rhai" | "lines">("spsl");
+  /** Run as: what the script is; a new one starts as Settings > General > Scripts says, and a file opened says its own */
+  let kind = $state<"spsl" | "rhai" | "lines">(untrack(newScriptLanguage));
   let saved = $state<Entry[]>([]);
   let chosen = $state<Entry | null>(null);
   let naming = $state(false);

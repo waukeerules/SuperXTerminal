@@ -109,6 +109,10 @@ pub struct AppSettings {
     /// Where the Sessions search looks (Search in…): "name", "host", "username", "folder", "note", "icon",
     /// "protocol", "profile"; empty for the first five
     pub tree_search_fields: Vec<String>,
+    /// What a new script is, in the Script Editor's Run as and a new button's Action (Settings > General > Scripts):
+    /// "rhai", "spsl" or "lines" (lines to send). Rhai by default, as the language with variables, loops and
+    /// functions; a script opened from a file or a button already made keeps its own
+    pub script_language: String,
 }
 
 impl Default for AppSettings {
@@ -160,6 +164,7 @@ impl Default for AppSettings {
             tree_search_case: false,
             tree_search_regex: false,
             tree_search_fields: Vec::new(),
+            script_language: "rhai".into(),
         }
     }
 }
@@ -178,5 +183,26 @@ impl AppSettings {
         std::fs::create_dir_all(user_folder).map_err(|e| e.to_string())?;
         let text = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         std::fs::write(user_folder.join("settings.json"), text).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A settings file from before Settings > General > Scripts reads with Rhai as the new scripts' language, and a
+    /// choice made since is kept
+    #[test]
+    fn new_scripts_are_rhai_until_another_language_is_chosen() {
+        let folder = std::env::temp_dir().join(format!("sxt-settings-language-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("settings.json"), r#"{"iconSize":20}"#).unwrap();
+        assert_eq!(AppSettings::load(&folder).script_language, "rhai");
+
+        let mut chosen = AppSettings::load(&folder);
+        chosen.script_language = "spsl".into();
+        chosen.save(&folder).unwrap();
+        assert_eq!(AppSettings::load(&folder).script_language, "spsl");
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

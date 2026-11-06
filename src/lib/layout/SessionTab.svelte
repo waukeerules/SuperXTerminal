@@ -32,6 +32,13 @@
   const scripting = $derived(running.runs.some((r) => r.tabId === tabId));
   /** The session is down: SuperXPuTTY's disconnected badge on the icon */
   const disconnected = $derived(tabStates[tabId]?.ended ?? false);
+  /** Still reaching the far end: a small yellow dot, as the Sessions tree shows */
+  const connecting = $derived(tabStates[tabId]?.connecting ?? false);
+  /**
+   * Connected, the far end having answered: a small green dot, as the Sessions tree shows. Only a terminal tab says
+   * (its page host reports connecting); a Remote Desktop or SFTP tab has no dot
+   */
+  const connected = $derived(tabStates[tabId]?.connecting === false && !disconnected);
   /** Watch for Activity's orange dot, or Watch for Silence's grey pause */
   const alert = $derived(tabStates[tabId]?.alert ?? null);
   /** The tab's colour: the environment's, else its profile's (Settings > Profiles > Tab colour); null for none */
@@ -49,8 +56,10 @@
       <!-- on its environment circle, outlined, as in the Sessions tree -->
       <Icon key={icon} size={Math.round(iconSize * 0.75)} {environment} {customs} />
       {#if disconnected}<span class="badge" aria-label="Disconnected">✕</span>
+      {:else if connecting}<span class="badge connecting" title="Connecting" aria-label="Connecting"></span>
       {:else if alert === "activity"}<span class="badge activity" title="New output" aria-label="New output"></span>
-      {:else if alert === "silence"}<span class="badge silence" title="Quiet" aria-label="Quiet">❚❚</span>{/if}
+      {:else if alert === "silence"}<span class="badge silence" title="Quiet" aria-label="Quiet">❚❚</span>
+      {:else if connected}<span class="badge connected" title="Connected" aria-label="Connected"></span>{/if}
     </span>
   {/if}
   <span class="title">{title}</span>
@@ -97,6 +106,27 @@
     font-size: 7px;
     line-height: 11px;
     text-align: center;
+  }
+
+  /*
+   * The Sessions tree's dots, smaller than the cross (they hold no sign): yellow until the far end answers, green
+   * while connected. Watch for Activity's and Silence's alerts take the green's place while they show
+   */
+  .badge.connecting,
+  .badge.connected {
+    width: 7px;
+    height: 7px;
+    right: 0;
+    bottom: 0;
+    box-shadow: 0 0 0 1.5px var(--bg-pane);
+  }
+
+  .badge.connecting {
+    background: #e3b341;
+  }
+
+  .badge.connected {
+    background: #2e9e44;
   }
 
   .badge.activity {

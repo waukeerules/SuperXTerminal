@@ -7,6 +7,7 @@
   import TreeFolder from "./TreeFolder.svelte";
   import Icon from "../icons/Icon.svelte";
   import type { CustomIcon } from "../icons/custom";
+  import type { SessionStates } from "../layout/TabArea";
   import type { EnvironmentColors } from "../icons/environment";
   import { DRAG_TYPE, type Dragged, type FolderNode, type Group } from "./tree";
   import { overriddenFields, unavailableReason, type Override, type SessionView } from "./api";
@@ -25,8 +26,8 @@
     iconSize: number;
     /** The user's custom icons */
     customs: ReadonlyMap<string, CustomIcon>;
-    /** Sessions with an open tab, as "store:id" */
-    openSessions: ReadonlySet<string>;
+    /** Sessions with an open tab, as "store:id": connecting (a yellow dot), connected (green) or dropped (a red cross) */
+    openSessions: SessionStates;
     /** The selected session or folder, as "store:id" or "store:folder:path" */
     selected: string;
     /** Sessions selected together (Cmd+click, Shift+click), as "store:id" */
@@ -167,7 +168,9 @@
       onkeydown={(e) => e.key === "Enter" && reason === null && onOpen(session)}>
       {#if lines}{@render connectors(depth + 1, childGuides, i === node.sessions.length - 1, false, 13)}{/if}
       <Icon key={session.icon} size={iconSize} environment={colors.forSession(session)} {customs}
-        open={openSessions.has(session.store + ":" + session.id)} />
+        open={openSessions.get(session.store + ":" + session.id) === "connected"}
+        connecting={openSessions.get(session.store + ":" + session.id) === "connecting"}
+        down={openSessions.get(session.store + ":" + session.id) === "disconnected"} />
       <span class="label">{session.name}</span>
     </div>
   {/each}

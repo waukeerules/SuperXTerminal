@@ -1,5 +1,7 @@
 // The tab area (dockview) with session tabs: switching tabs puts the keyboard in the chosen tab's terminal, a tab
-// takes its profile's Tab colour, and each split's ▾ lists only its own tabs. The terminal pages are stood in for by their iframes' postMessage (jsdom loads no
+// takes its profile's Tab colour, each split's ▾ lists only its own tabs, and the Sessions tree is told whether each
+// open session is connecting (yellow, its tab too, until the far end answers), connected (green, its tab too) or its tabs'
+// sessions have all ended (the red cross the tab shows). The terminal pages are stood in for by their iframes' postMessage (jsdom loads no
 // page), which records the "focus" the tab area sends the page; the Rust side by mockIPC, which answers with nothing
 // but hands over each tab's channel (pty_open), on which the test starts the session, and the profiles stored.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -20,6 +22,8 @@ let focused: string[];
 let channels: Map<string, Channel<unknown>>;
 /** The profiles stored, as profiles_list gives them */
 let profiles: Profile[];
+/** What the tab area last told the Sessions tree: each open session's state */
+let reported: ReadonlyMap<string, string>;
 
 beforeEach(() => {
   // dockview watches its element's size; jsdom has no ResizeObserver, and these tests need no sizes
@@ -48,7 +52,8 @@ beforeEach(() => {
   focused = [];
   element = document.createElement("div");
   document.body.append(element);
-  tabs = new TabArea(element, () => {});
+  reported = new Map();
+  tabs = new TabArea(element, (states) => (reported = states));
 });
 
 afterEach(() => {
@@ -153,5 +158,70 @@ describe("a split's ▾ list", () => {
     expect(listed).toEqual([["sw1", "sw2 ✓"], ["sw3 ✓"]]);
     // the tab switcher and Next Tab still go through them all
     expect(tabs.allTabs().map((t) => t.id)).toEqual([sw1, sw2, sw3]);
+  });
+});
+
+describe("what the Sessions tree is told", () => {
+  /** Start tab `id`'s session, as the Rust side says it's started (its program running, not yet the far end answering) */
+  async function start(id: string): Promise<void> {
+    ready(id);
+    await expect.poll(() => channels.get(id)).toBeDefined();
+    (channels.get(id)!.onmessage as (e: unknown) => void)({
+      type: "started", local: false, link: "pty",
+      look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "", tabColor: "" },
+    });
+  }
+  /** The session in tab `id` prints something (base64, as the Rust side sends it) */
+  const output = (id: string, text: string) => (channels.get(id)!.onmessage as (e: unknown) => void)({ type: "data", data: btoa(text) });
+  /** Tab `id`'s session ends, as the Rust side says when the connection drops */
+  const exit = (id: string) => (channels.get(id)!.onmessage as (e: unknown) => void)({ type: "exit", code: 255 });
+
+  it("says connecting until the far end answers, connected once it has, and disconnected when it ends", async () => {
+    const sw1 = open("sw1");
+    expect(reported.get("saved:Lab/sw1")).toBe("connecting");
+    await start(sw1);
+    // ssh running isn't the switch answering
+    expect(reported.get("saved:Lab/sw1")).toBe("connecting");
+    // its tab shows the same, a yellow dot
+    await expect.poll(() => label("sw1").querySelector('[aria-label="Connecting"]')).not.toBeNull();
+    output(sw1, "Password: ");
+    await expect.poll(() => reported.get("saved:Lab/sw1"), { timeout: 3000 }).toBe("connected");
+    // and green once connected, as the tree
+    await expect.poll(() => label("sw1").querySelector('[aria-label="Connected"]')).not.toBeNull();
+    expect(label("sw1").querySelector('[aria-label="Connecting"]')).toBeNull();
+    exit(sw1);
+    await expect.poll(() => reported.get("saved:Lab/sw1")).toBe("disconnected");
+    await expect.poll(() => label("sw1").querySelector('[aria-label="Disconnected"]')).not.toBeNull();
+    expect(label("sw1").querySelector('[aria-label="Connected"]')).toBeNull();
+    tabs.api.getPanel(sw1)!.api.close();
+    expect(reported.has("saved:Lab/sw1")).toBe(false);
+  });
+
+  it("goes from connecting straight to disconnected when the connection fails at once, never connected", async () => {
+    const sw1 = open("sw1");
+    await start(sw1);
+    const seen: string[] = [];
+    const watch = setInterval(() => seen.push(reported.get("saved:Lab/sw1") ?? ""), 10);
+    output(sw1, "ssh: connect to host 192.168.0.187 port 22: Network is unreachable\r\n");
+    exit(sw1);
+    await new Promise((r) => setTimeout(r, 1500));
+    clearInterval(watch);
+    expect(reported.get("saved:Lab/sw1")).toBe("disconnected");
+    expect(seen).not.toContain("connected");
+  });
+
+  it("counts a session open in two tabs as connected while either is", async () => {
+    const first = open("sw1");
+    const second = tabs.openSession("saved", "Lab/sw1", "sw1 (2)", false, "terminal", null);
+    await start(first);
+    await start(second);
+    output(first, "sw1#");
+    output(second, "sw1#");
+    await expect.poll(() => reported.get("saved:Lab/sw1"), { timeout: 3000 }).toBe("connected");
+    exit(first);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reported.get("saved:Lab/sw1")).toBe("connected");
+    exit(second);
+    await expect.poll(() => reported.get("saved:Lab/sw1")).toBe("disconnected");
   });
 });

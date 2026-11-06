@@ -34,7 +34,7 @@
   import SerialSettings from "./lib/terminal/SerialSettings.svelte";
   import QuickSelector, { type QuickItem } from "./lib/sessions/QuickSelector.svelte";
   import type { PageHost, QuickConnect as QuickFields } from "./lib/terminal/PageHost";
-  import type { MovingTab } from "./lib/layout/TabArea";
+  import type { MovingTab, SessionStates } from "./lib/layout/TabArea";
   import LayoutsList from "./lib/layout/LayoutsList.svelte";
   import LogViewer from "./lib/layout/LogViewer.svelte";
   import { checkForUpdates } from "./lib/settings/updates";
@@ -50,7 +50,7 @@
   let tabElement: HTMLDivElement;
   let tabs = $state<TabArea | null>(null);
   let status = $state("Ready");
-  let openSessions = $state<ReadonlySet<string>>(new Set());
+  let openSessions = $state<SessionStates>(new Map());
   /** The Settings window's tab while it's open; null when closed */
   let settingsTab = $state<string | null>(null);
   /** The profile Settings > Profiles shows first (Quick connect's Edit…, Edit Session's Profiles…) */

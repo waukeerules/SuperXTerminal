@@ -147,6 +147,15 @@ const KEY_FETCH_NEEDED = "KEY_FETCH:";
  */
 const keyFetches = new Map<string, Promise<boolean>>();
 
+/**
+ * How long a session must go on after its first output to count as connected (the far end answering): an ssh that
+ * fails at once ("Network is unreachable", "Connection refused") prints its message and ends within a few
+ * milliseconds, well inside this, so its tab and Sessions tree entry go from connecting straight to disconnected,
+ * without a moment of connected between. Short, so a good connection's yellow turns green without a felt lag (it was
+ * a second, which showed)
+ */
+const ANSWERED_AFTER_MS = 300;
+
 /** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
 const STABLE_AFTER_MS = 60_000;
 
@@ -185,6 +194,13 @@ export class PageHost implements ScriptTarget {
   private antiIdleTimer: ReturnType<typeof setInterval> | null = null;
   /** The program ended: nothing more can be typed */
   private ended = false;
+  /**
+   * The far end has answered: the session printed something and was still running ANSWERED_AFTER_MS later. Until
+   * then it's connecting (its program may be running, as ssh is while it reaches the host, without being connected)
+   */
+  private answered = false;
+  /** Waiting to see the session still running after its first output, to count it answered */
+  private answeredTimer: ReturnType<typeof setTimeout> | null = null;
   /** What the connection is: "pty", or a stream's "telnet", "raw" or "serial" (pty_open's started event) */
   private link = "pty";
   /** The tab's session log (SessionLog): its id for writing, its file, and whether it goes when the tab closes */
@@ -291,6 +307,7 @@ export class PageHost implements ScriptTarget {
   /** Close the pseudo terminal and stop listening; called when the tab closes */
   dispose(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.answeredTimer) clearTimeout(this.answeredTimer);
     if (this.antiIdleTimer) clearInterval(this.antiIdleTimer);
     this.stopPrefs();
     this.stopKeys();
@@ -532,6 +549,29 @@ export class PageHost implements ScriptTarget {
     return this.ended;
   }
 
+  /** Whether it's still connecting: not ended, and the far end hasn't answered yet (the tab's and tree's yellow) */
+  get isConnecting(): boolean {
+    return !this.ended && !this.answered;
+  }
+
+  /** Output came: the first, after a moment still running, means the far end has answered */
+  private heard(): void {
+    if (this.answered || this.answeredTimer) return;
+    this.answeredTimer = setTimeout(() => {
+      this.answeredTimer = null;
+      if (this.ended) return;
+      this.answered = true;
+      this.onState();
+    }, ANSWERED_AFTER_MS);
+  }
+
+  /** A new connection (the first, or a reconnect): connecting again until its far end answers */
+  private notAnswered(): void {
+    if (this.answeredTimer) clearTimeout(this.answeredTimer);
+    this.answeredTimer = null;
+    this.answered = false;
+  }
+
   /**
    * The session ended some other way than a logout: keep the tab and its output, and reconnect by itself when the
    * settings say so, as TerminalControl.OnExited. A session that stayed up a minute starts its attempts again, and
@@ -758,6 +798,7 @@ export class PageHost implements ScriptTarget {
         this.tail = (this.tail + atob(event.data)).slice(-TAIL_LIMIT);
         this.queue.push(event.data);
         this.flush();
+        this.heard();
       } else if (event.type === "started") {
         // output waits until the page has its settings, so the first lines are highlighted too
         this.link = event.link;
@@ -773,6 +814,7 @@ export class PageHost implements ScriptTarget {
           return;
         }
         this.ended = true;
+        this.notAnswered();
         // a tab of its own for a key fetch (Log in & cache key): it stays, saying how it went; Enter runs it again
         if (this.target.kind === "keyFetch") {
           this.post(event.code === 0
@@ -793,6 +835,7 @@ export class PageHost implements ScriptTarget {
   /** Start the tab's program at the page's size and pass its output on */
   private async open(): Promise<void> {
     if (this.ptyId !== null) return;
+    this.notAnswered();
     this.tail = "";
     this.fix = null;
     const channel = this.outputChannel();

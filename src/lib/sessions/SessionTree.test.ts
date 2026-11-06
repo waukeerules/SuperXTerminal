@@ -1,4 +1,5 @@
-// The Sessions tree's selection of folders and sessions together: Cmd+click and Shift+click pick both, and the
+// The Sessions tree's selection of folders and sessions together; an open session's state on its icon (a yellow dot
+// while connecting, green once connected, or the tab's red cross once its session has dropped); Cmd+click and Shift+click pick both, and the
 // selection's menu moves them to a folder; a search hides the roots it leaves no matches in; Show in Sessions tree opens a Recent session's folders and scrolls to it;
 // and on a clean install, the first session saved shows. The Rust side is stood in for by mockIPC; moves are
 // recorded. jsdom doesn't scroll, so scrollIntoView is stood in for, recording the rows it's asked to show.
@@ -9,6 +10,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import SessionTree from "./SessionTree.svelte";
 import { settings } from "../settings/store.svelte";
 import type { SessionView } from "./api";
+import type { SessionState } from "../layout/TabArea";
 
 /** A Saved SSH session with this id, its name and folder taken from it */
 function session(id: string): SessionView {
@@ -44,7 +46,7 @@ beforeEach(() => {
 
 /** Show the tree on the stand-in sessions, with Saved sessions' folders open */
 async function open() {
-  render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+  render(SessionTree, { openSessions: new Map(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
   await screen.findByText(/Imported/);
   // open Saved sessions' folders so their rows show
   await user.click(screen.getByRole("button", { name: "Expand all" }));
@@ -95,7 +97,7 @@ describe("searching", () => {
       if (cmd === "icons_custom" || cmd === "profiles_list") return [];
       return null;
     });
-    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    render(SessionTree, { openSessions: new Map(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
     await expect.poll(rootsShown).toEqual(["Saved sessions", "Private sessions"]);
     const search = screen.getByPlaceholderText(/Type to search/);
     await user.type(search, "r1");
@@ -125,7 +127,7 @@ describe("with Private sessions turned off", () => {
       return null;
     });
     Object.assign(settings, { settingsFolder: "/team", useSessionsXml: true, usePrivateSessions: false });
-    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    render(SessionTree, { openSessions: new Map(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
     await screen.findByText(/^Saved sessions/);
     expect(screen.queryByText(/^Private sessions/)).toBeNull();
     // Copy to lists only the roots in use
@@ -161,7 +163,7 @@ describe("turning Private sessions off and on", () => {
       return null;
     });
     Object.assign(settings, { loaded: true, settingsFolder: "/team", useSessionsXml: true, usePrivateSessions: true });
-    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    render(SessionTree, { openSessions: new Map(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
     await screen.findByText(/^Private sessions/);
     // Settings > General saves the change, as the core then answers
     privateOn = false;
@@ -194,7 +196,7 @@ describe("Show in Sessions tree", () => {
       if (cmd === "icons_custom" || cmd === "profiles_list") return [];
       return null;
     });
-    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    render(SessionTree, { openSessions: new Map(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
     // only Recent's sw1 shows: its folders are closed
     const inRecent = await screen.findByText("sw1");
     await user.pointer({ keys: "[MouseRight]", target: inRecent });
@@ -227,7 +229,7 @@ describe("the first session on a clean install", () => {
       if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
       return null;
     });
-    render(SessionTree, { openSessions: new Set<string>(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    render(SessionTree, { openSessions: new Map(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
     await screen.findByText(/Private sessions/);
     return stored;
   }
@@ -251,5 +253,32 @@ describe("the first session on a clean install", () => {
     await newSession("sw1");
     await expect.poll(() => stored.map((s) => `${s.store}:${s.id}`)).toEqual(["private:sw1"]);
     expect(within(row(/^Private sessions/).parentElement!).getByText("sw1")).toBeTruthy();
+  });
+});
+
+describe("an open session's state on its icon", () => {
+  it("shows a yellow dot while connecting, green while connected, and the tab's red cross once dropped", async () => {
+    render(SessionTree, {
+      openSessions: new Map<string, SessionState>([
+        ["saved:Imported/Core/sw1", "disconnected"], ["saved:Imported/Core/sw2", "connected"], ["saved:Lab/x", "connecting"],
+      ]),
+      onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {},
+    });
+    await screen.findByText(/Imported/);
+    await user.click(screen.getByRole("button", { name: "Expand all" }));
+    const dropped = row("sw1");
+    expect(within(dropped).getByLabelText("Disconnected")).toBeTruthy();
+    expect(dropped.querySelector(".open")).toBeNull();
+    const connected = row("sw2");
+    expect(connected.querySelector(".open")).not.toBeNull();
+    expect(within(connected).queryByLabelText("Disconnected")).toBeNull();
+    const connecting = row("x");
+    expect(within(connecting).getByLabelText("Connecting")).toBeTruthy();
+    expect(connecting.querySelector(".open")).toBeNull();
+    expect(within(connected).queryByLabelText("Connecting")).toBeNull();
+    // not open: none of them
+    expect(row("r1").querySelector(".open")).toBeNull();
+    expect(within(row("r1")).queryByLabelText("Disconnected")).toBeNull();
+    expect(within(row("r1")).queryByLabelText("Connecting")).toBeNull();
   });
 });

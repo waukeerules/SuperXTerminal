@@ -32,6 +32,14 @@ import { isDark } from "../settings/store.svelte";
 import { tabStates } from "./tabStates.svelte";
 
 /** What a terminal tab is given when it's added: what to run, whether it's a local shell, and how its tab looks */
+/**
+ * An open session's state, as the Sessions tree shows it: connecting (a yellow dot, as its tab shows, until the far end
+ * answers), connected (green), or disconnected (the tab's red cross)
+ */
+export type SessionState = "connecting" | "connected" | "disconnected";
+/** Each open session's state, by "store:id" */
+export type SessionStates = ReadonlyMap<string, SessionState>;
+
 export interface TerminalParams {
   target: Target;
   local: boolean;
@@ -385,7 +393,12 @@ class TerminalPanel implements IContentRenderer {
       () => parameters.api.close(),
       (command) => this.tabs.command(id, command),
       () => {
-        tabStates[id] = { ...tabStates[id], ended: this.host?.isEnded ?? false, tabColor: this.host?.tabColor ?? null };
+        tabStates[id] = {
+          ...tabStates[id],
+          ended: this.host?.isEnded ?? false,
+          connecting: this.host?.isConnecting ?? false,
+          tabColor: this.host?.tabColor ?? null,
+        };
         this.tabs.notify();
       },
     );
@@ -417,6 +430,8 @@ export class TabArea {
   customs: ReadonlyMap<string, CustomIcon> = new Map();
   /** The session ("store:id") each open tab runs, by panel id, for marking open sessions in the tree */
   private readonly sessions = new Map<string, string>();
+  /** What the Sessions tree was last told, as text, so it's only told again when something changed */
+  private reported = "";
   /** Quick connect tabs' typed fields as session values for their scripts ({host_address}...), by panel id */
   private readonly scriptValues = new Map<string, Record<string, string>>();
   /** Each tab's page host, by panel id */
@@ -438,9 +453,10 @@ export class TabArea {
 
   /**
    * Create the tab area inside `element`
-   * @param onOpenChanged told the open sessions ("store:id") whenever a session's tab opens or closes
+   * @param onOpenChanged told each open session's state (by "store:id") whenever a session's tab opens or closes, or
+   * a tab's session drops or comes back (the Sessions tree's green dot, or the tab's red cross)
    */
-  constructor(element: HTMLElement, private readonly onOpenChanged: (open: Set<string>) => void) {
+  constructor(element: HTMLElement, private readonly onOpenChanged: (states: SessionStates) => void) {
     this.api = createDockview(element, {
       theme: isDark() ? themeDark : themeLight,
       createComponent: (options) =>
@@ -467,7 +483,7 @@ export class TabArea {
       this.hosts.delete(panel.id);
       this.refusing.delete(panel.id);
       this.scriptValues.delete(panel.id);
-      if (this.sessions.delete(panel.id)) this.onOpenChanged(new Set(this.sessions.values()));
+      if (this.sessions.delete(panel.id)) this.reportSessions();
       this.changed();
     });
     this.api.onDidActivePanelChange(() => this.changed());
@@ -510,7 +526,7 @@ export class TabArea {
   openSession(store: "saved" | "private" | "database", id: string, title: string, local: boolean, icon: string, environment: string | null): string {
     const panelId = this.add(title, { target: { kind: "session", store, id }, local, icon, environment });
     this.sessions.set(panelId, `${store}:${id}`);
-    this.onOpenChanged(new Set(this.sessions.values()));
+    this.reportSessions();
     this.changed();
     return panelId;
   }
@@ -530,7 +546,7 @@ export class TabArea {
       renderer: "always",
     });
     this.sessions.set(panelId, `${store}:${id}`);
-    this.onOpenChanged(new Set(this.sessions.values()));
+    this.reportSessions();
     this.changed();
     return panelId;
   }
@@ -547,7 +563,7 @@ export class TabArea {
       renderer: "always",
     });
     this.sessions.set(panelId, `${store}:${id}`);
-    this.onOpenChanged(new Set(this.sessions.values()));
+    this.reportSessions();
     this.changed();
     return panelId;
   }
@@ -591,9 +607,39 @@ export class TabArea {
     for (const listener of this.listeners) listener();
   }
 
-  /** A tab's session started or ended */
+  /** A tab's session started or ended: its label changes, and the Sessions tree may have to say so */
   notify(): void {
+    this.reportSessions();
     this.changed();
+  }
+
+  /**
+   * Each open session's state, for the Sessions tree, from its tabs': "connected" if any tab is (one is
+   * enough: a second tab on a dropped device shows its own cross), else "connecting" if any tab is, else
+   * "disconnected" (every tab shows the red cross), as each tab's page host has it: connecting until the far end
+   * answers (PageHost.isConnecting), ended once the session has. Only terminal tabs have a page host: a Remote
+   * Desktop or SFTP tab's session is connected here, as its tab shows neither.
+   */
+  private sessionStates(): Map<string, SessionState> {
+    const rank: Record<SessionState, number> = { disconnected: 0, connecting: 1, connected: 2 };
+    const states = new Map<string, SessionState>();
+    for (const [panelId, key] of this.sessions) {
+      // a terminal tab's page host; none for a Remote Desktop or SFTP tab
+      const host = this.hosts.get(panelId);
+      const state: SessionState = host?.isEnded ? "disconnected" : host?.isConnecting ? "connecting" : "connected";
+      const before = states.get(key);
+      if (!before || rank[state] > rank[before]) states.set(key, state);
+    }
+    return states;
+  }
+
+  /** Tell the Sessions tree each open session's state, when it has changed since it was last told */
+  private reportSessions(): void {
+    const states = this.sessionStates();
+    const text = JSON.stringify([...states].sort());
+    if (text === this.reported) return;
+    this.reported = text;
+    this.onOpenChanged(states);
   }
 
   /** What a tab runs, for its menu: its target and how its tab looks */
@@ -627,7 +673,7 @@ export class TabArea {
     const session = this.sessions.get(id);
     if (session) {
       this.sessions.set(panelId, session);
-      this.onOpenChanged(new Set(this.sessions.values()));
+      this.reportSessions();
     }
   }
 
@@ -834,7 +880,7 @@ export class TabArea {
     } else {
       this.openLocalShell();
     }
-    this.onOpenChanged(new Set(this.sessions.values()));
+    this.reportSessions();
     this.changed();
   }
 
@@ -864,7 +910,7 @@ export class TabArea {
     if (moving.title !== moving.original) this.rename(panelId, moving.title);
     if (moving.session) {
       this.sessions.set(panelId, moving.session);
-      this.onOpenChanged(new Set(this.sessions.values()));
+      this.reportSessions();
     }
     this.changed();
   }

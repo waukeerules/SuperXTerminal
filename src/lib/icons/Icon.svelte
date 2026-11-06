@@ -1,7 +1,9 @@
 <!--
   A session icon at a size, as SuperXPuTTY's IconLibrary draws it: a template, logo or custom icon in its key's
   colour. With an environment colour it sits on a circle of that colour, outlined so it stays readable on it
-  (IconLibrary.DrawOnCircle); `open` adds the small green dot of a session with an open tab.
+  (IconLibrary.DrawOnCircle); `open` adds the small green dot of a session with an open tab, `connecting` a yellow
+  one while its tab is still reaching the far end, and `down` the red cross
+  of one whose tabs' sessions have all dropped (the tab's own disconnected badge, SessionTab.svelte), the icon dimmed.
 -->
 <script lang="ts" module>
   /** Gives each drawn icon its own prefix for SVG ids (gradients), since many share one page */
@@ -23,13 +25,17 @@
     environment?: string | null;
     /** Whether the session has an open tab: the small green dot */
     open?: boolean;
+    /** Whether its open tabs' sessions have all dropped: the red cross, as its tab shows, in place of the dot */
+    down?: boolean;
+    /** Whether its tab is still connecting (the far end hasn't answered yet): the dot yellow, as its tab shows */
+    connecting?: boolean;
     /** The user's custom icons, for a custom icon's key */
     customs?: ReadonlyMap<string, CustomIcon>;
     /** A toolbar glyph ("check", "clear", ...) rather than a session icon */
     glyph?: boolean;
   }
 
-  let { key, size, environment = null, open = false, customs = new Map(), glyph = false }: Props = $props();
+  let { key, size, environment = null, open = false, down = false, connecting = false, customs = new Map(), glyph = false }: Props = $props();
 
   /** This icon's prefix for its SVG ids */
   const uid = `i${next++}`;
@@ -57,8 +63,14 @@
         style:background={icon.color ?? custom.color}></span>
     {/if}
   </span>
-  {#if open}
-    <span class="open" style:width="{Math.round(size * 0.42)}px" style:height="{Math.round(size * 0.42)}px"></span>
+  {#if down}
+    <span class="dropped" role="img" aria-label="Disconnected" title="Disconnected" style:width="{Math.round(size * 0.46)}px"
+      style:height="{Math.round(size * 0.46)}px" style:font-size="{Math.max(6, Math.round(size * 0.3))}px">✕</span>
+  {:else if connecting}
+    <span class="dot connecting" role="img" aria-label="Connecting" title="Connecting"
+      style:width="{Math.round(size * 0.42)}px" style:height="{Math.round(size * 0.42)}px"></span>
+  {:else if open}
+    <span class="dot open" style:width="{Math.round(size * 0.42)}px" style:height="{Math.round(size * 0.42)}px"></span>
   {/if}
 </span>
 
@@ -97,12 +109,42 @@
     mask-repeat: no-repeat;
   }
 
-  .open {
+  /* the tab's disconnected badge (SessionTab.svelte): a red cross over the corner, the icon under it dimmed */
+  .dropped {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    border-radius: 50%;
+    background: #d32f2f;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    box-shadow: 0 0 0 1.5px var(--bg-pane);
+  }
+
+  .cell:has(.dropped) :global(svg),
+  .cell:has(.dropped) :global(img),
+  .cell:has(.dropped) .custom {
+    opacity: 0.55;
+  }
+
+  .dot {
     position: absolute;
     right: 0;
     bottom: 0;
     border-radius: 50%;
-    background: #2e9e44;
     box-shadow: 0 0 0 1.5px var(--bg-pane);
+  }
+
+  /* open and connected */
+  .open {
+    background: #2e9e44;
+  }
+
+  /* still connecting: the tab's yellow dot (SessionTab.svelte) */
+  .connecting {
+    background: #e3b341;
   }
 </style>

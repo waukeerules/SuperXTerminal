@@ -6,6 +6,7 @@
 -->
 <script lang="ts">
   import { MOD } from "../platform";
+  import type { SessionStates } from "../layout/TabArea";
   import { tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import TreeFolder from "./TreeFolder.svelte";
@@ -66,8 +67,8 @@
   import { commandLabel } from "../shortcuts";
 
   interface Props {
-    /** Sessions with an open tab, as "store:id" */
-    openSessions: ReadonlySet<string>;
+    /** Sessions with an open tab, as "store:id": connecting (a yellow dot), connected (green) or dropped (a red cross) */
+    openSessions: SessionStates;
     /** Open a session; given its icon key and environment colour for its tab */
     onOpen: (session: SessionView, environment: string | null) => void;
     /** The icon size and custom icons, once read, so tabs can draw icons the same way */

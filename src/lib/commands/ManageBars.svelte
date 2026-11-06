@@ -1,7 +1,8 @@
 <!--
   Manage Button Bars: every bar on the left, the chosen bar's buttons on the right, for tidying up what the right-click
   menu does one button at a time. Buttons can be moved or copied to another bar (the Move to and Copy to menus, or
-  dragged onto a bar, Alt/Option to copy), put in order, edited and deleted; bars can be added, renamed, copied, put in
+  dragged onto a bar, Alt/Option to copy), put in order, duplicated (beside themselves, as Label-1, -2...), edited and deleted; bars can be added, renamed,
+  copied (as Name-1), put in
   order, merged into another and deleted. A bar imported under a name already taken arrives as "Name (2)", so a bar
   that looks like another's copy gets a Merge hint, a button the same as one before it is marked Duplicate (Remove
   Duplicates takes those off), and buttons sharing a label with another command are marked so the user can choose.
@@ -19,7 +20,7 @@
   import TabIcons from "./TabIcons.svelte";
   import type { CustomIcon } from "../icons/custom";
   import type { Bar, BarButton } from "./bars";
-  import { clashes, copies, duplicateBar, duplicates, freeName, merge, reorder, transfer } from "./manage";
+  import { clashes, copies, duplicateBar, duplicateButtons, duplicates, freeName, merge, reorder, transfer } from "./manage";
 
   interface Props {
     /** The bars as ButtonBars.xml has them, read just before the window opened */
@@ -118,6 +119,14 @@
     const left = skipped ? `; ${count(skipped)} already there${copy ? "" : ", taken off here"}` : "";
     ticked = new Set();
     apply(next, `${verb} ${count(done)} to "${to}"${left}`);
+  }
+
+  /** Duplicate the ticked buttons, each copy beside its button as "Label-1", and tick the copies to change them */
+  function duplicateTicked(): void {
+    const n = selection.length;
+    const { bars: next, copies: made } = duplicateButtons(draft, chosen, selection);
+    apply(next, `Duplicated ${count(n)}`);
+    ticked = new Set(made);
   }
 
   /** Delete the ticked buttons */
@@ -325,6 +334,7 @@
           <button disabled={selection.length !== 1} onclick={() => (editing = { index: selection[0], button: { ...bar.buttons[selection[0]] } })}>Edit…</button>
           <button disabled={selection.length === 0 || draft.length < 2} onclick={(e) => barMenu(e, (to) => send(to, false))}>Move to ▾</button>
           <button disabled={selection.length === 0 || draft.length < 2} onclick={(e) => barMenu(e, (to) => send(to, true))}>Copy to ▾</button>
+          <button disabled={selection.length === 0} onclick={duplicateTicked} title="A copy of each ticked button beside it, as Label-1">Duplicate</button>
           <button aria-label="Delete buttons" disabled={selection.length === 0} onclick={deleteButtons}>Delete</button>
           <button disabled={repeated.size === 0} onclick={removeDuplicates}>Remove Duplicates</button>
           <button aria-label="Move button up" disabled={selection.length !== 1 || selection[0] === 0} onclick={() => moveButton(-1)}>▲</button>

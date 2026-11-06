@@ -1,5 +1,6 @@
 // Manage Button Bars, opened from the button bar's right-click menu: a bar imported again as "Cisco (2)" is merged
-// back by its hint, a duplicate button is taken off, a button moves to another bar, and only Save writes
+// back by its hint, a duplicate button is taken off, a button moves to another bar, buttons and bars are duplicated
+// as Name-1, Name-2..., and only Save writes
 // ButtonBars.xml. The Rust side is stood in for by mockIPC: the bars live in `stored`, which buttonbars_save replaces,
 // and the dialog plugin's "Leave without saving?" answers `sure`.
 import { beforeEach, describe, expect, it } from "vitest";
@@ -99,6 +100,38 @@ describe("Manage Button Bars", () => {
     expect(listed(dialog)).toEqual(["show run", "wr"]);
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(stored.find((b) => b.name === "Linux")!.buttons.map((b) => b.label)).toEqual(["ls", "ls", "show run", "wr"]);
+  });
+
+  it("duplicates the ticked buttons beside themselves as -1, then -2, ticking the copies", async () => {
+    const user = userEvent.setup();
+    const dialog = await openManager(user);
+    await user.click(within(dialog).getByRole("checkbox", { name: 'Tick "show run"' }));
+    await user.click(within(dialog).getByRole("checkbox", { name: 'Tick "wr"' }));
+    await user.click(within(dialog).getByRole("button", { name: "Duplicate" }));
+    expect(listed(dialog)).toEqual(["show run", "show run-1", "wr", "wr-1"]);
+    expect((within(dialog).getByRole("checkbox", { name: 'Tick "show run-1"' }) as HTMLInputElement).checked).toBe(true);
+    expect((within(dialog).getByRole("checkbox", { name: 'Tick "show run"' }) as HTMLInputElement).checked).toBe(false);
+    expect(within(dialog).getByRole("status").textContent).toContain("Duplicated 2 buttons");
+    // a second copy of the same button takes the next number free
+    await user.click(within(dialog).getByRole("checkbox", { name: 'Tick "show run-1"' }));
+    await user.click(within(dialog).getByRole("checkbox", { name: 'Tick "wr-1"' }));
+    await user.click(within(dialog).getByRole("checkbox", { name: 'Tick "show run"' }));
+    await user.click(within(dialog).getByRole("button", { name: "Duplicate" }));
+    expect(listed(dialog)).toEqual(["show run", "show run-2", "show run-1", "wr", "wr-1"]);
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    const cisco = stored.find((b) => b.name === "Cisco")!.buttons;
+    expect(cisco.map((b) => b.label)).toEqual(["show run", "show run-2", "show run-1", "wr", "wr-1"]);
+    expect(cisco[1].text).toBe("show run\n");
+  });
+
+  it("copies a bar as Name-1, then Name-2", async () => {
+    const user = userEvent.setup();
+    const dialog = await openManager(user);
+    const bars = () => within(dialog).getAllByRole("option").map((o) => o.querySelector(".name")!.textContent);
+    await user.click(within(dialog).getByRole("button", { name: "Copy" }));
+    await user.click(within(dialog).getAllByRole("option").find((o) => o.querySelector(".name")!.textContent === "Cisco")!);
+    await user.click(within(dialog).getByRole("button", { name: "Copy" }));
+    expect(bars()).toEqual(["Cisco", "Cisco-2", "Cisco-1", "Linux", "Cisco (2)"]);
   });
 
   it("writes nothing on Cancel", async () => {

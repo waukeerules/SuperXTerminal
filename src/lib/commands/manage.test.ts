@@ -68,11 +68,11 @@ describe("what needs tidying", () => {
 });
 
 describe("bars", () => {
-  it("copies a bar after itself under a name not taken", () => {
-    const bars = [bar("Cisco", button("wr")), bar("Cisco copy"), bar("Linux")];
+  it("copies a bar after itself as Name-1, or the next number not taken", () => {
+    const bars = [bar("Cisco", button("wr")), bar("Cisco-1"), bar("Linux")];
     const next = duplicateBar(bars, "Cisco");
-    expect(next.map((b) => b.name)).toEqual(["Cisco", "Cisco copy (2)", "Cisco copy", "Linux"]);
-    expect(labels(next)["Cisco copy (2)"]).toEqual(["wr"]);
+    expect(next.map((b) => b.name)).toEqual(["Cisco", "Cisco-2", "Cisco-1", "Linux"]);
+    expect(labels(next)["Cisco-2"]).toEqual(["wr"]);
   });
 
   it("puts an item somewhere else in its list", () => {

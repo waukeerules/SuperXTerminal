@@ -2287,7 +2287,7 @@ fn tray_command(app: &AppHandle, id: &str) {
         // a new window starts with a Local Shell
         "tray:newLocalShell" | "tray:openSession" | "tray:newWindow" if !has_window => deliver(app, None),
         "tray:newWindow" => {
-            let _ = window_new(app.clone(), None, None, None);
+            let _ = new_window(app, None, None, None);
         }
         "tray:newLocalShell" | "tray:openSession" => {
             deliver(app, None);
@@ -2369,8 +2369,19 @@ static NEXT_WINDOW: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32:
 
 /// File > New Window, and Connect in new window (`open` the session, "store:id"), as SuperXPuTTY's new instance: another
 /// window with its own Sessions tree and tabs
+///
+/// Async, so it runs off the main thread. On Windows Tauri runs a plain command on the main thread, inside WebView2's
+/// handling of the page's call, and `run_on_main_thread` from there makes the window at once, in that handler: WebView2
+/// never finished the new web view, which stayed blank (about:blank, the window's grey), and the page that asked never
+/// heard back. Move to New Window, New Window and Connect in new window all did this on Windows; the Mac didn't mind.
 #[tauri::command]
-fn window_new(app: AppHandle, open: Option<String>, adopt: Option<serde_json::Value>, layout: Option<String>) -> Result<(), String> {
+async fn window_new(app: AppHandle, open: Option<String>, adopt: Option<serde_json::Value>, layout: Option<String>) -> Result<(), String> {
+    new_window(&app, open, adopt, layout)
+}
+
+/// Make another window, starting with `open`, `adopt` or `layout` (see [`WindowStart`]), on the main thread. Never
+/// from a plain (sync) command: see [`window_new`].
+fn new_window(app: &AppHandle, open: Option<String>, adopt: Option<serde_json::Value>, layout: Option<String>) -> Result<(), String> {
     let label = format!("window-{}", NEXT_WINDOW.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
     if open.is_some() || adopt.is_some() || layout.is_some() {
         WINDOW_OPENS.lock().unwrap().get_or_insert_with(Default::default).insert(label.clone(), WindowStart { open, adopt, layout });
@@ -2965,5 +2976,30 @@ mod tests {
         let state = remembered_state();
         assert!(state.contains(StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED | StateFlags::FULLSCREEN));
         assert!(!state.intersects(StateFlags::VISIBLE | StateFlags::DECORATIONS));
+    }
+
+    #[test]
+    fn a_window_the_page_asks_for_is_made_by_an_async_command_so_windows_draws_it() {
+        // Move to New Window (and New Window, Connect in new window) opened a grey window on Windows that never loaded,
+        // and the window that asked stopped hearing back: a plain command runs on the main thread inside WebView2's
+        // handling of the page's call, and a web view made there never finishes. Nothing here can make a WebView2
+        // window (the app's windows aren't tested whole: docs/TESTING.md), so this reads the commands themselves: each
+        // that makes a window must be async, which Tauri runs off the main thread.
+        // as one kind of line ending, whichever Git checked out
+        let source = include_str!("lib.rs").replace("\r\n", "\n");
+        // the attribute in two halves, so this test's own text isn't taken for a command
+        let commands = source.split(concat!("#[tauri", "::command]")).skip(1);
+        let mut checked = 0;
+        for command in commands {
+            let signature = command.trim_start().lines().next().unwrap_or("");
+            // the command's body: up to the first line that closes an item
+            let body = command.split("\n}\n").next().unwrap_or("");
+            let makes_window = ["new_window(", "main_window(", "WebviewWindowBuilder"].iter().any(|call| body.contains(call));
+            if makes_window {
+                checked += 1;
+                assert!(signature.contains("async fn"), "a command that makes a window isn't async, so it hangs on Windows: {signature}");
+            }
+        }
+        assert!(checked > 0, "found no command that makes a window: has window_new moved?");
     }
 }

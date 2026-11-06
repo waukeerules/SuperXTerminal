@@ -110,7 +110,7 @@ describe("Rhai scripts in a tab", () => {
     const status = await run(core, device);
     expect(device.typed).toEqual(["show version\r"]);
     expect(found).toEqual({ index: 0, groups: ["uptime is 5 weeks", "5"] });
-    expect(status).toEqual(['Script "Script" in sw1: done', 'Script "Script" in sw1 finished']);
+    expect(status).toEqual(['Script "Script" in sw1: done', 'Script "Script" in sw1 finished: done']);
   });
 
   it("answers null when a wait's time runs out, so the script can choose what to do", async () => {

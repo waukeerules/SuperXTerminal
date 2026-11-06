@@ -185,7 +185,7 @@ hovering one in the script box says what it does.
 |---|---|
 | `prompt("question")` | Asks; gives the answer, or `""` when cancelled |
 | `password("question")` | Asks, hidden; gives the answer. Cancel stops the script |
-| `status("text")` | A line in the status bar. `print("text")` does the same; `debug(value)` shows any value |
+| `status("text")` | A line in the status bar. The last one stays when the script ends: "Script "name" in tab finished: text". `print("text")` does the same; `debug(value)` shows any value |
 | `sleep(500)` | Waits 500 ms. For pacing; to wait for a device, wait for its prompt |
 | `throw "message"` | Stops the script, with the message in the status bar |
 

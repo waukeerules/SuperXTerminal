@@ -185,7 +185,7 @@ the text). Something starting with `/` that isn't one of the options is the text
 | Command | Does |
 |---|---|
 | `SET name value` | Sets a variable: `{name}` in later lines is the value (with its own `{variables}` filled in as SET runs). `SET name` alone forgets it. A name starts with a letter or `_`. |
-| `ECHO text` | Shows the text in the status bar: "Script "name" in tab: text". |
+| `ECHO text` | Shows the text in the status bar: "Script "name" in tab: text". The last one stays when the script ends: "Script "name" in tab finished: text". |
 | `COLLECT name [/i] [/re] text` | Every match in the last command's output (as SAVE takes it), as a list for FOREACH: a regular expression's first group (else its whole match), or each place plain text appears. `{name}` is them all, comma-separated; `{name_count}` how many. |
 | `SAVE [/append] file` | Saves what the last command printed: the output since the last line that typed, without its echo (the rest of the line it was typed on) and without a prompt on the last line. A bare name or a relative path goes in `Documents/SuperXTerminal/output` (folders made as needed); `~/…` is the home folder; a full path is used as it is. `/append` adds to the file. |
 

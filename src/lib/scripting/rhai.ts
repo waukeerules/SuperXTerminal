@@ -162,9 +162,12 @@ export async function runRhai(
     }
   };
 
+  /** The script's last status() line, kept in the one it finishes with, which would otherwise cover it at once */
+  let said = "";
   const onEvent = (event: RhaiEvent) => {
     if (event.kind === "status") {
       if (event.line) run.line = event.line;
+      said = event.text;
       host.status(`Script ${where}: ${event.text}`);
     } else if (event.kind === "call") {
       run.line = event.line;
@@ -177,7 +180,7 @@ export async function runRhai(
     } else {
       if (event.stopped) host.status(`Script ${where} stopped by you${event.line ? ` at line ${event.line} of ${run.lineCount}` : ""}`);
       else if (event.error) host.status(`Script ${where} stopped${event.line ? ` at line ${event.line}` : ""}: ${event.error}`);
-      else host.status(`Script ${where} finished`);
+      else host.status(`Script ${where} finished${said ? `: ${said}` : ""}`);
       ended();
     }
   };

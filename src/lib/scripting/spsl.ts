@@ -977,9 +977,12 @@ export async function runScript(
     return now === null ? "the session ended" : "the session reconnected, so the script stopped rather than type into the new connection";
   };
 
+  /** The script's last ECHO line, kept in the one it finishes with, which would otherwise cover it at once */
+  let said = "";
+
   if (!fromStart) target.markOutput(true);
   const outcome = await execute(program, "", 0);
-  if (outcome === "done") host.status(run.isStopped ? `Script ${where} stopped by you at line ${run.line} of ${run.lineCount}` : `Script ${where} finished`);
+  if (outcome === "done") host.status(run.isStopped ? `Script ${where} stopped by you at line ${run.line} of ${run.lineCount}` : `Script ${where} finished${said ? `: ${said}` : ""}`);
 
   /**
    * Run a compiled script (the script itself, or one it CALLs, named `called`); "done" when it ran to its end (or
@@ -1303,7 +1306,8 @@ export async function runScript(
         failOn = step.spec ? [...failOn, step.spec] : [];
         break;
       case "echo":
-        host.status(`Script ${where}: ${expand(step.text, variables)}`);
+        said = expand(step.text, variables);
+        host.status(`Script ${where}: ${said}`);
         break;
       case "save": {
         const path = expand(step.path, variables);

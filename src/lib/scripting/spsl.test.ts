@@ -87,6 +87,16 @@ async function run(script: string, device: Device, run = new ScriptRun("Login", 
 }
 
 describe("SuperXPuTTY's commands", () => {
+  it("keeps the script's last ECHO in the status bar when it finishes, rather than covering it", async () => {
+    const device = new Device();
+    device.print("sw1#");
+    expect(await run("ECHO saving\nWAITPROMPT\nECHO Saved the running config", device)).toEqual([
+      'Script "Login" in sw1: saving',
+      'Script "Login" in sw1: Saved the running config',
+      'Script "Login" in sw1 finished: Saved the running config',
+    ]);
+  });
+
   it("types a line, waits for the prompt, and stops when it doesn't come", async () => {
     const device = new Device(["\r\nsw1#"]);
     device.print("sw1>");
@@ -327,7 +337,7 @@ describe("ECHO and SAVE", () => {
     const device = new Device(["show clock\r\n*10:01:02 UTC Mon Nov 4\r\nsw1#"]);
     device.print("sw1#");
     const script = "SET host sw1\nSENDLINE show clock\nWAITPROMPT\nSAVE clock-{host}.txt\nSAVE /append clock-{host}.txt\nECHO saved {host}'s clock";
-    expect(await run(script, device)).toEqual(['Script "Login" in sw1: saved sw1\'s clock', 'Script "Login" in sw1 finished']);
+    expect(await run(script, device)).toEqual(['Script "Login" in sw1: saved sw1\'s clock', 'Script "Login" in sw1 finished: saved sw1\'s clock']);
     expect(files).toEqual({ "clock-sw1.txt": "*10:01:02 UTC Mon Nov 4\n*10:01:02 UTC Mon Nov 4\n" });
   });
 });
@@ -610,7 +620,7 @@ describe("COLLECT, FOREACH and IF", () => {
       "END",
     ].join("\n");
     const status = await run(script, device);
-    expect(status).toEqual(['Script "Login" in sw1: keeping cat9k_iosxe.17.12.04.SPA.bin', 'Script "Login" in sw1 finished']);
+    expect(status).toEqual(['Script "Login" in sw1: keeping cat9k_iosxe.17.12.04.SPA.bin', 'Script "Login" in sw1 finished: keeping cat9k_iosxe.17.12.04.SPA.bin']);
     expect(device.typed).toEqual([
       "show boot | include BOOT\r",
       "dir flash:\r",

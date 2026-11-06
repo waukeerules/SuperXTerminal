@@ -148,13 +148,34 @@ const KEY_FETCH_NEEDED = "KEY_FETCH:";
 const keyFetches = new Map<string, Promise<boolean>>();
 
 /**
- * How long a session must go on after its first output to count as connected (the far end answering): an ssh that
+ * How long a session must go on after its first output with text in it (hasText) to count as connected (the far end answering): an ssh that
  * fails at once ("Network is unreachable", "Connection refused") prints its message and ends within a few
  * milliseconds, well inside this, so its tab and Sessions tree entry go from connecting straight to disconnected,
  * without a moment of connected between. Short, so a good connection's yellow turns green without a felt lag (it was
  * a second, which showed)
  */
 const ANSWERED_AFTER_MS = 300;
+
+/**
+ * Whether output holds text, not only terminal codes: what's left once escape sequences (a window title's included,
+ * whose words would otherwise look like text), control characters and spaces are taken out. Windows' pseudo console
+ * (ConPTY) sends codes of its own the moment ssh starts (modes, a cursor position query, a cleared screen, ssh.exe as
+ * the title), before ssh has reached anything; counted as the far end answering, a tab reconnecting on Windows went
+ * green while ssh was still trying to connect
+ */
+export function hasText(output: string): boolean {
+  const text = output
+    // OSC (a window title...), to BEL or ST
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, "")
+    // CSI (modes, a cursor position query, clearing, colours)
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    // DCS, SOS, PM and APC strings, to ST
+    .replace(/\x1b[PX^_][\s\S]*?\x1b\\/g, "")
+    // the other escapes: a character set, keypad modes, a reset
+    .replace(/\x1b[ -/]*[0-~]/g, "")
+    .replace(/[\x00-\x20\x7f]/g, "");
+  return text.length > 0;
+}
 
 /** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
 const STABLE_AFTER_MS = 60_000;
@@ -554,9 +575,12 @@ export class PageHost implements ScriptTarget {
     return !this.ended && !this.answered;
   }
 
-  /** Output came: the first, after a moment still running, means the far end has answered */
-  private heard(): void {
-    if (this.answered || this.answeredTimer) return;
+  /**
+   * Output came: the first with text in it (hasText; not ConPTY's own codes), after a moment still running, means the
+   * far end has answered
+   */
+  private heard(output: string): void {
+    if (this.answered || this.answeredTimer || !hasText(output)) return;
     this.answeredTimer = setTimeout(() => {
       this.answeredTimer = null;
       if (this.ended) return;
@@ -795,10 +819,11 @@ export class PageHost implements ScriptTarget {
       if (channel !== this.channel) return;
       if (event.type === "data") {
         // ssh's messages are plain ASCII, so the bytes as characters are enough to read them
-        this.tail = (this.tail + atob(event.data)).slice(-TAIL_LIMIT);
+        const bytes = atob(event.data);
+        this.tail = (this.tail + bytes).slice(-TAIL_LIMIT);
         this.queue.push(event.data);
         this.flush();
-        this.heard();
+        this.heard(bytes);
       } else if (event.type === "started") {
         // output waits until the page has its settings, so the first lines are highlighted too
         this.link = event.link;

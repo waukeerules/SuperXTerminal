@@ -1,12 +1,12 @@
 // A session's tab when ssh ends: what it says and whether it reconnects by itself, read from ssh's last words, and
 // the profile change it offers (F). The Rust side is stood in for by mockIPC: pty_open hands over the tab's channel,
 // which the test feeds ssh's output and its end. Also the tab's size reaching the pseudo terminal as the session starts,
-// Reconnect, the anti-idle string typed after a quiet spell, a paste taking the clipboard from the system, and Find
+// Reconnect, connecting until the far end answers (not ConPTY's own output), the anti-idle string typed after a quiet spell, a paste taking the clipboard from the system, and Find
 // (Ctrl+Shift+F) opening the page's find bar on Windows, where the app catches that key in the page itself.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
-import { PageHost } from "./PageHost";
+import { PageHost, hasText } from "./PageHost";
 import { catchShortcuts, loadShortcuts } from "../shortcuts";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "../settings/profiles";
 import { settings } from "../settings/store.svelte";
@@ -197,6 +197,45 @@ describe("Reconnect", () => {
     expect(host.isReconnecting).toBe(false);
     expect(host.canReceiveCommands).toBe(true);
     expect(notices().filter((n) => n.startsWith("Reconnecting in") || n.startsWith("Session ended"))).toEqual([]);
+  });
+});
+
+describe("connecting, until the far end answers", () => {
+  /**
+   * What Windows' pseudo console (ConPTY) sends as soon as ssh starts, before ssh has reached anything: its modes, a
+   * cursor position query, a cleared screen and the window title (ssh.exe's path)
+   */
+  const CONPTY_START = "\x1b[?9001h\x1b[?1004h\x1b[6n\x1b[?25l\x1b[2J\x1b[m\x1b[H\x1b]0;C:\\WINDOWS\\System32\\OpenSSH\\ssh.exe\x07\x1b[?25h";
+  const send = (event: unknown) => (channel!.onmessage as (e: unknown) => void)(event);
+  const started = () => send({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "" }, link: "pty" });
+
+  it("counts text as an answer, coloured or not, but not terminal codes, a window title or blank lines alone", () => {
+    expect(hasText("(admin@192.168.0.50) Password: ")).toBe(true);
+    expect(hasText("\x1b[32mlab-sw1#\x1b[0m")).toBe(true);
+    expect(hasText(CONPTY_START)).toBe(false);
+    expect(hasText("\x1b]0;admin@lab-sw1: ~\x1b\\")).toBe(false);
+    expect(hasText("\r\n\r\n   \x1b[K")).toBe(false);
+  });
+
+  it("stays connecting through ConPTY's own start-up output, at first and after a reconnect, until text comes", async () => {
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    started();
+    send({ type: "data", data: btoa(CONPTY_START) });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(host.isConnecting).toBe(true);
+    // the switch answers: its password prompt is text
+    send({ type: "data", data: btoa("(admin@192.168.0.50) Password: ") });
+    await expect.poll(() => host!.isConnecting, { timeout: 2000 }).toBe(false);
+
+    // dropped, and reconnecting to a switch that isn't answering yet: ConPTY starts again, ssh says nothing
+    send({ type: "exit", code: 255 });
+    await host.reconnect();
+    started();
+    send({ type: "data", data: btoa(CONPTY_START) });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(host.isConnecting).toBe(true);
   });
 });
 

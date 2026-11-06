@@ -24,6 +24,7 @@ mod pty;
 mod rdp;
 mod rdp_clipboard;
 mod rdp_options;
+mod rhai_scripts;
 mod scripts;
 mod secrets;
 mod outbox;
@@ -2625,6 +2626,7 @@ pub fn run() {
         .manage(rdp::Rdps::default())
         .manage(sftp::Sftps::default())
         .manage(logs::Logs::default())
+        .manage(rhai_scripts::RhaiRuns::default())
         .manage(AppState {
             user_folder,
             settings: Mutex::new(settings),
@@ -2728,6 +2730,10 @@ pub fn run() {
             text_file_read,
             text_file_write,
             script_output_save,
+            rhai_scripts::rhai_run,
+            rhai_scripts::rhai_reply,
+            rhai_scripts::rhai_stop,
+            rhai_scripts::rhai_check,
             dropped_file_save,
             shortcuts_favorite,
             shortcuts_opened,

@@ -1,32 +1,37 @@
 <!--
   The Script Editor, as SuperXPuTTY's dlgScriptEditor: the saved scripts on the left (the settings folder's scripts
   folder: Insert, Save as, Delete; double-click inserts), the script in the middle (the script box: Monaco, with SPSL's
-  colours when it runs as an SPSL script, and Wrap lines), the SPSL panel on the right, and
-  Open file, Save to file, Run as (Send lines or SPSL script), Step and Send at the bottom. Send goes to the Send
+  colours when it runs as an SPSL script, and Wrap lines; under it the script's problems, checked as it's written), the
+  script panel on the right (SPSL's commands, or Rhai's
+  functions for a Rhai script), and
+  Open file, Save to file, Run as (Send lines, SPSL script or Rhai script), Step and Send at the bottom. Send goes to the Send
   Commands selection and closes the editor; Step does the same, the script pausing before each line until Next line in
-  the status bar. It floats over the window without blocking it; drag it by its title.
+  the status bar. It floats over the window without blocking it; drag it by its title, and its bottom-right corner to
+  make it bigger or smaller.
 -->
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { ask, open, save } from "@tauri-apps/plugin-dialog";
   import Prompt from "../ui/Prompt.svelte";
   import SpslHelp from "../scripting/SpslHelp.svelte";
+  import { scriptNameProblem } from "../scripting/library";
   import ScriptBox from "../scripting/ScriptBox.svelte";
-  import { context, fillScriptPlaceholders, runScriptIn, selectedTargets } from "./sending.svelte";
+  import ScriptProblems from "../scripting/ScriptProblems.svelte";
+  import { context, fillScriptPlaceholders, rhaiEnvReady, runRhaiIn, runScriptIn, selectedTargets } from "./sending.svelte";
   import { resolveSnippet } from "../scripting/asking.svelte";
   import { lineFeedsAsEnter } from "../scripting/spsl";
 
   let { onClose }: { /** Close, or after Send */ onClose: () => void } = $props();
 
-  /** A saved script: its name, and "spsl" or "lines" */
+  /** A saved script: its name, and "spsl", "rhai" or "lines" */
   type Entry = { name: string; kind: string };
 
   let text = $state("");
-  let kind = $state<"spsl" | "lines">("spsl");
+  let kind = $state<"spsl" | "rhai" | "lines">("spsl");
   let saved = $state<Entry[]>([]);
   let chosen = $state<Entry | null>(null);
   let naming = $state(false);
-  let help: SpslHelp | undefined = $state();
+  let problems: ScriptProblems | undefined = $state();
   let box: ScriptBox | undefined = $state();
   let at = $state({ x: 120, y: 90 });
 
@@ -69,16 +74,17 @@
 
   /** Open a script file into the editor */
   async function openFile(): Promise<void> {
-    const path = await open({ filters: [{ name: "Scripts", extensions: ["spsl", "txt"] }, { name: "All files", extensions: ["*"] }] });
+    const path = await open({ filters: [{ name: "Scripts", extensions: ["spsl", "rhai", "txt"] }, { name: "All files", extensions: ["*"] }] });
     if (typeof path !== "string") return;
     text = await invoke<string>("text_file_read", { path });
-    // an .spsl file, or one starting #!/bin/spsl, is a script
+    // an .spsl file, or one starting #!/bin/spsl, is a script; an .rhai file a Rhai one
     if (path.toLowerCase().endsWith(".spsl") || text.startsWith("#!/bin/spsl")) kind = "spsl";
+    else if (path.toLowerCase().endsWith(".rhai")) kind = "rhai";
   }
 
   /** Save the script to a file of the user's choosing */
   async function saveFile(): Promise<void> {
-    const path = await save({ defaultPath: kind === "spsl" ? "script.spsl" : "lines.txt" });
+    const path = await save({ defaultPath: { spsl: "script.spsl", rhai: "script.rhai", lines: "lines.txt" }[kind] });
     if (path) await invoke("text_file_write", { path, text });
   }
 
@@ -93,14 +99,23 @@
       return;
     }
     if (kind === "spsl") {
-      const issues = help ? await help.check() : [];
+      const issues = problems ? await problems.check() : [];
       const errors = issues.filter((i) => i.error).length;
-      if (errors && !(await ask(`The script has ${errors} problem${errors === 1 ? "" : "s"} (see Check script). Send it anyway?`, { title: "Script Editor", kind: "warning" }))) return;
+      if (errors && !(await ask(`The script has ${errors} problem${errors === 1 ? "" : "s"} (listed under it). Send it anyway?`, { title: "Script Editor", kind: "warning" }))) return;
       const filled = await fillScriptPlaceholders(text);
       if (filled === null) return;
       const script = await resolveSnippet(filled, "Script Editor");
       if (script === null) return;
       for (const tab of targets) runScriptIn(tab, script, "Script", false, "", stepping);
+    } else if (kind === "rhai") {
+      // checked in the core, where it runs too; one that can't compile can't run, so there's no Send anyway
+      const [problem] = problems ? await problems.check() : [];
+      if (problem) {
+        context.status(`The Rhai script didn't run: line ${problem.line}: ${problem.message}`);
+        return;
+      }
+      if (!(await rhaiEnvReady(text))) return;
+      for (const tab of targets) runRhaiIn(tab, text, "Script");
     } else {
       // each line as the toolbar sends it: the text, then Enter; no placeholders or prompts
       for (const line of text.split("\n")) {
@@ -132,14 +147,14 @@
     <span>Script Editor</span>
     <button class="close" aria-label="Close" onclick={onClose}>×</button>
   </header>
-  <div class="columns" class:spsl={kind === "spsl"}>
+  <div class="columns" class:spsl={kind !== "lines"}>
     <div class="library">
       <div class="title">Saved scripts</div>
       <div class="list" role="listbox" aria-label="Saved scripts">
         {#each saved as entry (entry.name + entry.kind)}
           <div class="entry" class:on={chosen === entry} role="option" aria-selected={chosen === entry} tabindex="-1"
             onclick={() => (chosen = entry)} onkeydown={(e) => e.key === "Enter" && void insertSaved(entry)}
-            ondblclick={() => void insertSaved(entry)}>{entry.name} <span>· {entry.kind === "spsl" ? "SPSL" : "lines"}</span></div>
+            ondblclick={() => void insertSaved(entry)}>{entry.name} <span>· {({ spsl: "SPSL", rhai: "Rhai" } as Record<string, string>)[entry.kind] ?? "lines"}</span></div>
         {:else}
           <p class="muted">None yet</p>
         {/each}
@@ -150,10 +165,19 @@
         <button disabled={!chosen} onclick={() => void remove()}>Delete</button>
       </div>
     </div>
-    <ScriptBox bind:this={box} bind:value={text} language={kind === "spsl" ? "spsl" : "plain"} label="Script"
-      placeholder={kind === "spsl" ? "#!/bin/spsl\nWAITFOR #\nSENDLINE show version" : "one line per command"} />
-    {#if kind === "spsl"}
-      <SpslHelp bind:this={help} script={text} onInsert={insert} />
+    <div class="script">
+      <ScriptBox bind:this={box} bind:value={text} language={kind === "lines" ? "plain" : kind} label="Script"
+        placeholder={{ spsl: "#!/bin/spsl\nWAITFOR #\nSENDLINE show version", rhai: "wait_prompt();\nsend_line(\"show version\");\nif wait_for(\"uptime is\", 10) { status(\"up\"); }", lines: "one line per command" }[kind]} />
+      {#if kind !== "lines"}
+        {#key kind}
+          <ScriptProblems bind:this={problems} script={text} language={kind} onGoTo={(line) => box?.goToLine(line)} />
+        {/key}
+      {/if}
+    </div>
+    {#if kind !== "lines"}
+      {#key kind}
+        <SpslHelp onInsert={insert} language={kind} script={text} onSaved={(all) => (saved = all)} />
+      {/key}
     {/if}
   </div>
   <footer>
@@ -164,6 +188,7 @@
       <select bind:value={kind}>
         <option value="lines">Send lines</option>
         <option value="spsl">SPSL script</option>
+        <option value="rhai">Rhai script</option>
       </select>
     </label>
     {#if kind === "spsl"}
@@ -175,15 +200,25 @@
 
 {#if naming}
   <Prompt title="Save script as" value={chosen?.name ?? ""} onCancel={() => (naming = false)} onOk={(name) => void saveAs(name)}
-    validate={(name) => (/^[A-Za-z0-9 ._-]{1,60}$/.test(name.trim()) ? "" : "Use 1 to 60 letters, digits, spaces, dots, dashes or underscores.")} />
+    validate={scriptNameProblem} />
 {/if}
 
 <style>
+  /*
+   * Big enough for a long script at the start, staying inside the window from where it opens (at.y), and resizable
+   * from its corner as a window is, within the window's size
+   */
   .editor {
     position: fixed;
     z-index: 120;
-    width: min(880px, 96vw);
-    height: 440px;
+    width: min(1100px, 94vw);
+    height: min(640px, calc(100vh - 120px));
+    min-width: 520px;
+    min-height: 300px;
+    max-width: 98vw;
+    max-height: 96vh;
+    resize: both;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -219,7 +254,16 @@
   }
 
   .columns.spsl {
-    grid-template-columns: 190px 1fr 280px;
+    grid-template-columns: 190px minmax(0, 1fr) minmax(260px, 340px);
+  }
+
+  /* the script box, its problems under it: the box takes the height they leave */
+  .script {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
   }
 
   .library {

@@ -312,7 +312,7 @@
                 {:else if button.color}<span class="circle" style:background={button.color}></span>{/if}
               </span>
               <span class="name">{button.label}</span>
-              <span class="text muted" title={button.text}>{button.action === "SpslScript" ? "Script" : button.text.split("\n")[0]}</span>
+              <span class="text muted" title={button.text}>{button.action === "SpslScript" || button.action === "RhaiScript" ? "Script" : button.text.split("\n")[0]}</span>
               {#if repeated.has(i)}<span class="mark" title="The same as a button before it">Duplicate</span>
               {:else if clashing.has(i)}<span class="mark" title="Another button has this label and another command">Same label</span>{/if}
             </div>

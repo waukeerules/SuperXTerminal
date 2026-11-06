@@ -1,5 +1,5 @@
 //! The saved scripts (`<SettingsFolder>/scripts`, shared by the team), as SuperXPuTTY's ScriptLibrary: `.spsl` files
-//! are SPSL scripts and `.txt` files are lines to send. Saved with CRLF line endings, so they open cleanly in Notepad
+//! are SPSL scripts, `.rhai` files Rhai scripts (rhai_scripts.rs) and `.txt` files are lines to send. Saved with CRLF line endings, so they open cleanly in Notepad
 //! too, and read with LF.
 
 use std::path::{Path, PathBuf};
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     pub name: String,
-    /// "spsl" or "lines"
+    /// "spsl", "rhai" or "lines"
     pub kind: String,
 }
 
@@ -20,9 +20,12 @@ pub fn folder(settings_folder: &Path) -> PathBuf {
     settings_folder.join("scripts")
 }
 
-/// A script's file extension: `.spsl` for SPSL scripts, `.txt` for plain ones
+/// The kinds of script, each with its file extension: SPSL, Rhai, and plain lines to send
+const KINDS: [(&str, &str); 3] = [("spsl", ".spsl"), ("rhai", ".rhai"), ("lines", ".txt")];
+
+/// A script's file extension: `.spsl` for SPSL scripts, `.rhai` for Rhai ones, `.txt` for plain ones
 fn extension(kind: &str) -> &'static str {
-    if kind == "spsl" { ".spsl" } else { ".txt" }
+    KINDS.iter().find(|(k, _)| *k == kind).map_or(".txt", |(_, e)| e)
 }
 
 /// Where a script of this name and kind is kept
@@ -45,9 +48,9 @@ pub fn list(settings_folder: &Path) -> Vec<Entry> {
         .filter_map(|e| {
             let file = e.file_name().to_string_lossy().to_string();
             let lower = file.to_lowercase();
-            let kind = if lower.ends_with(".spsl") { "spsl" } else if lower.ends_with(".txt") { "lines" } else { return None };
+            let (kind, _) = KINDS.iter().find(|(_, e)| lower.ends_with(e))?;
             let name = file[..file.rfind('.').unwrap_or(file.len())].to_string();
-            Some(Entry { name, kind: kind.into() })
+            Some(Entry { name, kind: (*kind).into() })
         })
         .collect();
     entries.sort_by_key(|e| e.name.to_lowercase());
@@ -60,7 +63,7 @@ pub fn load(settings_folder: &Path, name: &str, kind: &str) -> Result<String, St
 }
 
 /// Save a script with CRLF, whole (saving.rs: tried again while OneDrive or antivirus holds it, as they may in a
-/// settings folder in Documents); a script of the other kind with the same name goes
+/// settings folder in Documents); a script of another kind with the same name goes, so a name is one script
 pub fn save(settings_folder: &Path, name: &str, kind: &str, text: &str) -> Result<(), String> {
     if let Some(problem) = name_problem(name) {
         return Err(problem);
@@ -71,9 +74,11 @@ pub fn save(settings_folder: &Path, name: &str, kind: &str, text: &str) -> Resul
     // beside it as name.spsl.saving (or .txt.saving), which the list of scripts doesn't show
     let temp_extension = format!("{}.saving", path.extension().and_then(|e| e.to_str()).unwrap_or("txt"));
     crate::saving::save(&path, &temp_extension, text)?;
-    let other = path_of(settings_folder, name, if kind == "spsl" { "lines" } else { "spsl" });
-    if other.exists() {
-        std::fs::remove_file(other).map_err(|e| e.to_string())?;
+    for (other, _) in KINDS.iter().filter(|(k, _)| *k != kind) {
+        let other = path_of(settings_folder, name, other);
+        if other.exists() {
+            std::fs::remove_file(other).map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -88,13 +93,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn saves_crlf_and_replaces_the_other_kind() {
+    fn saves_crlf_and_replaces_a_script_of_another_kind() {
         let dir = std::env::temp_dir().join(format!("sxt-scripts-{}", std::process::id()));
         save(&dir, "Login", "lines", "a\nb").unwrap();
         save(&dir, "Login", "spsl", "WAITFOR x\nSENDLINE y").unwrap();
         assert_eq!(list(&dir), vec![Entry { name: "Login".into(), kind: "spsl".into() }]);
         assert_eq!(std::fs::read_to_string(dir.join("scripts/Login.spsl")).unwrap(), "WAITFOR x\r\nSENDLINE y");
         assert_eq!(load(&dir, "Login", "spsl").unwrap(), "WAITFOR x\nSENDLINE y");
+        save(&dir, "Login", "rhai", "wait_for(\"x\");").unwrap();
+        assert_eq!(list(&dir), vec![Entry { name: "Login".into(), kind: "rhai".into() }]);
+        assert!(!dir.join("scripts/Login.spsl").exists());
         assert!(name_problem("bad/name").is_some());
         std::fs::remove_dir_all(&dir).unwrap();
     }

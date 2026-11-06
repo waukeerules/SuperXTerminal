@@ -684,3 +684,22 @@ describe("the guide and the example scripts", () => {
     expect(problems).toEqual([]);
   });
 });
+
+describe("a button's colour", () => {
+  it("numbers each line a script types in its button's colour, marked just before it's typed", async () => {
+    const device = new Device(["\nsw1#", "\nsw1#"]);
+    const log: string[] = [];
+    Object.assign(device, {
+      markCommand: (color: string) => log.push(`mark ${color}`),
+      type: async (text: string) => {
+        log.push(`type ${text}`);
+        Device.prototype.type.call(device, text);
+      },
+    });
+    const script = "SENDLINE show clock\nWAITPROMPT\nSENDLINE show version";
+    const runner = new ScriptRun("Show", "sw1", 3);
+    runner.color = "#3FB950";
+    await run(script, device, runner);
+    expect(log).toEqual(["mark #3FB950", "type show clock\r", "mark #3FB950", "type show version\r"]);
+  });
+});

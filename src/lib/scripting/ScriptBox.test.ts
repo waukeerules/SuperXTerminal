@@ -1,6 +1,6 @@
 // The script box (ScriptBox.svelte) as Edit Button and the Script Editor use it: a plain box until its page is
 // ready, then the page (Monaco) given the text, language, Wrap and light or dark, its changes taken back, the Wrap
-// lines switch kept in the preferences, and Pop out growing the box over the window (Escape puts it back). The page is stood in for by the iframe's postMessage, which records
+// lines switch above the box and kept in the preferences, and no Pop out (the dialogs are big instead). The page is stood in for by the iframe's postMessage, which records
 // what the box sends it, and by messages "from" its window; the Rust side by mockIPC, which saves the settings.
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/svelte";
@@ -69,6 +69,13 @@ describe("the script box", () => {
     expect(sent.at(-1)).toEqual({ type: "insert", text: "SLEEP 1\n" });
   });
 
+  it("has Wrap lines above the script, not below it", () => {
+    open("WAITFOR #");
+    const wrap = screen.getByRole("checkbox", { name: /Wrap lines/ });
+    const frame = document.querySelector("iframe")!;
+    expect(wrap.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("keeps Wrap lines in the preferences, and tells the page", async () => {
     const user = userEvent.setup();
     const { page } = open("x");
@@ -81,24 +88,15 @@ describe("the script box", () => {
     expect(wrap.checked).toBe(false);
   });
 
-  it("pops out over the window without loading its page again, and Escape pops it back in, not closing the dialog", async () => {
+  it("has no Pop out: the dialog it's in is the size, and Escape is always the dialog's", async () => {
     const user = userEvent.setup();
     const { page } = open("WAITFOR #");
     page({ type: "ready" });
-    const frame = document.querySelector("iframe");
-    /** The dialog's own Escape (Edit Button's), which mustn't fire while the box is popped out */
     let dialogClosed = 0;
     const dialogEscape = (e: KeyboardEvent) => e.key === "Escape" && dialogClosed++;
     window.addEventListener("keydown", dialogEscape);
-    await user.click(screen.getByRole("button", { name: /Pop out/ }));
-    const box = screen.getByRole("group", { name: "Script box, popped out" });
-    expect(box.classList.contains("popped")).toBe(true);
-    // the same iframe, not moved: its editor (and undo) is kept
-    expect(document.querySelector("iframe")).toBe(frame);
-    await user.keyboard("{Escape}");
-    expect(screen.getByRole("group", { name: "Script box" }).classList.contains("popped")).toBe(false);
-    expect(dialogClosed).toBe(0);
-    // popped in, Escape is the dialog's again
+    expect(screen.queryByRole("button", { name: /Pop/ })).toBeNull();
+    expect(screen.getByRole("group", { name: "Script box" })).toBeTruthy();
     await user.keyboard("{Escape}");
     expect(dialogClosed).toBe(1);
     window.removeEventListener("keydown", dialogEscape);

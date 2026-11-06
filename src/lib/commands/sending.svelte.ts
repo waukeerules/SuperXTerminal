@@ -11,7 +11,8 @@ import { settings } from "../settings/store.svelte";
 import { resolveSnippet, askOne } from "../scripting/asking.svelte";
 import { parseSendString } from "../scripting/sendString";
 import { clipboardText } from "../clipboard";
-import { ScriptRun, runScript, scriptVariables, type ScriptHost } from "../scripting/spsl";
+import { ScriptRun, runScript, scriptVariables, SESSION_VARIABLES, type ScriptHost } from "../scripting/spsl";
+import { envNames, runRhai } from "../scripting/rhai";
 import type { SessionView } from "../sessions/api";
 
 /**
@@ -154,15 +155,55 @@ export function tabValues(tab: { session: string; values?: Record<string, string
 /**
  * Run an SPSL script in a tab, as ctlPuttyPanel.RunScript; `fromStart` for a session's own script (its first WAITFOR
  * sees everything since the session started). `source` is what started it (a button's label), for its spinner.
- * `stepping` (the Script Editor's Step) pauses before each line until Next line in the status bar.
+ * `stepping` (the Script Editor's Step) pauses before each line until Next line in the status bar. `color` is the
+ * button's that started it: the lines it types are numbered in it (Line Numbers), as a send string's.
  */
-export function runScriptIn(tab: CommandTab, script: string, name: string, fromStart = false, source = "", stepping = false): void {
-  // the script's own lines, comments included, as the editor numbers them and the run reports them
-  const lines = script.replace(/\s+$/, "").split("\n").length;
-  const run = new ScriptRun(name, tab.title, lines, stepping);
+export function runScriptIn(tab: CommandTab, script: string, name: string, fromStart = false, source = "", stepping = false, color = ""): void {
+  const run = new ScriptRun(name, tab.title, lineCount(script), stepping);
+  run.color = color;
+  track(run, tab, source, runScript(tab.host, host, run, script, fromStart, tabValues(tab)));
+}
+
+/**
+ * Whether the Environment Variables a Rhai script reads (`env.name`) all have values; for one that hasn't, offers to
+ * open Environment Variables as a missing {key} does for SPSL (fillPlaceholders), and the script doesn't run. A
+ * session value read as one (`env.host_address`) stops it too, saying to write `session.host_address`. Its
+ * values themselves are filled in the core when it runs, so a secret never comes to the window.
+ */
+export async function rhaiEnvReady(script: string): Promise<boolean> {
+  const all = envNames(script);
+  // a session value read as an Environment Variable can't be defined there: say what to write instead
+  const misplaced = all.find((n) => SESSION_VARIABLES.includes(n.name));
+  if (misplaced) {
+    context.status(`The Rhai script didn't run: line ${misplaced.line}: env.${misplaced.name} is the tab's session's: write session.${misplaced.name}`);
+    return false;
+  }
+  const names = all;
+  if (names.length === 0) return true;
+  return (await fillPlaceholders(names.map((n) => `{${n.name}}`).join(" "))) !== null;
+}
+
+/**
+ * Run a Rhai script in a tab (rhai.ts), as runScriptIn runs an SPSL one: the tab's session's values are its `session`
+ * map and Environment Variables its `env` (rhaiEnvReady first); `color` as runScriptIn's. No Step yet, and no {key}
+ * placeholders filled, since braces are Rhai's own
+ */
+export function runRhaiIn(tab: CommandTab, script: string, name: string, fromStart = false, source = "", color = ""): void {
+  const run = new ScriptRun(name, tab.title, lineCount(script));
+  run.color = color;
+  track(run, tab, source, runRhai(tab.host, host, run, script, fromStart, tabValues(tab)));
+}
+
+/** A script's own lines, comments included, as the editor numbers them and a run reports them */
+function lineCount(script: string): number {
+  return script.replace(/\s+$/, "").split("\n").length;
+}
+
+/** List a run for the status bar (its line and Stop) until it ends */
+function track(run: ScriptRun, tab: CommandTab, source: string, ending: Promise<void>): void {
   const entry = { run, tab: tab.title, tabId: tab.id, started: Date.now(), source };
   running.runs = [...running.runs, entry];
-  void runScript(tab.host, host, run, script, fromStart, tabValues(tab)).finally(() => {
+  void ending.finally(() => {
     // the list holds proxies of the entries, so compare the run (a class, which isn't proxied)
     running.runs = running.runs.filter((r) => r.run !== run);
   });

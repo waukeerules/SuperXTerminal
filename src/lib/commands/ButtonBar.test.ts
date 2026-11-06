@@ -3,7 +3,9 @@
 // started and says which profile it uses, and again when the session or profile is saved; and it follows the tabs
 // though the window gives it them only after it's drawn, as App does.
 // The tab area is stood in for by `context.tabs` (the active tab, and its change listeners); the Rust side by
-// mockIPC: ButtonBars.xml's bars and the profiles stored. And a button asks before it runs, unless that's turned off.
+// mockIPC: ButtonBars.xml's bars and the profiles stored. And a button asks before it runs, unless that's turned off;
+// a Rhai script button's script goes to the core (rhai_run) as written, its braces not taken for placeholders, once
+// the Environment Variables it reads (env.name) have values.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -156,5 +158,99 @@ describe("the button bar", () => {
     profiles = [emptyProfile(DEFAULT_PROFILE), emptyProfile("Lab switches")];
     window.dispatchEvent(new Event(PROFILES_CHANGED));
     await expect.poll(shown).toBe("Cisco");
+  });
+});
+
+describe("a Rhai script button", () => {
+  it("runs its script in the core as written, its braces its own rather than placeholders", async () => {
+    const text = 'let n = 5;\nif wait_for("{x}", #{ timeout: n }) { status(`${n}`); }';
+    const commands: string[] = [];
+    let ran: { source: string; session: Record<string, string> } | null = null;
+    mockIPC((cmd, args) => {
+      commands.push(cmd);
+      if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [{ ...button("uptime"), action: "RhaiScript", text }], tabIcons: [] }];
+      if (cmd === "profiles_list") return [];
+      if (cmd === "rhai_run") {
+        ran = args as typeof ran;
+        return 1;
+      }
+      return null;
+    });
+    const host = { canReceiveCommands: true, markOutput: () => {}, connection: () => 1, type: async () => {} };
+    context.tabs = {
+      commandTabs: () => [{ id: "t1", title: "core-sw1", session: "", icon: "switch", profile: "", active: true, host } as unknown as CommandTab],
+      onChange: () => () => {},
+      focusActive: () => {},
+    } as unknown as TabArea;
+    Object.assign(settings, { loaded: true, activeButtonBar: "", confirmButtons: false });
+    render(ButtonBar, { customs: new Map() });
+    (await screen.findByRole("button", { name: /uptime/ })).click();
+    await expect.poll(() => ran?.source).toBe(text);
+    expect(commands).not.toContain("variables_fill");
+    await new Promise((r) => setTimeout(r, 50));
+  });
+});
+
+describe("a Rhai script button that reads Environment Variables", () => {
+  it("offers Environment Variables for an env.name with no value, and doesn't run", async () => {
+    const commands: string[] = [];
+    const asked: string[] = [];
+    mockIPC((cmd, args) => {
+      commands.push(cmd);
+      if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [{ ...button("login"), action: "RhaiScript", text: "send_line(env.ad_user);\nsend_line(env.ad_pass);" }], tabIcons: [] }];
+      if (cmd === "profiles_list") return [];
+      if (cmd === "variables_fill") return { text: (args as { text: string }).text, missing: ["{ad_pass}"] };
+      if (cmd === "plugin:dialog|message") {
+        asked.push((args as { message: string }).message);
+        return "Cancel";
+      }
+      return null;
+    });
+    const host = { canReceiveCommands: true, markOutput: () => {}, connection: () => 1, type: async () => {} };
+    context.tabs = {
+      commandTabs: () => [{ id: "t1", title: "core-sw1", session: "", icon: "switch", profile: "", active: true, host } as unknown as CommandTab],
+      onChange: () => () => {},
+      focusActive: () => {},
+    } as unknown as TabArea;
+    Object.assign(settings, { loaded: true, activeButtonBar: "", confirmButtons: false });
+    render(ButtonBar, { customs: new Map() });
+    (await screen.findByRole("button", { name: /login/ })).click();
+    await expect.poll(() => asked.length).toBe(1);
+    expect(asked[0]).toMatch(/\{ad_pass\} has no value\. Define it in Environment Variables\?/);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(commands).not.toContain("rhai_run");
+  });
+});
+
+describe("a script button's colour", () => {
+  it("numbers the lines its SPSL script types in the button's colour, as a send string's", async () => {
+    const log: string[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [{ ...button("clock"), color: "#E5534B", action: "SpslScript", text: "SENDLINE show clock" }], tabIcons: [] }];
+      if (cmd === "profiles_list") return [];
+      if (cmd === "variables_fill") return { text: (args as { text: string }).text, missing: [] };
+      return null;
+    });
+    const host = {
+      canReceiveCommands: true,
+      connection: () => 1,
+      markOutput: () => {},
+      position: () => 0,
+      outputFrom: () => "",
+      outputSinceMark: () => "",
+      advanceMark: () => {},
+      markCommand: (color: string) => log.push(`mark ${color}`),
+      type: async (text: string) => void log.push(`type ${text}`),
+    };
+    context.tabs = {
+      commandTabs: () => [{ id: "t1", title: "core-sw1", session: "", icon: "switch", profile: "", active: true, host } as unknown as CommandTab],
+      onChange: () => () => {},
+      focusActive: () => {},
+    } as unknown as TabArea;
+    Object.assign(settings, { loaded: true, activeButtonBar: "", confirmButtons: false });
+    render(ButtonBar, { customs: new Map() });
+    (await screen.findByRole("button", { name: /clock/ })).click();
+    await expect.poll(() => log).toEqual(["mark #E5534B", "type show clock\r"]);
+    await new Promise((r) => setTimeout(r, 100));
   });
 });

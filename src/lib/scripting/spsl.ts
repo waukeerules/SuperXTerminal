@@ -101,7 +101,7 @@ const DEFAULT_WAITFOR_MS = 30_000;
 /** How often a wait looks at the output */
 const WAITFOR_POLL_MS = 100;
 /** SENDLINE's (and PROMPT's) pause after Enter */
-const LINE_DELAY_MS = 50;
+export const LINE_DELAY_MS = 50;
 /** How deep CALLs may go: a script calling itself stops there rather than forever */
 const MAX_CALL_DEPTH = 8;
 /** How many times a script may go back (GOTO, AGAIN, REPEAT) without waiting for anything before it's stopped as a runaway */
@@ -782,6 +782,11 @@ function message(error: unknown): string {
 export interface ScriptTarget {
   /** Type text and key sequences into the session */
   type(text: string): Promise<void>;
+  /**
+   * A command starts on the cursor's line: Line Numbers number its lines in this colour, a button's ("" for the usual,
+   * which ends an earlier button's colour as a command typed does); none in a tab without line numbers (RdpHost)
+   */
+  markCommand?(color: string): void;
   /** Make a wait look only at output after now, or from the start of the cursor's line */
   markOutput(atLineStart: boolean): void;
   /** The output since the wait's mark: finished lines, then the cursor's line */
@@ -824,6 +829,13 @@ export class ScriptRun {
   step = "";
   /** Whether it's paused before a line, waiting for Next line (when stepping) */
   paused = false;
+  /**
+   * The colour of the button that started it ("" for none: the Script Editor, a session's own script): each command
+   * it types is numbered in it (Line Numbers), as a send string's lines are
+   */
+  color = "";
+  /** Told when Stop is pressed: a Rhai script (rhai.ts) runs in the core, which must hear of it */
+  onStop: (() => void) | null = null;
   private stopped = false;
   private wake: (() => void) | null = null;
   private resume: (() => void) | null = null;
@@ -849,6 +861,7 @@ export class ScriptRun {
   /** Stop: a SLEEP, wait or pause before a line ends at once */
   stop(): void {
     this.stopped = true;
+    this.onStop?.();
     this.wake?.();
     this.resume?.();
   }
@@ -884,7 +897,7 @@ export class ScriptRun {
 }
 
 /** What a wait found: a case's index, a FAILON that matched first (the line it's on), or nothing (time or Stop) */
-type Found = { index: number; match: Match } | { failed: string } | { idle: true } | null;
+export type Found = { index: number; match: Match } | { failed: string } | { idle: true } | null;
 
 /**
  * Run a script in a tab, as ctlPuttyPanel.RunScript: `fromStart` (the session's own script) lets the first wait see
@@ -1300,9 +1313,13 @@ export async function runScript(
     }
   }
 
-  /** Type, marking the output first so a following wait looks at what comes after */
+  /**
+   * Type, marking the output first so a following wait looks at what comes after, and the command for Line Numbers
+   * (the button's colour, run.color)
+   */
   async function send(text: string, delayMs: number): Promise<void> {
     target.markOutput(false);
+    target.markCommand?.(run.color);
     typedAt = target.position();
     await target.type(text);
     if (delayMs > 0) await run.pause(delayMs);
@@ -1358,7 +1375,7 @@ function lineAround(text: string, at: number): string {
  * first (or at the same place) wins over them all. Null on timeout, Stop, or the session going (`lost` says why;
  * checked at every look, so a drop ends the wait at once).
  */
-async function waitForAny(
+export async function waitForAny(
   target: ScriptTarget,
   run: ScriptRun,
   matchers: Matcher[],

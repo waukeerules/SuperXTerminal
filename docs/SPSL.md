@@ -11,6 +11,9 @@ an LLM writing a script: read [How a script sees the output](#how-a-script-sees-
 [Patterns that work](#patterns-that-work) before anything else, and finish with the
 [checklist](#checklist-before-handing-a-script-over).
 
+For scripts that need variables, arithmetic, loops or functions of their own, there's also Rhai, a small programming
+language: see [RHAI.md](RHAI.md), which has a table of SPSL's commands and their Rhai equivalents.
+
 The code is `src/lib/scripting/spsl.ts` (parser, compiler, runner, checker), with its tests in `spsl.test.ts`. The
 script box's colours are `public/web/script/script.js`.
 

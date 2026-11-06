@@ -14,7 +14,7 @@ export interface BarButton {
   color: string;
   /** A session icon key */
   icon: string;
-  /** "SendString" or "SpslScript" */
+  /** "SendString", "SpslScript" or "RhaiScript" (SuperXTerminal's own) */
   action: string;
   text: string;
 }

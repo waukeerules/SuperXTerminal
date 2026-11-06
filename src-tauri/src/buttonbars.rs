@@ -1,5 +1,6 @@
 //! The button bars (`ButtonBars.xml` in the settings folder, shared by the team), as SuperXPuTTY's ButtonBarData and
-//! ButtonBarStore: bars of buttons that send a string or run an SPSL script, each bar optionally shown for tabs with
+//! ButtonBarStore: bars of buttons that send a string or run an SPSL script (or a Rhai one, SuperXTerminal's own:
+//! `RhaiScript`, which SuperXPuTTY doesn't know and would send as text), each bar optionally shown for tabs with
 //! certain session icons. Written as .NET's XmlSerializer writes it (`<?xml version="1.0"?>`, CRLF, two-space indent,
 //! a button's text with its own LF line breaks) through a temporary file, so either app can read the other's. Bars
 //! move between people as SuperXPuTTY's JSON export.
@@ -23,7 +24,7 @@ pub struct Button {
     /// A session icon key, e.g. "switch#1E63B4"
     #[serde(default)]
     pub icon: String,
-    /// "SendString" or "SpslScript"
+    /// "SendString", "SpslScript" or "RhaiScript"
     pub action: String,
     pub text: String,
 }
@@ -167,7 +168,7 @@ pub fn to_xml(bars: &[Bar]) -> String {
                         out.push_str(&format!(" {name}=\"{}\"", attr(value)));
                     }
                 }
-                let action = if b.action == "SpslScript" { "SpslScript" } else { "SendString" };
+                let action = action_of(&b.action);
                 out.push_str(&format!(" Action=\"{action}\">\r\n"));
                 out.push_str(&format!("        <Text>{}</Text>\r\n", escape_text(&b.text)));
                 out.push_str("      </Button>\r\n");
@@ -259,6 +260,15 @@ pub fn export(bar: &Bar) -> String {
     serde_json::to_string_pretty(&file).unwrap_or_default()
 }
 
+/// A button's action as it's written: a script's kind, or SendString for anything unknown, as ButtonBarFile does
+fn action_of(action: &str) -> &'static str {
+    match action {
+        "SpslScript" => "SpslScript",
+        "RhaiScript" => "RhaiScript",
+        _ => "SendString",
+    }
+}
+
 /// Add the bars from an export file, as ButtonBarFile.Import: nameless bars are skipped, an unknown action is
 /// SendString, and a clashing name becomes "Name (2)"; returns the last bar's name
 pub fn import(bars: &mut Vec<Bar>, json: &str) -> Result<String, String> {
@@ -285,7 +295,7 @@ pub fn import(bars: &mut Vec<Bar>, json: &str) -> Result<String, String> {
                     tooltip: b.tooltip.unwrap_or_default(),
                     color: b.color.unwrap_or_default(),
                     icon: b.icon.unwrap_or_default(),
-                    action: if b.action == "SpslScript" { "SpslScript".into() } else { "SendString".into() },
+                    action: action_of(&b.action).into(),
                     text: b.text,
                 })
                 .collect(),
@@ -300,13 +310,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn writes_what_it_reads() {
+    fn writes_what_it_reads_rhai_scripts_too() {
         let bars = vec![
             Bar {
                 name: "Default".into(),
                 buttons: vec![
                     Button { label: "Show ver".into(), color: "#3FB950".into(), action: "SendString".into(), text: "show version\\r".into(), ..Button::default() },
                     Button { label: "Login & go".into(), icon: "ipod".into(), action: "SpslScript".into(), text: "WAITFOR login:\nSENDLINE <me>".into(), ..Button::default() },
+                    // SuperXTerminal's own: kept as a Rhai script, not turned into text to send
+                    Button { label: "Uptime".into(), action: "RhaiScript".into(), text: "send_line(\"show version\");\nwait_prompt();".into(), ..Button::default() },
                 ],
                 tab_icons: vec![],
             },

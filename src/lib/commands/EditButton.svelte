@@ -1,7 +1,8 @@
 <!--
   New Button / Edit Button, as SuperXPuTTY's dlgEditCommandButton: Label (required), Tooltip, Action (Send string or
-  Run SPSL script), Icon (none, a colour circle, or a session icon), and the text to send or the script, in the script
-  box (Monaco, with SPSL's colours for a script, and Wrap lines). For a script the SPSL panel shows beside it, and OK
+  Run SPSL script, Run Rhai script), Icon (none, a colour circle, or a session icon), and the text to send or the script, in the script
+  box (Monaco, with SPSL's or Rhai's colours for a script, and Wrap lines). For a script, its problems show under it
+  as it's written (click one to go to its line) and the script panel beside it, and OK
   checks the script first.
 -->
 <script lang="ts">
@@ -11,6 +12,8 @@
   import IconPicker from "../icons/IconPicker.svelte";
   import SpslHelp from "../scripting/SpslHelp.svelte";
   import ScriptBox from "../scripting/ScriptBox.svelte";
+  import WrapLines from "../scripting/WrapLines.svelte";
+  import ScriptProblems from "../scripting/ScriptProblems.svelte";
   import { SEND_STRING_HELP } from "../scripting/sendString";
   import type { CustomIcon } from "../icons/custom";
   import type { BarButton } from "./bars";
@@ -39,10 +42,12 @@
   let error = $state("");
   let picking = $state(false);
   let textBox: ScriptBox | undefined = $state();
-  let help: SpslHelp | undefined = $state();
+  let problems: ScriptProblems | undefined = $state();
 
-  /** Whether the command is an SPSL script, which shows the SPSL panel */
-  const spsl = $derived(draft.action === "SpslScript");
+  /** Whether the command is a script (SPSL or Rhai), which shows the script panel */
+  const spsl = $derived(draft.action === "SpslScript" || draft.action === "RhaiScript");
+  /** The script's language, for the panel and the script box's colours */
+  const language = $derived(draft.action === "RhaiScript" ? "rhai" : "spsl");
 
   /** Put text in the command at the cursor, in place of what's selected */
   function insert(text: string): void {
@@ -56,10 +61,10 @@
       error = "The button needs a label.";
       return;
     }
-    if (spsl && help) {
-      const issues = await help.check();
+    if (spsl && problems) {
+      const issues = await problems.check();
       const errors = issues.filter((i) => i.error).length;
-      if (errors && !(await ask(`The script has ${errors} problem${errors === 1 ? "" : "s"} (see Check script). Save the button anyway?`, { title: "Edit Button", kind: "warning" }))) return;
+      if (errors && !(await ask(`The script has ${errors} problem${errors === 1 ? "" : "s"} (listed under it). Save the button anyway?`, { title: "Edit Button", kind: "warning" }))) return;
     }
     // a button's lines are kept with LF, as SuperXPuTTY stores them
     onSave({ ...draft, label, tooltip: draft.tooltip.trim(), text: draft.text.replace(/\r\n/g, "\n") });
@@ -79,6 +84,7 @@
           <select bind:value={draft.action}>
             <option value="SendString">Send string</option>
             <option value="SpslScript">Run SPSL script</option>
+            <option value="RhaiScript">Run Rhai script</option>
           </select>
         </label>
         <div class="icon-row">
@@ -96,14 +102,25 @@
           <button class="choose" onclick={() => (picking = true)}>
             {#if draft.icon}<Icon key={draft.icon} size={18} {customs} />{/if}Choose icon…
           </button>
+          <!-- the script box's switch, here at the row's end rather than in a row of its own above the box -->
+          <div class="end"><WrapLines /></div>
         </div>
         <div class="text"><span>{spsl ? "Script:" : "Send:"}</span>
-          <ScriptBox bind:this={textBox} bind:value={draft.text} language={spsl ? "spsl" : "plain"} label={spsl ? "Script" : "Send"} />
+          <div class="script">
+            <ScriptBox bind:this={textBox} bind:value={draft.text} language={spsl ? language : "plain"} label={spsl ? "Script" : "Send"} ownWrap={false} />
+            {#if spsl}
+              {#key language}
+                <ScriptProblems bind:this={problems} script={draft.text} {language} onGoTo={(line) => textBox?.goToLine(line)} />
+              {/key}
+            {/if}
+          </div>
         </div>
-        <p class="hint">{spsl ? "SPSL: one command per line; see the panel on the right." : SEND_STRING_HELP}</p>
+        <p class="hint">{!spsl ? SEND_STRING_HELP : language === "rhai" ? "Rhai: see the functions in the panel on the right." : "SPSL: one command per line; see the panel on the right."}</p>
       </div>
       {#if spsl}
-        <SpslHelp bind:this={help} script={draft.text} onInsert={insert} />
+        {#key language}
+          <SpslHelp onInsert={insert} {language} script={draft.text} />
+        {/key}
       {/if}
     </div>
     <footer>
@@ -141,8 +158,11 @@
     box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
   }
 
+  /* a script gets most of the window, so a long one needs no scrolling sideways or popping out */
   .dialog.wide {
-    width: min(980px, 96vw);
+    width: min(1400px, 96vw);
+    height: min(900px, 92vh);
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .columns {
@@ -151,9 +171,10 @@
     gap: 12px;
   }
 
+  /* the script takes the width left after the panel, which keeps a readable width of its own */
   .wide .columns {
-    grid-template-columns: 540px 1fr;
-    height: 440px;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+    min-height: 0;
   }
 
   /* a column, so the script box takes the height the other fields leave */
@@ -199,6 +220,15 @@
     min-height: 200px;
   }
 
+  /* the script box, its problems under it: the box takes the height they leave */
+  .script {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+  }
+
   input,
   select,
   button {
@@ -230,6 +260,15 @@
     width: 26px;
     height: 22px;
     padding: 0;
+  }
+
+  /* at the row's right end, lined up with the script box's right edge; a div, not a span, which the row makes 70px
+     wide for "Icon:" (its text spilled past the box's edge then), and never squeezed */
+  .end {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: flex-end;
   }
 
   .choose {

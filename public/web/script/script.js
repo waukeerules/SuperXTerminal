@@ -1,15 +1,18 @@
 /*
- * The script box's page (index.html): Monaco editing a script, with SPSL's own colours (the "spsl" language below) or
- * as plain lines ("plaintext", for Send lines). The main window (src/lib/scripting/ScriptBox.svelte) sends:
+ * The script box's page (index.html): Monaco editing a script, with SPSL's own colours (the "spsl" language below),
+ * Rhai's ("rhai", for a Rhai script: src-tauri/src/rhai_scripts.rs), or as plain lines ("plaintext", for Send lines). The main window (src/lib/scripting/ScriptBox.svelte) sends:
  *   { type: "set", text, language, wrap, dark }  the whole state, as the box opens
  *   { type: "text", text }                       new text from outside (Revert, a saved script opened)
  *   { type: "insert", text }                     text at the cursor, in place of the selection (the SPSL panel)
  *   { type: "language", language } / { type: "wrap", wrap } / { type: "dark", dark }
  *   { type: "focus" }
+ *   { type: "reveal", line }                     the cursor to a line's start, shown (a problem clicked under the box)
  * and the page sends back { type: "ready" } once Monaco is up, and { type: "change", text } at every edit.
  *
  * Hovering a command, an option or a {variable} shows what it does (HELP, from docs/SPSL.md). The keywords are
- * spsl.ts's (COMMANDS); keep the two lists, and HELP, the same as it.
+ * spsl.ts's (COMMANDS); keep the two lists, and HELP, the same as it. In a Rhai script, hovering one of the tab's
+ * functions does the same (RHAI_HELP); keep it and RHAI_FUNCTIONS the same as rhai_scripts.rs registers them, and
+ * as the script panel lists them (SpslHelp.svelte's RHAI_COMMANDS).
  */
 (function () {
     'use strict';
@@ -125,6 +128,116 @@
         }
     };
 
+    /** The functions SuperXTerminal gives a Rhai script (rhai_scripts.rs), coloured apart from the language's own */
+    var RHAI_FUNCTIONS = ['send', 'send_line', 'wait_for', 'wait_for_any', 'wait_prompt', 'matched', 'sleep', 'status',
+        'prompt', 'password', 'print', 'debug'];
+
+    /**
+     * Rhai as Monaco's Monarch tokenizer reads it (https://rhai.rs/book): its keywords, the tab's functions
+     * (RHAI_FUNCTIONS) and `session`, numbers, "strings" with their \escapes, `backquoted strings` with their
+     * ${interpolations} (coloured as code), 'c'haracters, #{ maps }, // and /* comments *\/ (which nest, as Rhai's do).
+     * Unlike SPSL's, Rhai's statements run over lines, so the states here follow brackets and quotes, not lines.
+     */
+    var RHAI = {
+        defaultToken: '',
+        functions: RHAI_FUNCTIONS,
+        // declarations, and the words a script's flow is made of
+        declarations: ['let', 'const', 'fn', 'private', 'import', 'export', 'as', 'global', 'this'],
+        flow: ['if', 'else', 'switch', 'while', 'loop', 'for', 'in', 'do', 'until', 'break', 'continue', 'return',
+            'throw', 'try', 'catch'],
+        constants: ['true', 'false'],
+        // longest first, so => and ** aren't read as = > and * *
+        operators: /\*\*=?|<<=?|>>=?|\.\.=?|=>|\?\?|\?\.|::|&&|\|\||[=!<>]=?|[-+*\/%&|^]=?/,
+        escapes: /\\(?:[nrt0\\"'`$]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
+        tokenizer: {
+            root: [
+                [/\/\/.*$/, 'comment'],
+                [/\/\*/, 'comment', '@comment'],
+                [/\b(?:session|env)\b/, 'variable.predefined'],
+                [/[A-Za-z_]\w*/, {
+                    cases: {
+                        '@functions': 'type.identifier',
+                        '@declarations': 'keyword',
+                        '@flow': 'keyword.flow',
+                        '@constants': 'constant',
+                        '@default': 'identifier'
+                    }
+                }],
+                [/0x[0-9A-Fa-f_]+|0o[0-7_]+|0b[01_]+/, 'number'],
+                [/\d[\d_]*\.\d[\d_]*(?:[eE][-+]?\d+)?|\d[\d_]*(?:[eE][-+]?\d+)?/, 'number'],
+                [/"/, 'string', '@string'],
+                [/`/, 'string', '@backquoted'],
+                [/'(?:@escapes|[^\\'])'/, 'string'],
+                [/#\{/, 'delimiter.bracket'],
+                [/[{}()\[\]]/, '@brackets'],
+                [/@operators/, 'operator'],
+                [/[;,.:]/, 'delimiter'],
+                [/\s+/, 'white']
+            ],
+            string: [
+                [/@escapes/, 'string.escape'],
+                [/\\$/, 'string.escape'],
+                [/[^\\"]+/, 'string'],
+                [/\\./, 'string.escape.invalid'],
+                [/"/, 'string', '@pop']
+            ],
+            // `text ${code} text`: no escapes, and it may run over lines
+            backquoted: [
+                [/\$\{/, 'delimiter.bracket', '@interpolation'],
+                [/[^`$]+/, 'string'],
+                [/\$/, 'string'],
+                [/`/, 'string', '@pop']
+            ],
+            interpolation: [
+                [/\}/, 'delimiter.bracket', '@pop'],
+                { include: 'root' }
+            ],
+            comment: [
+                [/[^/*]+/, 'comment'],
+                [/\/\*/, 'comment', '@push'],
+                [/\*\//, 'comment', '@pop'],
+                [/[/*]/, 'comment']
+            ]
+        }
+    };
+
+    /** What each of the tab's functions does in a Rhai script, for hovering it (the script panel lists them too) */
+    var RHAI_HELP = {
+        send: '**send(text)**: type the text, without Enter. `\\r` is Enter, `\\t` Tab, `\\x03` Ctrl+C.',
+        send_line: '**send_line(text)**: type the text, then Enter. A wait after it looks only at what comes after.',
+        wait_for: '**wait_for(text [, seconds | #{ timeout, regex, any_case }])**: wait until the text appears (30 s by default; 0 for as long as it takes). **true** if it came, **false** if not: the script goes on either way, so check it. With `regex: true` it\'s a regular expression (JavaScript\'s; ^ and $ are each line\'s ends), its groups in `matched()`.',
+        wait_for_any: '**wait_for_any([texts] [, seconds])**: wait for whichever text appears first (30 s by default): its index, 0 for the first, or **-1** when none came.',
+        wait_prompt: '**wait_prompt([seconds])**: wait for the device\'s prompt, a last line ending in > # $ or % (30 s by default): **true** if it came. `matched()[0]` is the prompt line.',
+        matched: '**matched()**: what the last wait matched: `[0]` the whole match (the prompt line, for wait_prompt), `[1]`… a regular expression\'s groups.',
+        sleep: '**sleep(ms)**: wait that many milliseconds; Stop ends it at once.',
+        status: '**status(text)**: show the text in the status bar.',
+        print: '**print(text)**: show the text in the status bar, as status.',
+        debug: '**debug(value)**: show the value in the status bar, with its line.',
+        prompt: '**prompt(question)**: ask for a value: the answer, or "" when cancelled.',
+        password: '**password(question)**: ask for a password (hidden): the answer. Cancel stops the script.',
+        env: '**env**: Environment Variables, as SPSL\'s `{name}`: `env.ad_user` or `env["ad_user"]`, secrets included (filled in when the script starts, never shown). One with no value stops the script naming it; `env.has("name")` says whether it has one.',
+        session: '**session**: the tab\'s session, as the script starts: `session.host_address`, `host_port`, `session_name`, `session_id`, `session_folder`, `session_username`, `session_profile`, `session_protocol`.'
+    };
+
+    /** The help for the tab's function (or `session`) under the mouse on a line of a Rhai script; null for none */
+    function rhaiHelpAt(line, column) {
+        var words = /[A-Za-z_]\w*/g;
+        var match;
+        while ((match = words.exec(line))) {
+            if (column - 1 >= match.index && column - 1 <= match.index + match[0].length) {
+                // a field or method of the same name (x.status) isn't the function
+                if (match.index > 0 && line[match.index - 1] === '.' && match[0] !== 'session' && match[0] !== 'env') { return null; }
+                return Object.prototype.hasOwnProperty.call(RHAI_HELP, match[0]) ? RHAI_HELP[match[0]] : null;
+            }
+        }
+        return null;
+    }
+
+    /** The Monaco language for the window's: "spsl", "rhai", or plaintext for anything else (Send lines) */
+    function languageOf(language) {
+        return language === 'spsl' || language === 'rhai' ? language : 'plaintext';
+    }
+
     /** What each command, option and kind of {variable} does, for hovering it (docs/SPSL.md has the whole language) */
     var HELP = {
         SENDLINE: '**SENDLINE text**: type the text, then Enter. `SENDLINE` alone presses Enter. {variables} are filled in.',
@@ -208,7 +321,7 @@
         var model = editor.getModel();
         switch (message.type) {
             case 'set':
-                monaco.editor.setModelLanguage(model, message.language === 'spsl' ? 'spsl' : 'plaintext');
+                monaco.editor.setModelLanguage(model, languageOf(message.language));
                 editor.updateOptions({ wordWrap: message.wrap ? 'on' : 'off' });
                 monaco.editor.setTheme(theme(message.dark));
                 if (model.getValue() !== message.text) { model.setValue(message.text || ''); }
@@ -224,7 +337,7 @@
                 break;
             }
             case 'language':
-                monaco.editor.setModelLanguage(model, message.language === 'spsl' ? 'spsl' : 'plaintext');
+                monaco.editor.setModelLanguage(model, languageOf(message.language));
                 break;
             case 'wrap':
                 editor.updateOptions({ wordWrap: message.wrap ? 'on' : 'off' });
@@ -233,6 +346,11 @@
                 monaco.editor.setTheme(theme(message.dark));
                 break;
             case 'focus':
+                editor.focus();
+                break;
+            case 'reveal':
+                editor.setPosition({ lineNumber: message.line, column: 1 });
+                editor.revealLineInCenterIfOutsideViewport(message.line);
                 editor.focus();
                 break;
         }
@@ -246,6 +364,22 @@
         monaco.languages.registerHoverProvider('spsl', {
             provideHover: function (model, position) {
                 var help = helpAt(model.getLineContent(position.lineNumber), position.column);
+                return help ? { contents: [{ value: help }] } : null;
+            }
+        });
+        monaco.languages.register({ id: 'rhai' });
+        monaco.languages.setMonarchTokensProvider('rhai', RHAI);
+        monaco.languages.setLanguageConfiguration('rhai', {
+            comments: { lineComment: '//', blockComment: ['/*', '*/'] },
+            brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+            autoClosingPairs: [{ open: '{', close: '}' }, { open: '[', close: ']' }, { open: '(', close: ')' },
+                { open: '"', close: '"', notIn: ['string'] }, { open: '`', close: '`', notIn: ['string'] }],
+            surroundingPairs: [{ open: '{', close: '}' }, { open: '[', close: ']' }, { open: '(', close: ')' },
+                { open: '"', close: '"' }, { open: '`', close: '`' }]
+        });
+        monaco.languages.registerHoverProvider('rhai', {
+            provideHover: function (model, position) {
+                var help = rhaiHelpAt(model.getLineContent(position.lineNumber), position.column);
                 return help ? { contents: [{ value: help }] } : null;
             }
         });
@@ -272,7 +406,7 @@
             host.addEventListener('message', function (event) { onMessage(event.data); });
         }
         // for testing the page in a plain browser: scriptDev.message({...}), scriptDev.editor
-        window.scriptDev = { message: onMessage, helpAt: helpAt, get editor() { return editor; } };
+        window.scriptDev = { message: onMessage, helpAt: helpAt, rhaiHelpAt: rhaiHelpAt, get editor() { return editor; } };
         post({ type: 'ready' });
     }
 

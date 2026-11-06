@@ -1,5 +1,5 @@
 // The script box's page (public/web/script) on its own, as Edit Button and the Script Editor show it in an iframe:
-// SPSL's colours (Monaco's own tokenizer, run on a script), Wrap, inserting at the cursor, and each edit sent back
+// SPSL's and Rhai's colours (Monaco's own tokenizer, run on a script), going to a line, Wrap, inserting at the cursor, and each edit sent back
 // to the window. The main window is stood in for by the page itself: host/webview.js posts to window.parent, which
 // for a page on its own is the page, so the test listens there; the window's messages go in through scriptDev.
 import { expect, test, type Page } from "@playwright/test";
@@ -16,14 +16,16 @@ async function openScript(page: Page, text: string, options: { language?: string
     { text, language: options.language ?? "spsl", wrap: options.wrap ?? true });
 }
 
-/** Each line's words with the colour class Monaco gives them, e.g. "WAITFOR=keyword" */
-const tokens = (page: Page, text: string) => page.evaluate((text) => {
+/** Each line's words with the colour class Monaco gives them in a language, e.g. "WAITFOR=keyword" */
+const tokens = (page: Page, text: string, language = "spsl") => page.evaluate(({ text, language }) => {
   const monaco = (window as any).monaco;
   const lines = text.split("\n");
-  return monaco.editor.tokenize(text, "spsl").map((line: { offset: number; type: string }[], i: number) =>
-    line.map((t, j) => `${lines[i].slice(t.offset, line[j + 1]?.offset).trim()}=${t.type.replace(/\.spsl$/, "")}`)
-      .filter((t: string) => !t.startsWith("=")));
-}, text);
+  return monaco.editor.tokenize(text, language).map((line: { offset: number; type: string }[], i: number) =>
+    line.map((t, j) => [lines[i].slice(t.offset, line[j + 1]?.offset).trim(), t.type.replace(new RegExp(`\\.${language}$`), "")])
+      // white space has no text; an = operator does
+      .filter(([word]: string[]) => word !== "")
+      .map(([word, type]: string[]) => `${word}=${type}`));
+}, { text, language });
 
 test("colours SPSL: commands, options, regular expressions, CASE patterns, labels and placeholders", async ({ page }) => {
   await openScript(page, "");
@@ -154,4 +156,74 @@ test("colours COLLECT, FOREACH, IF and /idle:, and explains them", async ({ page
   const help = (line: string, column: number) => page.evaluate(({ line, column }) => (window as any).scriptDev.helpAt(line, column), { line, column });
   expect(await help("FOREACH f IN bins", 3)).toMatch(/^\*\*FOREACH/);
   expect(await help("EXPECT /t:10 /idle:5", 16)).toMatch(/^\*\*\/idle/);
+});
+
+test("colours Rhai: its keywords, the tab's functions, session, strings with escapes and ${...}, numbers and comments", async ({ page }) => {
+  await openScript(page, "", { language: "rhai" });
+  const script = [
+    "// the prompt",
+    "let n = 0x1F + 2.5;",
+    'if !wait_for("p\\tw:", #{ timeout: 10 }) { throw "none"; }',
+    "send_line(`ssh ${session.host_address}`);",
+    "for row in rows { n += 1; } /* a /* nested */ comment */",
+    "fn must(found) { return found == true; }",
+  ].join("\n");
+  expect(await tokens(page, script, "rhai")).toEqual([
+    ["// the prompt=comment"],
+    ["let=keyword", "n=identifier", "==operator", "0x1F=number", "+=operator", "2.5=number", ";=delimiter"],
+    ["if=keyword.flow", "!=operator", "wait_for=type.identifier", "(=delimiter.parenthesis", '"p=string', "\\t=string.escape", 'w:"=string',
+      ",=delimiter", "#{=delimiter.bracket", "timeout=identifier", ":=delimiter", "10=number", "}=delimiter.curly", ")=delimiter.parenthesis",
+      "{=delimiter.curly", "throw=keyword.flow", '"none"=string', ";=delimiter", "}=delimiter.curly"],
+    ["send_line=type.identifier", "(=delimiter.parenthesis", "`ssh=string", "${=delimiter.bracket", "session=variable.predefined", ".=delimiter",
+      "host_address=identifier", "}=delimiter.bracket", "`=string", ")=delimiter.parenthesis", ";=delimiter"],
+    ["for=keyword.flow", "row=identifier", "in=keyword.flow", "rows=identifier", "{=delimiter.curly", "n=identifier", "+==operator", "1=number",
+      ";=delimiter", "}=delimiter.curly", "/* a /* nested */ comment */=comment"],
+    ["fn=keyword", "must=identifier", "(=delimiter.parenthesis", "found=identifier", ")=delimiter.parenthesis", "{=delimiter.curly",
+      "return=keyword.flow", "found=identifier", "===operator", "true=constant", ";=delimiter", "}=delimiter.curly"],
+  ]);
+});
+
+test("a Rhai script takes Rhai's colours, and Send lines none, as the window switches", async ({ page }) => {
+  await openScript(page, "send_line(\"x\");", { language: "rhai" });
+  const language = () => page.evaluate(() => (window as any).scriptDev.editor.getModel().getLanguageId());
+  expect(await language()).toBe("rhai");
+  await page.evaluate(() => (window as any).scriptDev.message({ type: "language", language: "plain" }));
+  expect(await language()).toBe("plaintext");
+  await page.evaluate(() => (window as any).scriptDev.message({ type: "language", language: "spsl" }));
+  expect(await language()).toBe("spsl");
+});
+
+test("hovering one of the tab's functions in a Rhai script, or session, says what it does", async ({ page }) => {
+  await openScript(page, "", { language: "rhai" });
+  const help = (line: string, column: number) => page.evaluate(({ line, column }) => (window as any).scriptDev.rhaiHelpAt(line, column), { line, column });
+  expect(await help('if !wait_for("#", 10) {', 7)).toMatch(/^\*\*wait_for\(/);
+  expect(await help("send_line(`ssh ${session.host_address}`);", 3)).toMatch(/^\*\*send_line/);
+  expect(await help("send_line(`ssh ${session.host_address}`);", 20)).toMatch(/^\*\*session/);
+  // a variable, a method of the same name, and the language's own words have none
+  expect(await help("let status = 1;", 7)).toMatch(/^\*\*status/);
+  expect(await help("x.status();", 4)).toBeNull();
+  expect(await help("let n = 1;", 2)).toBeNull();
+});
+
+test("goes to a line when the window asks (a problem clicked under the box): the cursor at its start, in view", async ({ page }) => {
+  const lines = Array.from({ length: 200 }, (_, i) => `SENDLINE line ${i + 1}`).join("\n");
+  await openScript(page, lines);
+  await page.evaluate(() => (window as any).scriptDev.message({ type: "reveal", line: 150 }));
+  const where = await page.evaluate(() => {
+    const editor = (window as any).scriptDev.editor;
+    const ranges = editor.getVisibleRanges();
+    return { position: editor.getPosition(), from: ranges[0].startLineNumber, to: ranges[ranges.length - 1].endLineNumber };
+  });
+  expect(where.position).toMatchObject({ lineNumber: 150, column: 1 });
+  expect(where.from).toBeLessThanOrEqual(150);
+  expect(where.to).toBeGreaterThanOrEqual(150);
+});
+
+test("colours env as session is, and hovering it says it's Environment Variables", async ({ page }) => {
+  await openScript(page, "", { language: "rhai" });
+  expect(await tokens(page, "send_line(env.ad_user);", "rhai")).toEqual([
+    ["send_line=type.identifier", "(=delimiter.parenthesis", "env=variable.predefined", ".=delimiter", "ad_user=identifier", ")=delimiter.parenthesis", ";=delimiter"],
+  ]);
+  const help = (line: string, column: number) => page.evaluate(({ line, column }) => (window as any).scriptDev.rhaiHelpAt(line, column), { line, column });
+  expect(await help("send_line(env.ad_user);", 12)).toMatch(/^\*\*env\*\*: Environment Variables/);
 });

@@ -46,6 +46,8 @@ ironrdp-core = "0.2"
 russh-sftp = "3.0.1"
 futures-util = "0.3"
 tauri-plugin-window-state = "2"
+# Rhai scripts, beside SPSL (rhai_scripts.rs)
+rhai = "1.27.0"
 
 # Ctrl+C for local shells (console.rs), the login helper finding ssh (askpass.rs), COM ports (streams.rs), the menus' theme (lib.rs),
 # and the clipboard for a paste (clipboard.rs)

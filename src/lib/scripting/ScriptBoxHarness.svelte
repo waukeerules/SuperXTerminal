@@ -5,7 +5,7 @@
 <script lang="ts">
   import ScriptBox from "./ScriptBox.svelte";
 
-  let { start = "", language = "spsl" }: { /** The text to start with */ start?: string; /** The box's language */ language?: "spsl" | "plain" } = $props();
+  let { start = "", language = "spsl" }: { /** The text to start with */ start?: string; /** The box's language */ language?: "spsl" | "rhai" | "plain" } = $props();
 
   // the first text only: after that the box and the test change it
   // svelte-ignore state_referenced_locally

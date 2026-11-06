@@ -1,6 +1,6 @@
 <!--
   The button bar at the bottom of the window, as SuperXPuTTY's ButtonBarStrip: the bar picker, then the bar's buttons
-  (a session icon or a colour circle, and the label). A click sends the button's string, or runs its script, in the
+  (a session icon or a colour circle, and the label). A click sends the button's string, or runs its script (SPSL or Rhai), in the
   active tab; Shift+click sends to the Send Commands selection. The bar shown is the one picked by hand, until the
   active tab changes; else the active tab's session's own (Edit Session > Terminal); else its profile's (Settings >
   Profiles > Button bar); else the first whose tab
@@ -19,7 +19,7 @@
   import TabIcons from "./TabIcons.svelte";
   import { barFor, buttonColour, exportBar, importBars, loadBars, saveBars, type Bar, type BarButton } from "./bars";
   import { listProfiles, PROFILES_CHANGED } from "../settings/profiles";
-  import { activeTarget, context, fillPlaceholders, fillScriptPlaceholders, runScriptIn, running, selectedTargets, sendString } from "./sending.svelte";
+  import { activeTarget, context, fillPlaceholders, fillScriptPlaceholders, rhaiEnvReady, runRhaiIn, runScriptIn, running, selectedTargets, sendString } from "./sending.svelte";
   import { resolveSnippet } from "../scripting/asking.svelte";
   import { saveSettings, settings } from "../settings/store.svelte";
   import type { CustomIcon } from "../icons/custom";
@@ -125,13 +125,22 @@
       return;
     }
     if (settings.confirmButtons && !(await confirmRun(button, targets.map((t) => t.title)))) return;
+    // a Rhai script as written: its braces are its own, not {key} placeholders or {prompt:} snippets
+    if (button.action === "RhaiScript") {
+      if (!(await rhaiEnvReady(button.text))) return;
+      for (const tab of targets) runRhaiIn(tab, button.text, button.label, false, button.label, buttonColour(button));
+      context.status(`Sent "${button.label}" to ${targets.length} session${targets.length === 1 ? "" : "s"}`);
+      context.tabs?.focusActive();
+      return;
+    }
     // a script's own {variables} are its to fill as it runs
     const filled = button.action === "SpslScript" ? await fillScriptPlaceholders(button.text) : await fillPlaceholders(button.text);
     if (filled === null) return;
     const text = await resolveSnippet(filled, `Button "${button.label}"`);
     if (text === null) return;
     if (button.action === "SpslScript") {
-      for (const tab of targets) runScriptIn(tab, text, button.label, false, button.label);
+      // its lines numbered in the button's colour, as a send string's
+      for (const tab of targets) runScriptIn(tab, text, button.label, false, button.label, false, buttonColour(button));
     } else {
       await sendString(text, targets, buttonColour(button));
     }
@@ -147,7 +156,7 @@
     const where = tabs.length === 1 ? tabs[0] : `${tabs.length} tabs (${tabs.join(", ")})`;
     // a command's trailing line break is its Enter, not more to show
     const command = button.text.replace(/(\\[rn]|[\r\n])+$/, "");
-    const what = button.action === "SpslScript"
+    const what = button.action === "SpslScript" || button.action === "RhaiScript"
       ? "its script"
       : `"${command.split("\n")[0].slice(0, 60)}${command.length > 60 || command.includes("\n") ? "…" : ""}"`;
     return ask(`Run "${button.label}" (${what}) in ${where}?\n\nSettings > General > Button bar can stop this question.`, {

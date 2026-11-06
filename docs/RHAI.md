@@ -44,12 +44,13 @@ it runs, as for a button's.
 **Before it runs**, it's checked, as you write it (the problems under the script box) and again when you press OK
 or Send:
 - **A syntax error, or a variable used before it's set** (a misspelt name): Send won't run it; OK asks before saving.
+- **A function that doesn't exist** (`send_lin("show clock")`, offered `send_line` when it's a letter or two off), or
+  one given the wrong number of values (`send_line()`): the same. Your own `fn`s count, and Rhai's own functions.
+  A call on a value (`text.len()`) is only checked when it runs, as its function depends on what the value is.
 - **An `env.name` with no value** in Environment Variables: you're offered Environment Variables, as SPSL does for a
   missing `{name}`, and nothing is typed.
 - **`env.host_address`** (a session value read as an Environment Variable): it doesn't run, and says to write
   `session.host_address`.
-
-A function name spelt wrong (`send_lin`) isn't found until that line runs: Rhai only looks functions up then.
 
 **While it runs**, the status bar shows its line and what it's doing (`wait_for "#"`), and **Stop** ends it at once,
 in a wait, a `sleep` or a loop that never waits.

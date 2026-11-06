@@ -120,14 +120,110 @@ pub struct Issue {
 }
 
 /// A script's first syntax error, or a variable used that was never set (a misspelt name, which Rhai would otherwise
-/// only find when that line runs, after the lines before it have typed into the device). Functions are only looked up
-/// when it runs, so a misspelt one isn't found here.
+/// only find when that line runs, after the lines before it have typed into the device). A script that compiles is
+/// also checked for the functions it calls ([`unknown_calls`]): Rhai only looks a function up when its line runs, so
+/// `sned_line("conf t")` on line 9 would stop the script after lines 1 to 8 had typed into the device.
 pub fn check(source: &str) -> Vec<Issue> {
-    let (engine, scope) = configured(Engine::new(), BTreeMap::new(), HashMap::new());
+    let (mut engine, scope) = configured(Engine::new(), BTreeMap::new(), HashMap::new());
+    // the script's functions, registered as a run registers them, so the check knows each one and how many values it
+    // takes; this Ctx is never called, since nothing runs
+    let (_answers, replies) = channel();
+    let ctx = Rc::new(Ctx { send: Rc::new(|_| false), replies, abort: Arc::default(), next_call: Cell::new(0), matched: RefCell::default() });
+    register_functions(&mut engine, &ctx);
     match engine.compile_with_scope(&scope, &without_marker(source)) {
-        Ok(_) => Vec::new(),
+        Ok(ast) => unknown_calls(&engine, &ast),
         Err(error) => vec![Issue { line: error.1.line().unwrap_or(0), message: error.0.to_string() }],
     }
+}
+
+/// Rhai's keywords that are called like functions but aren't in the engine's list of functions, and take any number
+/// of values (`Fn("name")`, `call`, `curry`...): never reported
+const KEYWORD_CALLS: [&str; 10] = ["Fn", "call", "curry", "is_shared", "is_def_fn", "is_def_var", "type_of", "print", "debug", "eval"];
+
+/// The plain calls in a compiled script (`name(...)`, not `value.name(...)`, whose function depends on the value) to
+/// a function that doesn't exist, or that doesn't take that many values: one [`Issue`] each, on its line. A function
+/// is known if the script defines it, or the engine has it (Rhai's own, `send_line` and the others). A call through a
+/// variable holding a closure (`let add = |x| x + 1; add(2)`) is left alone, as its name is the variable's.
+fn unknown_calls(engine: &Engine, ast: &rhai::AST) -> Vec<Issue> {
+    // every function's name and the numbers of values it can take
+    let mut known: HashMap<String, Vec<usize>> = HashMap::new();
+    for (name, count) in engine.collect_fn_metadata(None, |f| Some((f.metadata.name.to_string(), f.metadata.num_params)), true) {
+        known.entry(name).or_default().push(count);
+    }
+    for f in ast.iter_functions() {
+        known.entry(f.name.to_string()).or_default().push(f.params.len());
+    }
+    // the script's own variables and parameters, which may hold a closure called by name
+    let mut variables: Vec<String> = ast.iter_functions().flat_map(|f| f.params.iter().map(|p| p.to_string()).collect::<Vec<_>>()).collect();
+    let mut calls: Vec<(String, usize, usize)> = Vec::new();
+    ast.walk(&mut |path: &[rhai::ASTNode]| {
+        match path.last() {
+            Some(rhai::ASTNode::Stmt(rhai::Stmt::Var(x, ..))) => variables.push(x.0.name.to_string()),
+            Some(rhai::ASTNode::Stmt(rhai::Stmt::FnCall(call, at)) | rhai::ASTNode::Expr(rhai::Expr::FnCall(call, at)))
+                if call.namespace.is_empty() && call.op_token.is_none() =>
+            {
+                calls.push((call.name.to_string(), call.args.len(), at.line().unwrap_or(0)));
+            }
+            _ => {}
+        }
+        true
+    });
+    let mut issues = Vec::new();
+    for (name, given, line) in calls {
+        // operators and Rhai's own inner calls have names no script can write
+        let callable = name.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_') && name.chars().all(|c| c.is_alphanumeric() || c == '_');
+        if !callable || KEYWORD_CALLS.contains(&name.as_str()) || variables.contains(&name) {
+            continue;
+        }
+        let message = match known.get(&name) {
+            Some(counts) if counts.contains(&given) => continue,
+            Some(counts) => {
+                let mut counts = counts.clone();
+                counts.sort_unstable();
+                counts.dedup();
+                let takes = counts.iter().map(usize::to_string).collect::<Vec<_>>().join(" or ");
+                let s = if counts == [1] { "" } else { "s" };
+                format!("{name} takes {takes} value{s}, not {given}")
+            }
+            None => match closest(&name, known.keys()) {
+                Some(meant) => format!("there's no function {name}: did you mean {meant}?"),
+                None => format!("there's no function {name}: the functions are listed in the panel"),
+            },
+        };
+        issues.push(Issue { line, message });
+    }
+    issues
+}
+
+/// The known name nearest `name`, when it's a slip of a letter or two away (`send_lin`, `sned_line`, `wiat_for`)
+fn closest<'a>(name: &str, known: impl Iterator<Item = &'a String>) -> Option<&'a str> {
+    let wanted = name.to_lowercase();
+    known
+        .map(|k| (edits(&wanted, &k.to_lowercase()), k))
+        .filter(|(distance, _)| *distance <= 2)
+        .min_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(b.1)))
+        .map(|(_, k)| k.as_str())
+}
+
+/// How many letters must change, be added or be taken away to turn `a` into `b` (Levenshtein distance), a swap of two
+/// letters counting as one
+fn edits(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut rows = vec![(0..=b.len()).collect::<Vec<_>>(); a.len() + 1];
+    for (i, row) in rows.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            let mut best = (rows[i - 1][j] + 1).min(rows[i][j - 1] + 1).min(rows[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                best = best.min(rows[i - 2][j - 2] + 1);
+            }
+            rows[i][j] = best;
+        }
+    }
+    rows[a.len()][b.len()]
 }
 
 /// A script with its `#!` first line (`#!/bin/rhai`, which marks a session's or profile's login script as Rhai, as
@@ -320,6 +416,51 @@ fn line_of(context: &NativeCallContext) -> usize {
     context.call_position().line().unwrap_or(0)
 }
 
+/// Teach the engine the script's own functions (`send`, `wait_for`… as docs/RHAI.md lists them), each going to the tab
+/// through `ctx`. Check script registers them too, with a [`Ctx`] that's never called, so it knows every function a
+/// running script has and how many values each takes.
+fn register_functions(engine: &mut Engine, ctx: &Rc<Ctx>) {
+    /// Register a function whose closure gets the context (`c`) and the calling line (`line`)
+    macro_rules! register {
+        ($name:literal, |$c:ident, $line:ident $(, $arg:ident : $ty:ty)*| $body:expr) => {{
+            let $c = ctx.clone();
+            engine.register_fn($name, move |context: NativeCallContext $(, $arg: $ty)*| {
+                let $line = line_of(&context);
+                $body
+            });
+        }};
+    }
+
+    register!("send", |c, line, text: &str| c.call(line, "type", json!({ "text": text, "enter": false })).map(|_| ()));
+    register!("send_line", |c, line, text: &str| c.call(line, "type", json!({ "text": text, "enter": true })).map(|_| ()));
+    register!("wait_for", |c, line, text: &str| c.wait(line, vec![pattern(text, false, false)], DEFAULT_WAIT_SECS).map(|f| f.is_some()));
+    register!("wait_for", |c, line, text: &str, secs: i64| c.wait(line, vec![pattern(text, false, false)], secs).map(|f| f.is_some()));
+    register!("wait_for", |c, line, text: &str, options: Map| {
+        let (look, secs) = wait_options(text, &options)?;
+        c.wait(line, vec![look], secs).map(|f| f.is_some())
+    });
+    register!("wait_for_any", |c, line, texts: Array| c.wait(line, texts.iter().map(|t| pattern(&t.to_string(), false, false)).collect(), DEFAULT_WAIT_SECS).map(|f| f.unwrap_or(-1)));
+    register!("wait_for_any", |c, line, texts: Array, secs: i64| c.wait(line, texts.iter().map(|t| pattern(&t.to_string(), false, false)).collect(), secs).map(|f| f.unwrap_or(-1)));
+    register!("wait_prompt", |c, line| c.wait(line, vec![json!({ "prompt": true })], DEFAULT_WAIT_SECS).map(|f| f.is_some()));
+    register!("wait_prompt", |c, line, secs: i64| c.wait(line, vec![json!({ "prompt": true })], secs).map(|f| f.is_some()));
+    register!("matched", |c, _line| Ok::<Array, Box<EvalAltResult>>(c.matched.borrow().clone()));
+    register!("sleep", |c, _line, ms: i64| c.sleep(ms));
+    register!("status", |c, line, text: &str| {
+        (c.send)(RhaiEvent::Status { line, text: text.to_string() });
+        Ok::<(), Box<EvalAltResult>>(())
+    });
+    // Cancel gives "" for a question, as SPSL's PROMPT; a cancelled password stops the script, as PWDPROMPT
+    register!("prompt", |c, line, text: &str| {
+        c.call(line, "ask", json!({ "message": text, "secret": false })).map(|v| v.as_str().unwrap_or("").to_string())
+    });
+    register!("password", |c, line, text: &str| {
+        match c.call(line, "ask", json!({ "message": text, "secret": true }))? {
+            Value::String(answer) => Ok(answer),
+            _ => Err(fail("you cancelled the password prompt")),
+        }
+    });
+}
+
 /// Run a script to its end on this thread; the [`RhaiEvent::Done`] to send
 fn run(source: &str, session: BTreeMap<String, String>, env: HashMap<String, String>, send: Rc<dyn Fn(RhaiEvent) -> bool>, replies: Receiver<Reply>, abort: Arc<AtomicBool>) -> RhaiEvent {
     let ctx = Rc::new(Ctx { send, replies, abort: abort.clone(), next_call: Cell::new(0), matched: RefCell::default() });
@@ -342,45 +483,7 @@ fn run(source: &str, session: BTreeMap<String, String>, env: HashMap<String, Str
             });
         }
 
-        /// Register a function whose closure gets the context (`c`) and the calling line (`line`)
-        macro_rules! register {
-            ($name:literal, |$c:ident, $line:ident $(, $arg:ident : $ty:ty)*| $body:expr) => {{
-                let $c = ctx.clone();
-                engine.register_fn($name, move |context: NativeCallContext $(, $arg: $ty)*| {
-                    let $line = line_of(&context);
-                    $body
-                });
-            }};
-        }
-
-        register!("send", |c, line, text: &str| c.call(line, "type", json!({ "text": text, "enter": false })).map(|_| ()));
-        register!("send_line", |c, line, text: &str| c.call(line, "type", json!({ "text": text, "enter": true })).map(|_| ()));
-        register!("wait_for", |c, line, text: &str| c.wait(line, vec![pattern(text, false, false)], DEFAULT_WAIT_SECS).map(|f| f.is_some()));
-        register!("wait_for", |c, line, text: &str, secs: i64| c.wait(line, vec![pattern(text, false, false)], secs).map(|f| f.is_some()));
-        register!("wait_for", |c, line, text: &str, options: Map| {
-            let (look, secs) = wait_options(text, &options)?;
-            c.wait(line, vec![look], secs).map(|f| f.is_some())
-        });
-        register!("wait_for_any", |c, line, texts: Array| c.wait(line, texts.iter().map(|t| pattern(&t.to_string(), false, false)).collect(), DEFAULT_WAIT_SECS).map(|f| f.unwrap_or(-1)));
-        register!("wait_for_any", |c, line, texts: Array, secs: i64| c.wait(line, texts.iter().map(|t| pattern(&t.to_string(), false, false)).collect(), secs).map(|f| f.unwrap_or(-1)));
-        register!("wait_prompt", |c, line| c.wait(line, vec![json!({ "prompt": true })], DEFAULT_WAIT_SECS).map(|f| f.is_some()));
-        register!("wait_prompt", |c, line, secs: i64| c.wait(line, vec![json!({ "prompt": true })], secs).map(|f| f.is_some()));
-        register!("matched", |c, _line| Ok::<Array, Box<EvalAltResult>>(c.matched.borrow().clone()));
-        register!("sleep", |c, _line, ms: i64| c.sleep(ms));
-        register!("status", |c, line, text: &str| {
-            (c.send)(RhaiEvent::Status { line, text: text.to_string() });
-            Ok::<(), Box<EvalAltResult>>(())
-        });
-        // Cancel gives "" for a question, as SPSL's PROMPT; a cancelled password stops the script, as PWDPROMPT
-        register!("prompt", |c, line, text: &str| {
-            c.call(line, "ask", json!({ "message": text, "secret": false })).map(|v| v.as_str().unwrap_or("").to_string())
-        });
-        register!("password", |c, line, text: &str| {
-            match c.call(line, "ask", json!({ "message": text, "secret": true }))? {
-                Value::String(answer) => Ok(answer),
-                _ => Err(fail("you cancelled the password prompt")),
-            }
-        });
+        register_functions(&mut engine, &ctx);
 
         engine.run_with_scope(&mut scope, &without_marker(source))
     };
@@ -686,6 +789,34 @@ mod tests {
         assert_eq!(issues.len(), 1, "{issues:?}");
         assert_eq!(issues[0].line, 2);
         assert!(issues[0].message.contains("hots"), "{}", issues[0].message);
+    }
+
+    #[test]
+    fn check_finds_a_misspelt_function_before_anything_is_typed() {
+        let issues = check("send_line(\"show clock\");\nsensdfsdfd(\"\");");
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert_eq!(issues[0].line, 2);
+        assert!(issues[0].message.contains("sensdfsdfd"), "{}", issues[0].message);
+        // one letter off is offered the function meant
+        let issues = check("send_lin(\"show clock\");");
+        assert!(issues[0].message.contains("did you mean send_line"), "{}", issues[0].message);
+    }
+
+    #[test]
+    fn check_finds_a_function_given_the_wrong_number_of_values() {
+        let issues = check("send_line();");
+        assert_eq!(issues.len(), 1, "{issues:?}");
+        assert!(issues[0].message.contains("send_line takes 1 value"), "{}", issues[0].message);
+        let issues = check("fn login(user) { send_line(user); }\nlogin();");
+        assert!(issues[0].message.contains("login takes 1 value"), "{}", issues[0].message);
+        assert_eq!(issues[0].line, 2);
+    }
+
+    #[test]
+    fn check_knows_the_scripts_own_functions_rhais_own_and_closures() {
+        let script = "fn login(user) { send_line(user); }\nlogin(\"jdoe\");\nlet n = parse_int(\"5\");\nlet add = |x| x + n;\nstatus(to_string(add(1)));\nprint(type_of(n));\nlet f = Fn(\"login\");\nf.call(\"x\");\nwait_for(\"#\", 5); wait_for(\"#\", #{ regex: true }); wait_for_any([\"#\"], 3); sleep(10); matched();";
+        let issues = check(script);
+        assert!(issues.is_empty(), "{issues:?}");
     }
 
     #[test]

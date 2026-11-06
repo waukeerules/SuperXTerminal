@@ -1,6 +1,6 @@
 // Tools > Environment Variables: names that clash can't be saved, placeholders used but not defined are listed, the
 // preview fills a template with secrets hidden, and Export… and Import… pass the variables on in SuperXPuTTY's file,
-// secrets by name only. The Rust side, and the dialogs choosing the file, are stood in for by mockIPC.
+// secrets by name only; and a placeholder used in long-named places keeps its Add button in view. The Rust side, and the dialogs choosing the file, are stood in for by mockIPC.
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -35,6 +35,13 @@ beforeEach(() => {
       return {
         ad_username: ["profile CyberArk"],
         cyberark_region: ["profile CyberArk", "session Region 4/Switch - CyberArk"],
+        admin_username: [
+          "session Customers/North America/Region 4/Building 12/Floor 3/Core Switch - with a very long name indeed",
+          "session Live Test/Lab Switch",
+          "session Live Test/Lab Switchsdfsdf",
+          "session Region 4/Switch - with admin password",
+          "profile Lab",
+        ],
         host_address: ["profile CyberArk"],
       };
     if (cmd === "variables_built_in") return [["host_address", "The session's own host"], ["host_port", "Its port"], ["key_file", "The key"]];
@@ -137,5 +144,23 @@ describe("Environment Variables", () => {
     await userEvent.click(screen.getByRole("button", { name: "Import…" }));
     expect(screen.getByText(/isn't an Environment Variables file/)).toBeTruthy();
     expect(keys().map((k) => k.value)).toEqual(["ad_username", "admin_password"]);
+  });
+
+  it("shows each place a placeholder is used on its own, to be cut from the front, so Add stays in view", async () => {
+    // a long folder or session name pushed Add off the window's right edge: each place is now its own piece, which
+    // the window's styles cut from the front ("…Core Switch - with a very long name indeed") so the session's name
+    // shows, with "and N more" and Add beside them, never cut
+    await open();
+    const row = screen.getByText("{admin_username}").closest("li") as HTMLElement;
+    const places = [...row.querySelectorAll(".place")].map((p) => p.textContent);
+    expect(places).toEqual([
+      "session Customers/North America/Region 4/Building 12/Floor 3/Core Switch - with a very long name indeed",
+      "session Live Test/Lab Switch",
+      "session Live Test/Lab Switchsdfsdf",
+    ]);
+    expect(row.querySelector(".more")?.textContent).toBe("and 2 more");
+    // every place, in full, on hover
+    expect(row.querySelector(".where")?.getAttribute("title")?.split("\n")).toHaveLength(5);
+    expect(within(row).getByRole("button", { name: "Add" }).parentElement).toBe(row);
   });
 });

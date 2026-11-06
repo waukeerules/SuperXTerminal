@@ -190,7 +190,14 @@
           <p class="hint">A session using one of these says it has no value yet, and doesn't open.</p>
           <ul>
             {#each undefinedUsed as [name, places] (name)}
-              <li><code>{`{${name}}`}</code> <span class="where" title={places.join("\n")}>{places.slice(0, 3).join(", ")}{places.length > 3 ? `, and ${places.length - 3} more` : ""}</span>
+              <!-- each place cut from the front when there isn't room, so its session's name shows and Add stays in view -->
+              <li><code title={`{${name}}`}>{`{${name}}`}</code>
+                <span class="where" title={places.join("\n")}>
+                  {#each places.slice(0, 3) as place, i (i)}
+                    <span class="place"><bdi>{place}</bdi></span>{#if i < Math.min(places.length, 3) - 1}<span class="sep">,</span>{/if}
+                  {/each}
+                  {#if places.length > 3}<span class="more">and {places.length - 3} more</span>{/if}
+                </span>
                 <button onclick={() => add(name)}>Add</button></li>
             {/each}
           </ul>
@@ -333,7 +340,52 @@
   }
 
   li button {
+    flex: none;
     margin-left: auto;
+  }
+
+  /* a long placeholder name is cut at its end, keeping room for where it's used */
+  li code {
+    flex: none;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* where it's used, on one line between the name and Add: what doesn't fit is cut, never pushing Add out */
+  .where {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  /* each place cut from the front ("…Floor 3/Core Switch"), so the session's own name shows: right-to-left puts the
+     ellipsis on the left, and the bdi keeps the text itself reading left to right */
+  .place {
+    flex: 0 1 auto;
+    min-width: 2em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    direction: rtl;
+    text-align: left;
+  }
+
+  .place bdi {
+    direction: ltr;
+  }
+
+  .sep {
+    flex: none;
+    margin-right: 0.4em;
+  }
+
+  .more {
+    flex: none;
+    margin-left: 0.4em;
   }
 
   .template {

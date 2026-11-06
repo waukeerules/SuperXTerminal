@@ -1,11 +1,124 @@
 # SuperXTerminal
 
-A consistent Mac and Windows alternative to SuperPuTTY: a terminal and session manager for people who look after a lot
-of servers and network devices. A tree of saved sessions, tabs and splits, SSH, Telnet, serial and Remote Desktop in
-the same window, a button bar of commands, and highlighting for Cisco and Junos output, built to look and work the same
-on both systems.
+A consistent Mac and Windows alternative to SuperPuTTY: a terminal and session manager for **teams** who look after a
+lot of servers and network devices together. One shared set of sessions for the whole team, with each person's own
+login, settings and exceptions kept on their own computer, where they don't get in a teammate's way. A tree of
+sessions, tabs and splits, SSH, Telnet, serial and Remote Desktop in the same window, a button bar of commands, and
+highlighting for Cisco and Junos output, built to look and work the same on both systems.
 
 ![The main window: Favorites, Recent, Saved, Private and Database sessions, and the button bar](docs/screenshots/main-window.png)
+
+## Built for teams
+
+Most SSH managers are a personal address book: your hosts, your passwords, perhaps synced between your own devices.
+Sharing one with a team means sharing everyone's logins too, or everyone keeping their own copy that drifts.
+SuperXTerminal is built around the other problem: **one list of devices that a whole team works from, where nobody's
+login, key or habits are written into it.**
+
+It does that by splitting a session in two, as PuTTY's saved sessions did:
+
+| Shared with the team | Kept on your own computer |
+|---|---|
+| **What** a session is: its name, folder, host, protocol, icon, environment colour, and the *name* of the profile it uses | **How you** log in: the profile of that name, with your username, password (in the Keychain or Windows' Credential Manager), key file, port, jump host, SSH algorithms and terminal preferences |
+| Button bars, scripts and highlighting rules | Environment Variables, your own values for `{placeholders}` in shared sessions, secrets included |
+| Folder colours and folder defaults | Local overrides: your own host, port, username, profile or jump host for a session, without changing it for anyone else |
+| | Private sessions, Favorites and Recent |
+
+So a session named "core-sw1" using the profile `netops` logs one engineer in with their own account and a key, and the
+next with a different account and a password, from the same shared row. Nobody's password is ever in the shared
+files or the shared table.
+
+### Profiles: standard settings, each person's own login
+
+A profile is a named set of login and connection settings, like a PuTTY saved session. The team agrees on the names
+(`netops`, `linux-root`, `cyberark`), and each person fills in their own profile of that name, in Settings > Profiles.
+A shared session only says which profile it uses.
+
+- **One change, every session.** Change your key file, username or SSH algorithms in the profile, and every session
+  that uses it follows. Nothing in the shared list changes.
+- **Older devices handled once.** A profile can carry the older key exchange and ciphers an old switch needs, so the
+  sessions for those devices just name that profile.
+- **A profile can name the host itself,** for a gateway such as CyberArk's SSH gateway: the session keeps naming the
+  real device, and the profile says where ssh connects ([docs/CYBERARK.md](docs/CYBERARK.md)).
+- **Default Settings** is the profile every other one falls back to, as in PuTTY.
+
+When a session opens, each setting comes from the first place that has it:
+
+1. your local override
+2. the session itself
+3. its folder's defaults
+4. its profile
+5. Default Settings
+
+### Environment Variables: placeholders each person fills in
+
+A shared session, profile or script can use `{placeholders}`, such as `{ad_user}@{host_address}` or a CyberArk login
+built from `{email}`, `{cyberark_region}` and `{cyberark_connector}`. Each person sets their own values in
+Tools > Environment Variables, and secrets go in the system's keychain, never in a file.
+
+- The window shows where each variable is used, and lists the placeholders used but not yet defined, each with Add.
+  A session that needs one you haven't set says which, rather than connecting with the wrong login.
+- **Export…** writes your set of variables to a file to hand to a new teammate, secrets by name only. **Import…** reads
+  one, adds what's new, and lists the secrets left to type. Files from SuperXPuTTY on Windows work too.
+
+### Local overrides: your exception, not the team's
+
+Sometimes a session has to open differently just for you: from home through a jump host, to a lab copy at another
+address, or as yourself rather than through the gateway. A local override changes the host, port, username, profile,
+extra arguments or jump host on your computer only, and can carry a note of why.
+
+- Set them for one session, a selection, or a whole folder and everything under it.
+- Turn them off and on without losing them, per session, per folder, or all at once from Tools > Use Local
+  Overrides. Off, the session opens exactly as the team's.
+- Save a set as a preset ("From home", "Lab") and apply it to other sessions.
+- The tree marks a session that has one, and its tooltip shows what's different.
+
+### Ways to share the sessions
+
+- **A shared settings folder** on a file share or a synced cloud folder, holding `Sessions.xml`, the button bars,
+  scripts and highlighting rules. Changes a teammate makes show up within seconds.
+- **Database sessions:** a PostgreSQL table for larger teams, with locked rows and fields so the standard entries stay
+  standard, an offline cache, and changes queued and sent when the connection comes back.
+- **Private sessions** for what's only yours, and Copy to between all three.
+- **A mixed team on Mac and Windows.** The files and the table are the same as SuperXPuTTY's, so people using either
+  app work from one set of sessions.
+- **Environment colours** (production in red, say) on the tree, the tab, the terminal's frame and the cursor, the same
+  for everyone, so nobody types into production thinking it's the lab.
+
+### A team of one, on several computers
+
+The same works for one person with more than one computer: a Mac at the desk and a Windows laptop on the road, say,
+or a work machine and a home one. Point each computer at the same settings folder, in iCloud Drive, OneDrive, Dropbox
+or a share, or at the same Database table, and they all have one set of sessions, button bars, scripts and
+highlighting rules. A session added or changed on one shows up on the others, on the Mac and on Windows alike, rather
+than one copy per computer that slowly drifts apart.
+
+What stays on each computer is what belongs to that computer: its passwords in its own keychain, its key files, its
+local overrides, and its Private sessions (so keep anything you want everywhere in Saved or Database sessions).
+Profiles and Environment Variables are each computer's too. Set them up once on each, and use Environment Variables'
+Export… and Import… to carry the variables across (secrets by name, to type again).
+
+## Know a device at a glance
+
+Every session can have an icon, so the tree reads like a network diagram: you look down it and see a core switch, a
+firewall, an Ubuntu server, without reading a name.
+
+- **Network symbols** drawn for the job: switch, core, distribution, stack, layer 3 and data centre switches, router,
+  voice router, firewall, load balancer, VPN concentrator, access point and wireless controller, console server, IP
+  phone, UPS, server, storage, database, workstation and more.
+- **Any colour.** The same symbol in any colour, so a team can make its own code: green switches for layer 2, blue for
+  layer 3, orange for the lab.
+- **Brand logos:** Cisco, Fortinet, Palo Alto Networks, VMware, Proxmox, Docker, Kubernetes, Ubuntu, Red Hat, Debian,
+  Rocky, Alma and other Linux and BSD systems.
+- **Your own:** a PNG in the settings folder's `icons` folder shows up under Custom, drawn in its own colour or any
+  other.
+- **Set once, everywhere:** pick one with Choose Icon in Edit Session, or give a whole folder or a selection its icon
+  at once with Edit sessions….
+
+The icon follows the session wherever it appears: the Sessions tree, its tab, and the open tabs list. A button bar can
+be set to show by itself for tabs with a given icon (Show for Tab Icons), so switching to a switch's tab brings up the
+switch commands, and a Linux server's brings up the Linux ones. Icons are part of the shared session, so the whole team
+sees the same picture. Your Private sessions take any icon you like.
 
 ## Where it comes from
 
@@ -43,7 +156,10 @@ and works the same on the Mac and on Windows. It's built with [Tauri 2](https://
   the tab, the terminal's frame and the cursor.
 - Profiles for usernames, passwords (kept in the system's keychain), key files (PuTTY `.ppk` keys too), SSH algorithms
   and older algorithms for older devices.
-- Jump hosts, PuTTY-style extra arguments, `{key}` placeholders from Environment Variables, and local overrides.
+- Jump hosts, PuTTY-style extra arguments, `{key}` placeholders from Environment Variables, and local overrides
+  (see [Built for teams](#built-for-teams)).
+- A session's tab and its place in the tree show yellow while it's connecting, green once it's connected, and a red
+  cross when it drops.
 - Import from SuperPuTTY XML, PuTTY and KiTTY, MobaXterm, `.rdp` files and `~/.ssh/config`; CSV export and import.
 
 **Connections**
@@ -61,6 +177,8 @@ and works the same on the Mac and on Windows. It's built with [Tauri 2](https://
 - Wrap Lines on or off. With it off, long lines stay whole, a scroll bar pans along them, and the view follows the
   cursor as you type.
 - Find, Search Output, Highlighted Output (the tab's output in Monaco), and Compare Output between two tabs.
+- Server load: a Linux server's CPU, memory, disk and network traffic in the status bar, with a 15-minute graph (a
+  profile setting, off by default).
 - Session logs with time stamps, paste checking for multi-line pastes, and watching a tab for activity or silence.
 
 **Commands and scripts**
@@ -80,6 +198,9 @@ and works the same on the Mac and on Windows. It's built with [Tauri 2](https://
 - The Script Editor: Monaco with SPSL's colours and hover help, Check script, and Step to run a script a line at a
   time. A script can also run when a session opens, and stops if its session drops. The whole language, with patterns
   and examples, is in **[docs/SPSL.md](docs/SPSL.md)**.
+- [Rhai](https://rhai.rs/book), a second script language beside SPSL, with variables, arithmetic, loops and functions
+  for scripts that have to decide, count or remember. A script reads the tab's session and your Environment Variables,
+  so one shared script logs in as whoever runs it. The guide and examples are in **[docs/RHAI.md](docs/RHAI.md)**.
 - `{prompt:...}` and `{secret:...}` snippets that ask before sending.
 
 **File transfer**

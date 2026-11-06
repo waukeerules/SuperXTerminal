@@ -37,6 +37,11 @@ export interface Profile {
   antiIdleSeconds: number;
   sshOptions: string;
   olderAlgorithms: boolean | null;
+  /**
+   * Show the server's CPU, memory, disk and network in the status bar while one of its sessions' tabs is in front
+   * (src-tauri/src/server_load.rs): for Linux servers, never a Cisco. null: Default Settings', else off. A Mac only
+   */
+  serverLoad: boolean | null;
   /** Its own SSH algorithm lists ("kex=a,b;mac=c"; "" for Default Settings' or ssh's own) */
   algorithms: string;
   sshConfigHost: string;
@@ -80,7 +85,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", olderAlgorithms: null, algorithms: "",
+    name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", olderAlgorithms: null, serverLoad: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
   };
 }

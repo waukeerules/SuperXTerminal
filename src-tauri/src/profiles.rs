@@ -64,6 +64,11 @@ pub struct Profile {
     pub ssh_options: String,
     /// Accept the older algorithms older devices offer (SHA-1 key exchange, ssh-rsa, CBC ciphers); None: the default's
     pub older_algorithms: Option<bool>,
+    /// Show the server's CPU, memory, disk and network traffic in the status bar while one of its sessions' tabs is in
+    /// front (server_load.rs), read over the tab's own connection every few seconds. For Linux servers: a Cisco switch
+    /// has no shell to read them, and would log the attempt as a command. None: the default's, else off. A Mac only:
+    /// Windows' OpenSSH can't share the connection
+    pub server_load: Option<bool>,
     /// Its own algorithm lists, as PuTTY's Kex, Host keys and Cipher panels ("kex=a,b;mac=c", algorithms.rs); a kind it
     /// doesn't set comes from Default Settings, else ssh's own list
     pub algorithms: String,

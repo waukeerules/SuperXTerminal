@@ -67,6 +67,9 @@ pub struct Launch {
     pub stream: Option<crate::streams::Target>,
     /// An SSH session's login as worked out (session, folders, profile), for the apps it opens in: FileZilla
     pub login: Option<Login>,
+    /// Where its ssh shares its connection (OpenSSH's ControlPath), for the server load readings (server_load.rs):
+    /// only for a profile with Show server load on
+    pub server_load: Option<std::path::PathBuf>,
 }
 
 /// Where and as whom an SSH session logs in
@@ -332,6 +335,7 @@ pub fn key_fetch(profiles: &Profiles, values: &HashMap<String, String>, profile_
         look: shell_look(profile, default),
         stream: None,
         login: None,
+        server_load: None,
     })
 }
 
@@ -430,6 +434,7 @@ fn stream(
         look: Look { rules, ..look(profile, default) },
         stream: Some(target),
         login: None,
+        server_load: None,
     })
 }
 
@@ -445,6 +450,7 @@ pub fn local_shell(profiles: &Profiles) -> Launch {
         look: shell_look(default, default),
         stream: None,
         login: None,
+        server_load: None,
     }
 }
 
@@ -761,6 +767,8 @@ fn ssh(
             || extra.args.iter().any(|a| a.to_ascii_lowercase().contains(option))
     };
     let keepalive = if keepalive == 0 && !set_elsewhere("serveralive") { BUILT_IN_KEEPALIVE } else { keepalive };
+    // the user's own options sharing the connection their way: Show server load leaves it to them
+    let shared_elsewhere = set_elsewhere("controlmaster") || set_elsewhere("controlpath");
     if keepalive != 0 {
         args.extend(["-o".into(), format!("ServerAliveInterval={keepalive}")]);
     }
@@ -792,9 +800,22 @@ fn ssh(
         args.extend(["-o".into(), format!("HostName={host}"), config_host.to_string()]);
     }
 
+    // Show server load: the connection shared (ControlMaster) for the readings, its options before the destination.
+    // Not on Windows (its OpenSSH can't share one), not through a Log in here profile (the readings would be the
+    // jump server's, not the target's), and not when the user's own options already share it their way
+    let server_load = (profile.server_load.or(default.server_load).unwrap_or(false)
+        && !cfg!(windows)
+        && !log_in_here
+        && !shared_elsewhere)
+    .then(crate::server_load::new_socket_path);
     let mut command = CommandBuilder::new(openssh("ssh"));
+    if let Some(path) = &server_load {
+        let at = args.len() - if config_host.is_empty() { 1 } else { 3 };
+        let shared = crate::server_load::master_args(path);
+        args.splice(at..at, shared);
+    }
     command.args(&args);
-    Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) }, stream: None, login: Some(login) })
+    Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) }, stream: None, login: Some(login), server_load })
 }
 
 /// A path with a leading "~/" turned into the home folder
@@ -1221,6 +1242,40 @@ mod tests {
         // a username naming a host the session doesn't have: nothing to put there
         let error = launched(&cyberark(), &CYBERARK_VALUES, &at("", &[("PuttySession", "CyberArk")])).unwrap_err();
         assert!(error.contains("no host to put there"), "{error}");
+    }
+
+    #[test]
+    fn show_server_load_shares_the_connection_before_the_host_only_where_it_can() {
+        let mut profiles = profiles();
+        let sw = session(&[("Username", "admin")]);
+        let shares = |launch: &Launch| {
+            let args: Vec<String> = launch.command.get_argv().iter().skip(1).map(|a| a.to_string_lossy().to_string()).collect();
+            let at = args.iter().position(|a| a == "ControlMaster=yes");
+            (at, args)
+        };
+        // off by default: a Cisco switch is never asked
+        let plain = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).unwrap();
+        assert_eq!((plain.server_load.is_some(), shares(&plain).0), (false, None));
+
+        // on in the profile: ssh is the sharing master, its options before the host, its socket's path given back
+        profiles.profiles[0].server_load = Some(true);
+        let on = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).unwrap();
+        let (at, args) = shares(&on);
+        if cfg!(windows) {
+            // Windows' OpenSSH can't share a connection
+            assert_eq!((on.server_load, at), (None, None));
+        } else {
+            let path = on.server_load.clone().expect("a socket for the readings");
+            assert!(at.is_some_and(|at| at < args.len() - 1), "{args:?}");
+            assert!(args.contains(&format!("ControlPath={}", path.display())), "{args:?}");
+            assert!(args.contains(&"ControlPersist=no".to_string()), "{args:?}");
+            assert_eq!(args.last().map(String::as_str), Some("10.0.0.1"));
+        }
+
+        // the user's own sharing, in the profile's SSH options, is left as it is
+        profiles.profiles[0].ssh_options = "-o ControlMaster=auto -o ControlPath=~/.ssh/cm-%C".into();
+        let theirs = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).unwrap();
+        assert_eq!((theirs.server_load.is_some(), shares(&theirs).0), (false, None));
     }
 
     #[test]

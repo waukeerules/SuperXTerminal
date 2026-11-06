@@ -114,6 +114,7 @@
     if (isDefault && field === "addressFamily") return value || "auto";
     if (isDefault && field === "offerKeys") return value ?? true;
     if (isDefault && field === "askUsername") return value ?? false;
+    if (isDefault && field === "serverLoad") return value ?? false;
     // Default Settings' blank is the built-in look, the same as choosing it
     if (isDefault && field === "cursorBlink") return value ?? true;
     if (isDefault && field === "cursor") return value || "block";
@@ -132,7 +133,7 @@
   const FIELDS: Field[] = [
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
-    "olderAlgorithms", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
+    "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
     "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
   ];
 
@@ -485,6 +486,18 @@
           <option value="on">Allow (older Cisco and similar devices)</option>
           <option value="off">Don't allow</option>
         </select></label>
+      <label>{@render caption("Server load", "serverLoad")}
+        <select value={triToValue(isDefault ? (draft.serverLoad ?? false) : draft.serverLoad)} disabled={!isMac}
+          onchange={(e) => (draft.serverLoad = valueToTri(e.currentTarget.value))}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          <option value="on">Show in the status bar (Linux servers)</option>
+          <option value="off">Don't show</option>
+        </select></label>
+      <p class="note under">The server's CPU, memory, root disk and network traffic, every 3 seconds, while one of this
+        profile's tabs is in front. Read over the tab's own connection (no second login) with cat and df: nothing on the
+        server changes. Linux only: leave it off for Cisco and other network devices, which would log the attempt as a
+        command, and for sessions through CyberArk. Not for a Log in here profile.{#if !isMac} Not on Windows yet: its
+        OpenSSH can't share a connection.{/if}</p>
       <label>{@render caption("SSH algorithms", "algorithms")}
         <button onclick={() => (algorithming = true)} title={draft.algorithms ? `Its own: ${draft.algorithms}` : isDefault ? "ssh's own lists" : "From Default Settings"}>
           Choose…</button>

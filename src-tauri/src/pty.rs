@@ -119,6 +119,8 @@ struct Session {
     /// The window whose tab it is; closing that window ends it
     window: String,
     outlet: Outlet,
+    /// Where its ssh shares its connection for the server load readings (server_load.rs); None when it doesn't
+    server_load: Option<std::path::PathBuf>,
 }
 
 /// A program in a pseudo terminal (ssh, a shell), or a Telnet, Raw or Serial stream in the core
@@ -136,6 +138,14 @@ enum SessionKind {
 pub struct Ptys {
     next: AtomicU32,
     sessions: Mutex<HashMap<u32, Session>>,
+}
+
+impl Ptys {
+    /// Where the tab with pseudo terminal `id` shares its ssh connection for the server load readings; None when it
+    /// doesn't (its profile hasn't Show server load on, it isn't SSH) or it has closed
+    pub fn server_load_socket(&self, id: u32) -> Option<std::path::PathBuf> {
+        self.sessions.lock().unwrap().get(&id).and_then(|s| s.server_load.clone())
+    }
 }
 
 /// Start a tab's program (`target`) in a new pseudo terminal of the given size, sending its output on `on_event`
@@ -196,7 +206,7 @@ pub fn pty_open(
         Target::KeyFetch { profile } => launch::key_fetch(&profiles, &values, &profile),
     };
     let launch = launch.inspect_err(|e| crate::applog::warn(format!("Couldn't open {what}: {e}")));
-    let Launch { mut command, password, local, mut notices, look, stream, .. } = launch?;
+    let Launch { mut command, password, local, mut notices, look, stream, server_load, .. } = launch?;
     crate::applog::info(format!("Opening {what} in {}", window.label()));
     // an SSH session: its command goes in the app's log, and with Verbose SSH (Settings > General) ssh tells the tab
     // how connecting and logging in went; -v right after the program, as the host and any remote command come last
@@ -295,7 +305,7 @@ pub fn pty_open(
         })
         .map_err(|e| e.to_string())?;
 
-    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Pty { master: pair.master, child }, window: window.label().to_string(), outlet });
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Pty { master: pair.master, child }, window: window.label().to_string(), outlet, server_load });
     Ok(id)
 }
 
@@ -353,7 +363,7 @@ fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u1
         })
         .map_err(|e| e.to_string())?;
     let writer = stream.writer.clone();
-    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Stream(stream), window: window.to_string(), outlet });
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Stream(stream), window: window.to_string(), outlet, server_load: None });
     Ok(id)
 }
 

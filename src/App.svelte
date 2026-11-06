@@ -1,6 +1,7 @@
 <!--
   The main window, laid out as SuperXPuTTY's: the Quick connect and Send Commands toolbars, the Sessions pane on the
-  left, the document tabs, then the button bar and the status bar (with running scripts and their Stop).
+  left, the document tabs, then the button bar and the status bar (with running scripts and their Stop, and the tab in
+  front's server load).
 -->
 <script lang="ts">
   import { THIS_COMPUTER } from "./lib/platform";
@@ -46,10 +47,14 @@
   import { catchShortcuts, fromMenu } from "./lib/shortcuts";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { askOne } from "./lib/scripting/asking.svelte";
+  import { followServerLoad, serverLoad } from "./lib/terminal/serverLoad.svelte";
+  import ServerLoadChart from "./lib/terminal/ServerLoadChart.svelte";
 
   let tabElement: HTMLDivElement;
   let tabs = $state<TabArea | null>(null);
   let status = $state("Ready");
+  /** Whether the server load graph is open (the status bar's figures, clicked) */
+  let loadGraph = $state(false);
   let openSessions = $state<SessionStates>(new Map());
   /** The Settings window's tab while it's open; null when closed */
   let settingsTab = $state<string | null>(null);
@@ -175,6 +180,8 @@
   onMount(() => {
     tabs = new TabArea(tabElement, (open) => (openSessions = open));
     context.tabs = tabs;
+    // the tab in front's server load in the status bar, for a profile with Server load on
+    followServerLoad(tabs);
     context.status = (text) => (status = text);
     context.openSession = (id) => tree?.openById(id) ?? false;
     context.editVariables = () => (variablesOpen = true);
@@ -792,6 +799,9 @@
   <div class="statusbar" class:hidden={!settings.showStatusBar}>
     <span class="status">{status}</span>
     <ScriptStatus />
+    {#if serverLoad.text}
+      <button class="load" title={serverLoad.title} aria-expanded={loadGraph} onclick={() => (loadGraph = !loadGraph)}>{serverLoad.text}</button>
+    {/if}
     {#if currentLayout}<span class="layout" title="The layout open now">{currentLayout}</span>{/if}
     {#if !settings.useLocalOverrides}
       <button class="overrides-off" onclick={() => void setLocalOverrides(true)}
@@ -800,6 +810,10 @@
     <span class="version">{version}</span>
   </div>
 </div>
+
+{#if loadGraph && serverLoad.text}
+  <ServerLoadChart samples={serverLoad.samples} tab={serverLoad.tab} onClose={() => (loadGraph = false)} />
+{/if}
 
 {#if editorOpen}
   <ScriptEditor onClose={() => (editorOpen = false)} />
@@ -1081,6 +1095,24 @@
   }
   .statusbar .status {
     flex: 1;
+  }
+
+  /* the tab in front's server load: figures that change every few seconds, so their width doesn't jump about */
+  .statusbar .load {
+    padding: 0 6px;
+    border: 0;
+    border-left: 1px solid var(--border);
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .statusbar .load:hover,
+  .statusbar .load[aria-expanded="true"] {
+    color: var(--text);
   }
 
   .statusbar .layout {

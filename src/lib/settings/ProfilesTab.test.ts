@@ -1,5 +1,5 @@
-// Settings > Profiles: which fields show as changed, what's greyed while there are changes, Save and Revert, and the
-// list's Duplicate, Export and Import. The Rust side is stood in for by mockIPC: the profiles live in `stored`, every
+// Settings > Profiles: which fields show as changed, what's greyed while there are changes, Save and Revert, the
+// list's Duplicate, Export and Import, and Server load (off unless chosen; greyed where it can't work). The Rust side is stood in for by mockIPC: the profiles live in `stored`, every
 // save and delete is recorded in `calls`, and the file chosen to import holds `inFile`.
 import { beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
@@ -7,6 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import ProfilesTab from "./ProfilesTab.svelte";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "./profiles";
+import { isMac } from "../shortcuts";
 
 /** The profiles stored, which the stand-ins for profiles_save and profiles_delete change */
 let stored: Profile[];
@@ -177,6 +178,14 @@ describe("Settings > Profiles", () => {
     await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("option", { name: DEFAULT_PROFILE }) });
     const remove = within(screen.getByRole("menu")).getByRole("menuitem", { name: "Delete…" });
     expect(remove.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("has Server load off unless chosen, greyed where it can't work (Windows; this test's jsdom isn't a Mac)", async () => {
+    await open("root");
+    const load = screen.getByRole("combobox", { name: /^Server load/ }) as HTMLSelectElement;
+    // a profile takes Default Settings', which is off: a Cisco is never asked
+    expect(load.value).toBe("");
+    expect(load.disabled).toBe(!isMac);
   });
 
   it("greys the colours until Colours is Custom, then saves the profile's own background", async () => {

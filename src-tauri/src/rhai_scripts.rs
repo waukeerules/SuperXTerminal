@@ -598,7 +598,8 @@ mod tests {
     /// as the functions change
     #[test]
     fn the_guides_examples_check_clean() {
-        let guide = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/RHAI.md")).unwrap();
+        // lines end in \r\n where Git checks the guide out that way on Windows (core.autocrlf)
+        let guide = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/RHAI.md")).unwrap().replace("\r\n", "\n");
         let blocks: Vec<&str> = guide.split("```rhai\n").skip(1).map(|rest| rest.split("```").next().unwrap()).collect();
         assert!(blocks.len() >= 8, "found {} blocks", blocks.len());
         for block in blocks {

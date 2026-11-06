@@ -2,16 +2,22 @@
 //! server an SSH tab is connected to, every few seconds, for the tab you're looking at.
 //!
 //! Only for a profile with "Show server load" on (off by default: a Cisco switch has no shell to run it, and would log
-//! the attempt as a command), on a Mac. The tab's ssh is then started as an OpenSSH connection-sharing master
-//! (`ControlMaster`, `launch.rs`), and each reading runs over that same connection as a new channel: no second login.
-//! The reading is one short command per channel ([`READ`]), not a loop left running: a master waits for its other
-//! channels before it ends, so a loop would keep the tab open after you logged out. Windows' OpenSSH can't share a
-//! connection (no ControlMaster), so there's none of this there yet.
+//! the attempt as a command). How the readings reach the server ([`LoadVia`]) differs:
+//!
+//! - **Mac:** the tab's ssh is started as an OpenSSH connection-sharing master (`ControlMaster`, `launch.rs`), and
+//!   each reading runs over that same connection as a new channel: no second login. One short command per channel
+//!   ([`READ`]), not a loop left running: a master waits for its other channels before it ends, so a loop would keep
+//!   the tab open after you logged out.
+//! - **Windows:** its OpenSSH can't share a connection (no ControlMaster), so the readings have a second login of
+//!   their own, with the tab's ssh arguments and `BatchMode`: it gets in with a key (a key file, ssh-agent) and never
+//!   asks for anything, so a server that wants a password gives no readings. That connection runs [`LOOP`], a reading
+//!   every few seconds, so it's one login while the tab is in front, not one per reading; being its own connection,
+//!   it doesn't hold the tab's open, and it ends when the tab leaves the front.
 //!
 //! The command only reads (`cat`, `df`): nothing on the server changes. A server without /proc/stat (BSD, macOS, a
 //! network device) gives no CPU line, and the tab's readings stop, saying so.
 
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +28,10 @@ use serde::Serialize;
 
 /// What each reading runs on the server: its counters, after a marker. Read only
 pub const READ: &str = "echo @@; cat /proc/stat /proc/meminfo /proc/net/dev; df -P / | tail -n 1";
+
+/// What the second login runs on Windows: [`READ`]'s reading every 3 seconds ([`EVERY`]), each between a line `@@`
+/// and a line `@@end`, until the connection ends. In `sh` whatever the login shell (fish has no `while :`)
+pub const LOOP: &str = "exec sh -c 'while :; do echo @@; cat /proc/stat /proc/meminfo /proc/net/dev; df -P / | tail -n 1; echo @@end; sleep 3; done'";
 
 /// Seconds between readings: often enough to follow, seldom enough to cost the server nothing
 const EVERY: Duration = Duration::from_secs(3);
@@ -143,6 +153,15 @@ pub fn load(before: Option<&Counters>, now: &Counters, seconds: f64) -> Load {
     Load { cpu, mem: now.mem, disk: now.disk, down, up }
 }
 
+/// How a tab's readings reach its server: over its own shared connection (the Mac), or a second login (Windows)
+#[derive(Clone, Debug, PartialEq)]
+pub enum LoadVia {
+    /// The master's socket ([`master_args`]); each reading a channel over it
+    Shared(PathBuf),
+    /// The ssh arguments of a second login that runs [`LOOP`] ([`separate_args`])
+    Separate(Vec<String>),
+}
+
 /// What a tab's watch tells its page
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -172,6 +191,28 @@ pub fn new_socket_path() -> PathBuf {
     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!("sxt-{}-{n}.sock", std::process::id()))
+}
+
+/// The second login's ssh arguments (Windows), from the tab's own `args` (its options, then the destination): no
+/// terminal (-T for -tt); BatchMode, so it uses a key or the agent and never asks for a password or about a host key
+/// (it fails instead, and the tab says why); none of the tab's port forwards, which the tab already holds; no
+/// password first, as only the tab's own login is typed; then [`LOOP`] after the destination. ssh takes an option's
+/// first value, so these come before the tab's own
+pub fn separate_args(args: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = ["-T", "-o", "BatchMode=yes", "-o", "ClearAllForwardings=yes"].map(String::from).to_vec();
+    let mut rest = args.iter().peekable();
+    while let Some(arg) = rest.next() {
+        if arg == "-tt" || arg == "-t" {
+            continue;
+        }
+        if arg == "-o" && rest.peek().is_some_and(|o| o.to_ascii_lowercase().starts_with("preferredauthentications=")) {
+            rest.next();
+            continue;
+        }
+        out.push(arg.clone());
+    }
+    out.push(LOOP.into());
+    out
 }
 
 /// The ssh that takes one reading over the master at `path`. It must never log in on its own: with no master there
@@ -224,8 +265,16 @@ fn pause(how_long: Duration, stop: &AtomicBool) -> bool {
     stop.load(Ordering::Relaxed)
 }
 
+/// Take readings the tab's way until stopped, sending each load to `send` (false: nobody's listening)
+fn watch(via: LoadVia, stop: Arc<AtomicBool>, send: impl Fn(LoadEvent) -> bool) {
+    match via {
+        LoadVia::Shared(path) => watch_shared(path, stop, send),
+        LoadVia::Separate(args) => watch_separate(args, stop, send),
+    }
+}
+
 /// Take readings over the master at `path` until stopped, sending each load to `send` (false: nobody's listening)
-fn watch(path: PathBuf, stop: Arc<AtomicBool>, send: impl Fn(LoadEvent) -> bool) {
+fn watch_shared(path: PathBuf, stop: Arc<AtomicBool>, send: impl Fn(LoadEvent) -> bool) {
     let mut before: Option<(Counters, Instant)> = None;
     let mut failures = 0;
     while !stop.load(Ordering::Relaxed) {
@@ -268,6 +317,127 @@ fn watch(path: PathBuf, stop: Arc<AtomicBool>, send: impl Fn(LoadEvent) -> bool)
     }
 }
 
+/// Each reading [`LOOP`] prints, as it's printed: the lines between a `@@` line and an `@@end` one (a login script's
+/// greeting before the first left out), sent to `send` until it's false or the output ends
+fn readings(output: impl BufRead, send: impl Fn(String) -> bool) {
+    let mut reading: Option<String> = None;
+    for line in output.lines() {
+        let Ok(line) = line else { return };
+        match line.trim_end_matches('\r') {
+            "@@" => reading = Some(String::new()),
+            "@@end" => {
+                if let Some(text) = reading.take()
+                    && !send(text)
+                {
+                    return;
+                }
+            }
+            text => {
+                if let Some(reading) = reading.as_mut() {
+                    reading.push_str(text);
+                    reading.push('\n');
+                }
+            }
+        }
+    }
+}
+
+/// How long the second login may take to give its first reading, and the longest gap after that before it's given
+/// up: past ConnectTimeout, a login and a slow reading
+const SEPARATE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Why there are no readings when the second login ended without one: on Windows that's nearly always a login that
+/// wanted a password (BatchMode won't type one), or a host key not yet in known_hosts
+const NO_KEY_LOGIN: &str = "on Windows the readings need a login of their own with a key (a key file or ssh-agent), and the server didn't let it in";
+
+/// What following one second login came to
+#[derive(Debug, PartialEq)]
+enum Followed {
+    /// Stopped, the server isn't Linux, or nobody's listening: nothing more to do
+    Done,
+    /// Its output ended (or went quiet too long) after this many readings: 0 is a login that never got in
+    Ended(u32),
+}
+
+/// Follow a second login's readings, as [`readings`] gives them on `chunks`, sending each load; `before` is kept
+/// across logins, so a rate after a reconnect is still the change since the last reading
+fn follow(chunks: &std::sync::mpsc::Receiver<String>, stop: &AtomicBool, before: &mut Option<(Counters, Instant)>, send: &impl Fn(LoadEvent) -> bool) -> Followed {
+    let mut count = 0;
+    let mut last = Instant::now();
+    loop {
+        if stop.load(Ordering::Relaxed) {
+            return Followed::Done;
+        }
+        match chunks.recv_timeout(Duration::from_millis(100)) {
+            Ok(text) => {
+                let Some(now) = parse(&text) else {
+                    send(LoadEvent::Unavailable { why: "not a Linux server (no /proc/stat)".into() });
+                    return Followed::Done;
+                };
+                count += 1;
+                last = Instant::now();
+                let seconds = before.as_ref().map_or(0.0, |(_, then)| last.duration_since(*then).as_secs_f64());
+                if !send(LoadEvent::Load(load(before.as_ref().map(|(c, _)| c), &now, seconds))) {
+                    return Followed::Done;
+                }
+                *before = Some((now, last));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) if last.elapsed() < SEPARATE_TIMEOUT => {}
+            Err(_) => return Followed::Ended(count),
+        }
+    }
+}
+
+/// The second login's ssh (Windows), with no console window of its own
+fn separate_command(args: &[String]) -> Command {
+    let mut command = Command::new(crate::launch::openssh("ssh"));
+    command.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    command
+}
+
+/// Take readings over a second login (Windows) until stopped. A login that never gets in isn't tried again (each try
+/// is a failed login in the server's log, which fail2ban counts); one that drops after giving readings is, a few times
+fn watch_separate(args: Vec<String>, stop: Arc<AtomicBool>, send: impl Fn(LoadEvent) -> bool) {
+    let mut before = None;
+    let mut failures = 0;
+    while !stop.load(Ordering::Relaxed) {
+        let Ok(mut child) = separate_command(&args).spawn() else {
+            send(LoadEvent::Unavailable { why: "ssh couldn't be started for the readings".into() });
+            return;
+        };
+        let (tx, chunks) = std::sync::mpsc::channel();
+        if let Some(output) = child.stdout.take() {
+            let _ = std::thread::Builder::new()
+                .name("server-load-output".into())
+                .spawn(move || readings(BufReader::new(output), |text| tx.send(text).is_ok()));
+        }
+        let followed = follow(&chunks, &stop, &mut before, &send);
+        let _ = child.kill();
+        let _ = child.wait();
+        match followed {
+            Followed::Done => return,
+            Followed::Ended(0) if failures == 0 => {
+                send(LoadEvent::Unavailable { why: NO_KEY_LOGIN.into() });
+                return;
+            }
+            Followed::Ended(0) => failures += 1,
+            Followed::Ended(_) => failures = 1,
+        }
+        if failures >= MAX_FAILURES {
+            send(LoadEvent::Unavailable { why: "the server didn't answer the readings".into() });
+            return;
+        }
+        if pause(EVERY, &stop) {
+            return;
+        }
+    }
+}
+
 /// The watch running: one at most, for the tab in front (its pseudo terminal's id, and its Stop)
 #[derive(Default)]
 pub struct ServerLoads {
@@ -283,18 +453,19 @@ impl ServerLoads {
     }
 }
 
-/// Watch the server load of the tab with pseudo terminal `id`, sending it on `on_event`; any other tab's watch stops.
-/// False when the tab has no shared connection (its profile hasn't Show server load on, it isn't SSH, or this is
-/// Windows), so the status bar shows nothing for it. Its socket is the tab's (pty.rs), gone when the tab closes
+/// Watch the server load of the tab with pseudo terminal `id`, sending it on `on_event`; any other tab's watch stops
+/// (on Windows, ending its second login). False when the tab has no way to read it (its profile hasn't Show server
+/// load on, or it isn't SSH), so the status bar shows nothing for it. A socket is the tab's (pty.rs), gone when the
+/// tab closes
 #[tauri::command]
 pub fn server_load_watch(loads: tauri::State<'_, ServerLoads>, ptys: tauri::State<'_, crate::pty::Ptys>, id: u32, on_event: tauri::ipc::Channel<LoadEvent>) -> bool {
     loads.stop();
-    let Some(path) = ptys.server_load_socket(id) else { return false };
+    let Some(via) = ptys.server_load(id) else { return false };
     let stop = Arc::new(AtomicBool::new(false));
     *loads.watching.lock().unwrap() = Some((id, stop.clone()));
     let _ = std::thread::Builder::new()
         .name(format!("server-load-{id}"))
-        .spawn(move || watch(path, stop, move |event| on_event.send(event).is_ok()));
+        .spawn(move || watch(via, stop, move |event| on_event.send(event).is_ok()));
     true
 }
 
@@ -396,6 +567,98 @@ mod tests {
         // a socket's path must stay short (a Mac's limit is about 100 characters)
         assert!(new_socket_path().as_os_str().len() < 100);
         assert_ne!(new_socket_path(), new_socket_path());
+    }
+
+    /// What LOOP prints for one reading: the fixture between its markers
+    fn printed(reading: &str) -> String {
+        format!("@@\n{}\n@@end\n", reading.rsplit("@@").next().unwrap().trim())
+    }
+
+    #[test]
+    fn windows_second_login_uses_the_tabs_arguments_never_asks_and_runs_the_loop() {
+        // the tab's ssh, as launch.rs builds it: a terminal, the password tried first, a port forward, the host
+        let tab: Vec<String> = ["-tt", "-p", "2222", "-l", "admin", "-o", "PreferredAuthentications=keyboard-interactive,password,publickey", "-L", "8080:localhost:80", "10.0.0.1"]
+            .map(String::from)
+            .to_vec();
+        let second = separate_args(&tab);
+        // options first, as ssh takes the first value it's given: no terminal, never a question, no forwards
+        assert_eq!(second[..5], ["-T", "-o", "BatchMode=yes", "-o", "ClearAllForwardings=yes"]);
+        assert!(!second.contains(&"-tt".to_string()), "{second:?}");
+        assert!(!second.iter().any(|a| a.starts_with("PreferredAuthentications")), "{second:?}");
+        // the same server and user, then the loop
+        assert!(second.windows(2).any(|w| w == ["-p", "2222"]) && second.windows(2).any(|w| w == ["-l", "admin"]), "{second:?}");
+        assert_eq!(second[second.len() - 2..], ["10.0.0.1", LOOP]);
+    }
+
+    #[test]
+    fn the_loop_only_reads_and_marks_each_reading() {
+        assert!(LOOP.contains(READ.trim_start_matches("echo @@; ")), "{LOOP}");
+        assert!(LOOP.contains("echo @@end") && LOOP.contains("sleep 3"), "{LOOP}");
+        // in sh whatever the login shell, and no # (a comment in sh) in a marker
+        assert!(LOOP.starts_with("exec sh -c '") && !LOOP.contains('#'), "{LOOP}");
+    }
+
+    #[test]
+    fn each_reading_the_loop_prints_is_read_as_it_comes_a_greeting_before_it_left_out() {
+        let output = format!("Welcome to Ubuntu\r\ncpu 9 9 9 9\r\n{}{}", printed(READING), printed(READING).replace('\n', "\r\n"));
+        let got = Mutex::new(Vec::new());
+        readings(std::io::Cursor::new(output), |text| {
+            got.lock().unwrap().push(text);
+            true
+        });
+        let got = got.into_inner().unwrap();
+        assert_eq!(got.len(), 2);
+        for text in &got {
+            assert!(!text.contains("Welcome") && !text.contains('\r'), "{text}");
+            assert_eq!(parse(text).and_then(|c| c.disk), Some(50));
+        }
+    }
+
+    /// Follow `chunks` (sent, then the sender gone, as when ssh ends) and give what it came to and what it sent
+    fn followed(chunks: &[String]) -> (Followed, Vec<LoadEvent>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        for chunk in chunks {
+            tx.send(chunk.clone()).unwrap();
+        }
+        drop(tx);
+        let sent = Mutex::new(Vec::new());
+        let came = follow(&rx, &AtomicBool::new(false), &mut None, &|event| {
+            sent.lock().unwrap().push(event);
+            true
+        });
+        (came, sent.into_inner().unwrap())
+    }
+
+    #[test]
+    fn windows_readings_come_to_the_status_bar_and_a_login_that_never_got_in_is_told() {
+        let reading = READING.rsplit("@@").next().unwrap().to_string();
+        let (came, sent) = followed(&[reading.clone(), reading]);
+        assert_eq!(came, Followed::Ended(2));
+        assert!(matches!(&sent[..], [LoadEvent::Load(first), LoadEvent::Load(second)] if first.cpu.is_none() && second.mem.is_some()), "{sent:?}");
+        // ssh ended without a reading: BatchMode turned down a password login; watch_separate says so once
+        let (came, sent) = followed(&[]);
+        assert_eq!((came, sent.len()), (Followed::Ended(0), 0));
+        assert!(NO_KEY_LOGIN.contains("key"));
+        // not Linux: said, and no more
+        let (came, sent) = followed(&["cat: /proc/stat: No such file or directory\n".into()]);
+        assert_eq!(came, Followed::Done);
+        assert!(matches!(&sent[..], [LoadEvent::Unavailable { why }] if why.contains("not a Linux server")), "{sent:?}");
+    }
+
+    #[test]
+    fn a_second_login_that_cant_get_in_is_told_at_once_with_the_real_ssh() {
+        // the system's own ssh (Windows' OpenSSH, the Mac's), to a port nothing listens on: it ends without a reading,
+        // and the tab is told why once, rather than the watch trying again or hanging
+        let args = separate_args(&["-p".into(), "1".into(), "-o".into(), "ConnectTimeout=5".into(), "127.0.0.1".into()]);
+        let sent = Mutex::new(Vec::new());
+        let started = Instant::now();
+        watch_separate(args, Arc::new(AtomicBool::new(false)), |event| {
+            sent.lock().unwrap().push(event);
+            true
+        });
+        let sent = sent.into_inner().unwrap();
+        assert!(matches!(&sent[..], [LoadEvent::Unavailable { why }] if why == NO_KEY_LOGIN), "{sent:?}");
+        assert!(started.elapsed() < Duration::from_secs(15), "{:?}", started.elapsed());
     }
 
     #[test]

@@ -119,8 +119,8 @@ struct Session {
     /// The window whose tab it is; closing that window ends it
     window: String,
     outlet: Outlet,
-    /// Where its ssh shares its connection for the server load readings (server_load.rs); None when it doesn't
-    server_load: Option<std::path::PathBuf>,
+    /// How the server load readings reach its server (server_load.rs); None when there are none
+    server_load: Option<crate::server_load::LoadVia>,
 }
 
 /// A program in a pseudo terminal (ssh, a shell), or a Telnet, Raw or Serial stream in the core
@@ -141,9 +141,9 @@ pub struct Ptys {
 }
 
 impl Ptys {
-    /// Where the tab with pseudo terminal `id` shares its ssh connection for the server load readings; None when it
-    /// doesn't (its profile hasn't Show server load on, it isn't SSH) or it has closed
-    pub fn server_load_socket(&self, id: u32) -> Option<std::path::PathBuf> {
+    /// How the server load readings reach the server of the tab with pseudo terminal `id`; None when there are none
+    /// (its profile hasn't Show server load on, it isn't SSH) or it has closed
+    pub fn server_load(&self, id: u32) -> Option<crate::server_load::LoadVia> {
         self.sessions.lock().unwrap().get(&id).and_then(|s| s.server_load.clone())
     }
 }

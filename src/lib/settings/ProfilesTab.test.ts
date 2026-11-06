@@ -1,5 +1,5 @@
 // Settings > Profiles: which fields show as changed, what's greyed while there are changes, Save and Revert, the
-// list's Duplicate, Export and Import, and Server load (off unless chosen; greyed where it can't work). The Rust side is stood in for by mockIPC: the profiles live in `stored`, every
+// list's Duplicate, Export and Import, and Server load (off unless chosen; on Windows, a key login of its own). The Rust side is stood in for by mockIPC: the profiles live in `stored`, every
 // save and delete is recorded in `calls`, and the file chosen to import holds `inFile`.
 import { beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
@@ -180,12 +180,18 @@ describe("Settings > Profiles", () => {
     expect(remove.getAttribute("aria-disabled")).toBe("true");
   });
 
-  it("has Server load off unless chosen, greyed where it can't work (Windows; this test's jsdom isn't a Mac)", async () => {
+  it("has Server load off unless chosen, and on Windows saves it on, saying it needs a key login", async () => {
+    // this test's jsdom isn't a Mac: Windows, whose readings have a second login of their own (server_load.rs)
+    expect(isMac).toBe(false);
     await open("root");
     const load = screen.getByRole("combobox", { name: /^Server load/ }) as HTMLSelectElement;
     // a profile takes Default Settings', which is off: a Cisco is never asked
     expect(load.value).toBe("");
-    expect(load.disabled).toBe(!isMac);
+    expect(load.disabled).toBe(false);
+    expect(load.closest("label")!.nextElementSibling!.textContent).toMatch(/second login of its own[\s\S]*needs a key/);
+    await userEvent.selectOptions(load, "on");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(calls.filter((c) => c.cmd === "profiles_save").at(-1)?.args).toMatchObject({ profile: { name: "root", serverLoad: true } });
   });
 
   it("greys the colours until Colours is Custom, then saves the profile's own background", async () => {

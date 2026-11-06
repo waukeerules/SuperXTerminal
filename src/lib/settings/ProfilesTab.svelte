@@ -487,17 +487,18 @@
           <option value="off">Don't allow</option>
         </select></label>
       <label>{@render caption("Server load", "serverLoad")}
-        <select value={triToValue(isDefault ? (draft.serverLoad ?? false) : draft.serverLoad)} disabled={!isMac}
+        <select value={triToValue(isDefault ? (draft.serverLoad ?? false) : draft.serverLoad)}
           onchange={(e) => (draft.serverLoad = valueToTri(e.currentTarget.value))}>
           {#if !isDefault}<option value="">From Default Settings</option>{/if}
           <option value="on">Show in the status bar (Linux servers)</option>
           <option value="off">Don't show</option>
         </select></label>
       <p class="note under">The server's CPU, memory, root disk and network traffic, every 3 seconds, while one of this
-        profile's tabs is in front. Read over the tab's own connection (no second login) with cat and df: nothing on the
-        server changes. Linux only: leave it off for Cisco and other network devices, which would log the attempt as a
-        command, and for sessions through CyberArk. Not for a Log in here profile.{#if !isMac} Not on Windows yet: its
-        OpenSSH can't share a connection.{/if}</p>
+        profile's tabs is in front, read with cat and df: nothing on the server changes. {#if isMac}Read over the tab's
+        own connection, with no second login.{:else}Read over a second login of its own (Windows' OpenSSH can't share the
+        tab's), which needs a key, a key file or ssh-agent: a server that asks for a password gives none.{/if} Linux
+        only: leave it off for Cisco and other network devices, which would log the attempt as a command, and for
+        sessions through CyberArk. Not for a Log in here profile.</p>
       <label>{@render caption("SSH algorithms", "algorithms")}
         <button onclick={() => (algorithming = true)} title={draft.algorithms ? `Its own: ${draft.algorithms}` : isDefault ? "ssh's own lists" : "From Default Settings"}>
           Choose…</button>

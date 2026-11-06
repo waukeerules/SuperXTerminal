@@ -67,9 +67,9 @@ pub struct Launch {
     pub stream: Option<crate::streams::Target>,
     /// An SSH session's login as worked out (session, folders, profile), for the apps it opens in: FileZilla
     pub login: Option<Login>,
-    /// Where its ssh shares its connection (OpenSSH's ControlPath), for the server load readings (server_load.rs):
-    /// only for a profile with Show server load on
-    pub server_load: Option<std::path::PathBuf>,
+    /// How the server load readings reach its server (server_load.rs): its ssh's shared connection (OpenSSH's
+    /// ControlPath) on the Mac, a second login on Windows. Only for a profile with Show server load on
+    pub server_load: Option<crate::server_load::LoadVia>,
 }
 
 /// Where and as whom an SSH session logs in
@@ -800,20 +800,24 @@ fn ssh(
         args.extend(["-o".into(), format!("HostName={host}"), config_host.to_string()]);
     }
 
-    // Show server load: the connection shared (ControlMaster) for the readings, its options before the destination.
-    // Not on Windows (its OpenSSH can't share one), not through a Log in here profile (the readings would be the
-    // jump server's, not the target's), and not when the user's own options already share it their way
-    let server_load = (profile.server_load.or(default.server_load).unwrap_or(false)
-        && !cfg!(windows)
-        && !log_in_here
-        && !shared_elsewhere)
-    .then(crate::server_load::new_socket_path);
-    let mut command = CommandBuilder::new(openssh("ssh"));
-    if let Some(path) = &server_load {
+    // Show server load: not through a Log in here profile (the readings would be the jump server's, not the
+    // target's). On the Mac the connection is shared (ControlMaster) for the readings, its options before the
+    // destination, unless the user's own options already share it their way; Windows' OpenSSH can't share one, so
+    // there the readings get a second login with the same arguments
+    let wanted = profile.server_load.or(default.server_load).unwrap_or(false) && !log_in_here;
+    let server_load = if !wanted {
+        None
+    } else if cfg!(windows) {
+        Some(crate::server_load::LoadVia::Separate(crate::server_load::separate_args(&args)))
+    } else if shared_elsewhere {
+        None
+    } else {
+        let path = crate::server_load::new_socket_path();
         let at = args.len() - if config_host.is_empty() { 1 } else { 3 };
-        let shared = crate::server_load::master_args(path);
-        args.splice(at..at, shared);
-    }
+        args.splice(at..at, crate::server_load::master_args(&path));
+        Some(crate::server_load::LoadVia::Shared(path))
+    };
+    let mut command = CommandBuilder::new(openssh("ssh"));
     command.args(&args);
     Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) }, stream: None, login: Some(login), server_load })
 }
@@ -1245,7 +1249,7 @@ mod tests {
     }
 
     #[test]
-    fn show_server_load_shares_the_connection_before_the_host_only_where_it_can() {
+    fn show_server_load_shares_the_connection_on_the_mac_and_has_a_second_login_on_windows() {
         let mut profiles = profiles();
         let sw = session(&[("Username", "admin")]);
         let shares = |launch: &Launch| {
@@ -1257,25 +1261,33 @@ mod tests {
         let plain = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).unwrap();
         assert_eq!((plain.server_load.is_some(), shares(&plain).0), (false, None));
 
-        // on in the profile: ssh is the sharing master, its options before the host, its socket's path given back
+        // on in the profile: on the Mac ssh is the sharing master, its options before the host, its socket's path
+        // given back; on Windows, whose OpenSSH can't share a connection, the tab's ssh is as it was and the readings
+        // get a second login of their own to the same host and user
         profiles.profiles[0].server_load = Some(true);
         let on = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).unwrap();
         let (at, args) = shares(&on);
         if cfg!(windows) {
-            // Windows' OpenSSH can't share a connection
-            assert_eq!((on.server_load, at), (None, None));
+            assert_eq!(at, None, "{args:?}");
+            let Some(crate::server_load::LoadVia::Separate(second)) = on.server_load.clone() else { panic!("a second login: {:?}", on.server_load) };
+            assert!(second.windows(2).any(|w| w == ["-l", "admin"]), "{second:?}");
+            assert!(second.contains(&"BatchMode=yes".to_string()), "{second:?}");
+            assert_eq!(second[second.len() - 2], "10.0.0.1");
         } else {
-            let path = on.server_load.clone().expect("a socket for the readings");
+            let Some(crate::server_load::LoadVia::Shared(path)) = on.server_load.clone() else { panic!("a socket for the readings: {:?}", on.server_load) };
             assert!(at.is_some_and(|at| at < args.len() - 1), "{args:?}");
             assert!(args.contains(&format!("ControlPath={}", path.display())), "{args:?}");
             assert!(args.contains(&"ControlPersist=no".to_string()), "{args:?}");
             assert_eq!(args.last().map(String::as_str), Some("10.0.0.1"));
         }
 
-        // the user's own sharing, in the profile's SSH options, is left as it is
+        // the user's own sharing, in the profile's SSH options, is left as it is (the Mac; Windows can't share)
         profiles.profiles[0].ssh_options = "-o ControlMaster=auto -o ControlPath=~/.ssh/cm-%C".into();
         let theirs = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).unwrap();
-        assert_eq!((theirs.server_load.is_some(), shares(&theirs).0), (false, None));
+        assert_eq!(shares(&theirs).0, None);
+        if !cfg!(windows) {
+            assert!(theirs.server_load.is_none());
+        }
     }
 
     #[test]

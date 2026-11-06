@@ -1,5 +1,6 @@
-// Tools > Environment Variables: names that clash can't be saved, placeholders used but not defined are listed, and
-// the preview fills a template with secrets hidden. The Rust side is stood in for by mockIPC.
+// Tools > Environment Variables: names that clash can't be saved, placeholders used but not defined are listed, the
+// preview fills a template with secrets hidden, and Export… and Import… pass the variables on in SuperXPuTTY's file,
+// secrets by name only. The Rust side, and the dialogs choosing the file, are stood in for by mockIPC.
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -8,10 +9,23 @@ import EnvironmentVariables from "./EnvironmentVariables.svelte";
 
 /** What the window last saved (variables_save), or null if it hasn't */
 let saved: unknown = null;
+/** What Export… wrote (text_file_write), or null if it hasn't */
+let written: { path: string; text: string } | null = null;
+/** The file Import… reads (text_file_read) */
+let importing = "";
 
 beforeEach(() => {
   saved = null;
+  written = null;
+  importing = "";
   mockIPC((cmd, args) => {
+    if (cmd === "plugin:dialog|save") return "/tmp/EnvironmentVariables.json";
+    if (cmd === "plugin:dialog|open") return "/tmp/theirs.json";
+    if (cmd === "text_file_write") {
+      written = args as { path: string; text: string };
+      return null;
+    }
+    if (cmd === "text_file_read") return importing;
     if (cmd === "variables_list")
       return [
         { key: "ad_username", value: "tim", secret: false, hasValue: false, fromWindows: false },
@@ -76,5 +90,52 @@ describe("Environment Variables", () => {
     await open();
     await userEvent.type(screen.getByLabelText("Template to preview"), "{{ad_username}@{{host_address} -pw {{admin_password} {{nope}");
     expect(screen.getByLabelText("Preview").textContent).toBe("tim@{host_address} -pw •••• {nope}");
+  });
+
+  it("exports every variable, a secret by its name only, even one just typed", async () => {
+    await open();
+    await userEvent.type(screen.getByLabelText("Secret value"), "hunter2");
+    await userEvent.click(screen.getByRole("button", { name: "Export…" }));
+    expect(written?.path).toBe("/tmp/EnvironmentVariables.json");
+    expect(written?.text).not.toContain("hunter2");
+    expect(JSON.parse(written!.text)).toEqual({
+      Variables: [
+        { Key: "ad_username", Value: "tim", Secret: false },
+        { Key: "admin_password", Secret: true },
+      ],
+    });
+  });
+
+  it("imports values over the ones here, adds new ones, and keeps a secret stored here", async () => {
+    importing = JSON.stringify({
+      Variables: [
+        { Key: "AD_Username", Value: "pat", Secret: false },
+        { Key: "domain", Value: "lab.local", Secret: false },
+        { Key: "admin_password", Secret: true },
+        { Key: "enable_secret", Secret: true, ProtectedValue: "AQAAANCMnd8B" },
+      ],
+    });
+    await open();
+    await userEvent.click(screen.getByRole("button", { name: "Import…" }));
+    expect(keys().map((k) => k.value)).toEqual(["ad_username", "admin_password", "domain", "enable_secret"]);
+    expect(screen.getByDisplayValue("pat")).toBeTruthy();
+    expect(screen.getByDisplayValue("lab.local")).toBeTruthy();
+    expect(screen.getByText("Imported 4 variables. Type the value of enable_secret, then OK to save.")).toBeTruthy();
+    await userEvent.click(ok());
+    expect(saved).toEqual([
+      { key: "ad_username", value: "pat", secret: false, hasValue: false, fromWindows: false },
+      // stored here already: an empty value keeps it
+      { key: "admin_password", value: "", secret: true, hasValue: true, fromWindows: false },
+      { key: "domain", value: "lab.local", secret: false, hasValue: false, fromWindows: false },
+      { key: "enable_secret", value: "", secret: true, hasValue: false, fromWindows: false },
+    ]);
+  });
+
+  it("says when a file isn't one of Environment Variables, and changes nothing", async () => {
+    importing = "<Sessions/>";
+    await open();
+    await userEvent.click(screen.getByRole("button", { name: "Import…" }));
+    expect(screen.getByText(/isn't an Environment Variables file/)).toBeTruthy();
+    expect(keys().map((k) => k.value)).toEqual(["ad_username", "admin_password"]);
   });
 });

@@ -5,7 +5,9 @@
   Windows can't be read on a Mac (it was encrypted for that PC), so it asks to be typed again.
 
   Beside the user's own: where each is used, the placeholders used that have no value yet, the ones SuperXTerminal
-  fills itself (which no variable can be named), and a preview of a template filled in, secrets as dots.
+  fills itself (which no variable can be named), and a preview of a template filled in, secrets as dots. Export…
+  and Import… pass a set on as SuperXPuTTY's EnvironmentVariables.json, secrets by name only (variablesFile.ts);
+  an import fills the window, and OK saves it.
   It opens in front of Edit Session, whose Environment Variables… button opens it for a placeholder with no value.
 -->
 <script lang="ts" module>
@@ -25,15 +27,8 @@
   import { SECRET_STORE } from "../platform";
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-
-  /** One row of the list, as EnvironmentVariables.json holds it */
-  interface Variable {
-    key: string;
-    value: string;
-    secret: boolean;
-    hasValue: boolean;
-    fromWindows: boolean;
-  }
+  import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
+  import { exportVariables, importVariables, type Variable } from "./variablesFile";
 
   interface Props {
     /** OK, Cancel or Escape: the window closes */
@@ -120,6 +115,34 @@
     }
   }
 
+  /** Export…: the variables in the window to a file to pass on, secrets by name only */
+  async function exportFile(): Promise<void> {
+    const path = await saveDialog({ defaultPath: "EnvironmentVariables.json", filters: [{ name: "Environment Variables", extensions: ["json"] }] });
+    if (!path) return;
+    try {
+      await invoke("text_file_write", { path, text: exportVariables(rows) });
+      const secrets = rows.filter((r) => r.key.trim() && r.secret).length;
+      message = `Exported ${rows.filter((r) => r.key.trim()).length} variables${secrets ? `, ${secrets} secret${secrets === 1 ? "" : "s"} by name only` : ""}.`;
+    } catch (e) {
+      message = `Couldn't export: ${e}`;
+    }
+  }
+
+  /** Import…: a file's variables into the window, for OK to save; nothing here is removed */
+  async function importFile(): Promise<void> {
+    const path = await open({ filters: [{ name: "Environment Variables", extensions: ["json"] }] });
+    if (typeof path !== "string") return;
+    try {
+      const imported = importVariables(await invoke<string>("text_file_read", { path }), rows);
+      rows = imported.rows;
+      const { toType } = imported;
+      message = `Imported ${imported.count} variables. `
+        + (toType.length ? `Type the value${toType.length === 1 ? "" : "s"} of ${toType.join(", ")}, then OK to save.` : "OK saves them.");
+    } catch (e) {
+      message = e instanceof Error ? e.message : `Couldn't import: ${e}`;
+    }
+  }
+
   /** What an empty secret field says */
   function secretHint(row: Variable): string {
     if (row.hasValue) return `Stored in ${SECRET_STORE} (type to replace)`;
@@ -197,6 +220,8 @@
 
     <footer>
       <button onclick={() => add()}>Add</button>
+      <button onclick={importFile} title="Add or update variables from a file; nothing here is removed">Import…</button>
+      <button onclick={exportFile} title="Save these to a file to pass on; secrets go by name only, without their values">Export…</button>
       <span class="message">{message || (blocked ? "Fix the names marked in red to save." : "")}</span>
       <button class="primary" onclick={save} disabled={blocked}>OK</button>
       <button onclick={onClose}>Cancel</button>

@@ -399,5 +399,7 @@ ends one); CHECK and REQUIRE; SENDBREAK; OPENSESSION.
 
 - [rhai-examples/cisco-tour.rhai](rhai-examples/cisco-tour.rhai): a Cisco switch, read only: enable, `show version`,
   config mode in and out, `show ip interface brief` counted.
+- [rhai-examples/cisco-save.rhai](rhai-examples/cisco-save.rhai): `copy running-config startup-config`, answering
+  "Destination filename [startup-config]?" or "[confirm]" with Enter if the switch asks, and going on if it doesn't.
 - [rhai-examples/linux-values.rhai](rhai-examples/linux-values.rhai): what a script sees of `session` and `env`, each
   echoed on a Linux host and read back.

@@ -1,5 +1,6 @@
 // The terminal page (public/web/terminal) on its own, as a tab's iframe shows it, fed through its terminalDev hooks:
-// Wrap Lines off and the view following the cursor, panning, full-screen programs, and selecting while panned.
+// Wrap Lines off and the view following the cursor, panning, full-screen programs, and selecting while panned; and
+// highlighting and Find drawn on the cells their text is in (after wide characters, and across a wrapped line).
 import { expect, test, type Page } from "@playwright/test";
 
 /** Open the page with these preferences (a PuTTY theme, so the font and fit apply as in the app) */
@@ -523,5 +524,73 @@ test.describe("Find", () => {
     await page.mouse.move(box.x + cell * 9 - 1, y, { steps: 5 });
     await page.mouse.up();
     await expect.poll(() => copies(page)).toEqual(["interface"]);
+  });
+});
+
+test.describe("Highlighting and Find on the text they match", () => {
+  /** Open the page highlighting ERROR (red) and IPv4 addresses (green), with these preferences */
+  async function openHighlighting(page: Page, prefs: Record<string, string> = {}) {
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    await page.evaluate((prefs) => (window as any).terminalDev.message({
+      type: "config",
+      prefs: { ruleSet: "log", ...prefs },
+      ruleSets: [{ id: "log", name: "Log", rules: [{ match: "ERROR", style: "error" }, { match: "\\d+\\.\\d+\\.\\d+\\.\\d+", style: "ip" }] }],
+      themes: [{ name: "PuTTY", colors: {}, styles: { error: { background: "#ff0000" }, ip: { color: "#00ff00" } } }],
+    }), prefs);
+    await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+  }
+  type Place = { row: number; x: number; width: number };
+  /** Where the highlights are drawn, row by row, left to right */
+  const highlights = (page: Page) => page.evaluate(() => ((window as any).terminalDev.highlights() as Place[]).sort((a, b) => a.row - b.row || a.x - b.x));
+  const findMarks = (page: Page) => page.evaluate(() => ((window as any).terminalDev.findMarks() as Place[]).sort((a, b) => a.row - b.row || a.x - b.x));
+
+  test("highlights fall on their text after characters two columns wide, emoji and accents", async ({ page }) => {
+    await openHighlighting(page);
+    // where xterm.js draws ERROR on each: 中 and 文 take two columns each; the emoji one (xterm.js's Unicode 6 widths,
+    // its picture drawn over the next cell too), though it's two characters of text; é built from e and an accent one
+    await feed(page, [
+      "café ERROR here",
+      "box ─── ERROR here",
+      "cjk 中文 ERROR here",
+      "emoji \u{1F600} ERROR here",
+      "combining é ERROR here",
+    ].join("\r\n") + "\r\n");
+    await expect.poll(() => highlights(page)).toEqual([
+      { row: 0, x: 5, width: 5 },
+      { row: 1, x: 8, width: 5 },
+      { row: 2, x: 9, width: 5 },
+      { row: 3, x: 8, width: 5 },
+      { row: 4, x: 12, width: 5 },
+    ]);
+  });
+
+  test("highlights a match a long line wraps across on both rows, from its first character (a log's address)", async ({ page }) => {
+    await openHighlighting(page);
+    const cols = await page.evaluate(() => (window as any).terminalDev.term.cols as number);
+    // the address starts 2 columns before the right edge: "19" on the first row, "2.168.0.10" on the next
+    await feed(page, "x".repeat(cols - 2) + "192.168.0.10 up\r\n");
+    await expect.poll(() => highlights(page)).toEqual([
+      { row: 0, x: cols - 2, width: 2 },
+      { row: 1, x: 0, width: 10 },
+    ]);
+  });
+
+  test("Find marks and selects a match where it's drawn: after wide characters, and across a wrap", async ({ page }) => {
+    await openHighlighting(page);
+    const cols = await page.evaluate(() => (window as any).terminalDev.term.cols as number);
+    await feed(page, "中文 uplink\r\n" + "x".repeat(cols - 3) + "uplink\r\n");
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "action", name: "find" }));
+    await page.locator("#findText").fill("uplink");
+    await expect.poll(() => findMarks(page)).toEqual([
+      { row: 0, x: 5, width: 6 },
+      { row: 1, x: cols - 3, width: 3 },
+      { row: 2, x: 0, width: 3 },
+    ]);
+    // the current match (the last) is selected from its first character to its last, across the wrap
+    const selected = await page.evaluate(() => (window as any).terminalDev.term.getSelectionPosition());
+    expect(selected).toEqual({ start: { x: cols - 3, y: 1 }, end: { x: 3, y: 2 } });
+    await page.keyboard.press("Enter");
+    expect(await page.evaluate(() => (window as any).terminalDev.term.getSelection())).toBe("uplink");
   });
 });

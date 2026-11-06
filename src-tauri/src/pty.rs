@@ -103,6 +103,7 @@ impl Outlet {
             let _ = state.channel.send(started);
         }
         let recent: Vec<u8> = state.recent.iter().copied().collect();
+        let recent = without_queries(&recent);
         for chunk in recent.chunks(64 * 1024) {
             let _ = state.channel.send(PtyEvent::Data { data: base64::engine::general_purpose::STANDARD.encode(chunk) });
         }
@@ -110,6 +111,84 @@ impl Outlet {
             let _ = state.channel.send(PtyEvent::Exit { code });
         }
     }
+}
+
+/// Output to replay in a moved tab, without the questions a program asked the terminal: where the cursor is (ESC[6n,
+/// which ConPTY asks as every session starts on Windows), its status (ESC[5n), what it is (ESC[c, ESC[>c, ESC[>q), a
+/// mode's setting (ESC[?...$p), the window's size (ESC[14t...), a colour or the clipboard (OSC 4, 10-19, 52 ending "?") or a setting
+/// (DCS $q). They were answered when first asked; the new tab's terminal would answer them again, into the session,
+/// where a Cisco switch showed ";1R" at its prompt. Everything drawn stays, and a sequence cut short at either end is
+/// left as it is.
+fn without_queries(bytes: &[u8]) -> Vec<u8> {
+    const ESC: u8 = 0x1b;
+    let mut kept = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let end = match (bytes[at], bytes.get(at + 1)) {
+            (ESC, Some(b'[')) => csi_query(bytes, at + 2),
+            // a colour (4, 10-19) or the clipboard (52) asked for; not a title that ends in a question mark
+            (ESC, Some(b']')) => string_query(bytes, at + 2, |body| {
+                let number = body.split(|&b| b == b';').next().and_then(|n| std::str::from_utf8(n).ok()?.parse::<u32>().ok());
+                matches!(number, Some(4 | 10..=19 | 52)) && body.ends_with(b"?")
+            }),
+            (ESC, Some(b'P')) => string_query(bytes, at + 2, |body| body.starts_with(b"$q")),
+            _ => None,
+        };
+        match end {
+            Some(end) => at = end,
+            None => {
+                kept.push(bytes[at]);
+                at += 1;
+            }
+        }
+    }
+    kept
+}
+
+/// The end of a control sequence starting at `from` (after ESC[) when it asks the terminal something; None when it
+/// doesn't or is cut short
+fn csi_query(bytes: &[u8], from: usize) -> Option<usize> {
+    // parameters (0-9 ; < = > ?), intermediates (space to /), then the final byte
+    let mut at = from;
+    while at < bytes.len() && (0x30..=0x3f).contains(&bytes[at]) {
+        at += 1;
+    }
+    let params = &bytes[from..at];
+    let mid = at;
+    while at < bytes.len() && (0x20..=0x2f).contains(&bytes[at]) {
+        at += 1;
+    }
+    let intermediates = &bytes[mid..at];
+    let last = *bytes.get(at)?;
+    let first: Option<u32> = std::str::from_utf8(params).ok()?.split(';').next()?.parse().ok();
+    let asks = match last {
+        // device status: ESC[5n, ESC[6n, ESC[?6n
+        b'n' => true,
+        // device attributes: ESC[c, ESC[0c, ESC[>c, ESC[=c
+        b'c' => intermediates.is_empty(),
+        // a mode's setting: ESC[...$p
+        b'p' => intermediates == b"$",
+        // the terminal's name and version: ESC[>q
+        b'q' => params.starts_with(b">"),
+        // the window's state, place and size, and the title (11, 13-21); not 22 and 23, which keep and restore the title
+        b't' => matches!(first, Some(11 | 13..=21)),
+        _ => false,
+    };
+    asks.then_some(at + 1)
+}
+
+/// The end of an OSC or DCS string starting at `from` (after ESC] or ESCP), ended by BEL or ESC\, when `asks` its
+/// body; None when it doesn't or is cut short
+fn string_query(bytes: &[u8], from: usize, asks: impl Fn(&[u8]) -> bool) -> Option<usize> {
+    let mut at = from;
+    while at < bytes.len() {
+        match bytes[at] {
+            0x07 => return asks(&bytes[from..at]).then_some(at + 1),
+            0x1b if bytes.get(at + 1) == Some(&b'\\') => return asks(&bytes[from..at]).then_some(at + 2),
+            _ => at += 1,
+        }
+    }
+    None
 }
 
 /// One open pseudo terminal: the master side (for resizing), its writer (for typing) and the program in it
@@ -661,5 +740,42 @@ mod tests {
     fn ignores_other_output() {
         let mut prompt = PasswordPrompt::new("pw".into());
         assert_eq!(prompt.answer(b"Are you sure you want to continue connecting (yes/no/[fingerprint])? "), None);
+    }
+
+    #[test]
+    fn a_tab_moved_to_another_window_is_shown_what_was_drawn_but_not_asked_the_old_questions() {
+        // On Windows ConPTY opens every session asking where the cursor is (ESC[6n). Replayed in the new window's tab,
+        // its terminal answered it again, into the session: a Cisco switch showed ";1R" at its prompt
+        use super::Outlet;
+        use base64::Engine;
+        use tauri::ipc::{Channel, InvokeResponseBody};
+        let outlet = Outlet::new(Channel::new(|_| Ok(())));
+        // ConPTY's start, a password prompt, and a program asking the terminal what it is and its colours
+        outlet.data(b"\x1b[?9001h\x1b[?1004h\x1b[6n\x1b[H\x1b[2J(admin@192.168.0.50) Password: \r\n");
+        outlet.data(b"\x1b[c\x1b[>0c\x1b[5n\x1b]11;?\x07\x1b[?2004$p\x1b]0;Ready?\x07\x1b[32mlab_cisco_switch#\x1b[0m");
+        let shown = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let into = Arc::clone(&shown);
+        outlet.attach(Channel::new(move |body| {
+            if let InvokeResponseBody::Json(json) = body
+                && let Ok(PtyEventSeen::Data { data }) = serde_json::from_str::<PtyEventSeen>(&json)
+            {
+                into.lock().unwrap().extend(base64::engine::general_purpose::STANDARD.decode(data).unwrap());
+            }
+            Ok(())
+        }));
+        let shown = String::from_utf8(shown.lock().unwrap().clone()).unwrap();
+        assert_eq!(
+            shown,
+            "\x1b[?9001h\x1b[?1004h\x1b[H\x1b[2J(admin@192.168.0.50) Password: \r\n\x1b]0;Ready?\x07\x1b[32mlab_cisco_switch#\x1b[0m",
+            "the new tab draws what the session showed, with nothing left for its terminal to answer"
+        );
+        // what the page receives, as PtyEvent sends it
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "type", rename_all = "camelCase")]
+        enum PtyEventSeen {
+            Data { data: String },
+            #[serde(other)]
+            Other,
+        }
     }
 }

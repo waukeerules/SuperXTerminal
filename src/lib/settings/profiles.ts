@@ -80,6 +80,11 @@ export interface Profile {
   /** Its sessions' logs kept (true) or temporary (false); null: Default Settings', else Settings > General's */
   sessionLog: boolean | null;
   /**
+   * The device's character set (src-tauri/src/charset.rs): "latin1", "latin9", "windows1252" or "cp437"; "" for
+   * Default Settings', else UTF-8
+   */
+  charset: string;
+  /**
    * Which colours its tabs have: "" or "default" (Default Settings'), "theme" (Settings > Terminal's theme), "dark", "light" or
    * "custom" (the colours below); a profile with colours and no choice is custom
    */
@@ -118,7 +123,7 @@ export interface Profile {
 export function emptyProfile(name: string): Profile {
   return {
     name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", forwards: [], agentForwarding: null, x11Forwarding: null, compression: null, olderAlgorithms: null, serverLoad: null, algorithms: "",
-    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", fontFamily: "", fontSize: 0, keyBackspace: "", keyHomeEnd: "", keyFunction: "", scrollback: 0, sessionLog: null, colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
+    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", fontFamily: "", fontSize: 0, keyBackspace: "", keyHomeEnd: "", keyFunction: "", scrollback: 0, sessionLog: null, charset: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
   };
 }
 

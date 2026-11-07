@@ -311,6 +311,21 @@ describe("Settings > Profiles", () => {
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", scrollback: 100000, sessionLog: true });
   });
 
+  it("saves a device's character set, UTF-8 on Default Settings being no choice of its own", async () => {
+    await open("root");
+    const charset = () => screen.getByRole("combobox", { name: /^Character set/ }) as HTMLSelectElement;
+    expect(charset().value).toBe("");
+    await userEvent.selectOptions(charset(), "cp437");
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", charset: "cp437" });
+    await userEvent.click(screen.getByRole("option", { name: DEFAULT_PROFILE }));
+    expect(charset().value).toBe("utf8");
+    await userEvent.selectOptions(charset(), "latin1");
+    await userEvent.selectOptions(charset(), "utf8");
+    // back to what it was: nothing to save
+    expect(dots()).toHaveLength(0);
+  });
+
   it("saves the keys a device reads another way, and offers From Default Settings except on Default Settings", async () => {
     await open("root");
     const backspace = () => screen.getByRole("combobox", { name: /^Backspace sends/ }) as HTMLSelectElement;

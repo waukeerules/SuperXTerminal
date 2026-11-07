@@ -110,6 +110,9 @@ pub struct Profile {
     /// Its sessions' logs are kept (Settings > General > Session logs' folder) or not; None: Default Settings', else
     /// Settings > General's Keep a log of every session
     pub session_log: Option<bool>,
+    /// The device's character set, as PuTTY's Remote character set (charset.rs): "latin1", "latin9", "windows1252" or
+    /// "cp437"; "" for Default Settings', else UTF-8
+    pub charset: String,
     /// Which colours its tabs have: "" or "default" (Default Settings'), "theme" (Settings > Terminal's theme), "dark" or "light"
     /// (the Dark or Light theme), or "custom" (the colours below). A profile with colours and no choice is custom.
     pub colours: String,

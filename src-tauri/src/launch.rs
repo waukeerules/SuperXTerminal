@@ -56,6 +56,9 @@ pub struct Look {
     pub scrollback: u32,
     /// Whether the tab's log is kept: the profile's, else Default Settings'; None for Settings > General's
     pub keep_log: Option<bool>,
+    /// The device's character set (charset.rs): the profile's, else Default Settings'; "" for UTF-8. Used by the
+    /// core (pty.rs), not the page
+    pub charset: String,
     /// The profile's anti-idle string as written (KiTTY's escapes), else Default Settings'; "" for none
     pub anti_idle: String,
     /// Seconds without typing before it's sent: the profile's, else Default Settings', else KiTTY's 180; 0 with no string
@@ -510,6 +513,7 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         },
         scrollback: if profile.scrollback != 0 { profile.scrollback } else { default.scrollback },
         keep_log: profile.session_log.or(default.session_log),
+        charset: first(profile.charset.trim(), default.charset.trim()).to_string(),
         anti_idle: anti_idle.to_string(),
         anti_idle_seconds: if anti_idle.is_empty() {
             0

@@ -5,6 +5,7 @@ mod applog;
 mod askpass;
 mod buttonbars;
 mod cli;
+mod charset;
 mod clipboard;
 mod command_history;
 mod command_tap;

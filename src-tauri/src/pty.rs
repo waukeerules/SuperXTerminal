@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::State;
 
+use crate::charset::Charset;
 use crate::launch::{self, Launch, Look};
 use crate::sessions::Store;
 use crate::AppState;
@@ -60,18 +61,20 @@ const KEPT_OUTPUT: usize = 2 * 1024 * 1024;
 #[derive(Clone)]
 struct Outlet(Arc<Mutex<OutletState>>);
 
-/// What an [`Outlet`] keeps: the tab's channel, the "started" event, the recent output and the end, if it's come
+/// What an [`Outlet`] keeps: the tab's channel, the "started" event, the recent output and the end, if it's come, and
+/// the device's character set its output is turned to UTF-8 from
 struct OutletState {
     channel: Channel<PtyEvent>,
     started: Option<PtyEvent>,
     recent: VecDeque<u8>,
     exit: Option<Option<u32>>,
+    charset: Charset,
 }
 
 impl Outlet {
-    /// An outlet sending to a tab's channel, with nothing passed on yet
-    fn new(channel: Channel<PtyEvent>) -> Outlet {
-        Outlet(Arc::new(Mutex::new(OutletState { channel, started: None, recent: VecDeque::new(), exit: None })))
+    /// An outlet sending to a tab's channel, with nothing passed on yet; the output is in `charset`
+    fn new(channel: Channel<PtyEvent>, charset: Charset) -> Outlet {
+        Outlet(Arc::new(Mutex::new(OutletState { channel, started: None, recent: VecDeque::new(), exit: None, charset })))
     }
 
     /// Pass an event on to the tab (a tab that's gone, or moving, misses it; the output is kept all the same)
@@ -85,9 +88,11 @@ impl Outlet {
         let _ = state.channel.send(event);
     }
 
-    /// Pass output on, keeping the last [`KEPT_OUTPUT`] bytes of it
+    /// Pass output on as UTF-8, keeping the last [`KEPT_OUTPUT`] bytes of it (already turned, for a moved tab's replay)
     fn data(&self, bytes: &[u8]) {
         let mut state = self.0.lock().unwrap();
+        let turned = state.charset.decode(bytes);
+        let bytes = turned.as_slice();
         state.recent.extend(bytes);
         let over = state.recent.len().saturating_sub(KEPT_OUTPUT);
         state.recent.drain(..over);
@@ -194,6 +199,8 @@ fn string_query(bytes: &[u8], from: usize, asks: impl Fn(&[u8]) -> bool) -> Opti
 /// One open pseudo terminal: the master side (for resizing), its writer (for typing) and the program in it
 struct Session {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    /// The device's character set, what's typed is turned into
+    charset: Charset,
     kind: SessionKind,
     /// The window whose tab it is; closing that window ends it
     window: String,
@@ -305,13 +312,20 @@ pub fn pty_open(
         Some(crate::streams::Target::Serial { .. }) => "serial",
         None => "pty",
     };
-    let outlet = Outlet::new(on_event);
+    // the profile's Remote character set: not for a local shell (this computer's own, UTF-8), nor for SSH on Windows,
+    // whose pseudo console has already turned the device's bytes into UTF-8 (charset.rs)
+    let chosen = Charset::named(&look.charset);
+    let charset = if local || (cfg!(windows) && stream.is_none()) { Charset::Utf8 } else { chosen };
+    if chosen != charset && !local {
+        notices.push(format!("The profile's character set ({}) isn't used for SSH on Windows: Windows' console turns the device's characters into UTF-8 first.", chosen.label()));
+    }
+    let outlet = Outlet::new(on_event, charset);
     outlet.send(PtyEvent::Started { local, look, link: link.into() });
     for text in notices {
         outlet.send(PtyEvent::Notice { text, kind: "info".into() });
     }
     if let Some(target) = stream {
-        return open_stream(&ptys, &target, cols, rows, outlet, window.label());
+        return open_stream(&ptys, &target, cols, rows, outlet, charset, window.label());
     }
 
     let pair = native_pty_system()
@@ -384,7 +398,7 @@ pub fn pty_open(
         })
         .map_err(|e| e.to_string())?;
 
-    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Pty { master: pair.master, child }, window: window.label().to_string(), outlet, server_load });
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, charset, kind: SessionKind::Pty { master: pair.master, child }, window: window.label().to_string(), outlet, server_load });
     Ok(id)
 }
 
@@ -420,7 +434,7 @@ fn watch_exit(child: Arc<Mutex<Box<dyn Child + Send + Sync>>>, finished: Arc<Ato
 
 /// Start a Telnet, Raw or Serial stream and pass its output on, as a pseudo terminal's. The other end closing is a
 /// clean end (the tab closes, as plink's would); a broken connection isn't (the tab stays and can reconnect).
-fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u16, outlet: Outlet, window: &str) -> Result<u32, String> {
+fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u16, outlet: Outlet, charset: Charset, window: &str) -> Result<u32, String> {
     let (stream, mut reader) = crate::streams::open(target, cols, rows)?;
     let id = ptys.next.fetch_add(1, Ordering::Relaxed) + 1;
     let output = outlet.clone();
@@ -442,7 +456,7 @@ fn open_stream(ptys: &Ptys, target: &crate::streams::Target, cols: u16, rows: u1
         })
         .map_err(|e| e.to_string())?;
     let writer = stream.writer.clone();
-    ptys.sessions.lock().unwrap().insert(id, Session { writer, kind: SessionKind::Stream(stream), window: window.to_string(), outlet, server_load: None });
+    ptys.sessions.lock().unwrap().insert(id, Session { writer, charset, kind: SessionKind::Stream(stream), window: window.to_string(), outlet, server_load: None });
     Ok(id)
 }
 
@@ -550,7 +564,7 @@ pub fn pty_write(ptys: State<'_, Ptys>, id: u32, data: String) -> Result<(), Str
     let mut sessions = ptys.sessions.lock().unwrap();
     let session = sessions.get_mut(&id).ok_or("no such terminal")?;
     let mut writer = session.writer.lock().unwrap();
-    writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+    writer.write_all(&session.charset.encode(&data)).map_err(|e| e.to_string())?;
     writer.flush().map_err(|e| e.to_string())
 }
 
@@ -749,7 +763,7 @@ mod tests {
         use super::Outlet;
         use base64::Engine;
         use tauri::ipc::{Channel, InvokeResponseBody};
-        let outlet = Outlet::new(Channel::new(|_| Ok(())));
+        let outlet = Outlet::new(Channel::new(|_| Ok(())), crate::charset::Charset::Utf8);
         // ConPTY's start, a password prompt, and a program asking the terminal what it is and its colours
         outlet.data(b"\x1b[?9001h\x1b[?1004h\x1b[6n\x1b[H\x1b[2J(admin@192.168.0.50) Password: \r\n");
         outlet.data(b"\x1b[c\x1b[>0c\x1b[5n\x1b]11;?\x07\x1b[?2004$p\x1b]0;Ready?\x07\x1b[32mlab_cisco_switch#\x1b[0m");
@@ -777,5 +791,31 @@ mod tests {
             #[serde(other)]
             Other,
         }
+    }
+
+    #[test]
+    fn a_latin1_devices_output_reaches_the_tab_as_utf8_and_so_does_a_moved_tabs_replay() {
+        use super::Outlet;
+        use base64::Engine;
+        use tauri::ipc::{Channel, InvokeResponseBody};
+        /// The text a channel is sent as output
+        fn watched(into: Arc<Mutex<Vec<u8>>>) -> Channel<super::PtyEvent> {
+            Channel::new(move |body| {
+                if let InvokeResponseBody::Json(json) = body
+                    && let Ok(value) = serde_json::from_str::<serde_json::Value>(&json)
+                    && value["type"] == "data"
+                {
+                    into.lock().unwrap().extend(base64::engine::general_purpose::STANDARD.decode(value["data"].as_str().unwrap()).unwrap());
+                }
+                Ok(())
+            })
+        }
+        let first = Arc::new(Mutex::new(Vec::new()));
+        let outlet = Outlet::new(watched(first.clone()), crate::charset::Charset::Latin1);
+        outlet.data(b"Interface d\xe9sactiv\xe9e\r\n");
+        assert_eq!(String::from_utf8(first.lock().unwrap().clone()).unwrap(), "Interface désactivée\r\n");
+        let moved = Arc::new(Mutex::new(Vec::new()));
+        outlet.attach(watched(moved.clone()));
+        assert_eq!(String::from_utf8(moved.lock().unwrap().clone()).unwrap(), "Interface désactivée\r\n");
     }
 }

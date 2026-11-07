@@ -140,7 +140,7 @@
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions",
     "agentForwarding", "x11Forwarding", "compression", "forwards", "cursor", "cursorBlink", "bell",
-    "fontFamily", "fontSize", "keyBackspace", "keyHomeEnd", "keyFunction", "scrollback", "sessionLog", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
+    "fontFamily", "fontSize", "keyBackspace", "keyHomeEnd", "keyFunction", "scrollback", "sessionLog", "charset", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
   ];
 
   /** The button bars' names (ButtonBars.xml in the settings folder), for the Button bar box */
@@ -622,6 +622,19 @@
       <p class="note under">More scrollback for a core router's long show commands than a lab box's; a log kept for every
         session to production devices. Kept logs go to Settings > General > Session logs' folder; otherwise a tab's log
         is deleted when it closes.</p>
+      <label>{@render caption("Character set", "charset")}
+        <select value={isDefault ? draft.charset || "utf8" : draft.charset} onchange={(e) => (draft.charset = e.currentTarget.value === "utf8" && isDefault ? "" : e.currentTarget.value)}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          <option value="utf8">UTF-8</option>
+          <option value="latin1">ISO-8859-1 (Latin-1)</option>
+          <option value="latin9">ISO-8859-15 (Latin-9, with €)</option>
+          <option value="windows1252">Windows-1252</option>
+          <option value="cp437">CP437 (DOS, line drawing)</option>
+        </select></label>
+      <p class="note under">As PuTTY's Remote character set, for a device that doesn't send UTF-8: its accents, or its
+        boxes and lines, show as � or stray letters until this matches it. What's typed is sent in it too.
+        {#if !isMac}Telnet, Raw and Serial sessions only on Windows: for SSH, Windows' console turns the device's
+        characters into UTF-8 before SuperXTerminal sees them.{/if}</p>
       <label>{@render caption("Colours", "colours")}
         <select value={shownChoice(draft)} onchange={(e) => (draft.colours = e.currentTarget.value)}>
           {#if !isDefault}<option value="default">From Default Settings ({SHORT[coloursChoice(defaultProfile, undefined)]})</option>{/if}

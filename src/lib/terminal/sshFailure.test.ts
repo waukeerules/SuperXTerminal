@@ -33,7 +33,7 @@ describe("sshFailure", () => {
   });
 
   it("reads a jump server that won't forward, and doesn't reconnect by itself", () => {
-    // OpenSSH's words for ssh -J through a server with AllowTcpForwarding no (OpenMediaVault's default)
+    // OpenSSH's words for ssh -J through a server with AllowTcpForwarding no
     const failure = sshFailure("channel 0: open failed: administratively prohibited: open failed\r\nstdio forwarding failed\r\nConnection closed by UNKNOWN port 65535\r\n");
     expect(failure).toEqual({ kind: "jumpForwarding" });
     expect(retries(failure)).toBe(false);

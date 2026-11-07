@@ -153,12 +153,12 @@ export function deleteSession(store: Store, id: string): Promise<void> {
 
 /**
  * What a jump server needs for the Jump host field (ssh -J), shown under it in Edit Session and Settings > Profiles.
- * Forwarding is what usually stops it, and OpenMediaVault, for one, has it off; a tab that hits it says so too
- * (PageHost's advice for "jumpForwarding")
+ * Forwarding is what usually stops it, as some servers have it off; a tab that hits it says so too (PageHost's advice
+ * for "jumpForwarding"). Generic: sshd's own setting, or the server's SSH settings for one that manages sshd itself
  */
 export const JUMP_HOST_NEEDS =
-  "The jump server must allow TCP forwarding (AllowTcpForwarding in its sshd_config; on OpenMediaVault, Services > SSH > " +
-  "TCP forwarding) and reach the host itself. Where it can't, log in through it with a profile that has Log in here.";
+  "The jump server must allow TCP forwarding (AllowTcpForwarding in its sshd_config, or its SSH settings) and reach " +
+  "the host itself. Where it can't, log in through it with a profile that has Log in here.";
 
 /** SuperXPuTTY's protocols, as Edit Session's Connection type lists them */
 export const PROTOCOLS = ["SSH", "Telnet", "Rlogin", "Raw", "Serial", "VNC", "RDP", "Mintty", "Cygterm", "WSL", "WINCMD", "PS"];

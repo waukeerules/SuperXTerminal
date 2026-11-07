@@ -679,7 +679,7 @@ export class PageHost implements ScriptTarget {
       case "unreachable":
         return "No route to the device: check the network or VPN.";
       case "jumpForwarding":
-        return `The jump server won't pass the connection on: it doesn't allow TCP forwarding, which a Jump host needs. Turn on AllowTcpForwarding in its /etc/ssh/sshd_config (on OpenMediaVault: Services > SSH > TCP forwarding), or log in through it with a profile that has Log in here.`;
+        return `The jump server won't pass the connection on: it doesn't allow TCP forwarding, which a Jump host needs. Turn on AllowTcpForwarding in its /etc/ssh/sshd_config (or TCP forwarding in its SSH settings), or log in through it with a profile that has Log in here.`;
       case "jumpConnect":
         return `The jump server couldn't reach the device (${failure.reason}): check the host and port as the jump server sees them, and its network or firewall.`;
       default:

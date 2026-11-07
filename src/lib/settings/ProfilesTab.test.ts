@@ -176,6 +176,19 @@ describe("Settings > Profiles", () => {
     expect(listed().getByRole("option", { name: "lab" }).getAttribute("aria-selected")).toBe("true");
   });
 
+  it("offers New and Import on a right-click in the list's empty space, and a profile's own menu on a profile", async () => {
+    inFile = [{ ...emptyProfile("lab"), port: 2200 }];
+    await open("root");
+    await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("listbox", { name: "Profiles" }) });
+    const items = within(screen.getByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim());
+    expect(items).toEqual(["New", "Import…"]);
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Import…" }));
+    expect(await screen.findByText(/Imported "lab"\./)).toBeTruthy();
+    // a profile still gets its own menu, not the list's
+    await userEvent.pointer({ keys: "[MouseRight]", target: listed().getByRole("option", { name: "root" }) });
+    expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Duplicate" })).toBeTruthy();
+  });
+
   it("imports PuTTY's saved sessions from a reg export as profiles", async () => {
     pickedFile = "/tmp/putty.reg";
     puttyFile = [{ ...emptyProfile("Lab switches"), host: "10.0.0.5", username: "admin" }];

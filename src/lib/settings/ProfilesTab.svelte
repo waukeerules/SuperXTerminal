@@ -367,6 +367,25 @@
     };
   }
 
+  /**
+   * The menu for the list's empty space, below the profiles: New and Import. Without it Import is only found by
+   * right-clicking a profile, which nobody guesses when what they want is a profile they don't have yet. A right-click
+   * on a profile has already shown that profile's menu (and prevented the default), so it's left alone
+   */
+  function showListMenu(event: MouseEvent): void {
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    const busy = changes > 0 ? "Save or revert the changes first" : false;
+    menu = {
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: "New", disabled: busy, action: add },
+        { label: "Import…", disabled: busy, action: () => void importProfiles() },
+      ],
+    };
+  }
+
   /** Choose a private key file */
   async function chooseKey(): Promise<void> {
     const path = await open({ title: "Choose a private key (OpenSSH format)", defaultPath: "~/.ssh" });
@@ -444,7 +463,7 @@
 
 <div class="profiles">
   <div class="list">
-    <ul role="listbox" aria-label="Profiles">
+    <ul role="listbox" aria-label="Profiles" oncontextmenu={showListMenu}>
       {#each profiles as profile (profile.name)}
         <!-- another profile can't be opened over unsaved changes: Save or Revert first -->
         <li role="option" aria-selected={profile.name === selected} aria-disabled={changes > 0}

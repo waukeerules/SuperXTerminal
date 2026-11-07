@@ -15,7 +15,8 @@ import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
 import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
-import { DEFAULT_PROFILE, listProfiles, profileColours, profileFont, profileKeys, profileScrollback, PROFILES_CHANGED, saveProfile } from "../settings/profiles";
+import { DEFAULT_PROFILE, listProfiles, profileColours, profileFont, profileKeys, profileScrollback, PROFILES_CHANGED, resolvedProfile, saveProfile, type Forward } from "../settings/profiles";
+import { completeTunnels, sameTunnels, tunnelNotices } from "./tunnels";
 import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailure";
 import { antiIdleKeys } from "./antiIdle";
 import { running } from "../commands/sending.svelte";
@@ -64,6 +65,8 @@ interface Look {
   antiIdle?: string;
   /** Seconds without typing before it's typed; 0 with no string */
   antiIdleSeconds?: number;
+  /** The tunnels ssh was given (the profile's, launch.rs's forwarding); absent or none for anything but SSH */
+  tunnels?: Forward[];
 }
 
 /** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
@@ -330,6 +333,18 @@ export class PageHost implements ScriptTarget {
   tabColor: string | null = null;
 
   /**
+   * The tunnels the session's ssh opened (Settings > Profiles > Tunnels), as the core gave them when it started: the
+   * tab's tunnel icon and Tunnels… show them. None before it starts, and for anything but SSH
+   */
+  tunnels: Forward[] = [];
+
+  /**
+   * The profile's tunnels were changed after the session started: ssh can't add or drop one on a connection it has
+   * made, so they take effect when the session restarts, which the tab and Tunnels… say
+   */
+  tunnelsChanged = false;
+
+  /**
    * A profile was saved or removed: the tab takes its profile's colours, font, keys and scrollback again, its tab's
    * colour included (its log stays kept or temporary as it began)
    */
@@ -343,6 +358,14 @@ export class PageHost implements ScriptTarget {
       this.post({ type: "keys", keys: profileKeys(profiles, name) });
       this.post({ type: "profileScrollback", lines: profileScrollback(profiles, name) });
       this.tabColor = tab || null;
+      // an SSH session's tunnels, as its profile now gives them: different from what ssh opened, a restart uses them
+      if (this.link === "pty" && !this.local && !this.ended) {
+        const changed = !sameTunnels(completeTunnels(resolvedProfile(profiles, name)?.forwards ?? []), this.tunnels);
+        if (changed && !this.tunnelsChanged) {
+          this.post({ type: "notice", text: "The profile's tunnels changed: Restart session (in the tab's menu) to use them.", kind: "info" });
+        }
+        this.tunnelsChanged = changed;
+      }
       this.onState();
     }).catch(() => {});
   };
@@ -884,6 +907,10 @@ export class PageHost implements ScriptTarget {
         this.link = event.link;
         this.configured = this.sendConfig(event.look);
         this.lookArrived(event.look);
+        // what the tunnels make reachable, at the top, with their links: a tunnel is otherwise invisible
+        this.tunnels = event.look.tunnels ?? [];
+        this.tunnelsChanged = false;
+        for (const text of tunnelNotices(this.tunnels)) this.post({ type: "notice", text, kind: "info" });
       } else if (event.type === "notice") {
         this.post({ type: "notice", text: event.text, kind: event.kind });
       } else if (event.type === "exit") {

@@ -63,6 +63,9 @@ pub struct Look {
     pub anti_idle: String,
     /// Seconds without typing before it's sent: the profile's, else Default Settings', else KiTTY's 180; 0 with no string
     pub anti_idle_seconds: u32,
+    /// The tunnels ssh was given for this tab ([`forwarding`]), so the tab can say what each makes reachable, with a
+    /// link, and show its tunnel icon; none for anything but SSH
+    pub tunnels: Vec<profiles::Forward>,
 }
 
 /// The keys that differ between terminals, in the terminal page's names (its `keysFromProfile`), as PuTTY's Terminal >
@@ -524,6 +527,7 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         } else {
             [profile.anti_idle_seconds, default.anti_idle_seconds].into_iter().find(|s| *s != 0).unwrap_or(ANTI_IDLE_SECONDS)
         },
+        tunnels: Vec::new(),
     }
 }
 
@@ -537,8 +541,9 @@ fn shell_look(profile: &Profile, default: &Profile) -> Look {
 /// ssh's arguments for a profile's forwarding, as PuTTY's Tunnels, Auth and Connection panels: agent forwarding (-A),
 /// X11 (-X) and compression (-C), each the profile's choice else Default Settings'; and the profile's own tunnels
 /// (-L, -R, -D). A tunnel missing its port or where it goes, or with a space in either, is left out, with a notice
-/// in the tab, rather than giving ssh an argument it would stop on
-fn forwarding(profile: &Profile, default: &Profile, notices: &mut Vec<String>) -> Vec<String> {
+/// in the tab, rather than giving ssh an argument it would stop on. The tunnels given are added to `tunnels`, trimmed,
+/// for the tab's look
+fn forwarding(profile: &Profile, default: &Profile, notices: &mut Vec<String>, tunnels: &mut Vec<profiles::Forward>) -> Vec<String> {
     let mut args = Vec::new();
     let on = |own: Option<bool>, fallback: Option<bool>| own.or(fallback).unwrap_or(false);
     if on(profile.agent_forwarding, default.agent_forwarding) {
@@ -560,7 +565,10 @@ fn forwarding(profile: &Profile, default: &Profile, notices: &mut Vec<String>) -
             _ => None,
         };
         match arg {
-            Some((flag, value)) => args.extend([flag.to_string(), value]),
+            Some((flag, value)) => {
+                args.extend([flag.to_string(), value]);
+                tunnels.push(profiles::Forward { kind: forward.kind.clone(), listen: listen.to_string(), to: to.to_string() });
+            }
             None => notices.push(format!("A tunnel in the profile ({} {listen} {to}) is incomplete; left out.", forward.kind)),
         }
     }
@@ -885,7 +893,8 @@ fn ssh(
     if !jump_host.is_empty() {
         args.extend(["-J".into(), jump_address(sessions, values, store, session, &jump_host)?]);
     }
-    args.extend(forwarding(profile, default, &mut notices));
+    let mut tunnels = Vec::new();
+    args.extend(forwarding(profile, default, &mut notices, &mut tunnels));
     args.extend(split_words(first(&profile.ssh_options, &default.ssh_options)));
     args.extend(extra.args);
     if config_host.is_empty() {
@@ -914,7 +923,7 @@ fn ssh(
     };
     let mut command = CommandBuilder::new(openssh("ssh"));
     command.args(&args);
-    Ok(Launch { command, password, local: false, notices, look: Look { rules, ..look(profile, default) }, stream: None, login: Some(login), server_load })
+    Ok(Launch { command, password, local: false, notices, look: Look { rules, tunnels, ..look(profile, default) }, stream: None, login: Some(login), server_load })
 }
 
 /// A path with a leading "~/" turned into the home folder
@@ -1565,6 +1574,9 @@ mod tests {
         // Default Settings' tunnels for its own sessions
         let (args, _) = args_of(&Sessions::default(), &profiles, &session(&[]));
         assert!(args.join(" ").contains("-C -D 1080"), "{args:?}");
+        // the tab is told the tunnels ssh was given, for its links and icon: not the one left out
+        let launch = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &session(&[("PuttySession", "web")])).unwrap();
+        assert_eq!(launch.look.tunnels, vec![forward("local", "8080", "localhost:80"), forward("remote", "127.0.0.1:9000", "localhost:22")]);
     }
 
     #[test]

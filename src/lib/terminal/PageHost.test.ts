@@ -8,7 +8,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import { PageHost, hasText } from "./PageHost";
 import { catchShortcuts, loadShortcuts } from "../shortcuts";
-import { DEFAULT_PROFILE, emptyProfile, type Profile } from "../settings/profiles";
+import { DEFAULT_PROFILE, emptyProfile, PROFILES_CHANGED, type Profile } from "../settings/profiles";
 import { settings } from "../settings/store.svelte";
 import { running } from "../commands/sending.svelte";
 import type { ScriptRun } from "../scripting/spsl";
@@ -416,5 +416,41 @@ describe("a notice from outside the tab", () => {
     (channel!.onmessage as (e: unknown) => void)({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "root" }, link: "pty" });
     await told;
     expect(notices()).toEqual(["Switch's login script jump-host.spsl isn't on this PC, so the session opens without it."]);
+  });
+});
+
+describe("a session's tunnels", () => {
+  /** Open root's tab, its ssh having opened these tunnels */
+  async function startedWith(tunnels: { kind: string; listen: string; to: string }[]): Promise<void> {
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    (channel!.onmessage as (e: unknown) => void)({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "root", tunnels }, link: "pty" });
+  }
+
+  it("are listed at the top of the tab, with their links, and kept for its tunnel icon", async () => {
+    await startedWith([{ kind: "local", listen: "8080", to: "localhost:80" }]);
+    await expect.poll(() => notices()).toEqual([
+      "Tunnel (Local): http://localhost:8080 on this PC opens localhost:80, as the server sees it.",
+      "The tunnel icon on the tab, or Tunnels… in its menu, shows them with a way to test each.",
+    ]);
+    expect(host!.tunnels).toEqual([{ kind: "local", listen: "8080", to: "localhost:80" }]);
+  });
+
+  it("say so once when the profile's tunnels change, as a restart is needed to use them", async () => {
+    profiles = [emptyProfile(DEFAULT_PROFILE), { ...emptyProfile("root"), forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }] }];
+    await startedWith([{ kind: "local", listen: "8080", to: "localhost:80" }]);
+    // saved as it was: nothing to say
+    window.dispatchEvent(new Event(PROFILES_CHANGED));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(host!.tunnelsChanged).toBe(false);
+    profiles = [emptyProfile(DEFAULT_PROFILE), { ...emptyProfile("root"), forwards: [{ kind: "local", listen: "8443", to: "localhost:443" }] }];
+    window.dispatchEvent(new Event(PROFILES_CHANGED));
+    await expect.poll(() => host!.tunnelsChanged).toBe(true);
+    window.dispatchEvent(new Event(PROFILES_CHANGED));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(notices().filter((n) => n.startsWith("The profile's tunnels changed"))).toEqual(["The profile's tunnels changed: Restart session (in the tab's menu) to use them."]);
+    // the tab still has the ones ssh opened
+    expect(host!.tunnels).toEqual([{ kind: "local", listen: "8080", to: "localhost:80" }]);
   });
 });

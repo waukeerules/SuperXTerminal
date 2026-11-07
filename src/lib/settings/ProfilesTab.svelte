@@ -6,7 +6,7 @@
   colleague's or another computer's.
 -->
 <script lang="ts">
-  import { MONOSPACE_FONTS, SECRET_STORE, SSH_KEYS } from "../platform";
+  import { MONOSPACE_FONTS, SECRET_STORE, SSH_KEYS, THIS_COMPUTER } from "../platform";
   import { onMount } from "svelte";
   import { ask, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
@@ -14,7 +14,7 @@
   import { context } from "../commands/sending.svelte";
   import { keyFetchExamples } from "./keyFetchExamples";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
-  import { coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, MAX_FONT_POINTS, ownColoursChoice, saveProfile, type Profile } from "./profiles";
+  import { coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, MAX_FONT_POINTS, ownColoursChoice, saveProfile, type Forward, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
   import { drawnTheme, pref } from "../terminal/prefs";
   import { highlighting } from "../terminal/highlighting";
@@ -119,6 +119,8 @@
     if (isDefault && field === "cursorBlink") return value ?? true;
     if (isDefault && field === "cursor") return value || "block";
     if (isDefault && field === "bell") return value || "visual";
+    if (field === "forwards") return JSON.stringify(value ?? []);
+    if (isDefault && (field === "agentForwarding" || field === "x11Forwarding" || field === "compression")) return value ?? false;
     if (isDefault && field === "keyBackspace") return value || "del";
     if (isDefault && field === "keyHomeEnd") return value || "standard";
     if (isDefault && field === "keyFunction") return value || "tilde";
@@ -136,7 +138,8 @@
   const FIELDS: Field[] = [
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
-    "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
+    "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions",
+    "agentForwarding", "x11Forwarding", "compression", "forwards", "cursor", "cursorBlink", "bell",
     "fontFamily", "fontSize", "keyBackspace", "keyHomeEnd", "keyFunction", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
   ];
 
@@ -357,6 +360,18 @@
   const triToValue = (v: boolean | null) => (v === null ? "" : v ? "on" : "off");
   /** The select's value back as a three-way choice */
   const valueToTri = (v: string) => (v === "" ? null : v === "on");
+
+  /**
+   * Change one tunnel. The list is replaced, not changed in place: the saved profile shares it, and Revert and the
+   * changes count compare against that. A dynamic tunnel goes nowhere, so its destination is cleared
+   */
+  function setForward(index: number, change: Partial<Forward>): void {
+    draft.forwards = draft.forwards.map((f, i) => {
+      if (i !== index) return f;
+      const next = { ...f, ...change };
+      return next.kind === "dynamic" ? { ...next, to: "" } : next;
+    });
+  }
 </script>
 
 <div class="profiles">
@@ -507,7 +522,39 @@
           Choose…</button>
         <span class="note">{draft.algorithms ? "its own lists" : isDefault ? "ssh's own lists" : "from Default Settings"}</span></label>
       <label>{@render caption("SSH config host", "sshConfigHost")}<input bind:value={draft.sshConfigHost} placeholder="a Host in ~/.ssh/config" /></label>
-      <label>{@render caption("More ssh options", "sshOptions")}<input bind:value={draft.sshOptions} placeholder="e.g. -L 8080:localhost:80" /></label>
+      <label>{@render caption("More ssh options", "sshOptions")}<input bind:value={draft.sshOptions} placeholder="e.g. -o Compression=yes" /></label>
+      {#each [["agentForwarding", "Agent forwarding", "Forward ssh-agent (-A): a login from there onwards uses your keys"], ["x11Forwarding", "X11 forwarding", "Forward X11 (-X): needs an X server on " + THIS_COMPUTER], ["compression", "Compression", "Compress (-C): for a slow link"]] as [field, label, on] (field)}
+        {@const key = field as "agentForwarding" | "x11Forwarding" | "compression"}
+        <label>{@render caption(label, key)}
+          <select value={triToValue(isDefault ? (draft[key] ?? false) : draft[key])} onchange={(e) => (draft[key] = valueToTri(e.currentTarget.value))}>
+            {#if !isDefault}<option value="">From Default Settings</option>{/if}
+            <option value="on">{on}</option>
+            <option value="off">Off</option>
+          </select></label>
+      {/each}
+      <div class="tunnels">
+        <span class="caption">{@render caption("Tunnels", "forwards")}</span>
+        {#each draft.forwards as forward, i (i)}
+          <div class="tunnel">
+            <select aria-label="Tunnel {i + 1} kind" value={forward.kind} onchange={(e) => setForward(i, { kind: e.currentTarget.value as Forward["kind"] })}>
+              <option value="local">Local (-L)</option>
+              <option value="remote">Remote (-R)</option>
+              <option value="dynamic">Dynamic, SOCKS (-D)</option>
+            </select>
+            <input aria-label="Tunnel {i + 1} port" value={forward.listen} placeholder="port, or address:port"
+              oninput={(e) => setForward(i, { listen: e.currentTarget.value })} />
+            <input aria-label="Tunnel {i + 1} to" value={forward.to} disabled={forward.kind === "dynamic"}
+              placeholder={forward.kind === "dynamic" ? "anywhere asked" : "host:port"} oninput={(e) => setForward(i, { to: e.currentTarget.value })} />
+            <button aria-label="Remove tunnel {i + 1}" onclick={() => (draft.forwards = draft.forwards.filter((_, j) => j !== i))}>✕</button>
+          </div>
+        {/each}
+        <button onclick={() => (draft.forwards = [...draft.forwards, { kind: "local", listen: "", to: "" }])}>Add tunnel</button>
+      </div>
+      <p class="note under">As PuTTY's Tunnels. Local: a port on {THIS_COMPUTER} reaches host:port as seen from the
+        server (8080 to localhost:80 shows its web page at localhost:8080 here). Remote: a port on the server reaches
+        host:port from here. Dynamic: a SOCKS proxy on {THIS_COMPUTER} going out through the server. This profile's own
+        {isDefault ? "(for sessions with no profile of their own)" : "(not Default Settings')"}: each opens with every tab, and a
+        second tab on the same port says it's in use. File Transfer leaves them to the tab.</p>
     </fieldset>
 
     <fieldset>
@@ -757,6 +804,28 @@
     grid-template-columns: 130px 1fr auto;
     align-items: center;
     gap: 8px;
+  }
+
+  /* Tunnels: its caption in the labels' column, the rows and Add tunnel in the field's */
+  .tunnels {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 6px 8px;
+    align-items: center;
+  }
+
+  .tunnels > :not(.caption) {
+    grid-column: 2;
+  }
+
+  .tunnels > button {
+    justify-self: start;
+  }
+
+  .tunnel {
+    display: grid;
+    grid-template-columns: 150px 1fr 1fr auto;
+    gap: 6px;
   }
 
   /* a checkbox with what it does beside it, in the field's column */

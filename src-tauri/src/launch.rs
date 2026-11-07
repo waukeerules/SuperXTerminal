@@ -520,6 +520,39 @@ fn shell_look(profile: &Profile, default: &Profile) -> Look {
     Look { anti_idle: String::new(), anti_idle_seconds: 0, ..look(profile, default) }
 }
 
+/// ssh's arguments for a profile's forwarding, as PuTTY's Tunnels, Auth and Connection panels: agent forwarding (-A),
+/// X11 (-X) and compression (-C), each the profile's choice else Default Settings'; and the profile's own tunnels
+/// (-L, -R, -D). A tunnel missing its port or where it goes, or with a space in either, is left out, with a notice
+/// in the tab, rather than giving ssh an argument it would stop on
+fn forwarding(profile: &Profile, default: &Profile, notices: &mut Vec<String>) -> Vec<String> {
+    let mut args = Vec::new();
+    let on = |own: Option<bool>, fallback: Option<bool>| own.or(fallback).unwrap_or(false);
+    if on(profile.agent_forwarding, default.agent_forwarding) {
+        args.push("-A".to_string());
+    }
+    if on(profile.x11_forwarding, default.x11_forwarding) {
+        args.push("-X".to_string());
+    }
+    if on(profile.compression, default.compression) {
+        args.push("-C".to_string());
+    }
+    let word = |s: &str| !s.is_empty() && !s.contains(char::is_whitespace);
+    for forward in &profile.forwards {
+        let (listen, to) = (forward.listen.trim(), forward.to.trim());
+        let arg = match forward.kind.as_str() {
+            "local" if word(listen) && word(to) => Some(("-L", format!("{listen}:{to}"))),
+            "remote" if word(listen) && word(to) => Some(("-R", format!("{listen}:{to}"))),
+            "dynamic" if word(listen) => Some(("-D", listen.to_string())),
+            _ => None,
+        };
+        match arg {
+            Some((flag, value)) => args.extend([flag.to_string(), value]),
+            None => notices.push(format!("A tunnel in the profile ({} {listen} {to}) is incomplete; left out.", forward.kind)),
+        }
+    }
+    args
+}
+
 /// `value` when it's one of `choices`, else the first of them (PuTTY's default): a profile written by hand or by a
 /// later version can't send the page a key style it doesn't know
 fn known(value: &str, choices: &[&str]) -> String {
@@ -836,6 +869,7 @@ fn ssh(
     if !jump_host.is_empty() {
         args.extend(["-J".into(), jump_address(sessions, values, store, session, &jump_host)?]);
     }
+    args.extend(forwarding(profile, default, &mut notices));
     args.extend(split_words(first(&profile.ssh_options, &default.ssh_options)));
     args.extend(extra.args);
     if config_host.is_empty() {
@@ -1476,6 +1510,32 @@ mod tests {
         let own = Profile { ssh_options: "-o ConnectTimeout=30".into(), ..Profile::default() };
         let (args, _) = args_of(&Sessions::default(), &none(own), &session(&[]));
         assert_eq!(args.iter().filter(|a| a.starts_with("ConnectTimeout=")).collect::<Vec<_>>(), ["ConnectTimeout=30"]);
+    }
+
+    #[test]
+    fn a_profiles_tunnels_agent_x11_and_compression_go_to_ssh() {
+        use crate::profiles::Forward;
+        let forward = |kind: &str, listen: &str, to: &str| Forward { kind: kind.into(), listen: listen.into(), to: to.into() };
+        let default = Profile { name: profiles::DEFAULT_PROFILE.into(), compression: Some(true), forwards: vec![forward("dynamic", "1080", "")], ..Profile::default() };
+        let web = Profile {
+            name: "web".into(),
+            agent_forwarding: Some(true),
+            x11_forwarding: Some(true),
+            forwards: vec![forward("local", "8080", "localhost:80"), forward("remote", "127.0.0.1:9000", "localhost:22"), forward("local", "8081", "")],
+            ..Profile::default()
+        };
+        let profiles = Profiles { profiles: vec![default, web] };
+        let (args, notices) = args_of(&Sessions::default(), &profiles, &session(&[("PuttySession", "web")]));
+        let joined = args.join(" ");
+        // its own switches, Default Settings' compression, its own tunnels only (not Default Settings' SOCKS port)
+        assert!(joined.contains("-A -X -C -L 8080:localhost:80 -R 127.0.0.1:9000:localhost:22 "), "{joined}");
+        assert!(!joined.contains("-D"), "{joined}");
+        // the tunnel with nowhere to go is left out, and the tab says so
+        assert!(!joined.contains("8081"), "{joined}");
+        assert!(notices.iter().any(|n| n.contains("tunnel") && n.contains("8081")), "{notices:?}");
+        // Default Settings' tunnels for its own sessions
+        let (args, _) = args_of(&Sessions::default(), &profiles, &session(&[]));
+        assert!(args.join(" ").contains("-C -D 1080"), "{args:?}");
     }
 
     #[test]

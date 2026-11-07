@@ -195,14 +195,16 @@ pub fn new_socket_path() -> PathBuf {
 
 /// The second login's ssh arguments (Windows), from the tab's own `args` (its options, then the destination): no
 /// terminal (-T for -tt); BatchMode, so it uses a key or the agent and never asks for a password or about a host key
-/// (it fails instead, and the tab says why); none of the tab's port forwards, which the tab already holds; no
+/// (it fails instead, and the tab says why); none of the tab's port forwards, which the tab already holds, nor its
+/// agent or X11 forwarding; no
 /// password first, as only the tab's own login is typed; then [`LOOP`] after the destination. ssh takes an option's
 /// first value, so these come before the tab's own
 pub fn separate_args(args: &[String]) -> Vec<String> {
     let mut out: Vec<String> = ["-T", "-o", "BatchMode=yes", "-o", "ClearAllForwardings=yes"].map(String::from).to_vec();
     let mut rest = args.iter().peekable();
     while let Some(arg) = rest.next() {
-        if arg == "-tt" || arg == "-t" {
+        // the profile's agent and X11 forwarding are the tab's: the readings need neither
+        if arg == "-tt" || arg == "-t" || arg == "-A" || arg == "-X" {
             continue;
         }
         if arg == "-o" && rest.peek().is_some_and(|o| o.to_ascii_lowercase().starts_with("preferredauthentications=")) {
@@ -577,13 +579,15 @@ mod tests {
     #[test]
     fn windows_second_login_uses_the_tabs_arguments_never_asks_and_runs_the_loop() {
         // the tab's ssh, as launch.rs builds it: a terminal, the password tried first, a port forward, the host
-        let tab: Vec<String> = ["-tt", "-p", "2222", "-l", "admin", "-o", "PreferredAuthentications=keyboard-interactive,password,publickey", "-L", "8080:localhost:80", "10.0.0.1"]
+        let tab: Vec<String> = ["-tt", "-p", "2222", "-l", "admin", "-o", "PreferredAuthentications=keyboard-interactive,password,publickey", "-A", "-X", "-L", "8080:localhost:80", "10.0.0.1"]
             .map(String::from)
             .to_vec();
         let second = separate_args(&tab);
         // options first, as ssh takes the first value it's given: no terminal, never a question, no forwards
         assert_eq!(second[..5], ["-T", "-o", "BatchMode=yes", "-o", "ClearAllForwardings=yes"]);
         assert!(!second.contains(&"-tt".to_string()), "{second:?}");
+        // nor the profile's agent or X11 forwarding
+        assert!(!second.iter().any(|a| a == "-A" || a == "-X"), "{second:?}");
         assert!(!second.iter().any(|a| a.starts_with("PreferredAuthentications")), "{second:?}");
         // the same server and user, then the loop
         assert!(second.windows(2).any(|w| w == ["-p", "2222"]) && second.windows(2).any(|w| w == ["-l", "admin"]), "{second:?}");

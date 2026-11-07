@@ -8,6 +8,15 @@ import { invoke } from "@tauri-apps/api/core";
 /** The profile every session without one uses, and every profile falls back to */
 export const DEFAULT_PROFILE = "Default Settings";
 
+/** One tunnel, as ssh's -L (local), -R (remote) or -D (dynamic, a SOCKS proxy) is given it */
+export interface Forward {
+  kind: "local" | "remote" | "dynamic";
+  /** The port it listens on, or address:port */
+  listen: string;
+  /** Where it goes, host:port; "" for dynamic */
+  to: string;
+}
+
 /** One profile; empty fields aren't set and fall back to Default Settings */
 export interface Profile {
   name: string;
@@ -36,6 +45,14 @@ export interface Profile {
   /** Seconds without typing before it's typed; 0 for Default Settings', else 180 */
   antiIdleSeconds: number;
   sshOptions: string;
+  /** Its own tunnels (ssh's -L, -R, -D), as PuTTY's Tunnels; not taken from Default Settings */
+  forwards: Forward[];
+  /** Agent forwarding (-A); null: Default Settings', else off */
+  agentForwarding: boolean | null;
+  /** X11 forwarding (-X); null: Default Settings', else off. Needs an X server on this computer */
+  x11Forwarding: boolean | null;
+  /** Compression (-C); null: Default Settings', else off */
+  compression: boolean | null;
   olderAlgorithms: boolean | null;
   /**
    * Show the server's CPU, memory, disk and network in the status bar while one of its sessions' tabs is in front
@@ -96,7 +113,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", olderAlgorithms: null, serverLoad: null, algorithms: "",
+    name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", forwards: [], agentForwarding: null, x11Forwarding: null, compression: null, olderAlgorithms: null, serverLoad: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", fontFamily: "", fontSize: 0, keyBackspace: "", keyHomeEnd: "", keyFunction: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
   };
 }

@@ -265,6 +265,40 @@ describe("Settings > Profiles", () => {
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", fontFamily: "Lucida Console", fontSize: 16 });
   });
 
+  it("adds, changes and removes tunnels, and saves them with agent forwarding and compression", async () => {
+    await open("root");
+    await userEvent.click(button("Add tunnel"));
+    await userEvent.type(screen.getByLabelText("Tunnel 1 port"), "8080");
+    await userEvent.type(screen.getByLabelText("Tunnel 1 to"), "localhost:80");
+    await userEvent.click(button("Add tunnel"));
+    await userEvent.selectOptions(screen.getByLabelText("Tunnel 2 kind"), "dynamic");
+    await userEvent.type(screen.getByLabelText("Tunnel 2 port"), "1080");
+    // a SOCKS proxy goes wherever it's asked
+    expect((screen.getByLabelText("Tunnel 2 to") as HTMLInputElement).disabled).toBe(true);
+    await userEvent.click(button("Add tunnel"));
+    await userEvent.click(button("Remove tunnel 3"));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /^Agent forwarding/ }), "on");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /^Compression/ }), "on");
+    expect(dots()).toHaveLength(3);
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({
+      name: "root", agentForwarding: true, x11Forwarding: null, compression: true,
+      forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }, { kind: "dynamic", listen: "1080", to: "" }],
+    });
+  });
+
+  it("puts the tunnels back on Revert, the saved profile's untouched", async () => {
+    stored = stored.map((p) => (p.name === "root" ? { ...p, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }] } : p));
+    await open("root");
+    await userEvent.clear(screen.getByLabelText("Tunnel 1 port"));
+    await userEvent.type(screen.getByLabelText("Tunnel 1 port"), "9090");
+    await userEvent.click(button("Remove tunnel 1"));
+    expect(dots()).toHaveLength(1);
+    await userEvent.click(button("Revert"));
+    expect((screen.getByLabelText("Tunnel 1 port") as HTMLInputElement).value).toBe("8080");
+    expect(dots()).toHaveLength(0);
+  });
+
   it("saves the keys a device reads another way, and offers From Default Settings except on Default Settings", async () => {
     await open("root");
     const backspace = () => screen.getByRole("combobox", { name: /^Backspace sends/ }) as HTMLSelectElement;

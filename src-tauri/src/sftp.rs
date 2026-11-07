@@ -188,7 +188,7 @@ pub async fn sftp_open(
 
     // the terminal's ssh, without its terminal, running the sftp subsystem
     let base: Vec<String> = launch.command.get_argv().iter().skip(1).map(|w| w.to_string_lossy().to_string()).filter(|w| w != "-tt").collect();
-    let base = with_keepalive(base);
+    let base = with_keepalive(without_forwarding(base));
     let mut args = base.clone();
     args.splice(0..0, ["-s".to_string(), "-T".to_string()]);
     args.push("sftp".into());
@@ -681,6 +681,16 @@ async fn upload_file(raw: &RawSftpSession, item: &Item, cancel: &AtomicBool, rep
 
 // ---- SCP, for devices with no SFTP ----
 
+/// The tab's ssh arguments without its forwarding, for a file transfer's own connection: the tab already holds the
+/// profile's tunnels (a second -L on the same port fails with "address already in use"), and an X11 display or the
+/// agent has nothing to do with copying files. ClearAllForwardings drops the tunnels whichever way they were given
+/// (the profile's Tunnels, its SSH options, ~/.ssh/config); -A and -X are taken out, as ssh can't be told to undo them
+fn without_forwarding(base: Vec<String>) -> Vec<String> {
+    let mut args: Vec<String> = base.into_iter().filter(|w| w != "-A" && w != "-X").collect();
+    args.splice(0..0, ["-o".to_string(), "ClearAllForwardings=yes".to_string()]);
+    args
+}
+
 /// Keepalives for every ssh and scp a file transfer runs, so a long copy (or an idle tab) isn't dropped by a
 /// firewall: the profile's Keepalive when it sets one (already in the arguments), else every 30 seconds; ssh gives up
 /// after 4 unanswered (two minutes), as a slow device writing its flash can pause that long
@@ -1102,6 +1112,13 @@ pub fn local_reveal(path: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_transfer_leaves_the_tabs_tunnels_agent_and_x11_to_the_tab() {
+        let tab: Vec<String> = ["-p", "2222", "-A", "-X", "-C", "-L", "8080:localhost:80", "10.0.0.5"].map(String::from).to_vec();
+        let args = without_forwarding(tab);
+        assert_eq!(args, ["-o", "ClearAllForwardings=yes", "-p", "2222", "-C", "-L", "8080:localhost:80", "10.0.0.5"]);
+    }
 
     #[test]
     fn reads_a_cisco_dir() {

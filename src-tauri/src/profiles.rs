@@ -60,8 +60,18 @@ pub struct Profile {
     pub anti_idle: String,
     /// Seconds without typing before the anti-idle string is sent; 0 for Default Settings', else KiTTY's 180
     pub anti_idle_seconds: u32,
-    /// More ssh arguments, e.g. "-L 8080:localhost:80 -o Compression=yes"
+    /// More ssh arguments, e.g. "-o Compression=yes"
     pub ssh_options: String,
+    /// Its tunnels, as PuTTY's Connection > SSH > Tunnels: ssh's -L, -R and -D. This profile's alone, not taken from
+    /// Default Settings: every session opening one would ask for the same port, and all but the first would fail
+    pub forwards: Vec<Forward>,
+    /// ssh-agent forwarding (ssh's -A), as PuTTY's Allow agent forwarding; None: the default's, else off
+    pub agent_forwarding: Option<bool>,
+    /// X11 forwarding (ssh's -X), as PuTTY's Enable X11 forwarding; None: the default's, else off. Needs an X server
+    /// here (XQuartz on the Mac, VcXsrv or similar on Windows)
+    pub x11_forwarding: Option<bool>,
+    /// Compression (ssh's -C), as PuTTY's Enable compression; for a slow link. None: the default's, else off
+    pub compression: Option<bool>,
     /// Accept the older algorithms older devices offer (SHA-1 key exchange, ssh-rsa, CBC ciphers); None: the default's
     pub older_algorithms: Option<bool>,
     /// Show the server's CPU, memory, disk and network traffic in the status bar while one of its sessions' tabs is in
@@ -121,6 +131,19 @@ pub struct Profile {
     /// Whether a password is stored for it (the password itself stays in the Keychain)
     #[serde(skip_deserializing)]
     pub has_password: bool,
+}
+
+/// One tunnel: what ssh's -L, -R or -D is given
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Forward {
+    /// "local" (-L: a port here reaches `to` from the far end), "remote" (-R: a port there reaches `to` from here) or
+    /// "dynamic" (-D: a SOCKS proxy here)
+    pub kind: String,
+    /// The port it listens on, or address:port ("8080", "127.0.0.1:8080")
+    pub listen: String,
+    /// Where it goes, host:port ("localhost:80"); "" for dynamic
+    pub to: String,
 }
 
 /// Every profile, "Default Settings" first

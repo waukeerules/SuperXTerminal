@@ -329,3 +329,14 @@ describe("Edit Session's login script", () => {
     await expect.poll(() => saved?.script).toBe("scripts/jump-host.spsl");
   });
 });
+
+describe("Edit Session's jump host", () => {
+  it("says what a jump server needs: TCP forwarding, where OpenMediaVault turns it on, and Log in here where it can't", async () => {
+    const user = userEvent.setup();
+    open();
+    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    const note = screen.getByRole("note", { name: "What a jump server needs" }).textContent ?? "";
+    expect(note).toMatch(/must allow TCP forwarding \(AllowTcpForwarding in its sshd_config; on OpenMediaVault, Services > SSH > TCP forwarding\)/);
+    expect(note).toContain("a profile that has Log in here");
+  });
+});

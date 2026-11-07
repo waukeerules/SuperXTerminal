@@ -33,7 +33,7 @@
   import { lineOf, withLine } from "./serial";
   import { chosenScript } from "../scripting/scriptPath";
   import ScriptPathNote from "../scripting/ScriptPathNote.svelte";
-  import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
+  import { JUMP_HOST_NEEDS, PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
   interface Props {
     /** Which sessions it's in: Saved, Private or Database */
@@ -514,6 +514,7 @@
           placeholder={inherited("jumpHost") || "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22"} /></label>
       </div>
       {@render missing(missingVariables.jumpHost)}
+      <p class="note" role="note" aria-label="What a jump server needs">{JUMP_HOST_NEEDS}</p>
 
     </div>
 

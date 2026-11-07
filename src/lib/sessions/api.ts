@@ -151,6 +151,15 @@ export function deleteSession(store: Store, id: string): Promise<void> {
   return invoke("session_delete", { store, id });
 }
 
+/**
+ * What a jump server needs for the Jump host field (ssh -J), shown under it in Edit Session and Settings > Profiles.
+ * Forwarding is what usually stops it, and OpenMediaVault, for one, has it off; a tab that hits it says so too
+ * (PageHost's advice for "jumpForwarding")
+ */
+export const JUMP_HOST_NEEDS =
+  "The jump server must allow TCP forwarding (AllowTcpForwarding in its sshd_config; on OpenMediaVault, Services > SSH > " +
+  "TCP forwarding) and reach the host itself. Where it can't, log in through it with a profile that has Log in here.";
+
 /** SuperXPuTTY's protocols, as Edit Session's Connection type lists them */
 export const PROTOCOLS = ["SSH", "Telnet", "Rlogin", "Raw", "Serial", "VNC", "RDP", "Mintty", "Cygterm", "WSL", "WINCMD", "PS"];
 

@@ -14,6 +14,7 @@
   import { context } from "../commands/sending.svelte";
   import { keyFetchExamples } from "./keyFetchExamples";
   import { chosenScript, isFullPath } from "../scripting/scriptPath";
+  import { JUMP_HOST_NEEDS } from "../sessions/api";
   import ScriptPathNote from "../scripting/ScriptPathNote.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { baseChain, coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, MAX_FONT_POINTS, mergedProfile, ownColoursChoice, resolvedProfile, saveProfile, type Forward, type Profile } from "./profiles";
@@ -584,6 +585,7 @@
       <legend>Connection</legend>
       <label>{@render caption("Port", "port")}<input class="short" type="number" min="0" max="65535" bind:value={draft.port} /> <span class="note">0: not set</span></label>
       <label>{@render caption("Jump host", "jumpHost")}<input bind:value={draft.jumpHost} placeholder="a session, or admin@10.0.0.1:22" /></label>
+      <p class="note under" role="note" aria-label="What a jump server needs">{JUMP_HOST_NEEDS}</p>
       <label>{@render caption("Host", "host")}<input bind:value={draft.host} placeholder="none; e.g. example.cyberark.cloud" /></label>
       <p class="note under">Used, at the Port above, by sessions with no host of their own, as a PuTTY saved session's
         Host Name; and by sessions whose username names their host as {"{host_address}"} (a CyberArk SSH gateway, which

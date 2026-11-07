@@ -231,6 +231,11 @@ describe("Settings > Profiles", () => {
     expect(remove.getAttribute("aria-disabled")).toBe("true");
   });
 
+  it("says under Jump host what a jump server needs", async () => {
+    await open("root");
+    expect(screen.getByRole("note", { name: "What a jump server needs" }).textContent).toMatch(/^The jump server must allow TCP forwarding/);
+  });
+
   it("names ssh's config file where Windows keeps it, not the Mac's ~/.ssh/config", async () => {
     // this test's jsdom isn't a Mac
     expect(isMac).toBe(false);

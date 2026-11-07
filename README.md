@@ -264,6 +264,23 @@ npm install
 npm run tauri dev
 ```
 
+## Contributing
+
+SuperXTerminal is open source: fork it, change it, and send improvements back.
+
+- **Report a problem or suggest a feature:** open a [GitHub issue](https://github.com/waukeerules/SuperXTerminal/issues).
+  Say what you did, what you expected, and what happened. Screenshots help, but hide hosts and passwords first.
+- **Send code:** fork the repository, make your change on a branch, and open a pull request.
+
+Before you open a pull request:
+
+- Run the checks for what you changed: `npm run check`, `npm test`, `npm run test:browser` for the terminal page, and
+  `cargo test` in `src-tauri`. [docs/TESTING.md](docs/TESTING.md) says which suite covers what.
+- Never put real hosts, usernames, passwords or exported config files in code, tests, issues or screenshots. Use
+  made-up values, as the existing tests do (`core-sw1`, `10.0.0.5`, `/team/Sessions.xml`).
+- Follow [AGENTS.md](AGENTS.md), which covers the code style for people and AI assistants alike: small functions, a
+  test with every bug fix, a comment at the top of each file and on each function, and one change per commit.
+
 ## Licence
 
 MIT, as SuperPuTTY is: you're free to use, copy, change and share it, as long as the copyright notice comes with it.

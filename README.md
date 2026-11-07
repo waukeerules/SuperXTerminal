@@ -266,20 +266,22 @@ npm run tauri dev
 
 ## Contributing
 
-SuperXTerminal is open source: fork it, change it, and send improvements back.
+Help is welcome, whether it's a bug found on a real network, an idea from a day of using it, or a fix of your own.
 
-- **Report a problem or suggest a feature:** open a [GitHub issue](https://github.com/waukeerules/SuperXTerminal/issues).
-  Say what you did, what you expected, and what happened. Screenshots help, but hide hosts and passwords first.
-- **Send code:** fork the repository, make your change on a branch, and open a pull request.
+- **Something wrong, or missing?** [Open an issue](https://github.com/waukeerules/SuperXTerminal/issues): the steps
+  that led to it, what should have happened, and what did. A screenshot often says it best; blur the hosts,
+  usernames and passwords in it first.
+- **A change of your own?** Fork the repository, work on a branch, and send it back as a pull request.
 
-Before you open a pull request:
+A pull request goes in faster when:
 
-- Run the checks for what you changed: `npm run check`, `npm test`, `npm run test:browser` for the terminal page, and
-  `cargo test` in `src-tauri`. [docs/TESTING.md](docs/TESTING.md) says which suite covers what.
-- Never put real hosts, usernames, passwords or exported config files in code, tests, issues or screenshots. Use
-  made-up values, as the existing tests do (`core-sw1`, `10.0.0.5`, `/team/Sessions.xml`).
-- Follow [AGENTS.md](AGENTS.md), which covers the code style for people and AI assistants alike: small functions, a
-  test with every bug fix, a comment at the top of each file and on each function, and one change per commit.
+- **The tests pass.** `npm run check` and `npm test` for the app, `npm run test:browser` if you touched the terminal
+  page, and `cargo test` in `src-tauri` for the Rust side; [docs/TESTING.md](docs/TESTING.md) has which covers what.
+  A bug fix comes with a test that fails without it.
+- **Nothing real is in it.** No real device names, addresses, logins, passwords or exported session files, in the
+  code, the tests or a screenshot. Make some up, as the tests do: `core-sw1` at `10.0.0.5` in `/team/Sessions.xml`.
+- **It reads like the code around it.** [AGENTS.md](AGENTS.md) sets the house style, for people and AI assistants
+  alike: each file and function says what it's for, and each commit is one change.
 
 ## Licence
 

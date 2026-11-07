@@ -2,7 +2,8 @@
   The Quick Selector, as SuperXPuTTY's QuickSelector: File > Open Session… (every session) and Window > Switch
   Session… (the open tabs). Type to filter: every word (split at spaces, dots and *) must be in the name or the
   detail, ignoring case. Enter takes the highlighted one (the first, until the arrows move it), Esc closes, a
-  double-click takes one, and Option+Delete removes the last "/" part of what's typed.
+  click takes one (SuperXPuTTY's needs a double-click; one click only highlighted it, which looked broken, and pickers
+  such as VS Code's take a click), and Option+Delete removes the last "/" part of what's typed.
 -->
 <script lang="ts" module>
   /** One entry: what it's called, its detail (a session id), and its icon */
@@ -29,7 +30,7 @@
     items: QuickItem[];
     /** The user's custom icons, for the list */
     customs: ReadonlyMap<string, CustomIcon>;
-    /** Enter or a click: the item chosen */
+    /** Enter or a click on a row: the item chosen */
     onChoose: (item: QuickItem) => void;
     /** Escape, or a click outside the window */
     onClose: () => void;
@@ -99,7 +100,7 @@
     <div class="list" role="listbox" bind:this={list}>
       {#each shown as item, i (item.key)}
         <div class="row" class:current={i === index} role="option" aria-selected={i === index} tabindex="-1"
-          onmousemove={() => (index = i)} onclick={() => (index = i)} ondblclick={() => choose(item)} onkeydown={() => {}}>
+          onmousemove={() => (index = i)} onclick={() => choose(item)} onkeydown={() => {}}>
           <span class="tick">{item.current ? "✓" : ""}</span>
           <Icon key={item.icon} size={18} environment={item.environment} {customs} />
           <span class="name">{item.name}</span>

@@ -19,6 +19,10 @@ let stored: Profile[];
 let calls: { cmd: string; args: Record<string, unknown> }[];
 /** The profiles in the file chosen to import, as profiles_read_file reads them */
 let inFile: Profile[];
+/** PuTTY's sessions in the .reg file chosen to import, as profiles_read_putty reads them */
+let puttyFile: Profile[];
+/** The file chosen to import: a .json file unless a test picks a .reg */
+let pickedFile: string;
 /** The team's templates in the settings folder, as profile_templates reads them */
 let templates: Profile[];
 
@@ -30,6 +34,8 @@ beforeEach(() => {
   ];
   calls = [];
   inFile = [];
+  puttyFile = [];
+  pickedFile = "/tmp/profiles.json";
   templates = [];
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
@@ -54,8 +60,9 @@ beforeEach(() => {
       return typeof buttons === "object" && buttons ? Object.values(buttons as Record<string, string[]>)[0][0] : "Yes";
     }
     if (cmd === "plugin:dialog|save") return "/tmp/root profile.json";
-    if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("login script") ? "/Users/me/scripts/omv-login.spsl" : "/tmp/profiles.json";
+    if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("login script") ? "/Users/me/scripts/omv-login.spsl" : pickedFile;
     if (cmd === "profiles_read_file") return inFile;
+    if (cmd === "profiles_read_putty") return puttyFile;
     if (cmd === "profile_templates") return templates;
     if (cmd === "profile_template_share") return templates;
     if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [], tabIcons: [] }, { name: "Cisco", buttons: [], tabIcons: [] }];
@@ -167,6 +174,18 @@ describe("Settings > Profiles", () => {
     expect(stored.find((p) => p.name === "root")?.username).toBe("root");
     expect(stored.find((p) => p.name === "root-1")?.username).toBe("admin");
     expect(listed().getByRole("option", { name: "lab" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("imports PuTTY's saved sessions from a reg export as profiles", async () => {
+    pickedFile = "/tmp/putty.reg";
+    puttyFile = [{ ...emptyProfile("Lab switches"), host: "10.0.0.5", username: "admin" }];
+    await open("root");
+    await userEvent.pointer({ keys: "[MouseRight]", target: listed().getByRole("option", { name: "root" }) });
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Import…" }));
+    expect(await screen.findByText(/Imported "Lab switches"\. From PuTTY: its proxies/)).toBeTruthy();
+    expect(calls.find((c) => c.cmd === "profiles_read_putty")?.args).toEqual({ path: "/tmp/putty.reg" });
+    expect(calls.some((c) => c.cmd === "profiles_read_file")).toBe(false);
+    expect(stored.find((p) => p.name === "Lab switches")?.host).toBe("10.0.0.5");
   });
 
   it("shows how old a fetched key is, and when the next session will fetch another", async () => {

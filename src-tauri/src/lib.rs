@@ -23,6 +23,7 @@ mod logs;
 mod ppk;
 mod profiles;
 mod pty;
+mod putty_reg;
 mod rdp;
 mod rdp_clipboard;
 mod rdp_options;
@@ -165,6 +166,12 @@ fn profiles_export(state: State<'_, AppState>, name: String, path: String) -> Re
     let profiles = state.profiles.lock().unwrap();
     let profile = profiles.get(&name).ok_or_else(|| format!("There's no profile called {name}."))?;
     std::fs::write(&path, profiles::export_text(profile)?).map_err(|e| e.to_string())
+}
+
+/// PuTTY's saved sessions in a `reg export` file, as profiles for Settings > Profiles' Import… to add (putty_reg.rs)
+#[tauri::command]
+fn profiles_read_putty(path: String) -> Result<Vec<Profile>, String> {
+    putty_reg::read(&std::fs::read(&path).map_err(|e| e.to_string())?)
 }
 
 /// The team's profile templates (ProfileTemplates.json in the settings folder), for Settings > Profiles to offer the
@@ -2868,6 +2875,7 @@ pub fn run() {
             profiles_export,
             profiles_read_file,
             profile_templates,
+            profiles_read_putty,
             profile_template_share,
             profiles_save,
             profiles_delete,

@@ -316,14 +316,17 @@
   }
 
   /**
-   * Add the profiles in a .json file (an exported profile, or a whole Profiles.json); one named as a profile already
-   * here comes in under the next free name, as Duplicate's, so nothing here is replaced. The last one opens.
+   * Add the profiles in a .json file (an exported profile, or a whole Profiles.json), or PuTTY's saved sessions in a
+   * .reg file (reg export HKCU\Software\SimonTatham\PuTTY\Sessions), each as a profile of its name, as SuperXPuTTY's
+   * sessions name them. One named as a profile already here comes in under the next free name, as Duplicate's, so
+   * nothing here is replaced. The last one opens.
    */
   async function importProfiles(): Promise<void> {
-    const path = await open({ title: "Import profiles", filters: [{ name: "Profile", extensions: ["json"] }] });
+    const path = await open({ title: "Import profiles", filters: [{ name: "Profiles, or PuTTY's sessions (reg export)", extensions: ["json", "reg"] }] });
     if (typeof path !== "string") return;
+    const fromPutty = path.toLowerCase().endsWith(".reg");
     try {
-      const found = await invoke<Profile[]>("profiles_read_file", { path });
+      const found = await invoke<Profile[]>(fromPutty ? "profiles_read_putty" : "profiles_read_file", { path });
       const added: string[] = [];
       const renamed: string[] = [];
       for (const profile of found) {
@@ -337,7 +340,7 @@
       message = [
         added.length === 1 ? `Imported "${added[0]}".` : `Imported ${added.length} profiles.`,
         renamed.length ? `Already here, so imported ${renamed.join(", ")}.` : "",
-        "Passwords aren't in profile files: type them in.",
+        fromPutty ? "From PuTTY: its proxies and algorithm lists aren't profile settings, so check those." : "Passwords aren't in profile files: type them in.",
       ].filter(Boolean).join(" ");
     } catch (e) {
       message = String(e);

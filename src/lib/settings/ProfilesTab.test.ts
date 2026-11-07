@@ -231,6 +231,13 @@ describe("Settings > Profiles", () => {
     expect(remove.getAttribute("aria-disabled")).toBe("true");
   });
 
+  it("names ssh's config file where Windows keeps it, not the Mac's ~/.ssh/config", async () => {
+    // this test's jsdom isn't a Mac
+    expect(isMac).toBe(false);
+    await open("root");
+    expect((screen.getByLabelText("SSH config host") as HTMLInputElement).placeholder).toBe(String.raw`a Host in C:\Users\<you>\.ssh\config`);
+  });
+
   it("has Server load off unless chosen, and on Windows saves it on, saying it needs a key login", async () => {
     // this test's jsdom isn't a Mac: Windows, whose readings have a second login of their own (server_load.rs)
     expect(isMac).toBe(false);

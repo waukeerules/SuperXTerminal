@@ -6,7 +6,7 @@
   colleague's or another computer's.
 -->
 <script lang="ts">
-  import { MONOSPACE_FONTS, SECRET_STORE, SSH_KEYS, THIS_COMPUTER } from "../platform";
+  import { MONOSPACE_FONTS, SECRET_STORE, SSH_CONFIG, SSH_KEYS, THIS_COMPUTER } from "../platform";
   import { onMount } from "svelte";
   import { ask, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
@@ -636,7 +636,7 @@
         <button onclick={() => (algorithming = true)} title={draft.algorithms ? `Its own: ${draft.algorithms}` : isDefault ? "ssh's own lists" : FROM}>
           Choose…</button>
         <span class="note">{draft.algorithms ? "its own lists" : isDefault ? "ssh's own lists" : "from Default Settings"}</span></label>
-      <label>{@render caption("SSH config host", "sshConfigHost")}<input bind:value={draft.sshConfigHost} placeholder="a Host in ~/.ssh/config" /></label>
+      <label>{@render caption("SSH config host", "sshConfigHost")}<input bind:value={draft.sshConfigHost} placeholder={`a Host in ${SSH_CONFIG}`} /></label>
       <label>{@render caption("More ssh options", "sshOptions")}<input bind:value={draft.sshOptions} placeholder="e.g. -o Compression=yes" /></label>
       {#each [["agentForwarding", "Agent forwarding", "Forward ssh-agent (-A): a login from there onwards uses your keys"], ["x11Forwarding", "X11 forwarding", "Forward X11 (-X): needs an X server on " + THIS_COMPUTER], ["compression", "Compression", "Compress (-C): for a slow link"]] as [field, label, on] (field)}
         {@const key = field as "agentForwarding" | "x11Forwarding" | "compression"}

@@ -528,6 +528,20 @@ test.describe("the profile's font", () => {
   });
 });
 
+test("keeps the profile's scrollback over Settings > Terminal's, and Settings > Terminal's once the profile has none", async ({ page }) => {
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  await page.evaluate(() => (window as any).terminalDev.message({
+    type: "config", prefs: { scrollback: "10000" }, themes: [{ name: "PuTTY", colors: {} }], profileScrollback: 100000,
+  }));
+  await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+  const kept = () => page.evaluate(() => (window as any).terminalDev.term.options.scrollback as number);
+  await expect.poll(kept).toBe(100000);
+  // the profile saved with no scrollback of its own
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "profileScrollback", lines: 0 }));
+  await expect.poll(kept).toBe(10000);
+});
+
 test.describe("the profile's keys", () => {
   /** Watch what the page sends the session as typing */
   async function watchInput(page: Page) {

@@ -1,7 +1,7 @@
 // A session's tab when ssh ends: what it says and whether it reconnects by itself, read from ssh's last words, and
 // the profile change it offers (F). The Rust side is stood in for by mockIPC: pty_open hands over the tab's channel,
 // which the test feeds ssh's output and its end. Also the tab's size reaching the pseudo terminal as the session starts,
-// Reconnect, connecting until the far end answers (not ConPTY's own output), the anti-idle string typed after a quiet spell, a paste taking the clipboard from the system, and Find
+// Reconnect, connecting until the far end answers (not ConPTY's own output), the anti-idle string typed after a quiet spell, a paste taking the clipboard from the system, its log kept as its profile says, and Find
 // (Ctrl+Shift+F) opening the page's find bar on Windows, where the app catches that key in the page itself.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -36,8 +36,11 @@ let openedAt: { cols: number; rows: number } | null;
 let openWaits: Promise<void> | null;
 /** The clipboard's text, as clipboard_text reads it */
 let clipboard: string;
+/** What each log_open was told to do with the log: keep it, not, or as Settings > General says (null) */
+let logKeep: (boolean | null)[];
 
 beforeEach(() => {
+  logKeep = [];
   channel = null;
   opened = 0;
   saved = [];
@@ -67,6 +70,10 @@ beforeEach(() => {
       return null;
     }
     if (cmd === "clipboard_text") return clipboard;
+    if (cmd === "log_open") {
+      logKeep.push(payload.keep as boolean | null);
+      return { id: 1, path: "/tmp/sw1.log", temporary: payload.keep !== true };
+    }
     // Settings > Shortcuts' Find, for the terminal menu's key
     if (cmd === "shortcuts_keys") return [{ id: "find", label: "Find…", default: "", key: "Ctrl+Shift+F" }];
     if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
@@ -111,6 +118,26 @@ async function sshEnds(output: string): Promise<void> {
 
 /** The notices the host gave the page, in order */
 const notices = () => posted.filter((m) => m.type === "notice").map((m) => m.text ?? "");
+
+describe("the tab's log", () => {
+  it("is kept as the profile's Session log says, though the profile's look comes after pty_open has answered", async () => {
+    let answer = () => {};
+    openWaits = new Promise((resolve) => (answer = resolve));
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    // pty_open answers first, then the started event with the profile's choice
+    answer();
+    await new Promise((r) => setTimeout(r, 20));
+    (channel!.onmessage as (e: unknown) => void)({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "core", keepLog: true }, link: "pty" });
+    await expect.poll(() => logKeep).toEqual([true]);
+  });
+
+  it("goes by Settings > General when the profile doesn't say", async () => {
+    await sshEnds("");
+    await expect.poll(() => logKeep).toEqual([null]);
+  });
+});
 
 describe("a session's tab when ssh ends", () => {
   it("doesn't reconnect by itself after a refused login, and says where the password is", async () => {

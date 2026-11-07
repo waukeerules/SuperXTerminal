@@ -52,6 +52,10 @@ pub struct Look {
     pub font_size: u32,
     /// What Backspace, Home/End and F1-F12 send: the profile's, else Default Settings', else PuTTY's defaults
     pub keys: Keys,
+    /// Lines kept to scroll back through: the profile's, else Default Settings'; 0 for Settings > Terminal's
+    pub scrollback: u32,
+    /// Whether the tab's log is kept: the profile's, else Default Settings'; None for Settings > General's
+    pub keep_log: Option<bool>,
     /// The profile's anti-idle string as written (KiTTY's escapes), else Default Settings'; "" for none
     pub anti_idle: String,
     /// Seconds without typing before it's sent: the profile's, else Default Settings', else KiTTY's 180; 0 with no string
@@ -504,6 +508,8 @@ fn look(profile: &Profile, default: &Profile) -> Look {
             home_end: known(first(profile.key_home_end.trim(), default.key_home_end.trim()), &["standard", "rxvt"]),
             function_keys: known(first(profile.key_function.trim(), default.key_function.trim()), &["tilde", "linux", "xtermr6", "vt100", "sco"]),
         },
+        scrollback: if profile.scrollback != 0 { profile.scrollback } else { default.scrollback },
+        keep_log: profile.session_log.or(default.session_log),
         anti_idle: anti_idle.to_string(),
         anti_idle_seconds: if anti_idle.is_empty() {
             0
@@ -1160,6 +1166,19 @@ mod tests {
         // nothing set anywhere, or a style the page doesn't know: PuTTY's defaults
         let putty = super::look(&Profile { key_function: "vt52".into(), ..Profile::default() }, &Profile::default()).keys;
         assert_eq!((putty.backspace.as_str(), putty.home_end.as_str(), putty.function_keys.as_str()), ("del", "standard", "tilde"));
+    }
+
+    #[test]
+    fn a_profiles_scrollback_and_log_reach_its_tabs_else_default_settings_else_the_settings() {
+        let default = Profile { session_log: Some(false), ..Profile::default() };
+        let core = Profile { scrollback: 100_000, session_log: Some(true), ..Profile::default() };
+        let page = serde_json::to_value(super::look(&core, &default)).unwrap();
+        assert_eq!((page["scrollback"].as_u64(), page["keepLog"].as_bool()), (Some(100_000), Some(true)));
+        // none of its own: Default Settings'; none anywhere: the settings' (0 and null)
+        let lab = super::look(&Profile::default(), &default);
+        assert_eq!((lab.scrollback, lab.keep_log), (0, Some(false)));
+        let page = serde_json::to_value(super::look(&Profile::default(), &Profile::default())).unwrap();
+        assert_eq!((page["scrollback"].as_u64(), page["keepLog"].is_null()), (Some(0), true));
     }
 
     #[test]

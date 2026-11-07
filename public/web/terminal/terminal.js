@@ -51,6 +51,7 @@
     var sessionRules = '';          // the session's or its folder's highlighting rules; empty: Options > Terminal's
     var tabRules = null;            // rules chosen in this tab's menu, for this tab only; null: the session's or default
     var unlimitedScrollback = 1000000; // scrollback when the preference is 0, from TerminalControl
+    var profileScrollback = 0;      // the profile's own lines kept (SuperXTerminal), over the preference's; 0 for none
     var webgl = null;               // xterm.js's WebGL renderer while it's drawing the terminal
     var cursorColor = null;         // the session's environment colour (#rrggbb) for the cursor, or null
     var settleTimer = null;
@@ -1551,9 +1552,12 @@
         markSelectionMatches();
     }
 
-    /** Keep the preference's number of lines (Options > Terminal); 0 or less: as many as unlimitedScrollback */
+    /**
+     * Keep the profile's number of lines (SuperXTerminal's Settings > Profiles > Scrollback), else the preference's
+     * (Options > Terminal); 0 or less: as many as unlimitedScrollback
+     */
     function applyScrollback() {
-        var lines = parseInt(loadPref('scrollback'), 10);
+        var lines = profileScrollback > 0 ? profileScrollback : parseInt(loadPref('scrollback'), 10);
         var wanted = lines > 0 ? lines : unlimitedScrollback;
         if (term.options.scrollback !== wanted) { term.options.scrollback = wanted; }
     }
@@ -1607,6 +1611,7 @@
         if (config.keys) { keysFromProfile = config.keys; }
         sessionRules = config.sessionRules || '';
         if (config.unlimitedScrollback) { unlimitedScrollback = config.unlimitedScrollback; }
+        profileScrollback = config.profileScrollback > 0 ? config.profileScrollback : 0;
         applyCursor();
         cursorColor = config.cursorColor || null;
         profileColours = config.colors || {};
@@ -1661,6 +1666,8 @@
             case 'profileFont': profileFont = message.font || { family: '', points: 0 }; applyFont(); break;
             // the profile was saved with other Backspace, Home/End or function keys (SuperXTerminal)
             case 'keys': if (message.keys) { keysFromProfile = message.keys; } break;
+            // the profile was saved with another Scrollback (SuperXTerminal)
+            case 'profileScrollback': profileScrollback = message.lines > 0 ? message.lines : 0; applyScrollback(); break;
         }
     }
 

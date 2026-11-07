@@ -110,7 +110,7 @@
    */
   function meaning(profile: Profile, field: keyof Profile): unknown {
     const value = profile[field];
-    if (field === "port" || field === "keepalive" || field === "keyLifetime" || field === "antiIdleSeconds" || field === "fontSize") return Number(value) || 0;
+    if (field === "port" || field === "keepalive" || field === "keyLifetime" || field === "antiIdleSeconds" || field === "fontSize" || field === "scrollback") return Number(value) || 0;
     if (isDefault && field === "addressFamily") return value || "auto";
     if (isDefault && field === "offerKeys") return value ?? true;
     if (isDefault && field === "askUsername") return value ?? false;
@@ -140,7 +140,7 @@
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions",
     "agentForwarding", "x11Forwarding", "compression", "forwards", "cursor", "cursorBlink", "bell",
-    "fontFamily", "fontSize", "keyBackspace", "keyHomeEnd", "keyFunction", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
+    "fontFamily", "fontSize", "keyBackspace", "keyHomeEnd", "keyFunction", "scrollback", "sessionLog", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
   ];
 
   /** The button bars' names (ButtonBars.xml in the settings folder), for the Button bar box */
@@ -185,7 +185,7 @@
   async function save(): Promise<void> {
     try {
       profiles = await saveProfile(
-        { ...draft, port: Number(draft.port) || 0, keepalive: Number(draft.keepalive) || 0, antiIdleSeconds: Math.max(0, Number(draft.antiIdleSeconds) || 0), keyLifetime: Math.max(0, Number(draft.keyLifetime) || 0) },
+        { ...draft, port: Number(draft.port) || 0, keepalive: Number(draft.keepalive) || 0, antiIdleSeconds: Math.max(0, Number(draft.antiIdleSeconds) || 0), keyLifetime: Math.max(0, Number(draft.keyLifetime) || 0), fontSize: Math.max(0, Number(draft.fontSize) || 0), scrollback: Math.max(0, Math.floor(Number(draft.scrollback) || 0)) },
         originalName, password,
       );
       select(draft.name.trim());
@@ -611,6 +611,17 @@
       <p class="note under">As PuTTY's Terminal > Keyboard, for a device that reads the keys another way: an older Unix
         or switch that deletes with Control-H shows ^? when Backspace is pressed. Settings > Terminal > Keys set to xterm's
         turns these off for every tab; a local shell always has xterm's.</p>
+      <label>{@render caption("Scrollback", "scrollback")}<input class="short" type="number" min="0" step="1000" bind:value={draft.scrollback} />
+        <span class="note">{isDefault || !defaultProfile?.scrollback ? "lines (0: Settings > Terminal's)" : `lines (0: Default Settings', ${defaultProfile.scrollback})`}</span></label>
+      <label>{@render caption("Session log", "sessionLog")}
+        <select value={triToValue(draft.sessionLog)} onchange={(e) => (draft.sessionLog = valueToTri(e.currentTarget.value))}>
+          <option value="">{isDefault ? "As Settings > General > Session logs says" : "From Default Settings"}</option>
+          <option value="on">Keep a log of each session</option>
+          <option value="off">Don't keep logs</option>
+        </select></label>
+      <p class="note under">More scrollback for a core router's long show commands than a lab box's; a log kept for every
+        session to production devices. Kept logs go to Settings > General > Session logs' folder; otherwise a tab's log
+        is deleted when it closes.</p>
       <label>{@render caption("Colours", "colours")}
         <select value={shownChoice(draft)} onchange={(e) => (draft.colours = e.currentTarget.value)}>
           {#if !isDefault}<option value="default">From Default Settings ({SHORT[coloursChoice(defaultProfile, undefined)]})</option>{/if}

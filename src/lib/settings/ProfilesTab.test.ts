@@ -299,6 +299,18 @@ describe("Settings > Profiles", () => {
     expect(dots()).toHaveLength(0);
   });
 
+  it("saves more scrollback and a kept log for a profile, and shows Default Settings' scrollback when it has none", async () => {
+    stored = stored.map((p) => (p.name === DEFAULT_PROFILE ? { ...p, scrollback: 20000 } : p));
+    await open("root");
+    const lines = screen.getByLabelText(/^Scrollback/) as HTMLInputElement;
+    expect(lines.closest("label")!.textContent).toContain("0: Default Settings', 20000");
+    await userEvent.clear(lines);
+    await userEvent.type(lines, "100000");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /^Session log/ }), "on");
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", scrollback: 100000, sessionLog: true });
+  });
+
   it("saves the keys a device reads another way, and offers From Default Settings except on Default Settings", async () => {
     await open("root");
     const backspace = () => screen.getByRole("combobox", { name: /^Backspace sends/ }) as HTMLSelectElement;

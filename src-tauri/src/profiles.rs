@@ -104,6 +104,12 @@ pub struct Profile {
     /// What F1-F12 send: "tilde" (ESC[n~, PuTTY's default), "linux", "xtermr6", "vt100" or "sco"; "" for Default
     /// Settings'. The terminal page (profileKey) turns these into the keys' sequences
     pub key_function: String,
+    /// Lines of output its tabs keep to scroll back through; 0 for Default Settings', else Settings > Terminal's.
+    /// Over Settings > Terminal's, as a core router's long show commands want more than a lab box's
+    pub scrollback: u32,
+    /// Its sessions' logs are kept (Settings > General > Session logs' folder) or not; None: Default Settings', else
+    /// Settings > General's Keep a log of every session
+    pub session_log: Option<bool>,
     /// Which colours its tabs have: "" or "default" (Default Settings'), "theme" (Settings > Terminal's theme), "dark" or "light"
     /// (the Dark or Light theme), or "custom" (the colours below). A profile with colours and no choice is custom.
     pub colours: String,

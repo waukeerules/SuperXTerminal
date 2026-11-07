@@ -15,7 +15,7 @@ import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
 import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
-import { DEFAULT_PROFILE, listProfiles, profileColours, profileFont, profileKeys, PROFILES_CHANGED, saveProfile } from "../settings/profiles";
+import { DEFAULT_PROFILE, listProfiles, profileColours, profileFont, profileKeys, profileScrollback, PROFILES_CHANGED, saveProfile } from "../settings/profiles";
 import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailure";
 import { antiIdleKeys } from "./antiIdle";
 import { running } from "../commands/sending.svelte";
@@ -56,6 +56,10 @@ interface Look {
   fontSize?: number;
   /** What Backspace, Home/End and F1-F12 send (the profile's, else Default Settings', else PuTTY's); absent: PuTTY's */
   keys?: { backspace: string; homeEnd: string; functionKeys: string };
+  /** Lines kept to scroll back through (the profile's, else Default Settings'); 0 or absent for Settings > Terminal's */
+  scrollback?: number;
+  /** Whether the tab's log is kept (the profile's Session log, else Default Settings'); null or absent: Settings > General's */
+  keepLog?: boolean | null;
   /** The profile's anti-idle string, as KiTTY writes it; "" or absent for none */
   antiIdle?: string;
   /** Seconds without typing before it's typed; 0 with no string */
@@ -102,6 +106,9 @@ function menuKeyLabels(): Record<string, string> {
   const find = shortcutLabel("find");
   return isMac ? { copy: "⌘C", paste: "⌘V", find } : { find };
 }
+
+/** How long a new tab's log waits for its profile's choice before going by Settings > General's */
+const LOOK_WAIT_MS = 2000;
 
 /**
  * A stand-in theme for when no theme files are found (SuperXPuTTY's defaults are missing from its Git repository):
@@ -320,7 +327,10 @@ export class PageHost implements ScriptTarget {
    */
   tabColor: string | null = null;
 
-  /** A profile was saved or removed: the tab takes its profile's colours, font and keys again, its tab's colour included */
+  /**
+   * A profile was saved or removed: the tab takes its profile's colours, font, keys and scrollback again, its tab's
+   * colour included (its log stays kept or temporary as it began)
+   */
   private readonly onProfilesChanged = (): void => {
     const name = this.profile;
     if (name === null) return;
@@ -329,6 +339,7 @@ export class PageHost implements ScriptTarget {
       this.post({ type: "colors", colors, theme });
       this.post({ type: "profileFont", font: profileFont(profiles, name) });
       this.post({ type: "keys", keys: profileKeys(profiles, name) });
+      this.post({ type: "profileScrollback", lines: profileScrollback(profiles, name) });
       this.tabColor = tab || null;
       this.onState();
     }).catch(() => {});
@@ -795,6 +806,8 @@ export class PageHost implements ScriptTarget {
       keyLabels: (await loadShortcuts(), menuKeyLabels()),
       sessionRules: look.rules,
       unlimitedScrollback: 1000000,
+      // the profile's Scrollback (else Default Settings'), over Settings > Terminal's; 0 for Settings > Terminal's
+      profileScrollback: look.scrollback ?? 0,
       cursorColor: this.cursorColor,
       profileTheme: look.theme ?? "",
       colors: { background: look.background ?? "", foreground: look.foreground ?? "", selection: look.selection ?? "", cursor: look.cursorColor ?? "" },
@@ -839,6 +852,7 @@ export class PageHost implements ScriptTarget {
         // output waits until the page has its settings, so the first lines are highlighted too
         this.link = event.link;
         this.configured = this.sendConfig(event.look);
+        this.lookArrived(event.look);
       } else if (event.type === "notice") {
         this.post({ type: "notice", text: event.text, kind: event.kind });
       } else if (event.type === "exit") {
@@ -884,7 +898,7 @@ export class PageHost implements ScriptTarget {
         this.ptyId = id;
         this.startedAt = Date.now();
         await invoke("pty_resize", { id, ...this.size }).catch(() => {});
-        if (!this.log) this.log = await invoke<{ id: number; path: string; temporary: boolean }>("log_open", { name: this.title }).catch(() => null);
+        if (!this.log) this.log = await this.openLog();
         this.markStarted();
       } catch (error) {
         if (!this.configured) await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" });
@@ -899,7 +913,7 @@ export class PageHost implements ScriptTarget {
       this.fetchedKey = false;
       this.startedAt = Date.now();
       // one log for the tab, kept across reconnects, as SuperXPuTTY's
-      if (!this.log) this.log = await invoke<{ id: number; path: string; temporary: boolean }>("log_open", { name: this.title }).catch(() => null);
+      if (!this.log) this.log = await this.openLog();
       this.markStarted();
     } catch (error) {
       let text = String(error);
@@ -980,6 +994,21 @@ export class PageHost implements ScriptTarget {
    * prompt and the ends of long lines in the middle of the output; on the Mac the host only wrapped lines early.
    * @param args pty_open's arguments but the size
    */
+  /** Called with the look as the session's "started" event comes (set by `look` below, so declared before it) */
+  private lookArrived: (look: Look) => void = () => {};
+  /** The look the session started with, once its "started" event has come (for the log's Keep); see [`openLog`] */
+  private look: Promise<Look | null> = new Promise((resolve) => (this.lookArrived = resolve));
+
+  /**
+   * Start the tab's log, kept or temporary as its profile's Session log says, else as Settings > General does. The
+   * profile's choice comes with the session's "started" event, which can come just after pty_open answers: wait for
+   * it a moment, then go by Settings > General
+   */
+  private async openLog(): Promise<{ id: number; path: string; temporary: boolean } | null> {
+    const look = await Promise.race([this.look, new Promise<null>((resolve) => setTimeout(() => resolve(null), LOOK_WAIT_MS))]);
+    return invoke<{ id: number; path: string; temporary: boolean }>("log_open", { name: this.title, keep: look?.keepLog ?? null }).catch(() => null);
+  }
+
   private async openPty(args: { target: Target; onEvent: ReturnType<PageHost["outputChannel"]>; loginAs: string | null }): Promise<void> {
     const opening = { ...this.size };
     this.ptyId = await invoke<number>("pty_open", { ...args, ...opening });

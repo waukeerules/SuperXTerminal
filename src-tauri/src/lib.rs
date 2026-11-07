@@ -685,12 +685,13 @@ struct LogStarted {
     temporary: bool,
 }
 
-/// Start a tab's session log: kept in the chosen folder when the settings say so, else temporary
+/// Start a tab's session log: kept in the chosen folder when the tab's profile says so (`keep`, its Session log),
+/// else when Settings > General says so (`keep` None); otherwise temporary
 #[tauri::command]
-fn log_open(state: State<'_, AppState>, logs: State<'_, logs::Logs>, name: String) -> Result<LogStarted, String> {
+fn log_open(state: State<'_, AppState>, logs: State<'_, logs::Logs>, name: String, keep: Option<bool>) -> Result<LogStarted, String> {
     let (keep, folder) = {
         let settings = state.settings.lock().unwrap();
-        (settings.session_log_enabled, settings.session_log_folder.clone())
+        (keep.unwrap_or(settings.session_log_enabled), settings.session_log_folder.clone())
     };
     let folder = if keep { logs::kept_folder(&folder) } else { logs::temp_folder() };
     let (id, path) = logs.open(&folder, &name)?;

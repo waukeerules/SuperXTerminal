@@ -75,6 +75,10 @@ export interface Profile {
   keyHomeEnd: string;
   /** What F1-F12 send: "tilde" (ESC[n~), "linux", "xtermr6", "vt100" or "sco"; "" for Default Settings' */
   keyFunction: string;
+  /** Lines its tabs keep to scroll back through; 0 for Default Settings', else Settings > Terminal's */
+  scrollback: number;
+  /** Its sessions' logs kept (true) or temporary (false); null: Default Settings', else Settings > General's */
+  sessionLog: boolean | null;
   /**
    * Which colours its tabs have: "" or "default" (Default Settings'), "theme" (Settings > Terminal's theme), "dark", "light" or
    * "custom" (the colours below); a profile with colours and no choice is custom
@@ -114,7 +118,7 @@ export interface Profile {
 export function emptyProfile(name: string): Profile {
   return {
     name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", forwards: [], agentForwarding: null, x11Forwarding: null, compression: null, olderAlgorithms: null, serverLoad: null, algorithms: "",
-    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", fontFamily: "", fontSize: 0, keyBackspace: "", keyHomeEnd: "", keyFunction: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
+    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", fontFamily: "", fontSize: 0, keyBackspace: "", keyHomeEnd: "", keyFunction: "", scrollback: 0, sessionLog: null, colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
   };
 }
 
@@ -176,6 +180,17 @@ export function profileFont(profiles: Profile[], name: string): { family: string
     family: profile?.fontFamily?.trim() || fallback?.fontFamily?.trim() || "",
     points: points ? Math.min(MAX_FONT_POINTS, Math.max(MIN_FONT_POINTS, points)) : 0,
   };
+}
+
+/**
+ * A profile's Scrollback as a session's tab takes it (`look` in src-tauri/src/launch.rs): its own, else Default
+ * Settings'; 0 for Settings > Terminal's. For a tab already open when it's saved
+ */
+export function profileScrollback(profiles: Profile[], name: string): number {
+  const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
+  const fallback = find(DEFAULT_PROFILE);
+  const profile = find(name) ?? fallback;
+  return Number(profile?.scrollback) || Number(fallback?.scrollback) || 0;
 }
 
 /** The keys' styles a profile can choose, PuTTY's default first (`Keys` in src-tauri/src/launch.rs) */

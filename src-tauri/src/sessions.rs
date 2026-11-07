@@ -312,6 +312,58 @@ pub fn user_folder() -> PathBuf {
 mod tests {
     use super::*;
 
+    /// A folder of its own for one test, empty
+    fn empty_folder(name: &str) -> PathBuf {
+        let folder = std::env::temp_dir().join(format!("sxt-sessions-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    /// A sessions file holding sessions with these ids
+    fn sessions_file(ids: &[&str]) -> String {
+        write_sessions(&ids.iter().map(|id| StoredSession::new(id)).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn a_backup_restored_is_the_sessions_file_again_and_what_it_replaced_is_backed_up() {
+        let folder = empty_folder("restore");
+        let file = folder.join("PrivateSessions.xml");
+        std::fs::write(folder.join("PrivateSessions.20261101_093000.xml"), sessions_file(&["Lab/sw1", "Lab/sw2"])).unwrap();
+        std::fs::write(&file, sessions_file(&["Lab/sw1"])).unwrap();
+        // Sessions.xml's backups beside it aren't PrivateSessions.xml's
+        std::fs::write(folder.join("Sessions.20261101_093000.xml"), sessions_file(&[])).unwrap();
+
+        let listed = backups(&file);
+        assert_eq!(listed.len(), 1);
+        assert_eq!((listed[0].name.as_str(), listed[0].sessions, listed[0].problem.is_none()), ("PrivateSessions.20261101_093000.xml", 2, true));
+
+        restore(&file, "PrivateSessions.20261101_093000.xml").unwrap();
+        let mut problems = Vec::new();
+        let ids: Vec<String> = read_sessions(&file, &mut problems).iter().map(|s| s.id().to_string()).collect();
+        assert_eq!(ids, ["Lab/sw1", "Lab/sw2"]);
+        // the one-session file it replaced is a backup now, so the restore can be undone
+        let after = backups(&file);
+        assert_eq!(after.len(), 2);
+        assert!(after.iter().any(|b| b.sessions == 1));
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_backup_that_isnt_a_sessions_file_or_isnt_a_backup_is_refused_and_the_file_left_as_it_is() {
+        let folder = empty_folder("refuse");
+        let file = folder.join("Sessions.xml");
+        std::fs::write(&file, sessions_file(&["Lab/sw1"])).unwrap();
+        std::fs::write(folder.join("Sessions.20261101_093000.xml"), "not xml <<<").unwrap();
+        assert!(backups(&file)[0].problem.is_some());
+        assert!(restore(&file, "Sessions.20261101_093000.xml").is_err());
+        // a name that isn't one of its backups can't reach another file
+        assert!(restore(&file, "../Sessions.20261101_093000.xml").is_err());
+        assert!(restore(&file, "Folders.xml").is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), sessions_file(&["Lab/sw1"]));
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
     #[test]
     fn a_session_shown_to_the_search_has_its_password_masked() {
         assert_eq!(super::masked_password("-l admin -pw cisco -L 80:x:80"), "-l admin -pw ******** -L 80:x:80");
@@ -505,17 +557,81 @@ pub(crate) fn back_up(path: &Path) {
         return;
     }
     let Ok(entries) = std::fs::read_dir(folder) else { return };
-    let prefix = format!("{base}.");
     let mut old: Vec<PathBuf> = entries
         .flatten()
         .map(|e| e.path())
-        .filter(|p| {
-            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&prefix) && n.ends_with(".xml") && n.len() == prefix.len() + 19)
-        })
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| is_backup_of(base, n)))
         .collect();
     old.sort();
     old.reverse();
     for extra in old.iter().skip(20) {
         let _ = std::fs::remove_file(extra);
     }
+}
+
+/// Whether `name` is one of [`back_up`]'s copies of the file named `base` ("Sessions" for Sessions.xml):
+/// "Sessions.yyyyMMdd_hhmmss.xml", digits and the one "_" only, so a name given to [`restore`] can't reach elsewhere
+fn is_backup_of(base: &str, name: &str) -> bool {
+    let Some(stamp) = name.strip_prefix(base).and_then(|r| r.strip_prefix('.')).and_then(|r| r.strip_suffix(".xml")) else {
+        return false;
+    };
+    stamp.len() == 15 && stamp.char_indices().all(|(i, c)| if i == 8 { c == '_' } else { c.is_ascii_digit() })
+}
+
+/// One backup of a sessions file, for Restore from Backup (Settings > General)
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Backup {
+    /// Its file name, beside the sessions file: what [`restore`] is given
+    pub name: String,
+    /// When the version it holds was saved, from the file's time ("2026-11-07 14:03:12", this computer's time): its
+    /// name's stamp has .NET's 12-hour "hh", as SuperXPuTTY writes it, so it can't tell morning from afternoon
+    pub saved: String,
+    /// How many sessions it holds
+    pub sessions: usize,
+    /// Why it can't be restored (it doesn't read as a sessions file); None when it can
+    pub problem: Option<String>,
+}
+
+/// A sessions file's backups, newest first
+pub fn backups(path: &Path) -> Vec<Backup> {
+    let (Some(folder), Some(base)) = (path.parent(), path.file_stem().and_then(|s| s.to_str())) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(folder) else { return Vec::new() };
+    let mut found: Vec<(std::time::SystemTime, Backup)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_str()?.to_string();
+            if !is_backup_of(base, &name) {
+                return None;
+            }
+            let modified = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+            let mut problems = Vec::new();
+            let sessions = read_sessions(&entry.path(), &mut problems).len();
+            let saved = chrono::DateTime::<chrono::Local>::from(modified).format("%Y-%m-%d %H:%M:%S").to_string();
+            Some((modified, Backup { name, saved, sessions, problem: problems.into_iter().next() }))
+        })
+        .collect();
+    found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.name.cmp(&a.1.name)));
+    found.into_iter().map(|(_, backup)| backup).collect()
+}
+
+/// Put a backup back as the sessions file. The file as it is now is backed up first, so a restore can itself be
+/// undone from the same list; a backup that doesn't read as a sessions file is refused, leaving the file as it is.
+/// The backup is read before that new backup is made, since making it can remove the oldest of the 20
+pub fn restore(path: &Path, name: &str) -> Result<(), String> {
+    let (Some(folder), Some(base)) = (path.parent(), path.file_stem().and_then(|s| s.to_str())) else {
+        return Err("The sessions file has no folder".into());
+    };
+    if !is_backup_of(base, name) {
+        return Err(format!("{name} isn't a backup of {base}.xml"));
+    }
+    let backup = folder.join(name);
+    let mut problems = Vec::new();
+    read_sessions(&backup, &mut problems);
+    if let Some(problem) = problems.into_iter().next() {
+        return Err(format!("{name} can't be restored: {problem}"));
+    }
+    let contents = std::fs::read(&backup).map_err(|e| format!("Couldn't read {name}: {e}"))?;
+    back_up(path);
+    crate::saving::save(path, "xml.saving", contents)
 }

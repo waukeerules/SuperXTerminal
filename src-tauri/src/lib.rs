@@ -2277,6 +2277,32 @@ fn sessions_reveal(state: State<'_, AppState>, store: sessions::Store) -> Result
     reveal(&file_or_folder(&folder, name))
 }
 
+/// Sessions.xml's or PrivateSessions.xml's file, for Restore from Backup: Database sessions have none, and Sessions.xml
+/// none until a settings folder is chosen
+fn sessions_file_of(state: &AppState, store: sessions::Store) -> Result<PathBuf, String> {
+    let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
+    sessions::file_of(store, settings_folder.as_deref(), &state.user_folder).ok_or_else(|| match store {
+        sessions::Store::Database => "Database sessions aren't kept in a file".to_string(),
+        _ => "No settings folder has been chosen yet".to_string(),
+    })
+}
+
+/// Settings > General's Restore from Backup: the backups of Sessions.xml or PrivateSessions.xml, newest first
+#[tauri::command]
+fn sessions_backups(state: State<'_, AppState>, store: sessions::Store) -> Result<Vec<sessions::Backup>, String> {
+    Ok(sessions::backups(&sessions_file_of(&state, store)?))
+}
+
+/// Put one of Sessions.xml's or PrivateSessions.xml's backups back (the file now is backed up first). The Sessions
+/// tree reads it again, as for any change on disk (`sessions_files_changed`)
+#[tauri::command]
+fn sessions_restore(state: State<'_, AppState>, store: sessions::Store, name: String) -> Result<(), String> {
+    let file = sessions_file_of(&state, store)?;
+    sessions::restore(&file, &name)?;
+    applog::info(format!("Restored {} from {name}", file.display()));
+    Ok(())
+}
+
 /// The file to show in Finder or File Explorer: `folder/name`, or the folder when the file isn't there yet (no
 /// session saved to it), since revealing a missing file opens Explorer on Documents instead and Finder on nothing
 fn file_or_folder(folder: &std::path::Path, name: &str) -> PathBuf {
@@ -2750,6 +2776,8 @@ pub fn run() {
             applog_clear,
             applog_reveal,
             sessions_reveal,
+            sessions_backups,
+            sessions_restore,
             command_history_load,
             command_history_add,
             requests_take,

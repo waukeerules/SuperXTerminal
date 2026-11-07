@@ -19,8 +19,11 @@
   }
   import { parseRules } from "../icons/environment";
   import EnvironmentColours from "./EnvironmentColours.svelte";
+  import RestoreBackup from "./RestoreBackup.svelte";
 
   let editingColours = $state(false);
+  /** Which sessions file Restore from Backup… is open for; null while it's closed */
+  let restoring = $state<"saved" | "private" | null>(null);
   let linksMessage = $state("");
   /** Why a Show in Finder / File Explorer beside a sessions file didn't work */
   let fileMessage = $state("");
@@ -71,16 +74,24 @@
         <input type="checkbox" checked={settings.useSessionsXml}
           onchange={(e) => void saveSettings({ useSessionsXml: e.currentTarget.checked })}
           disabled={settings.useSessionsXml && !settings.usePrivateSessions} /> Use Sessions.xml (Saved sessions)</label>
-      <button onclick={() => void showFile("saved")} disabled={!settings.settingsFolder}
-        title="Sessions.xml, in the settings folder">Show in {FILE_MANAGER}</button>
+      <span class="buttons">
+        <button onclick={() => (restoring = "saved")} disabled={!settings.settingsFolder}
+          title="Put back a copy of Sessions.xml kept before an earlier save">Restore from Backup…</button>
+        <button onclick={() => void showFile("saved")} disabled={!settings.settingsFolder}
+          title="Sessions.xml, in the settings folder">Show in {FILE_MANAGER}</button>
+      </span>
     </div>
     <div class="file">
       <label class="check" title="Untick to use only Saved and Database sessions: PrivateSessions.xml (only yours, on this computer) is then neither read nor written (it's left as it is), and nothing offers Private sessions">
         <input type="checkbox" checked={settings.usePrivateSessions}
           onchange={(e) => void saveSettings({ usePrivateSessions: e.currentTarget.checked })}
           disabled={settings.usePrivateSessions && !savedInUse} /> Use PrivateSessions.xml (Private sessions)</label>
-      <button onclick={() => void showFile("private")}
-        title="PrivateSessions.xml, in your own folder on {THIS_COMPUTER}">Show in {FILE_MANAGER}</button>
+      <span class="buttons">
+        <button onclick={() => (restoring = "private")}
+          title="Put back a copy of PrivateSessions.xml kept before an earlier save">Restore from Backup…</button>
+        <button onclick={() => void showFile("private")}
+          title="PrivateSessions.xml, in your own folder on {THIS_COMPUTER}">Show in {FILE_MANAGER}</button>
+      </span>
     </div>
     {#if fileMessage}<p class="hint">{fileMessage}</p>{/if}
     {#if !settings.usePrivateSessions || !savedInUse}
@@ -277,6 +288,10 @@
   </fieldset>
 </div>
 
+{#if restoring}
+  <RestoreBackup store={restoring} onClose={() => (restoring = null)} />
+{/if}
+
 {#if editingColours}
   <EnvironmentColours onClose={() => (editingColours = false)} />
 {/if}
@@ -363,11 +378,16 @@
     display: flex;
   }
 
-  /* a sessions file's checkbox, with its Show in Finder / File Explorer at the right */
+  /* a sessions file's checkbox, with its Restore from Backup and Show in Finder / File Explorer at the right */
   .file {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
+  }
+
+  .file .buttons {
+    display: flex;
     gap: 8px;
   }
 

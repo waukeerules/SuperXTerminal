@@ -2263,18 +2263,13 @@ fn applog_reveal() -> Result<(), String> {
 
 /// Settings > General's Show buttons beside Use Sessions.xml and Use PrivateSessions.xml: the file in Finder or
 /// File Explorer, whether or not it's in use. Sessions.xml is in the settings folder, PrivateSessions.xml in this
-/// user's own folder (on this computer); Database sessions have no file
+/// user's own folder (on this computer); Database sessions have no file. Returns what to tell the user when the file
+/// isn't there yet and its folder is shown instead, so an empty-looking folder isn't a puzzle
 #[tauri::command]
-fn sessions_reveal(state: State<'_, AppState>, store: sessions::Store) -> Result<(), String> {
-    let (folder, name) = match store {
-        sessions::Store::Saved => {
-            let folder = state.settings.lock().unwrap().settings_folder.clone();
-            (folder.ok_or("No settings folder has been chosen yet")?, "Sessions.xml")
-        }
-        sessions::Store::Private => (state.user_folder.clone(), "PrivateSessions.xml"),
-        sessions::Store::Database => return Err("Database sessions aren't kept in a file".into()),
-    };
-    reveal(&file_or_folder(&folder, name))
+fn sessions_reveal(state: State<'_, AppState>, store: sessions::Store) -> Result<Option<String>, String> {
+    let (shown, note) = file_or_folder(&sessions_file_of(&state, store)?);
+    reveal(&shown)?;
+    Ok(note)
 }
 
 /// Sessions.xml's or PrivateSessions.xml's file, for Restore from Backup: Database sessions have none, and Sessions.xml
@@ -2303,15 +2298,17 @@ fn sessions_restore(state: State<'_, AppState>, store: sessions::Store, name: St
     Ok(())
 }
 
-/// The file to show in Finder or File Explorer: `folder/name`, or the folder when the file isn't there yet (no
-/// session saved to it), since revealing a missing file opens Explorer on Documents instead and Finder on nothing
-fn file_or_folder(folder: &std::path::Path, name: &str) -> PathBuf {
-    let file = folder.join(name);
+/// What to show in Finder or File Explorer for a sessions file: the file, or its folder when it isn't there yet (no
+/// session has been saved to it), since revealing a missing file opens Explorer on Documents instead and Finder on
+/// nothing. The folder comes with a note saying the file will be made there
+fn file_or_folder(file: &std::path::Path) -> (PathBuf, Option<String>) {
     if file.exists() {
-        file
-    } else {
-        folder.to_path_buf()
+        return (file.to_path_buf(), None);
     }
+    let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let what = if name == "Sessions.xml" { "Saved" } else { "Private" };
+    let note = format!("There's no {name} yet: it's made in this folder when the first {what} session is saved.");
+    (file.parent().map(std::path::Path::to_path_buf).unwrap_or_default(), Some(note))
 }
 
 /// Send Commands' history saved from earlier runs, newest first, for the Command box as a window opens; none while
@@ -2947,13 +2944,17 @@ mod tests {
     }
 
     #[test]
-    fn show_in_the_file_manager_selects_the_sessions_file_or_opens_its_folder_before_there_is_one() {
+    fn show_in_the_file_manager_selects_the_sessions_file_or_opens_its_folder_saying_why_before_there_is_one() {
         let folder = std::env::temp_dir().join("sxt-reveal-test");
         let _ = std::fs::remove_dir_all(&folder);
         std::fs::create_dir_all(&folder).unwrap();
-        assert_eq!(super::file_or_folder(&folder, "PrivateSessions.xml"), folder);
-        std::fs::write(folder.join("PrivateSessions.xml"), "<ArrayOfSessionData />").unwrap();
-        assert_eq!(super::file_or_folder(&folder, "PrivateSessions.xml"), folder.join("PrivateSessions.xml"));
+        let file = folder.join("Sessions.xml");
+        // none yet: the folder, saying why the file isn't in it
+        let (shown, note) = super::file_or_folder(&file);
+        assert_eq!(shown, folder);
+        assert!(note.unwrap().contains("There's no Sessions.xml yet"));
+        std::fs::write(&file, "<ArrayOfSessionData />").unwrap();
+        assert_eq!(super::file_or_folder(&file), (file.clone(), None));
         let _ = std::fs::remove_dir_all(&folder);
     }
 

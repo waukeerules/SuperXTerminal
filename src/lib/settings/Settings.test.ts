@@ -21,7 +21,12 @@ beforeEach(() => {
   saved = [];
   revealed = [];
   mockIPC((cmd, args) => {
-    if (cmd === "sessions_reveal") return void revealed.push((args as { store: string }).store);
+    if (cmd === "sessions_reveal") {
+      const store = (args as { store: string }).store;
+      revealed.push(store);
+      // Sessions.xml not made yet: its folder is shown, with a note
+      return store === "saved" ? "There's no Sessions.xml yet: it's made in this folder when the first Saved session is saved." : null;
+    }
     if (cmd === "profiles_list") return [emptyProfile(DEFAULT_PROFILE)];
     if (cmd === "shortcuts_keys") return [{ id: "newTab", label: "New Local Terminal", key: "CmdOrCtrl+T", default: "CmdOrCtrl+T" }];
     if (cmd === "shortcuts_reserved") return [];
@@ -120,6 +125,17 @@ describe("Show in the file manager beside the sessions files", () => {
     await user.click(savedButton);
     await user.click(privateButton);
     expect(revealed).toEqual(["saved", "private"]);
+  });
+
+  it("says why only the folder showed when the file isn't made yet, and not once it's there", async () => {
+    const user = userEvent.setup();
+    Object.assign(settings, { settingsFolder: "/team", useSessionsXml: true, usePrivateSessions: true });
+    render(Settings, { onClose: () => {} });
+    const [savedButton, privateButton] = showButtons();
+    await user.click(savedButton);
+    expect(await screen.findByText(/There's no Sessions\.xml yet/)).toBeTruthy();
+    await user.click(privateButton);
+    await expect.poll(() => screen.queryByText(/There's no Sessions\.xml yet/)).toBeNull();
   });
 
   it("can't show Sessions.xml before a settings folder is chosen, but can show PrivateSessions.xml", () => {

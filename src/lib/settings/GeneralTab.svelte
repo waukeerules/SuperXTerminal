@@ -25,17 +25,16 @@
   /** Which sessions file Restore from Backup… is open for; null while it's closed */
   let restoring = $state<"saved" | "private" | null>(null);
   let linksMessage = $state("");
-  /** Why a Show in Finder / File Explorer beside a sessions file didn't work */
+  /** Why a Show in Finder / File Explorer beside a sessions file showed its folder only, or didn't work */
   let fileMessage = $state("");
 
   /**
-   * Show Sessions.xml or PrivateSessions.xml in Finder or File Explorer, selected (its folder, before anything's
-   * been saved to it), whether or not it's in use
+   * Show Sessions.xml or PrivateSessions.xml in Finder or File Explorer, selected (its folder, saying why, before
+   * anything's been saved to it), whether or not it's in use
    */
   async function showFile(store: "saved" | "private"): Promise<void> {
     try {
-      fileMessage = "";
-      await invoke("sessions_reveal", { store });
+      fileMessage = (await invoke<string | null>("sessions_reveal", { store })) ?? "";
     } catch (e) {
       fileMessage = String(e);
     }

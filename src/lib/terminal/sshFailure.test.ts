@@ -32,6 +32,20 @@ describe("sshFailure", () => {
     expect(sshFailure("Unable to negotiate with 10.0.0.9 port 22: no matching host key type found. Their offer: ssh-rsa\r\n")).toMatchObject({ what: "host key type", offer: "ssh-rsa" });
   });
 
+  it("reads a jump server that won't forward, and doesn't reconnect by itself", () => {
+    // OpenSSH's words for ssh -J through a server with AllowTcpForwarding no (OpenMediaVault's default)
+    const failure = sshFailure("channel 0: open failed: administratively prohibited: open failed\r\nstdio forwarding failed\r\nConnection closed by UNKNOWN port 65535\r\n");
+    expect(failure).toEqual({ kind: "jumpForwarding" });
+    expect(retries(failure)).toBe(false);
+  });
+
+  it("reads a jump server that can't reach the device as the jump server's, not this computer's", () => {
+    const failure = sshFailure("channel 0: open failed: connect failed: No route to host\r\nstdio forwarding failed\r\nConnection closed by UNKNOWN port 65535\r\n");
+    expect(failure).toEqual({ kind: "jumpConnect", reason: "No route to host" });
+    // the device may be restarting: tried again, as a direct No route is
+    expect(retries(failure)).toBe(true);
+  });
+
   it("reads too many attempts before a Permission denied the device sends with it", () => {
     const failure = sshFailure("Received disconnect from 10.0.0.9 port 22:2: Too many authentication failures\r\nDisconnected from 10.0.0.9 port 22\r\n");
     expect(failure).toEqual({ kind: "tooManyAttempts" });

@@ -156,6 +156,14 @@ describe("a session's tab when ssh ends", () => {
     expect(host!.isReconnecting).toBe(false);
   });
 
+  it("says a jump server doesn't allow forwarding, and how to turn it on, without reconnecting", async () => {
+    await sshEnds("channel 0: open failed: administratively prohibited: open failed\r\nstdio forwarding failed\r\nConnection closed by UNKNOWN port 65535\r\n");
+    await expect.poll(() => notices().join("\n")).toContain("The jump server won't pass the connection on: it doesn't allow TCP forwarding");
+    expect(notices().join("\n")).toContain("AllowTcpForwarding");
+    expect(notices().join("\n")).toContain("Log in here");
+    expect(host!.isReconnecting).toBe(false);
+  });
+
   it("offers older algorithms for the profile, and F turns them on and reconnects", async () => {
     await sshEnds("Unable to negotiate with 10.0.0.9 port 22: no matching key exchange method found. Their offer: diffie-hellman-group1-sha1\r\n");
     await expect.poll(() => notices().join("\n")).toContain("no key exchange method in common (it offers diffie-hellman-group1-sha1)");

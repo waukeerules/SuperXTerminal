@@ -31,7 +31,8 @@
   import { isMac } from "../shortcuts";
   import { SECRET_STORE, THIS_COMPUTER } from "../platform";
   import { lineOf, withLine } from "./serial";
-  import { chosenScript, fullPathNote } from "../scripting/scriptPath";
+  import { chosenScript } from "../scripting/scriptPath";
+  import ScriptPathNote from "../scripting/ScriptPathNote.svelte";
   import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
   interface Props {
@@ -562,7 +563,7 @@
         <button onclick={() => (draft.script = "")}>Clear</button>
         <button onclick={browseScript}>Browse…</button>
       </div>
-      {#if fullPathNote(draft.script)}<p class="note" role="note" aria-label="Login script path">{fullPathNote(draft.script)}</p>{/if}
+      <ScriptPathNote spec={draft.script} onCopied={(spec) => (draft.script = spec)} disabled={locked("spsl_script")} />
       <!-- the bar shown while its tab is active, over its profile's and the tab icon's; one picked by hand still wins -->
       <div class="row">
         <label>{@render caption("Button bar:", "buttonBar")}

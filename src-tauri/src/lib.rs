@@ -625,6 +625,14 @@ fn script_chosen(state: State<'_, AppState>, path: String) -> String {
     scripts::as_spec(&shared_folder(&state), std::path::Path::new(&path))
 }
 
+/// Copy a login script that's a full path into the settings folder's scripts folder, for the name a shared session
+/// or profile can keep (scripts::copy_in); a different file of that name there is replaced only with `replace`
+#[tauri::command]
+fn script_copy_in(state: State<'_, AppState>, path: String, replace: bool) -> Result<scripts::CopiedIn, String> {
+    let path = path.trim();
+    scripts::copy_in(&shared_folder(&state), std::path::Path::new(path.strip_prefix("file://").unwrap_or(path)), replace)
+}
+
 /// The saved scripts
 #[tauri::command]
 fn scripts_list(state: State<'_, AppState>) -> Vec<scripts::Entry> {
@@ -2856,6 +2864,7 @@ pub fn run() {
             buttonbars_import,
             scripts_list,
             script_chosen,
+            script_copy_in,
             session_script,
             quick_connect_script,
             script_load,

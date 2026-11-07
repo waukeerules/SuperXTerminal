@@ -4,7 +4,7 @@
 // side is stood in for by mockIPC: what's saved, what's stored as the session's password, the profiles and the
 // variables, which can be held back to show the window before they arrive.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import EditSession from "./EditSession.svelte";
@@ -27,6 +27,10 @@ let profilesWait: Promise<void> | null;
 let variables: string[];
 /** The profiles profiles_list gives */
 let profileList: Record<string, unknown>[];
+/** What the dialogs asked */
+let asked: string[];
+/** Each Copy to Scripts Folder's `replace` */
+let copies: boolean[];
 
 beforeEach(() => {
   saved = null;
@@ -35,6 +39,8 @@ beforeEach(() => {
   profilesWait = null;
   variables = [];
   profileList = [{ name: "Default Settings" }, { name: "root" }];
+  asked = [];
+  copies = [];
   mockIPC(async (cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (cmd === "session_password_has") return false;
@@ -62,8 +68,17 @@ beforeEach(() => {
     }
     if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
     if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [], tabIcons: [] }, { name: "Cisco", buttons: [], tabIcons: [] }];
-    // Move -pw here asks first, with its own button labels: answered with its OK button
-    if (cmd === "plugin:dialog|message") return "Move it";
+    // Move -pw here and Copy to Scripts Folder ask first, with their own button labels: answered with the OK button
+    if (cmd === "plugin:dialog|message") {
+      asked.push(String(payload.message));
+      const buttons = payload.buttons;
+      return typeof buttons === "object" && buttons ? Object.values(buttons as Record<string, string[]>)[0][0] : "Move it";
+    }
+    // a different jump-host.spsl is in the scripts folder already, until it's replaced
+    if (cmd === "script_copy_in") {
+      copies.push(payload.replace as boolean);
+      return { kind: payload.replace ? "copied" : "exists", spec: "scripts/jump-host.spsl" };
+    }
     return null;
   });
 });
@@ -294,5 +309,23 @@ describe("Edit Session with a CyberArk profile", () => {
     open({ ...SWITCH, username: "admin" });
     await screen.findByRole("note", { name: "Key" });
     expect(screen.queryByRole("note", { name: "Gateway" })).toBeNull();
+  });
+});
+
+describe("Edit Session's login script", () => {
+  it("offers to copy a full path's script to the scripts folder, asks before replacing another, and names the copy", async () => {
+    const user = userEvent.setup();
+    open({ ...SESSION, script: String.raw`C:\Users\me\Downloads\jump-host.spsl` });
+    await user.click(screen.getByRole("tab", { name: "Terminal" }));
+    const note = screen.getByRole("note", { name: "Login script path" });
+    expect(note.textContent).toMatch(/^A full path, found on this (Mac|PC) only\./);
+    await user.click(within(note).getByRole("button", { name: "Copy to Scripts Folder" }));
+    await expect.poll(() => (screen.getByLabelText(/Login script/) as HTMLInputElement).value).toBe("scripts/jump-host.spsl");
+    expect(copies).toEqual([false, true]);
+    expect(asked).toEqual(["The scripts folder already has scripts/jump-host.spsl, and it's different. Replace it with this one?"]);
+    // a relative path is found from the Mac and Windows alike: nothing more to say
+    expect(screen.queryByRole("note", { name: "Login script path" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await expect.poll(() => saved?.script).toBe("scripts/jump-host.spsl");
   });
 });

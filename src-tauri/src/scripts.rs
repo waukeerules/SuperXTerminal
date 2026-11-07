@@ -103,6 +103,33 @@ pub fn as_spec(settings_folder: &Path, chosen: &Path) -> String {
     }
 }
 
+/// What [`copy_in`] did: the script's new name as a session or profile keeps it ("scripts/jump-host.spsl"), or that
+/// another file of that name is there already, left as it was
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CopiedIn {
+    /// Copied (or the same file was already there): use this
+    Copied { spec: String },
+    /// The scripts folder has a different file of this name; nothing was copied
+    Exists { spec: String },
+}
+
+/// Copy a login script that's a full path (found on one system only) into the settings folder's scripts folder, so a
+/// shared session or profile can name it relative, for the Mac and Windows both. A different file of the same name
+/// is replaced only when `replace` says so; the same text there already counts as copied
+pub fn copy_in(settings_folder: &Path, from: &Path, replace: bool) -> Result<CopiedIn, String> {
+    let text = std::fs::read(from).map_err(|e| format!("Can't read {}: {e}", from.display()))?;
+    let file = from.file_name().ok_or_else(|| format!("{} isn't a file", from.display()))?;
+    let spec = format!("scripts/{}", file.to_string_lossy());
+    let to = folder(settings_folder).join(file);
+    if to.exists() && !replace && std::fs::read(&to).ok().as_deref() != Some(&text[..]) {
+        return Ok(CopiedIn::Exists { spec });
+    }
+    std::fs::create_dir_all(folder(settings_folder)).map_err(|e| e.to_string())?;
+    std::fs::write(&to, text).map_err(|e| e.to_string())?;
+    Ok(CopiedIn::Copied { spec })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,6 +159,28 @@ mod tests {
         assert_eq!(as_spec(&dir, &dir.join("scripts").join("Cisco login.spsl")), "scripts/Cisco login.spsl");
         assert_eq!(as_spec(&dir, &elsewhere), elsewhere.to_string_lossy());
         std::fs::remove_file(&elsewhere).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_script_copied_in_lands_in_the_scripts_folder_and_another_of_its_name_is_replaced_only_when_asked() {
+        let dir = std::env::temp_dir().join(format!("sxt-copy-in-{}", std::process::id()));
+        let downloads = dir.join("Downloads");
+        std::fs::create_dir_all(&downloads).unwrap();
+        let from = downloads.join("jump-host.spsl");
+        std::fs::write(&from, "SENDLINE new").unwrap();
+        let settings = dir.join("settings");
+        let spec = "scripts/jump-host.spsl".to_string();
+        assert_eq!(copy_in(&settings, &from, false), Ok(CopiedIn::Copied { spec: spec.clone() }));
+        assert_eq!(std::fs::read_to_string(settings.join("scripts/jump-host.spsl")).unwrap(), "SENDLINE new");
+        // the same again is fine; a different one of that name waits to be asked
+        assert_eq!(copy_in(&settings, &from, false), Ok(CopiedIn::Copied { spec: spec.clone() }));
+        std::fs::write(settings.join("scripts/jump-host.spsl"), "SENDLINE team's").unwrap();
+        assert_eq!(copy_in(&settings, &from, false), Ok(CopiedIn::Exists { spec: spec.clone() }));
+        assert_eq!(std::fs::read_to_string(settings.join("scripts/jump-host.spsl")).unwrap(), "SENDLINE team's");
+        assert_eq!(copy_in(&settings, &from, true), Ok(CopiedIn::Copied { spec }));
+        assert_eq!(std::fs::read_to_string(settings.join("scripts/jump-host.spsl")).unwrap(), "SENDLINE new");
+        assert!(copy_in(&settings, &downloads.join("gone.spsl"), false).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

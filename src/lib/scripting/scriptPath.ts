@@ -2,7 +2,8 @@
  * A login script's path as a session or profile keeps it. Sessions and profiles in a shared settings folder or
  * database are opened from the Mac and from Windows, so a script picked with Choose… is kept relative to the settings
  * folder when it's in there ("scripts/cisco-login.spsl"), which each system looks in. A full path ("C:\Scripts\...",
- * "/Users/...") is found by one system only, and Edit Session and Settings > Profiles say so under the field.
+ * "/Users/...") is found by one system only, and Edit Session and Settings > Profiles say so under the field, with a
+ * button that copies the script in (ScriptPathNote.svelte).
  */
 import { invoke } from "@tauri-apps/api/core";
 import { THIS_COMPUTER } from "../platform";
@@ -31,7 +32,7 @@ export function isFullPath(spec: string): boolean {
  */
 export function fullPathNote(spec: string): string {
   return isFullPath(spec)
-    ? `A full path, found on ${THIS_COMPUTER} only. To share it between the Mac and Windows, put the script in the ` +
-        `settings folder's scripts folder and choose it from there.`
+    ? `A full path, found on ${THIS_COMPUTER} only. To share it between the Mac and Windows, copy the script to the ` +
+        `settings folder's scripts folder.`
     : "";
 }

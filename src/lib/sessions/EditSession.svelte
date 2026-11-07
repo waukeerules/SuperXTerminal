@@ -31,6 +31,7 @@
   import { isMac } from "../shortcuts";
   import { SECRET_STORE, THIS_COMPUTER } from "../platform";
   import { lineOf, withLine } from "./serial";
+  import { chosenScript, fullPathNote } from "../scripting/scriptPath";
   import { PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
   interface Props {
@@ -368,10 +369,13 @@
     if (!TABS.some((t) => t.name === tab)) tab = "General";
   });
 
-  /** Choose a login script file: SPSL (#!/bin/spsl) or Rhai (#!/bin/rhai, or .rhai) */
+  /**
+   * Choose a login script file: SPSL (#!/bin/spsl) or Rhai (#!/bin/rhai, or .rhai). One in the settings folder is
+   * kept relative to it, so the session finds it from the Mac and from Windows (scriptPath.ts)
+   */
   async function browseScript(): Promise<void> {
     const path = await open({ title: "Choose the session's login script", filters: [{ name: "Scripts", extensions: ["spsl", "rhai", "txt"] }] });
-    if (typeof path === "string") draft.script = path;
+    if (typeof path === "string") draft.script = await chosenScript(path);
   }
 
   /** Choose the local folder for file transfers */
@@ -558,6 +562,7 @@
         <button onclick={() => (draft.script = "")}>Clear</button>
         <button onclick={browseScript}>Browse…</button>
       </div>
+      {#if fullPathNote(draft.script)}<p class="note" role="note" aria-label="Login script path">{fullPathNote(draft.script)}</p>{/if}
       <!-- the bar shown while its tab is active, over its profile's and the tab icon's; one picked by hand still wins -->
       <div class="row">
         <label>{@render caption("Button bar:", "buttonBar")}

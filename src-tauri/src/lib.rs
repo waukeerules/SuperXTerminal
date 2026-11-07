@@ -610,11 +610,19 @@ fn read_script(spec: &str, profile: Option<String>, folder: &std::path::Path) ->
         return SessionScript::Url { url: spec.to_string(), profile };
     }
     let path = PathBuf::from(spec.strip_prefix("file://").unwrap_or(spec));
-    let path = if path.is_absolute() { path } else { folder.join(path) };
+    // a relative one typed on Windows ("scripts\login.spsl") is found on the Mac too, where \ is a letter in a name
+    let path = if path.is_absolute() { path } else { folder.join(spec.replace('\\', "/")) };
     match std::fs::read_to_string(&path) {
         Ok(text) => SessionScript::Text { text, profile, source: spec.to_string() },
         Err(_) => SessionScript::Missing { path: spec.to_string(), profile },
     }
+}
+
+/// A login script file picked with Choose… (Edit Session, Settings > Profiles) as the session or profile keeps it:
+/// relative to the settings folder when it's in there, so the Mac and Windows both find it (scripts::as_spec)
+#[tauri::command]
+fn script_chosen(state: State<'_, AppState>, path: String) -> String {
+    scripts::as_spec(&shared_folder(&state), std::path::Path::new(&path))
 }
 
 /// The saved scripts
@@ -2847,6 +2855,7 @@ pub fn run() {
             buttonbars_export,
             buttonbars_import,
             scripts_list,
+            script_chosen,
             session_script,
             quick_connect_script,
             script_load,
@@ -3129,5 +3138,19 @@ mod tests {
             }
         }
         assert!(checked > 0, "found no command that makes a window: has window_new moved?");
+    }
+
+    /// A session or profile shared between the Mac and Windows names its login script relative to the settings folder;
+    /// one typed on Windows, with backslashes, is found on the Mac as well, where \ would be a letter in the name
+    #[test]
+    fn a_relative_login_script_is_found_with_either_systems_slashes() {
+        let dir = std::env::temp_dir().join(format!("sxt-read-script-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("scripts")).unwrap();
+        std::fs::write(dir.join("scripts").join("login.spsl"), "SENDLINE x").unwrap();
+        for spec in ["scripts/login.spsl", r"scripts\login.spsl"] {
+            assert!(matches!(super::read_script(spec, None, &dir), super::SessionScript::Text { ref text, .. } if text == "SENDLINE x"), "{spec}");
+        }
+        assert!(matches!(super::read_script("scripts/other.spsl", None, &dir), super::SessionScript::Missing { .. }));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -88,6 +88,21 @@ pub fn delete(settings_folder: &Path, name: &str, kind: &str) -> Result<(), Stri
     std::fs::remove_file(path_of(settings_folder, name, kind)).map_err(|e| e.to_string())
 }
 
+/// A login script file chosen with Choose…, as a session or profile keeps it: relative to the settings folder, with
+/// forward slashes ("scripts/cisco-login.spsl"), when it's in there, else the path as chosen. Sessions and profiles
+/// in a shared folder or database are opened from the Mac and Windows alike, and a full path ("C:\Scripts\..." or
+/// "/Users/...") is found on one of them only; the settings folder is where each looks for a relative one. Both are
+/// compared as the system resolves them (case, `..`, links, and Windows' `\\?\`), else as written when one can't be
+pub fn as_spec(settings_folder: &Path, chosen: &Path) -> String {
+    let resolve = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    match resolve(chosen).strip_prefix(resolve(settings_folder)) {
+        Ok(inside) if !inside.as_os_str().is_empty() => {
+            inside.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/")
+        }
+        _ => chosen.to_string_lossy().into_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,6 +119,19 @@ mod tests {
         assert_eq!(list(&dir), vec![Entry { name: "Login".into(), kind: "rhai".into() }]);
         assert!(!dir.join("scripts/Login.spsl").exists());
         assert!(name_problem("bad/name").is_some());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_script_chosen_in_the_settings_folder_is_kept_relative_and_one_elsewhere_whole() {
+        let dir = std::env::temp_dir().join(format!("sxt-script-spec-{}", std::process::id()));
+        save(&dir, "Cisco login", "spsl", "SENDLINE x").unwrap();
+        let elsewhere = std::env::temp_dir().join(format!("sxt-script-elsewhere-{}.spsl", std::process::id()));
+        std::fs::write(&elsewhere, "SENDLINE y").unwrap();
+        // forward slashes on Windows too, so the Mac finds it
+        assert_eq!(as_spec(&dir, &dir.join("scripts").join("Cisco login.spsl")), "scripts/Cisco login.spsl");
+        assert_eq!(as_spec(&dir, &elsewhere), elsewhere.to_string_lossy());
+        std::fs::remove_file(&elsewhere).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

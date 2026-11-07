@@ -13,6 +13,7 @@
   import { isMac } from "../shortcuts";
   import { context } from "../commands/sending.svelte";
   import { keyFetchExamples } from "./keyFetchExamples";
+  import { chosenScript, fullPathNote } from "../scripting/scriptPath";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { baseChain, coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, MAX_FONT_POINTS, mergedProfile, ownColoursChoice, resolvedProfile, saveProfile, type Forward, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
@@ -395,7 +396,7 @@
   /** Choose the login script (SPSL or Rhai) the profile's sessions run as they open */
   async function chooseScript(): Promise<void> {
     const path = await open({ title: "Choose the profile's login script", filters: [{ name: "Scripts", extensions: ["spsl", "rhai", "txt"] }] });
-    if (typeof path === "string") draft.script = path;
+    if (typeof path === "string") draft.script = await chosenScript(path);
   }
 
   /** Examples for the Fetch command, for this system; the one last picked, for its note */
@@ -783,6 +784,7 @@
       <label>{@render caption("Login script", "script")}<input bind:value={draft.script}
           placeholder={isDefault ? "none; a file, or an http(s) address" : defaultProfile?.script ? `${FROM} (${defaultProfile.script})` : "none; a file, or an http(s) address"} />
         <button onclick={chooseScript}>Choose…</button></label>
+      {#if fullPathNote(draft.script)}<p class="note under" role="note" aria-label="Login script path">{fullPathNote(draft.script)}</p>{/if}
       <p class="note under">Run in each of the profile's tabs as it opens, when the session has no login script of its
         own (Edit Session > Terminal), so a session can be just a name and a host. SPSL, starting with #!/bin/spsl; or
         Rhai, starting with #!/bin/rhai or named .rhai. It starts as the connection does: begin with WAITPROMPT (Rhai:

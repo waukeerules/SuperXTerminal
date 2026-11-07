@@ -60,7 +60,9 @@ beforeEach(() => {
       return typeof buttons === "object" && buttons ? Object.values(buttons as Record<string, string[]>)[0][0] : "Yes";
     }
     if (cmd === "plugin:dialog|save") return "/tmp/root profile.json";
-    if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("login script") ? "/Users/me/scripts/omv-login.spsl" : pickedFile;
+    if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("login script") ? "/Users/me/SuperXTerminal/scripts/omv-login.spsl" : pickedFile;
+    // as scripts::as_spec, for a settings folder of /Users/me/SuperXTerminal: a script in there is kept relative
+    if (cmd === "script_chosen") return String(payload.path).replace(/^\/Users\/me\/SuperXTerminal\//, "");
     if (cmd === "profiles_read_file") return inFile;
     if (cmd === "profiles_read_putty") return puttyFile;
     if (cmd === "profile_templates") return templates;
@@ -456,10 +458,15 @@ describe("Settings > Profiles", () => {
     expect(dots()).toHaveLength(1);
     await userEvent.click(button("Save"));
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", script: "linux-login.spsl" });
-    // Choose… puts the file picked in its place
+    // Choose… puts the file picked in its place, relative to the settings folder it's in, so the Mac and Windows
+    // both find it; a full path typed is found on one only, and the field says so
     const choose = within(script().closest("label")!).getByRole("button", { name: "Choose…" });
     await userEvent.click(choose);
-    await expect.poll(() => script().value).toBe("/Users/me/scripts/omv-login.spsl");
+    await expect.poll(() => script().value).toBe("scripts/omv-login.spsl");
+    expect(screen.queryByRole("note", { name: "Login script path" })).toBeNull();
+    await userEvent.clear(script());
+    await userEvent.type(script(), "/Users/me/omv.spsl");
+    expect(screen.getByRole("note", { name: "Login script path" }).textContent).toMatch(/^A full path, found on this (Mac|PC) only\./);
   });
 
   it("ticks Log in here for a jump server, and doesn't offer it on Default Settings", async () => {

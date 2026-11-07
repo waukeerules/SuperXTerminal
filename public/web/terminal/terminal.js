@@ -1659,6 +1659,8 @@
             case 'colors': profileColours = message.colors || {}; profileTheme = message.theme || null; applyTheme(); break;
             // the profile was saved with another font or size (SuperXTerminal)
             case 'profileFont': profileFont = message.font || { family: '', points: 0 }; applyFont(); break;
+            // the profile was saved with other Backspace, Home/End or function keys (SuperXTerminal)
+            case 'keys': if (message.keys) { keysFromProfile = message.keys; } break;
         }
     }
 

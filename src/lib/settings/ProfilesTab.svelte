@@ -119,6 +119,9 @@
     if (isDefault && field === "cursorBlink") return value ?? true;
     if (isDefault && field === "cursor") return value || "block";
     if (isDefault && field === "bell") return value || "visual";
+    if (isDefault && field === "keyBackspace") return value || "del";
+    if (isDefault && field === "keyHomeEnd") return value || "standard";
+    if (isDefault && field === "keyFunction") return value || "tilde";
     if (field === "colours") return shownChoice(profile);
     return value ?? null;
   }
@@ -134,7 +137,7 @@
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
-    "fontFamily", "fontSize", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
+    "fontFamily", "fontSize", "keyBackspace", "keyHomeEnd", "keyFunction", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
   ];
 
   /** The button bars' names (ButtonBars.xml in the settings folder), for the Button bar box */
@@ -537,6 +540,30 @@
         <span class="note">{isDefault || !defaultProfile?.fontSize ? "points (0: the theme's)" : `points (0: Default Settings', ${defaultProfile.fontSize})`}</span></label>
       <p class="note under">As PuTTY's Window > Appearance > Font. Its tabs draw in it while Settings > Terminal > Font is
         The profile's (the default); a font or size chosen there, or a size from Ctrl+wheel, wins over it.</p>
+      <label>{@render caption("Backspace sends", "keyBackspace")}
+        <select value={isDefault ? draft.keyBackspace || "del" : draft.keyBackspace} onchange={(e) => (draft.keyBackspace = e.currentTarget.value)}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          <option value="del">Control-? (127, PuTTY's default)</option>
+          <option value="bs">Control-H (8)</option>
+        </select></label>
+      <label>{@render caption("Home and End", "keyHomeEnd")}
+        <select value={isDefault ? draft.keyHomeEnd || "standard" : draft.keyHomeEnd} onchange={(e) => (draft.keyHomeEnd = e.currentTarget.value)}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          <option value="standard">Standard (ESC[1~ and ESC[4~)</option>
+          <option value="rxvt">rxvt</option>
+        </select></label>
+      <label>{@render caption("Function keys", "keyFunction")}
+        <select value={isDefault ? draft.keyFunction || "tilde" : draft.keyFunction} onchange={(e) => (draft.keyFunction = e.currentTarget.value)}>
+          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          <option value="tilde">ESC[n~ (PuTTY's default)</option>
+          <option value="linux">Linux console</option>
+          <option value="xtermr6">Xterm R6</option>
+          <option value="vt100">VT100+</option>
+          <option value="sco">SCO</option>
+        </select></label>
+      <p class="note under">As PuTTY's Terminal > Keyboard, for a device that reads the keys another way: an older Unix
+        or switch that deletes with Control-H shows ^? when Backspace is pressed. Settings > Terminal > Keys set to xterm's
+        turns these off for every tab; a local shell always has xterm's.</p>
       <label>{@render caption("Colours", "colours")}
         <select value={shownChoice(draft)} onchange={(e) => (draft.colours = e.currentTarget.value)}>
           {#if !isDefault}<option value="default">From Default Settings ({SHORT[coloursChoice(defaultProfile, undefined)]})</option>{/if}

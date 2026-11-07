@@ -15,7 +15,7 @@ import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
 import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
-import { DEFAULT_PROFILE, listProfiles, profileColours, profileFont, PROFILES_CHANGED, saveProfile } from "../settings/profiles";
+import { DEFAULT_PROFILE, listProfiles, profileColours, profileFont, profileKeys, PROFILES_CHANGED, saveProfile } from "../settings/profiles";
 import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailure";
 import { antiIdleKeys } from "./antiIdle";
 import { running } from "../commands/sending.svelte";
@@ -54,6 +54,8 @@ interface Look {
   fontFamily?: string;
   /** The profile's font size in points, else Default Settings'; 0 or absent for the theme's */
   fontSize?: number;
+  /** What Backspace, Home/End and F1-F12 send (the profile's, else Default Settings', else PuTTY's); absent: PuTTY's */
+  keys?: { backspace: string; homeEnd: string; functionKeys: string };
   /** The profile's anti-idle string, as KiTTY writes it; "" or absent for none */
   antiIdle?: string;
   /** Seconds without typing before it's typed; 0 with no string */
@@ -318,7 +320,7 @@ export class PageHost implements ScriptTarget {
    */
   tabColor: string | null = null;
 
-  /** A profile was saved or removed: the tab takes its profile's colours and font again, its tab's colour included */
+  /** A profile was saved or removed: the tab takes its profile's colours, font and keys again, its tab's colour included */
   private readonly onProfilesChanged = (): void => {
     const name = this.profile;
     if (name === null) return;
@@ -326,6 +328,7 @@ export class PageHost implements ScriptTarget {
       const { theme, tab, ...colors } = profileColours(profiles, name);
       this.post({ type: "colors", colors, theme });
       this.post({ type: "profileFont", font: profileFont(profiles, name) });
+      this.post({ type: "keys", keys: profileKeys(profiles, name) });
       this.tabColor = tab || null;
       this.onState();
     }).catch(() => {});
@@ -783,8 +786,8 @@ export class PageHost implements ScriptTarget {
       prefs: allPrefs(),
       // the system's own monospaced fonts, for the page's font menu
       fonts: MONOSPACE_FONTS,
-      // PuTTY's defaults (the profile's Terminal > Keyboard and Bell settings aren't in SuperXTerminal's profiles)
-      keys: { backspace: "del", homeEnd: "standard", functionKeys: "tilde" },
+      // the profile's Backspace, Home/End and function keys (Settings > Profiles > Terminal), else PuTTY's defaults
+      keys: look.keys ?? { backspace: "del", homeEnd: "standard", functionKeys: "tilde" },
       bellOverload: { on: true, count: 5, windowMs: 2000, quietMs: 5000 },
       // the profile's font (Settings > Profiles > Font), else Default Settings'; "" and 0: the theme's
       profileFont: { family: look.fontFamily ?? "", points: look.fontSize ?? 0 },

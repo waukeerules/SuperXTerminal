@@ -528,6 +528,36 @@ test.describe("the profile's font", () => {
   });
 });
 
+test.describe("the profile's keys", () => {
+  /** Watch what the page sends the session as typing */
+  async function watchInput(page: Page) {
+    await page.evaluate(() => {
+      (window as any).typed = [];
+      window.addEventListener("message", (e) => { if (e.data?.channel === "sxt-page" && e.data.message?.type === "input") (window as any).typed.push(e.data.message.data); });
+    });
+  }
+  const typed = (page: Page) => page.evaluate(() => (window as any).typed as string[]);
+
+  test("Backspace sends Control-H, and F1 VT100's, when the profile says, and Control-? again once it's saved back", async ({ page }) => {
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    await page.evaluate(() => (window as any).terminalDev.message({
+      type: "config", prefs: { keys: "profile" }, themes: [{ name: "PuTTY", colors: {} }], keys: { backspace: "bs", homeEnd: "standard", functionKeys: "vt100" },
+    }));
+    await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+    await watchInput(page);
+    await page.locator("#terminal").click();
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("F1");
+    await expect.poll(() => typed(page)).toEqual(["\x08", "\x1bOP"]);
+    // the profile saved with PuTTY's defaults: the open tab follows
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "keys", keys: { backspace: "del", homeEnd: "standard", functionKeys: "tilde" } }));
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("F1");
+    await expect.poll(() => typed(page)).toEqual(["\x08", "\x1bOP", "\x7f", "\x1b[11~"]);
+  });
+});
+
 test.describe("Find", () => {
   /** Watch what the page sends TerminalControl (through host/webview.js, to the page itself here) */
   async function watchSent(page: Page) {

@@ -1,7 +1,7 @@
 // A profile's terminal colours, Tab colour and font as its tabs take them again when it's saved: its own, else
 // Default Settings'.
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PROFILE, emptyProfile, profileColours, profileFont } from "./profiles";
+import { DEFAULT_PROFILE, emptyProfile, profileColours, profileFont, profileKeys } from "./profiles";
 
 describe("profileColours", () => {
   const profiles = [
@@ -55,5 +55,16 @@ describe("profileFont", () => {
     expect(profileFont(profiles, "gone")).toEqual({ family: "Consolas", points: 11 });
     // none anywhere: the theme's
     expect(profileFont([emptyProfile(DEFAULT_PROFILE)], DEFAULT_PROFILE)).toEqual({ family: "", points: 0 });
+  });
+});
+
+describe("profileKeys", () => {
+  it("takes the profile's own, else Default Settings', else PuTTY's, a style it doesn't know being PuTTY's", () => {
+    const profiles = [
+      { ...emptyProfile(DEFAULT_PROFILE), keyBackspace: "bs" },
+      { ...emptyProfile("Old Unix"), keyHomeEnd: "rxvt", keyFunction: "vt52" },
+    ];
+    expect(profileKeys(profiles, "old unix")).toEqual({ backspace: "bs", homeEnd: "rxvt", functionKeys: "tilde" });
+    expect(profileKeys([emptyProfile(DEFAULT_PROFILE)], DEFAULT_PROFILE)).toEqual({ backspace: "del", homeEnd: "standard", functionKeys: "tilde" });
   });
 });

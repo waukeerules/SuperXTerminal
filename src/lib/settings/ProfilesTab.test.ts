@@ -265,6 +265,21 @@ describe("Settings > Profiles", () => {
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", fontFamily: "Lucida Console", fontSize: 16 });
   });
 
+  it("saves the keys a device reads another way, and offers From Default Settings except on Default Settings", async () => {
+    await open("root");
+    const backspace = () => screen.getByRole("combobox", { name: /^Backspace sends/ }) as HTMLSelectElement;
+    expect(backspace().value).toBe("");
+    await userEvent.selectOptions(backspace(), "bs");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /^Function keys/ }), "vt100");
+    expect(dots()).toHaveLength(2);
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", keyBackspace: "bs", keyHomeEnd: "", keyFunction: "vt100" });
+    // Default Settings has PuTTY's defaults shown, not a From Default Settings of its own
+    await userEvent.click(screen.getByRole("option", { name: DEFAULT_PROFILE }));
+    expect(backspace().value).toBe("del");
+    expect([...backspace().options].map((o) => o.value)).toEqual(["del", "bs"]);
+  });
+
   it("saves an SPSL script for the profile's sessions, typed or chosen, and shows Default Settings' when it has none", async () => {
     stored = stored.map((p) => (p.name === DEFAULT_PROFILE ? { ...p, script: "every.spsl" } : p));
     await open("root");

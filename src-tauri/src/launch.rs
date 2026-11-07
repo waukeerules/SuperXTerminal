@@ -50,10 +50,23 @@ pub struct Look {
     pub font_family: String,
     /// The profile's font size in points, else Default Settings'; 0 for the theme's
     pub font_size: u32,
+    /// What Backspace, Home/End and F1-F12 send: the profile's, else Default Settings', else PuTTY's defaults
+    pub keys: Keys,
     /// The profile's anti-idle string as written (KiTTY's escapes), else Default Settings'; "" for none
     pub anti_idle: String,
     /// Seconds without typing before it's sent: the profile's, else Default Settings', else KiTTY's 180; 0 with no string
     pub anti_idle_seconds: u32,
+}
+
+/// The keys that differ between terminals, in the terminal page's names (its `keysFromProfile`), as PuTTY's Terminal >
+/// Keyboard: Backspace ("del" or "bs"), Home and End ("standard" or "rxvt"), and F1-F12 ("tilde", "linux", "xtermr6",
+/// "vt100" or "sco")
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Keys {
+    pub backspace: String,
+    pub home_end: String,
+    pub function_keys: String,
 }
 
 /// A session ready to start
@@ -486,6 +499,11 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         tab_color: colour(&profile.tab_color, &default.tab_color),
         font_family: first(profile.font_family.trim(), default.font_family.trim()).to_string(),
         font_size: [profile.font_size, default.font_size].into_iter().find(|s| *s != 0).map_or(0, |s| s.clamp(MIN_FONT_POINTS, MAX_FONT_POINTS)),
+        keys: Keys {
+            backspace: known(first(profile.key_backspace.trim(), default.key_backspace.trim()), &["del", "bs"]),
+            home_end: known(first(profile.key_home_end.trim(), default.key_home_end.trim()), &["standard", "rxvt"]),
+            function_keys: known(first(profile.key_function.trim(), default.key_function.trim()), &["tilde", "linux", "xtermr6", "vt100", "sco"]),
+        },
         anti_idle: anti_idle.to_string(),
         anti_idle_seconds: if anti_idle.is_empty() {
             0
@@ -500,6 +518,12 @@ fn look(profile: &Profile, default: &Profile) -> Look {
 /// awake, and cmd and PowerShell would only show it, ^E after ^E, at the prompt.
 fn shell_look(profile: &Profile, default: &Profile) -> Look {
     Look { anti_idle: String::new(), anti_idle_seconds: 0, ..look(profile, default) }
+}
+
+/// `value` when it's one of `choices`, else the first of them (PuTTY's default): a profile written by hand or by a
+/// later version can't send the page a key style it doesn't know
+fn known(value: &str, choices: &[&str]) -> String {
+    choices.iter().find(|c| **c == value).unwrap_or(&choices[0]).to_string()
 }
 
 /// The smallest and largest font size a profile can give, in points: the page draws 6 to 48 pixels, 5 to 36 points
@@ -1091,6 +1115,17 @@ mod tests {
         let theme = super::look(&Profile::default(), &Profile::default());
         assert_eq!((theme.font_family.as_str(), theme.font_size), ("", 0));
         assert_eq!(super::look(&Profile { font_size: 200, ..Profile::default() }, &Profile::default()).font_size, super::MAX_FONT_POINTS);
+    }
+
+    #[test]
+    fn a_profiles_keys_reach_its_tabs_else_default_settings_else_puttys() {
+        let default = Profile { key_backspace: "bs".into(), ..Profile::default() };
+        let old = Profile { key_home_end: "rxvt".into(), key_function: "vt100".into(), ..Profile::default() };
+        let page = serde_json::to_value(super::look(&old, &default)).unwrap();
+        assert_eq!(page["keys"], serde_json::json!({ "backspace": "bs", "homeEnd": "rxvt", "functionKeys": "vt100" }));
+        // nothing set anywhere, or a style the page doesn't know: PuTTY's defaults
+        let putty = super::look(&Profile { key_function: "vt52".into(), ..Profile::default() }, &Profile::default()).keys;
+        assert_eq!((putty.backspace.as_str(), putty.home_end.as_str(), putty.function_keys.as_str()), ("del", "standard", "tilde"));
     }
 
     #[test]

@@ -86,6 +86,14 @@ pub struct Profile {
     /// The font's size in points, as PuTTY's; 0 for Default Settings', else the theme's. A size chosen in Settings >
     /// Terminal or with Ctrl+wheel wins over it
     pub font_size: u32,
+    /// What Backspace sends, as PuTTY's Terminal > Keyboard: "del" (Control-?, PuTTY's default) or "bs" (Control-H,
+    /// for older Unix systems and devices that take ^? as a character); "" for Default Settings'
+    pub key_backspace: String,
+    /// What Home and End send: "standard" (ESC[1~ and ESC[4~, PuTTY's default) or "rxvt"; "" for Default Settings'
+    pub key_home_end: String,
+    /// What F1-F12 send: "tilde" (ESC[n~, PuTTY's default), "linux", "xtermr6", "vt100" or "sco"; "" for Default
+    /// Settings'. The terminal page (profileKey) turns these into the keys' sequences
+    pub key_function: String,
     /// Which colours its tabs have: "" or "default" (Default Settings'), "theme" (Settings > Terminal's theme), "dark" or "light"
     /// (the Dark or Light theme), or "custom" (the colours below). A profile with colours and no choice is custom.
     pub colours: String,

@@ -113,6 +113,9 @@ pub struct AppSettings {
     /// "rhai", "spsl" or "lines" (lines to send). Rhai by default, as the language with variables, loops and
     /// functions; a script opened from a file or a button already made keeps its own
     pub script_language: String,
+    /// Settings > General > Command bar: how many days Send Commands' history is kept between runs, as SuperPuTTY's
+    /// "Save history for N days" (`command_history.rs`); 0, the default, keeps it only until the app closes
+    pub command_history_days: u32,
 }
 
 impl Default for AppSettings {
@@ -165,6 +168,7 @@ impl Default for AppSettings {
             tree_search_regex: false,
             tree_search_fields: Vec::new(),
             script_language: "rhai".into(),
+            command_history_days: 0,
         }
     }
 }

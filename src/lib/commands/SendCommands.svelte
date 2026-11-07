@@ -2,9 +2,12 @@
   The Send Commands toolbar, as SuperXPuTTY's: the Command box (Enter sends it, with Enter, to the selected tabs;
   Up and Down go through the history; any Ctrl+key goes straight to them), Send, the mask, the Script Editor, then
   "Select sessions to send to" and the icon group. {prompt:} and {secret:} values are asked for before sending;
-  masked commands never go in the history, which lasts until the app closes (SuperXPuTTY's default).
+  masked commands never go in the history. The history lasts until the app closes (SuperXPuTTY's default), or is
+  kept for the days Settings > General > Command bar says (command_history.rs), as SuperPuTTY's "Save history".
 -->
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import Icon from "../icons/Icon.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { settings } from "../settings/store.svelte";
@@ -26,6 +29,15 @@
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   let box: HTMLInputElement;
 
+  // the history saved from earlier runs (Settings > General > Command bar), after anything sent while it was read
+  onMount(() => {
+    void invoke<string[]>("command_history_load")
+      .then((saved) => {
+        if (saved?.length) history = [...history, ...saved.filter((h) => !history.includes(h))];
+      })
+      .catch(() => {});
+  });
+
   /** The buttons' icon size: smaller than the tree's, as SuperXPuTTY's toolbars */
   const size = $derived(Math.round(settings.iconSize * 0.85));
 
@@ -44,7 +56,10 @@
       void tab.host.type(lineFeedsAsEnter(resolved) + "\r");
     }
     // the text as typed, with its {prompt:} markers, so it asks again next time
-    if (!masked && typed) history = [typed, ...history.filter((h) => h !== typed)];
+    if (!masked && typed) {
+      history = [typed, ...history.filter((h) => h !== typed)];
+      if (settings.commandHistoryDays > 0) void invoke("command_history_add", { command: typed }).catch(() => {});
+    }
     place = -1;
     text = "";
     context.status(`Sent command to ${targets.length} session${targets.length === 1 ? "" : "s"}`);

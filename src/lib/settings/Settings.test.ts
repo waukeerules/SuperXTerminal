@@ -92,6 +92,22 @@ describe("Use PrivateSessions.xml", () => {
   });
 });
 
+describe("Command bar's days", () => {
+  it("are saved as typed, 0 keeping the history only until the app closes", async () => {
+    const user = userEvent.setup();
+    render(Settings, { onClose: () => {} });
+    const days = screen.getByRole("spinbutton", { name: "Keep sent commands for" });
+    await user.clear(days);
+    await user.type(days, "7");
+    await user.tab();
+    await expect.poll(() => saved.at(-1)?.commandHistoryDays).toBe(7);
+    await user.clear(days);
+    await user.type(days, "0");
+    await user.tab();
+    await expect.poll(() => saved.at(-1)?.commandHistoryDays).toBe(0);
+  });
+});
+
 describe("Show in the file manager beside the sessions files", () => {
   /** The Show in Finder / File Explorer buttons, Sessions.xml's first */
   const showButtons = () => screen.getAllByRole("button", { name: `Show in ${FILE_MANAGER}` }) as HTMLButtonElement[];

@@ -6,6 +6,7 @@ mod askpass;
 mod buttonbars;
 mod cli;
 mod clipboard;
+mod command_history;
 mod command_tap;
 mod console;
 mod db;
@@ -1114,7 +1115,12 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
     };
     current.tree_font_size = current.tree_font_size.clamp(10, 24);
     current.shortcuts = keys::cleaned(&current.shortcuts);
+    current.command_history_days = current.command_history_days.min(command_history::MOST_DAYS);
     current.save(&state.user_folder)?;
+    // Settings > General > Command bar's days shortened (or 0): what they no longer allow goes now, not at next start
+    if current.command_history_days < before.command_history_days {
+        let _ = command_history::prune(&state.user_folder, current.command_history_days, command_history::now());
+    }
     let changes = window_changes(&before, &current);
     // the menu bar's keys follow Settings > Shortcuts
     if changes.menu && let Ok(bar) = menu(&app, &current.shortcuts, current.use_local_overrides) {
@@ -2282,6 +2288,21 @@ fn file_or_folder(folder: &std::path::Path, name: &str) -> PathBuf {
     }
 }
 
+/// Send Commands' history saved from earlier runs, newest first, for the Command box as a window opens; none while
+/// Settings > General > Command bar keeps it 0 days (until the app closes)
+#[tauri::command]
+fn command_history_load(state: State<'_, AppState>) -> Vec<String> {
+    let days = state.settings.lock().unwrap().command_history_days;
+    command_history::load(&state.user_folder, days, command_history::now())
+}
+
+/// Note a command sent from the Command box in the saved history (nothing is saved with 0 days)
+#[tauri::command]
+fn command_history_add(state: State<'_, AppState>, command: String) -> Result<(), String> {
+    let days = state.settings.lock().unwrap().command_history_days;
+    command_history::add(&state.user_folder, days, &command, command_history::now())
+}
+
 /// Show a file in its folder, selected: Finder on the Mac (`open -R`), Explorer on Windows (`/select,`)
 pub fn reveal(path: &std::path::Path) -> Result<(), String> {
     #[cfg(windows)]
@@ -2729,6 +2750,8 @@ pub fn run() {
             applog_clear,
             applog_reveal,
             sessions_reveal,
+            command_history_load,
+            command_history_add,
             requests_take,
             links_make_default,
             shortcuts_keys,

@@ -150,6 +150,19 @@
   </fieldset>
 
   <fieldset>
+    <legend>Command bar</legend>
+    <div class="row">
+      <label for="command-history-days">Keep sent commands for</label>
+      <input id="command-history-days" class="days" type="number" min="0" max="3650" value={settings.commandHistoryDays}
+        onchange={(e) => void saveSettings({ commandHistoryDays: Math.min(3650, Math.max(0, Math.floor(Number(e.currentTarget.value) || 0))) })} />
+      <span>days</span>
+    </div>
+    <p class="hint">Send Commands' history (Up, Down and its ▾), as SuperPuTTY's Save history. 0 keeps it only until
+      SuperXTerminal closes; otherwise commands sent in the last that many days are there next time. Masked commands are
+      never kept, and {"{prompt:}"} values are asked for again.</p>
+  </fieldset>
+
+  <fieldset>
     <legend>Scripts</legend>
     <div class="row">
       <label for="script-language">New scripts are</label>
@@ -329,6 +342,14 @@
 
   .row input {
     flex: 1;
+  }
+
+  .row input.days {
+    flex: 0 0 70px;
+  }
+
+  .row {
+    align-items: center;
   }
 
   label {

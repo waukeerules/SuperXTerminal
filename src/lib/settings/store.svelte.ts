@@ -88,6 +88,11 @@ export interface AppSettings {
    * Action. "rhai" by default; "spsl", or "lines" for lines to send (a button's Send string)
    */
   scriptLanguage: ScriptLanguage;
+  /**
+   * Settings > General > Command bar: how many days Send Commands' history is kept between runs, as SuperPuTTY's
+   * "Save history for N days"; 0, the default, keeps it only until the app closes
+   */
+  commandHistoryDays: number;
 }
 
 /** A script's kind, as the Script Editor's Run as names it: Rhai, SPSL, or lines sent as they are */
@@ -147,6 +152,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   treeSearchRegex: false,
   treeSearchFields: [],
   scriptLanguage: "rhai",
+  commandHistoryDays: 0,
 });
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */

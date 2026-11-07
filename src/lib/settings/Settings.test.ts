@@ -15,12 +15,16 @@ import { FILE_MANAGER } from "../platform";
 let saved: Record<string, unknown>[] = [];
 /** The sessions files asked to be shown in the file manager (sessions_reveal's store) */
 let revealed: string[] = [];
+/** The links opened in the browser (the opener plugin's open_url) */
+let opened: string[] = [];
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = () => {};
   saved = [];
   revealed = [];
+  opened = [];
   mockIPC((cmd, args) => {
+    if (cmd === "plugin:opener|open_url") return void opened.push((args as { url: string }).url);
     if (cmd === "sessions_reveal") {
       const store = (args as { store: string }).store;
       revealed.push(store);
@@ -94,6 +98,24 @@ describe("Use PrivateSessions.xml", () => {
     await expect.poll(() => saved.at(-1)?.usePrivateSessions).toBe(false);
     await expect.poll(() => (screen.getByRole("checkbox", { name: /Use Sessions\.xml/ }) as HTMLInputElement).disabled).toBe(true);
     Object.assign(settings, { usePrivateSessions: true });
+  });
+});
+
+describe("Scripts", () => {
+  it("says what each kind of script is, and its links open in the browser, not in the app's window", async () => {
+    const user = userEvent.setup();
+    render(Settings, { onClose: () => {} });
+    // each kind the New scripts are list offers is named, with what it is under it
+    for (const kind of ["Rhai scripts", "SPSL scripts", "Lines to send"]) expect(screen.getByText(kind, { selector: "dt" })).toBeTruthy();
+    expect(screen.getByText(/each line is typed into the session as it is/)).toBeTruthy();
+    await user.click(screen.getByRole("link", { name: "rhai.rs" }));
+    await user.click(screen.getByRole("link", { name: "Rhai in SuperXTerminal" }));
+    await user.click(screen.getByRole("link", { name: "SPSL in SuperXTerminal" }));
+    expect(opened).toEqual([
+      "https://rhai.rs/",
+      "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/RHAI.md",
+      "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/SPSL.md",
+    ]);
   });
 });
 

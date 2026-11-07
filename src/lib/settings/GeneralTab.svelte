@@ -49,6 +49,20 @@
       linksMessage = String(e);
     }
   }
+  /** Rhai's own site, for Settings > General > Scripts */
+  const RHAI_SITE = "https://rhai.rs/";
+  /** How Rhai scripts work in SuperXTerminal: docs/RHAI.md on GitHub, as a user without the source can read it */
+  const RHAI_DOC = "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/RHAI.md";
+  /** How SPSL scripts work in SuperXTerminal: docs/SPSL.md on GitHub */
+  const SPSL_DOC = "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/SPSL.md";
+
+  /** A link in Settings opens in the default browser: in the app's own window it would replace the app */
+  function openLink(event: MouseEvent): void {
+    event.preventDefault();
+    const url = (event.currentTarget as HTMLAnchorElement).href;
+    void invoke("plugin:opener|open_url", { url }).catch(() => {});
+  }
+
   /** The environment colour rules, for the count beside Environment colours… */
   const colourRules = $derived(parseRules(settings.environmentColorRules));
 
@@ -185,6 +199,20 @@
     </div>
     <p class="hint">What the Script Editor's Run as starts on, and a new button's Action. A script opened from a file,
       and a button already made, keep their own; either can still be changed there.</p>
+    <dl class="languages">
+      <dt>Rhai scripts</dt>
+      <dd>A small programming language made to be built into apps (<a href={RHAI_SITE} onclick={openLink}>rhai.rs</a>):
+        variables, sums, if and else, loops, lists and functions, with the same reach into the tab as SPSL: type, wait
+        for the device, ask you something. For a script that has to decide, count or remember, such as checking what
+        each port says before changing it. <a href={RHAI_DOC} onclick={openLink}>Rhai in SuperXTerminal</a></dd>
+      <dt>SPSL scripts</dt>
+      <dd>SuperPuTTY's own script language, one command a line (SENDLINE, WAITFOR, SLEEP...), made for typing and
+        waiting: a login, or a few commands in a row. SuperXPuTTY's scripts and buttons are written in it, and run
+        here as they are. <a href={SPSL_DOC} onclick={openLink}>SPSL in SuperXTerminal</a></dd>
+      <dt>Lines to send</dt>
+      <dd>No language: each line is typed into the session as it is, followed by Enter, without waiting for the
+        device. For a few fixed commands, such as a button for show interfaces status.</dd>
+    </dl>
   </fieldset>
 
   <fieldset>
@@ -398,6 +426,27 @@
     border-radius: 4px;
     padding: 4px 6px;
     min-width: 0;
+  }
+
+  /* Scripts: what each kind of script is, a name over its explanation */
+  .languages {
+    display: grid;
+    gap: 2px 0;
+    margin: 0;
+  }
+
+  .languages dt {
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  .languages dd {
+    margin: 0;
+    color: var(--text-muted);
+  }
+
+  .languages a {
+    color: var(--accent);
   }
 
   .search-settings {

@@ -667,11 +667,22 @@
         {/each}
         <button onclick={() => (draft.forwards = [...draft.forwards, { kind: "local", listen: "", to: "" }])}>Add tunnel</button>
       </div>
-      <p class="note under">As PuTTY's Tunnels. Local: a port on {THIS_COMPUTER} reaches host:port as seen from the
-        server (8080 to localhost:80 shows its web page at localhost:8080 here). Remote: a port on the server reaches
-        host:port from here. Dynamic: a SOCKS proxy on {THIS_COMPUTER} going out through the server. This profile's own
-        {isDefault ? "(for sessions with no profile of their own)" : "(or the profile it's based on's, never Default Settings')"}: each opens with every tab, and a
-        second tab on the same port says it's in use. File Transfer leaves them to the tab.</p>
+      <div class="note under tunnels-help" role="note" aria-label="About tunnels">
+        <p>A tunnel reaches something through the SSH connection, as if you were on the server: for what the server can
+          reach and {THIS_COMPUTER} can't. As PuTTY's Tunnels.</p>
+        <p><b>Local</b> (the usual one): a port on {THIS_COMPUTER} opens host:port as the server sees it. A device's web
+          page on a network only the server reaches: 8443 to 10.0.0.5:443, then https://localhost:8443 here. A database
+          that only listens on the server: 5432 to localhost:5432.</p>
+        <p><b>Remote</b>: a port on the server opens host:port as {THIS_COMPUTER} sees it, e.g. for a device to fetch a
+          file from a web server here.</p>
+        <p><b>Dynamic</b>: a SOCKS proxy on {THIS_COMPUTER}, e.g. 1080. A browser set to use it opens pages from the
+          server's side, a whole lab's without a tunnel for each.</p>
+        <p>The tunnels open with each tab of the profile's sessions; the tab lists them at the top, with links, and its
+          tunnel icon (or Tunnels… in its menu) shows how to test each. The server must allow TCP forwarding
+          (AllowTcpForwarding in its sshd_config, or its SSH settings). Changed tunnels take effect when the session
+          restarts. This profile's own {isDefault ? "(for sessions with no profile of their own)" : "(or the profile it's based on's, never Default Settings')"};
+          a second tab on the same port says it's in use, and File Transfer leaves them to the tab.</p>
+      </div>
     </fieldset>
 
     <fieldset>
@@ -935,6 +946,11 @@
   .message {
     color: var(--text-muted);
     margin: 0;
+  }
+
+  /* the tunnels' explanation: a paragraph for each kind */
+  .tunnels-help p {
+    margin: 0 0 4px;
   }
 
   /* a note for the row above, lined up with its control (label's first column and gap) */

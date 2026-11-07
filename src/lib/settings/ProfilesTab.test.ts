@@ -231,6 +231,16 @@ describe("Settings > Profiles", () => {
     expect(remove.getAttribute("aria-disabled")).toBe("true");
   });
 
+  it("explains each kind of tunnel with an everyday use, what the server must allow, and where the tab shows them", async () => {
+    await open("root");
+    const help = screen.getByRole("note", { name: "About tunnels" }).textContent ?? "";
+    expect(help).toContain("Local (the usual one): a port on this PC opens host:port as the server sees it.");
+    expect(help).toContain("https://localhost:8443");
+    expect(help).toContain("Dynamic: a SOCKS proxy on this PC");
+    expect(help).toContain("AllowTcpForwarding");
+    expect(help).toContain("tunnel icon (or Tunnels… in its menu)");
+  });
+
   it("says under Jump host what a jump server needs", async () => {
     await open("root");
     expect(screen.getByRole("note", { name: "What a jump server needs" }).textContent).toMatch(/^The jump server must allow TCP forwarding/);

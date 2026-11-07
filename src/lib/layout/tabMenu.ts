@@ -1,7 +1,7 @@
 /**
  * A tab's right-click menu, as SuperXPuTTY's ctlPuttyPanel menu for the built-in terminal: New session (every
- * session, by folder), Duplicate, Copy host address, Save session as; Rename tab, Refresh tab, Accept commands;
- * the output items (M4); Send Key and Special Command; Copy all, Restart (or Reconnect), Clear scrollback, Reset;
+ * session, by folder), Duplicate, Copy host address, Save session as, Tunnels (the session's, TunnelsPanel); Rename
+ * tab, Refresh tab, Accept commands; the output items (M4); Send Key and Special Command; Copy all, Restart (or Reconnect), Clear scrollback, Reset;
  * Close, Close others, Close others to the right, Close all. A Remote Desktop tab has its own (rdpMenu).
  */
 import type { MenuItem } from "../ui/Menu.svelte";
@@ -37,6 +37,8 @@ export interface TabMenuHost {
   /** Move the tab, with its session running, to a new window */
   moveToNewWindow: (id: string) => void;
   status: (text: string) => void;
+  /** Show the tab's tunnels (TunnelsPanel), where the menu was */
+  tunnels: (id: string) => void;
 }
 
 /** SuperXPuTTY's Send Key entries */
@@ -119,6 +121,11 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
       label: "Save session as...",
       disabled: !session && "Only a tab opened from a session can be saved as one",
       action: () => session && host.saveAs(session.store, session.id, tab.title),
+    },
+    {
+      label: "Tunnels...",
+      disabled: !tab.host.tunnels?.length && "The session opened no tunnels: add them in Settings > Profiles > Tunnels",
+      action: () => host.tunnels(id),
     },
     { separator: true },
     { label: "Rename tab", action: () => host.rename(id, tab.title) },

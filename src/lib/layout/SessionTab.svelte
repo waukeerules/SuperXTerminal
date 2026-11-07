@@ -1,5 +1,6 @@
 <!--
-  A document tab's label: the session's icon, its name and a close button. Its environment colour fills the tab
+  A document tab's label: the session's icon, its name, a tunnel icon when its ssh opened tunnels (a click shows
+  them, TunnelsPanel), and a close button. Its environment colour fills the tab
   when it's selected and tints it, with a stripe along the top, when it isn't, as SuperXPuTTY's TabIcons. With no
   environment colour, its profile's tab colour does the same, but leaves the icon without a circle: the circle marks
   an environment, as in the Sessions tree.
@@ -25,9 +26,15 @@
     tabId: string;
     /** The tab's ✕ */
     onClose: () => void;
+    /** The tunnel icon, clicked at this point in the window */
+    onTunnels?: (x: number, y: number) => void;
   }
 
-  let { title, icon, environment, iconSize, customs, tabId, onClose }: Props = $props();
+  let { title, icon, environment, iconSize, customs, tabId, onClose, onTunnels }: Props = $props();
+  /** How many tunnels the session's ssh opened: the tunnel icon shows with any */
+  const tunnels = $derived(tabStates[tabId]?.tunnels ?? 0);
+  /** The profile's tunnels changed since: the icon is marked, as a restart is needed to use them */
+  const tunnelsChanged = $derived(tabStates[tabId]?.tunnelsChanged ?? false);
   /** Whether a script is running in the tab, which shows a spinner in place of the icon */
   const scripting = $derived(running.runs.some((r) => r.tabId === tabId));
   /** The session is down: SuperXPuTTY's disconnected badge on the icon */
@@ -63,6 +70,19 @@
     </span>
   {/if}
   <span class="title">{title}</span>
+  {#if tunnels > 0 && !disconnected}
+    <!-- a tunnel's arch: what the tunnels make reachable, with links and tests -->
+    <button class="tunnels" class:changed={tunnelsChanged}
+      title={tunnelsChanged ? "Tunnels: the profile's have changed, restart the session to use them" : `Tunnels (${tunnels}): what they open, and how to test them`}
+      aria-label="Tunnels of {title}"
+      onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); onTunnels?.(e.clientX, e.clientY); }}>
+      <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+        <path d="M2 14V8a6 6 0 0 1 12 0v6" fill="none" stroke="currentColor" stroke-width="1.6" />
+        <path d="M5.5 14V8.5a2.5 2.5 0 0 1 5 0V14" fill="none" stroke="currentColor" stroke-width="1.6" />
+        <path d="M1 14h14" stroke="currentColor" stroke-width="1.6" />
+      </svg>
+    </button>
+  {/if}
   <button class="close" title="Close" aria-label="Close {title}"
     onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); onClose(); }}>✕</button>
 </span>
@@ -161,6 +181,26 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  .tunnels {
+    display: flex;
+    border: 0;
+    background: none;
+    padding: 0 1px;
+    color: inherit;
+    opacity: 0.8;
+    cursor: default;
+  }
+
+  .tunnels:hover {
+    opacity: 1;
+  }
+
+  /* the profile's tunnels changed: a restart is needed, marked as Watch for Activity's alert is */
+  .tunnels.changed {
+    color: #f0883e;
+    opacity: 1;
   }
 
   .close {

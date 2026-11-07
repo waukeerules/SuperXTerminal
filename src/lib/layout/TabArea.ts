@@ -26,6 +26,7 @@ import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
 import { OutputHost } from "../terminal/OutputHost";
 import { RdpHost } from "../terminal/RdpHost";
 import type { ScriptTarget } from "../scripting/spsl";
+import type { Forward } from "../settings/profiles";
 import SessionTab from "./SessionTab.svelte";
 import FileTransfer from "../transfer/FileTransfer.svelte";
 import { isDark } from "../settings/store.svelte";
@@ -86,6 +87,7 @@ class TabLabel implements ITabRenderer {
           customs: this.tabs.customs,
           tabId: parameters.api.id,
           onClose: () => parameters.api.close(),
+          onTunnels: (x: number, y: number) => this.tabs.onTunnels?.(parameters.api.id, x, y),
         },
       });
     };
@@ -333,6 +335,10 @@ export interface CommandTarget extends ScriptTarget {
   readonly canReceiveCommands: boolean;
   /** A button's command starts here: its lines' numbers take the button's colour (a terminal's; Remote Desktop has none) */
   markCommand?(color: string): void;
+  /** The tunnels the session's ssh opened (a terminal's; Remote Desktop has none) */
+  readonly tunnels?: readonly Forward[];
+  /** The profile's tunnels changed since the session started, so a restart is needed to use them */
+  readonly tunnelsChanged?: boolean;
   /** A notice at the top of the tab, such as a login script that isn't there (a terminal's; Remote Desktop has none) */
   notice?(text: string, kind?: "warn" | "error" | "info"): Promise<void>;
 }
@@ -400,6 +406,8 @@ class TerminalPanel implements IContentRenderer {
           ended: this.host?.isEnded ?? false,
           connecting: this.host?.isConnecting ?? false,
           tabColor: this.host?.tabColor ?? null,
+          tunnels: this.host?.tunnels.length ?? 0,
+          tunnelsChanged: this.host?.tunnelsChanged ?? false,
         };
         this.tabs.notify();
       },
@@ -452,6 +460,8 @@ export class TabArea {
   private tabListShowing: string | null = null;
   /** A tab was right-clicked: App shows its menu */
   onTabMenu: ((id: string, x: number, y: number) => void) | null = null;
+  /** A tab's tunnel icon was clicked: App shows its tunnels (TunnelsPanel), at the pointer */
+  onTunnels: ((id: string, x: number, y: number) => void) | null = null;
   /** An output alert to show in the status bar (Watch for Activity and Silence) */
   onAlert: ((text: string, background: boolean) => void) | null = null;
   /** Watched tabs, as ctlPuttyPanel's watches: activity on or off, silence in seconds (0 off) */

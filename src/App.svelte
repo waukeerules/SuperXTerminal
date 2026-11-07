@@ -28,6 +28,7 @@
   import { saveSettings } from "./lib/settings/store.svelte";
   import type { CustomIcon } from "./lib/icons/custom";
   import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
+  import TunnelsPanel from "./lib/terminal/TunnelsPanel.svelte";
   import Prompt from "./lib/ui/Prompt.svelte";
   import { tabMenu } from "./lib/layout/tabMenu";
   import SearchOutput from "./lib/terminal/SearchOutput.svelte";
@@ -107,6 +108,10 @@
     if (!menu?.tabList) tabs?.tabListClosed();
   });
   let renaming = $state<{ id: string; title: string } | null>(null);
+  /** The tab whose tunnels are showing (its tunnel icon, or Tunnels… in its menu), and where */
+  let tunnelsOf = $state<{ id: string; x: number; y: number } | null>(null);
+  /** That tab's page host, while its tunnels show */
+  const tunnelsHost = $derived(tunnelsOf ? tabs?.hosts.get(tunnelsOf.id) ?? null : null);
   /** The serial tab whose Serial Settings are open */
   let serialTab = $state<{ title: string; host: PageHost; session: { store: Store; id: string } | null } | null>(null);
   /** Search Output windows, one per tab */
@@ -215,6 +220,7 @@
     };
     // the same ▾ clicked again: its list closes
     tabs.onTabListClose = () => (menu = null);
+    tabs.onTunnels = (id, x, y) => (tunnelsOf = { id, x, y });
     tabs.onTabMenu = (id, x, y) => {
       if (!tabs || !tree) return;
       const t = tree;
@@ -245,6 +251,7 @@
               searches = [...searches, { id: tabId, title: tabs?.api.getPanel(tabId)?.title ?? "", logPath: host?.logPath ?? null }];
             },
             status: (text) => (status = text),
+            tunnels: (tabId) => (tunnelsOf = { id: tabId, x, y }),
           },
           id,
         ),
@@ -850,6 +857,14 @@
 
 {#if menu}
   <Menu items={menu.items} x={menu.x} y={menu.y} {customs} onClose={() => (menu = null)} />
+{/if}
+
+{#if tunnelsOf && tunnelsHost}
+  <TunnelsPanel title={tabs?.api.getPanel(tunnelsOf.id)?.title ?? ""} tunnels={tunnelsHost.tunnels} changed={tunnelsHost.tunnelsChanged}
+    profile={tunnelsHost.profileName} x={tunnelsOf.x} y={tunnelsOf.y} onClose={() => (tunnelsOf = null)}
+    onOpenLink={(url) => void invoke("plugin:opener|open_url", { url }).catch(() => {})}
+    onEdit={() => void openProfiles(tunnelsHost.profileName)}
+    onRestart={() => void tunnelsHost.reconnect()} />
 {/if}
 
 {#if quick}

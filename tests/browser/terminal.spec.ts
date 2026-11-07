@@ -504,6 +504,38 @@ test.describe("Find", () => {
     await expect(page.locator("#findText")).toBeFocused();
   });
 
+  test("opens from the magnifying glass at the top right, which goes while the bar is open and comes back when it closes", async ({ page }) => {
+    await openTerminal(page, {});
+    const glass = page.getByRole("button", { name: "Find", exact: true });
+    await expect(glass).toBeVisible();
+    // its tooltip names Find's key, as the menu does
+    await expect(glass).toHaveAttribute("title", "Find (Ctrl+Shift+F)");
+    // at the top right, above the output
+    const box = (await glass.boundingBox())!;
+    const page_ = (await page.locator("#terminal").boundingBox())!;
+    expect(box.y - page_.y).toBeLessThan(12);
+    expect(page_.x + page_.width - (box.x + box.width)).toBeLessThan(30);
+    await glass.click();
+    await expect(page.locator("#find")).toBeVisible();
+    await expect(page.locator("#findText")).toBeFocused();
+    await expect(glass).toBeHidden();
+    await page.locator("#findText").press("Escape");
+    await expect(page.locator("#find")).toBeHidden();
+    await expect(glass).toBeVisible();
+  });
+
+  test("the magnifying glass names the app's Find key, and a new one from Settings > Shortcuts", async ({ page }) => {
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    await page.evaluate(() => (window as any).terminalDev.message({
+      type: "config", prefs: {}, themes: [{ name: "PuTTY", colors: {} }], keyLabels: { find: "⌘F" },
+    }));
+    const glass = page.getByRole("button", { name: "Find", exact: true });
+    await expect(glass).toHaveAttribute("title", "Find (⌘F)");
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "keyLabels", keyLabels: { find: "⇧⌘F" } }));
+    await expect(glass).toHaveAttribute("title", "Find (⇧⌘F)");
+  });
+
   test("leaves Copy on Select on: text selected while the find bar is open is copied, Find's own match isn't", async ({ page }) => {
     await openTerminal(page, { copyOnSelect: "true" });
     await feed(page, "\x1b[2J\x1b[H" + "interface GigabitEthernet1/0/24\r\n description uplink\r\n");

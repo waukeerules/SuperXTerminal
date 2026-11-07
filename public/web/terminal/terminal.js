@@ -1095,6 +1095,14 @@
         document.getElementById('findPrev').addEventListener('click', function () { showMatch(find.index - 1); });
         document.getElementById('findNext').addEventListener('click', function () { showMatch(find.index + 1); });
         document.getElementById('findClose').addEventListener('click', closeFind);
+        document.getElementById('findOpen').addEventListener('click', openFind);
+        titleFindButton();
+    }
+
+    /** The magnifying glass's tooltip names Find's key, as the menu's Find... does (it changes in Settings > Shortcuts) */
+    function titleFindButton() {
+        var key = menuKey('find', 'Ctrl+Shift+F');
+        document.getElementById('findOpen').title = key ? 'Find (' + key + ')' : 'Find';
     }
 
     // ---- right-click menu -----------------------------------------------------------------------------------------
@@ -1583,6 +1591,7 @@
         specials = config.specials || [];
         menuKeys = config.menuKeys || [];
         keyLabels = config.keyLabels || {};
+        titleFindButton();
         if (config.keys) { keysFromProfile = config.keys; }
         sessionRules = config.sessionRules || '';
         if (config.unlimitedScrollback) { unlimitedScrollback = config.unlimitedScrollback; }
@@ -1631,7 +1640,7 @@
             case 'look': darkDefault = !!message.dark; applyTheme(); break;
             case 'prefs': applyPrefs(message.prefs); break;
             // Settings > Shortcuts changed: the menu shows the new keys (SuperXTerminal)
-            case 'keyLabels': keyLabels = message.keyLabels || {}; break;
+            case 'keyLabels': keyLabels = message.keyLabels || {}; titleFindButton(); break;
             // a button's command (SuperXTerminal): its lines' numbers in the button's colour
             case 'commandColor': markCommand(message.color); break;
             // the profile was saved with other colours (SuperXTerminal)

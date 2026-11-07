@@ -229,6 +229,35 @@ body.nowrap #hscroll {
   color: #ffffff;
 }
 
+/* the magnifying glass that opens the find bar: where the bar opens, left of xterm.js's scroll bar, faint until the
+   pointer's on it so it doesn't hide the output under it */
+#findOpen {
+  position: absolute;
+  top: 6px;
+  right: 22px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--menu-fg);
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: 4px;
+  opacity: 0.4;
+  cursor: pointer;
+}
+
+#findOpen:hover, #findOpen:focus-visible {
+  opacity: 1;
+}
+
+#find:not([hidden]) ~ #findOpen {
+  display: none;
+}
+
 #findCount {
   min-width: 56px;
   text-align: center;

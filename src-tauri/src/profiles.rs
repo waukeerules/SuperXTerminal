@@ -265,6 +265,40 @@ fn merged(profile: Profile, base: &Profile) -> Profile {
     serde_json::from_value(serde_json::Value::Object(own)).map(|p| Profile { has_password, ..p }).unwrap_or(profile)
 }
 
+/// The team's profile templates' file in the settings folder: the shared parts of the profiles the team's sessions
+/// name (algorithms, jump host, button bar, keys...), for each person to set up as their own and add only their login
+pub const TEMPLATES_FILE: &str = "ProfileTemplates.json";
+
+/// A profile as the team shares it: without the login, which is each person's own (username, key file, password),
+/// and without whether it has a password here
+pub fn as_template(profile: &Profile) -> Profile {
+    Profile { username: String::new(), key_file: String::new(), has_password: false, ..profile.clone() }
+}
+
+/// The team's templates in the settings folder (`TEMPLATES_FILE`), in its order; none when there's no file. An
+/// unreadable file is an error, so a typo in it doesn't look like the team having none
+pub fn templates(settings_folder: &Path) -> Result<Vec<Profile>, String> {
+    match std::fs::read_to_string(settings_folder.join(TEMPLATES_FILE)) {
+        Ok(text) => import_text(&text).map_err(|e| format!("{TEMPLATES_FILE}: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(format!("{TEMPLATES_FILE}: {e}")),
+    }
+}
+
+/// Add a profile to the team's templates, or put it in place of the template of that name (whatever its case),
+/// without its login. Read fresh first, so a template a teammate shared meanwhile stays
+pub fn share_template(settings_folder: &Path, profile: &Profile) -> Result<Vec<Profile>, String> {
+    let mut all = templates(settings_folder)?;
+    let shared = as_template(profile);
+    match all.iter().position(|t| t.name.eq_ignore_ascii_case(&shared.name)) {
+        Some(index) => all[index] = shared,
+        None => all.push(shared),
+    }
+    let text = serde_json::to_string_pretty(&Profiles { profiles: all.clone() }).map_err(|e| e.to_string())?;
+    crate::saving::save(&settings_folder.join(TEMPLATES_FILE), "json.saving", text)?;
+    Ok(all)
+}
+
 /// The script a session with no script of its own runs: its profile's, else Default Settings'; "" for none. With
 /// the profile's name, for saying whose script it is
 pub fn script_of<'a>(profiles: &'a Profiles, profile_name: &str) -> Option<(&'a str, &'a str)> {
@@ -360,6 +394,30 @@ mod tests {
         let based_on_jump = Profiles { profiles: vec![profiles.profiles[4].clone(), Profile { name: "via".into(), based_on: "jump".into(), ..Profile::default() }] };
         assert!(!based_on_jump.resolved("via").unwrap().log_in_here);
         assert!(profiles.resolved("nobody").is_none());
+    }
+
+    #[test]
+    fn a_profile_shared_with_the_team_leaves_its_login_behind_and_replaces_the_template_of_its_name() {
+        let folder = std::env::temp_dir().join(format!("sxt-templates-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        assert!(super::templates(&folder).unwrap().is_empty());
+        let mine = Profile {
+            name: "netops".into(), username: "jsmith".into(), key_file: "~/.ssh/id_jsmith".into(), has_password: true,
+            jump_host: "bastion".into(), algorithms: "kex=diffie-hellman-group14-sha1".into(), ..Profile::default()
+        };
+        super::share_template(&folder, &mine).unwrap();
+        let shared = &super::templates(&folder).unwrap()[0];
+        assert_eq!((shared.username.as_str(), shared.key_file.as_str(), shared.has_password), ("", "", false));
+        assert_eq!((shared.jump_host.as_str(), shared.algorithms.as_str()), ("bastion", "kex=diffie-hellman-group14-sha1"));
+        // shared again, changed: one template of that name, the new one
+        super::share_template(&folder, &Profile { name: "NetOps".into(), jump_host: "bastion2".into(), ..Profile::default() }).unwrap();
+        let all = super::templates(&folder).unwrap();
+        assert_eq!((all.len(), all[0].jump_host.as_str()), (1, "bastion2"));
+        // a file that isn't templates says so, rather than reading as none
+        std::fs::write(folder.join(super::TEMPLATES_FILE), "not json").unwrap();
+        assert!(super::templates(&folder).unwrap_err().starts_with("ProfileTemplates.json"));
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

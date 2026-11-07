@@ -167,6 +167,25 @@ fn profiles_export(state: State<'_, AppState>, name: String, path: String) -> Re
     std::fs::write(&path, profiles::export_text(profile)?).map_err(|e| e.to_string())
 }
 
+/// The team's profile templates (ProfileTemplates.json in the settings folder), for Settings > Profiles to offer the
+/// ones not set up here; none without a settings folder
+#[tauri::command]
+fn profile_templates(state: State<'_, AppState>) -> Result<Vec<Profile>, String> {
+    let folder = state.settings.lock().unwrap().settings_folder.clone();
+    folder.map_or(Ok(Vec::new()), |f| profiles::templates(&f))
+}
+
+/// Share a profile with the team as a template in the settings folder, without its login (Settings > Profiles'
+/// Share as Team Template)
+#[tauri::command]
+fn profile_template_share(state: State<'_, AppState>, name: String) -> Result<Vec<Profile>, String> {
+    let folder = state.settings.lock().unwrap().settings_folder.clone().ok_or("Choose a settings folder first (Settings > General): the templates are kept there for the team.")?;
+    let profile = state.profiles.lock().unwrap().get(&name).cloned().ok_or_else(|| format!("There's no profile called {name}."))?;
+    let shared = profiles::share_template(&folder, &profile)?;
+    applog::info(format!("Shared profile {name} as a team template"));
+    Ok(shared)
+}
+
 /// The profiles in a file, for Settings > Profiles' Import… to add (it names them and saves each)
 #[tauri::command]
 fn profiles_read_file(path: String) -> Result<Vec<Profile>, String> {
@@ -2848,6 +2867,8 @@ pub fn run() {
             profiles_list,
             profiles_export,
             profiles_read_file,
+            profile_templates,
+            profile_template_share,
             profiles_save,
             profiles_delete,
             clipboard::clipboard_text,

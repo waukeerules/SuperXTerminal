@@ -45,6 +45,12 @@
   let algorithming = $state(false);
   /** The list's right-click menu, where it was opened */
   let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  /** The team's profile templates (ProfileTemplates.json in the settings folder) */
+  let templates = $state<Profile[]>([]);
+  /** The team template the new profile being edited came from, to say what's left to fill in; "" for none */
+  let fromTemplate = $state("");
+  /** The templates not set up here yet, by name: offered under the profiles */
+  const newTemplates = $derived(templates.filter((t) => !profiles.some((p) => p.name.toLowerCase() === t.name.toLowerCase())));
 
   /** Whether the profile shown is Default Settings, which can't be renamed or deleted */
   const isDefault = $derived(originalName.toLowerCase() === DEFAULT_PROFILE.toLowerCase());
@@ -174,6 +180,7 @@
     // a session's profile is matched by name whatever its case, as the launch matches it
     const wanted = initial ? profiles.find((p) => p.name.toLowerCase() === initial.trim().toLowerCase()) : undefined;
     select(wanted?.name ?? DEFAULT_PROFILE);
+    await loadTemplates();
   });
 
   /** Edit a profile from the list */
@@ -181,6 +188,7 @@
     const profile = profiles.find((p) => p.name === name);
     if (!profile) return;
     selected = name;
+    fromTemplate = "";
     draft = { ...profile };
     saved = { ...profile };
     originalName = profile.name;
@@ -191,11 +199,50 @@
   /** Start a new profile: it asks for the password rather than offering SSH keys, as most are for network devices */
   function add(): void {
     selected = "";
+    fromTemplate = "";
     draft = { ...emptyProfile(""), offerKeys: false };
     saved = { ...draft };
     originalName = "";
     password = undefined;
     message = "Name it after the PuTTY profile your sessions use, e.g. root.";
+  }
+
+  /** Read the team's templates again (after one is shared); a file that can't be read says so here */
+  async function loadTemplates(): Promise<void> {
+    try {
+      templates = (await invoke<Profile[] | null>("profile_templates")) ?? [];
+    } catch (e) {
+      templates = [];
+      message = String(e);
+    }
+  }
+
+  /**
+   * Set up a team template as a profile of the same name: its fields filled in, for this person to add their login
+   * and Save. Nothing is saved until then, and Revert gives a blank new profile
+   */
+  function setUp(template: Profile): void {
+    selected = "";
+    saved = { ...emptyProfile(""), offerKeys: false };
+    draft = { ...emptyProfile(""), ...template, username: "", keyFile: "", hasPassword: false };
+    originalName = "";
+    password = undefined;
+    message = "";
+    fromTemplate = template.name;
+  }
+
+  /** Share a profile with the team as a template in the settings folder, without its login, after asking */
+  async function share(name: string): Promise<void> {
+    const replacing = templates.some((t) => t.name.toLowerCase() === name.toLowerCase());
+    const question = (replacing ? `Replace the team's template "${name}" with this profile?` : `Share profile "${name}" with the team as a template?`)
+      + " Its username, key file and password stay here; everyone with the settings folder can set it up as their own.";
+    if (!(await ask(question, { title: "Share as Team Template", okLabel: replacing ? "Replace" : "Share" }))) return;
+    try {
+      templates = (await invoke<Profile[] | null>("profile_template_share", { name })) ?? templates;
+      message = `Shared "${name}" with the team.`;
+    } catch (e) {
+      message = String(e);
+    }
   }
 
   /** Save the draft */
@@ -309,6 +356,7 @@
         { label: "Duplicate", disabled: busy, action: () => void duplicate(name) },
         { separator: true },
         { label: "Export…", action: () => void exportProfile(name) },
+        { label: "Share as Team Template…", disabled: busy || (!settings.settingsFolder ? "Choose a settings folder first (Settings > General)" : false), action: () => void share(name) },
         { label: "Import…", disabled: busy, action: () => void importProfiles() },
         { separator: true },
         { label: "Delete…", disabled: busy || (isDefaultProfile ? "Default Settings can't be deleted" : false), action: () => void remove(name) },
@@ -405,6 +453,18 @@
           {profile.name}
         </li>
       {/each}
+      {#if newTemplates.length}
+        <li class="group" role="presentation">Team templates</li>
+        {#each newTemplates as template (template.name)}
+          <!-- not set up here yet: a click fills a new profile from it -->
+          <li role="option" aria-selected="false" aria-disabled={changes > 0} class="template" class:locked={changes > 0}
+            title={changes > 0 ? "Save or revert the changes first" : "Set it up as your own: add your login and Save"}
+            onclick={() => changes === 0 && setUp(template)}
+            onkeydown={(e) => e.key === "Enter" && changes === 0 && setUp(template)} tabindex="0">
+            {template.name}
+          </li>
+        {/each}
+      {/if}
     </ul>
     <div class="list-buttons">
       <button onclick={add} disabled={changes > 0}>New</button>
@@ -429,6 +489,9 @@
       defaults, then the profile, then Default Settings.
     </p>
 
+    {#if fromTemplate}
+      <p class="from-template">From the team's template "{fromTemplate}": add your username and password (or key file), then Save.</p>
+    {/if}
     <fieldset>
       <legend>Profile</legend>
       <label>{@render caption("Name", "name")}<input bind:value={draft.name} disabled={isDefault} placeholder="e.g. root" /></label>
@@ -758,6 +821,27 @@
   li.selected {
     background: var(--accent);
     color: #fff;
+  }
+
+  /* the guidance for a profile being set up from a team template, over its fields */
+  .from-template {
+    margin: 0;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: var(--bg-input);
+    border-left: 3px solid var(--accent);
+  }
+
+  /* the team's templates not set up here: under a heading, in italics until set up */
+  li.group {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  li.template {
+    font-style: italic;
+    color: var(--text-muted);
   }
 
   .list-buttons,

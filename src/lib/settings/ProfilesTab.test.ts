@@ -1,6 +1,9 @@
 // Settings > Profiles: which fields show as changed, what's greyed while there are changes, Save and Revert, the
-// list's Duplicate, Export and Import, and Server load (off unless chosen; on Windows, a key login of its own). The Rust side is stood in for by mockIPC: the profiles live in `stored`, every
-// save and delete is recorded in `calls`, and the file chosen to import holds `inFile`.
+// list's Duplicate, Export and Import, Server load (off unless chosen; on Windows, a key login of its own), the fields
+// a profile's tabs take (font, keys, tunnels, scrollback, log, character set), Based on, and the team's templates.
+// The Rust side is stood in for by mockIPC: the profiles live in `stored`, every save and delete is recorded in
+// `calls`, the file chosen to import holds `inFile`, the settings folder's templates are `templates`, and every
+// question is answered with its OK button.
 import { beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -8,6 +11,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import ProfilesTab from "./ProfilesTab.svelte";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "./profiles";
 import { isMac } from "../shortcuts";
+import { settings } from "./store.svelte";
 
 /** The profiles stored, which the stand-ins for profiles_save and profiles_delete change */
 let stored: Profile[];
@@ -15,6 +19,8 @@ let stored: Profile[];
 let calls: { cmd: string; args: Record<string, unknown> }[];
 /** The profiles in the file chosen to import, as profiles_read_file reads them */
 let inFile: Profile[];
+/** The team's templates in the settings folder, as profile_templates reads them */
+let templates: Profile[];
 
 beforeEach(() => {
   stored = [
@@ -24,6 +30,7 @@ beforeEach(() => {
   ];
   calls = [];
   inFile = [];
+  templates = [];
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: payload });
@@ -40,9 +47,17 @@ beforeEach(() => {
     }
     // the dialog plugin's "Are you sure?": yes; the file chosen to save to or open
     if (cmd === "plugin:dialog|ask") return true;
+    // ask() is a message with OK and Cancel: OK, by its label
+    if (cmd === "plugin:dialog|message") {
+      const buttons = payload.buttons;
+      // custom labels come as { OkCancelCustom: [ok, cancel] }
+      return typeof buttons === "object" && buttons ? Object.values(buttons as Record<string, string[]>)[0][0] : "Yes";
+    }
     if (cmd === "plugin:dialog|save") return "/tmp/root profile.json";
     if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("login script") ? "/Users/me/scripts/omv-login.spsl" : "/tmp/profiles.json";
     if (cmd === "profiles_read_file") return inFile;
+    if (cmd === "profile_templates") return templates;
+    if (cmd === "profile_template_share") return templates;
     if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [], tabIcons: [] }, { name: "Cisco", buttons: [], tabIcons: [] }];
     // the key fetch's key file: 37 minutes old, or 5 hours for the "old" one
     if (cmd === "profile_key_age") return String(payload.keyFile).includes("old") ? 5 * 3600 : 37 * 60;
@@ -334,6 +349,39 @@ describe("Settings > Profiles", () => {
     await userEvent.selectOptions(basedOn(), "root");
     await userEvent.click(button("Save"));
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "netops-old", basedOn: "root" });
+  });
+
+  it("offers the team's templates not set up here, and sets one up as a new profile for the login to be added", async () => {
+    templates = [
+      { ...emptyProfile("netops"), jumpHost: "bastion", algorithms: "kex=diffie-hellman-group14-sha1", buttonBar: "Cisco" },
+      // set up here already: not offered
+      { ...emptyProfile("ROOT"), port: 22 },
+    ];
+    await open();
+    const list = listed();
+    expect(list.getByText("Team templates")).toBeTruthy();
+    expect(list.queryAllByRole("option").map((o) => o.textContent?.trim())).toEqual([DEFAULT_PROFILE, "root", "CyberArk", "netops"]);
+    await userEvent.click(list.getByRole("option", { name: "netops" }));
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("netops");
+    expect((screen.getByLabelText("Jump host") as HTMLInputElement).value).toBe("bastion");
+    expect(screen.getByText(/add your username and password/)).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("Username"), "jsmith");
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args).toMatchObject({
+      previousName: "", profile: { name: "netops", username: "jsmith", jumpHost: "bastion", buttonBar: "Cisco" },
+    });
+    // set up now: no longer offered
+    expect(listed().queryByText("Team templates")).toBeNull();
+  });
+
+  it("shares a profile with the team from its menu, once there's a settings folder, after asking", async () => {
+    settings.settingsFolder = "/team";
+    await open();
+    await userEvent.pointer({ keys: "[MouseRight]", target: listed().getByRole("option", { name: "root" }) });
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Share as Team Template…" }));
+    await expect.poll(() => calls.find((c) => c.cmd === "profile_template_share")?.args).toEqual({ name: "root" });
+    expect(String(calls.find((c) => c.cmd === "plugin:dialog|message")?.args.message)).toContain("username, key file and password stay here");
+    settings.settingsFolder = null;
   });
 
   it("saves a device's character set, UTF-8 on Default Settings being no choice of its own", async () => {

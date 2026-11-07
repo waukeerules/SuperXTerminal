@@ -1,6 +1,7 @@
 // Settings' search: it finds a setting in any tab, not only the open one, and a result opens its tab with the
-// setting flashed. And General's Use PrivateSessions.xml, which can be turned off only while Saved sessions are in use.
-// The Rust side is stood in for by mockIPC, which saves the settings.
+// setting flashed. And General's Use PrivateSessions.xml, which can be turned off only while Saved sessions are in use,
+// and the Show in Finder / File Explorer beside each sessions file.
+// The Rust side is stood in for by mockIPC, which saves the settings and notes the files asked to be shown.
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -8,14 +9,19 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import Settings from "./Settings.svelte";
 import { emptyProfile, DEFAULT_PROFILE } from "./profiles";
 import { settings } from "./store.svelte";
+import { FILE_MANAGER } from "../platform";
 
 /** The settings saved, as settings_save was given them */
 let saved: Record<string, unknown>[] = [];
+/** The sessions files asked to be shown in the file manager (sessions_reveal's store) */
+let revealed: string[] = [];
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = () => {};
   saved = [];
+  revealed = [];
   mockIPC((cmd, args) => {
+    if (cmd === "sessions_reveal") return void revealed.push((args as { store: string }).store);
     if (cmd === "profiles_list") return [emptyProfile(DEFAULT_PROFILE)];
     if (cmd === "shortcuts_keys") return [{ id: "newTab", label: "New Local Terminal", key: "CmdOrCtrl+T", default: "CmdOrCtrl+T" }];
     if (cmd === "shortcuts_reserved") return [];
@@ -83,5 +89,28 @@ describe("Use PrivateSessions.xml", () => {
     await expect.poll(() => saved.at(-1)?.usePrivateSessions).toBe(false);
     await expect.poll(() => (screen.getByRole("checkbox", { name: /Use Sessions\.xml/ }) as HTMLInputElement).disabled).toBe(true);
     Object.assign(settings, { usePrivateSessions: true });
+  });
+});
+
+describe("Show in the file manager beside the sessions files", () => {
+  /** The Show in Finder / File Explorer buttons, Sessions.xml's first */
+  const showButtons = () => screen.getAllByRole("button", { name: `Show in ${FILE_MANAGER}` }) as HTMLButtonElement[];
+
+  it("shows Sessions.xml and PrivateSessions.xml, each by its own button", async () => {
+    const user = userEvent.setup();
+    Object.assign(settings, { settingsFolder: "/team", useSessionsXml: true, usePrivateSessions: true });
+    render(Settings, { onClose: () => {} });
+    const [savedButton, privateButton] = showButtons();
+    await user.click(savedButton);
+    await user.click(privateButton);
+    expect(revealed).toEqual(["saved", "private"]);
+  });
+
+  it("can't show Sessions.xml before a settings folder is chosen, but can show PrivateSessions.xml", () => {
+    Object.assign(settings, { settingsFolder: null, useSessionsXml: true, usePrivateSessions: true });
+    render(Settings, { onClose: () => {} });
+    const [savedButton, privateButton] = showButtons();
+    expect(savedButton.disabled).toBe(true);
+    expect(privateButton.disabled).toBe(false);
   });
 });

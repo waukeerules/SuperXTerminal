@@ -2255,6 +2255,33 @@ fn applog_reveal() -> Result<(), String> {
     reveal(&applog::file())
 }
 
+/// Settings > General's Show buttons beside Use Sessions.xml and Use PrivateSessions.xml: the file in Finder or
+/// File Explorer, whether or not it's in use. Sessions.xml is in the settings folder, PrivateSessions.xml in this
+/// user's own folder (on this computer); Database sessions have no file
+#[tauri::command]
+fn sessions_reveal(state: State<'_, AppState>, store: sessions::Store) -> Result<(), String> {
+    let (folder, name) = match store {
+        sessions::Store::Saved => {
+            let folder = state.settings.lock().unwrap().settings_folder.clone();
+            (folder.ok_or("No settings folder has been chosen yet")?, "Sessions.xml")
+        }
+        sessions::Store::Private => (state.user_folder.clone(), "PrivateSessions.xml"),
+        sessions::Store::Database => return Err("Database sessions aren't kept in a file".into()),
+    };
+    reveal(&file_or_folder(&folder, name))
+}
+
+/// The file to show in Finder or File Explorer: `folder/name`, or the folder when the file isn't there yet (no
+/// session saved to it), since revealing a missing file opens Explorer on Documents instead and Finder on nothing
+fn file_or_folder(folder: &std::path::Path, name: &str) -> PathBuf {
+    let file = folder.join(name);
+    if file.exists() {
+        file
+    } else {
+        folder.to_path_buf()
+    }
+}
+
 /// Show a file in its folder, selected: Finder on the Mac (`open -R`), Explorer on Windows (`/select,`)
 pub fn reveal(path: &std::path::Path) -> Result<(), String> {
     #[cfg(windows)]
@@ -2701,6 +2728,7 @@ pub fn run() {
             applog_write,
             applog_clear,
             applog_reveal,
+            sessions_reveal,
             requests_take,
             links_make_default,
             shortcuts_keys,
@@ -2865,6 +2893,17 @@ mod tests {
         // no Saved sessions (no settings folder, or Use Sessions.xml off): Private stay on, whatever the setting
         assert!(!super::private_off_when(false, false));
         assert!(!super::private_off_when(true, true));
+    }
+
+    #[test]
+    fn show_in_the_file_manager_selects_the_sessions_file_or_opens_its_folder_before_there_is_one() {
+        let folder = std::env::temp_dir().join("sxt-reveal-test");
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        assert_eq!(super::file_or_folder(&folder, "PrivateSessions.xml"), folder);
+        std::fs::write(folder.join("PrivateSessions.xml"), "<ArrayOfSessionData />").unwrap();
+        assert_eq!(super::file_or_folder(&folder, "PrivateSessions.xml"), folder.join("PrivateSessions.xml"));
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

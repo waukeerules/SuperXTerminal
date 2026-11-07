@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
   import { SEARCH_FIELDS, searchFieldsOf, toggledSearchFields } from "../sessions/tree";
-  import { SYSTEM, THIS_COMPUTER } from "../platform";
+  import { FILE_MANAGER, SYSTEM, THIS_COMPUTER } from "../platform";
   import { chooseSettingsFolder, saveSettings, settings, type ScriptLanguage } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
@@ -22,6 +22,21 @@
 
   let editingColours = $state(false);
   let linksMessage = $state("");
+  /** Why a Show in Finder / File Explorer beside a sessions file didn't work */
+  let fileMessage = $state("");
+
+  /**
+   * Show Sessions.xml or PrivateSessions.xml in Finder or File Explorer, selected (its folder, before anything's
+   * been saved to it), whether or not it's in use
+   */
+  async function showFile(store: "saved" | "private"): Promise<void> {
+    try {
+      fileMessage = "";
+      await invoke("sessions_reveal", { store });
+    } catch (e) {
+      fileMessage = String(e);
+    }
+  }
 
   /** Make SuperXTerminal the app for ssh:// and telnet:// links (macOS asks the user to confirm) */
   async function makeDefault(): Promise<void> {
@@ -51,14 +66,23 @@
       <input readonly value={settings.settingsFolder ?? "Not chosen yet"} aria-label="Settings folder" />
       <button onclick={chooseSettingsFolder}>Choose…</button>
     </div>
-    <label class="check" title="Untick to use only Private and Database sessions: Sessions.xml and Folders.xml are then neither read nor written (they're left as they are), and imports go to Private sessions">
-      <input type="checkbox" checked={settings.useSessionsXml}
-        onchange={(e) => void saveSettings({ useSessionsXml: e.currentTarget.checked })}
-        disabled={settings.useSessionsXml && !settings.usePrivateSessions} /> Use Sessions.xml (Saved sessions)</label>
-    <label class="check" title="Untick to use only Saved and Database sessions: PrivateSessions.xml (only yours, on this computer) is then neither read nor written (it's left as it is), and nothing offers Private sessions">
-      <input type="checkbox" checked={settings.usePrivateSessions}
-        onchange={(e) => void saveSettings({ usePrivateSessions: e.currentTarget.checked })}
-        disabled={settings.usePrivateSessions && !savedInUse} /> Use PrivateSessions.xml (Private sessions)</label>
+    <div class="file">
+      <label class="check" title="Untick to use only Private and Database sessions: Sessions.xml and Folders.xml are then neither read nor written (they're left as they are), and imports go to Private sessions">
+        <input type="checkbox" checked={settings.useSessionsXml}
+          onchange={(e) => void saveSettings({ useSessionsXml: e.currentTarget.checked })}
+          disabled={settings.useSessionsXml && !settings.usePrivateSessions} /> Use Sessions.xml (Saved sessions)</label>
+      <button onclick={() => void showFile("saved")} disabled={!settings.settingsFolder}
+        title="Sessions.xml, in the settings folder">Show in {FILE_MANAGER}</button>
+    </div>
+    <div class="file">
+      <label class="check" title="Untick to use only Saved and Database sessions: PrivateSessions.xml (only yours, on this computer) is then neither read nor written (it's left as it is), and nothing offers Private sessions">
+        <input type="checkbox" checked={settings.usePrivateSessions}
+          onchange={(e) => void saveSettings({ usePrivateSessions: e.currentTarget.checked })}
+          disabled={settings.usePrivateSessions && !savedInUse} /> Use PrivateSessions.xml (Private sessions)</label>
+      <button onclick={() => void showFile("private")}
+        title="PrivateSessions.xml, in your own folder on {THIS_COMPUTER}">Show in {FILE_MANAGER}</button>
+    </div>
+    {#if fileMessage}<p class="hint">{fileMessage}</p>{/if}
     {#if !settings.usePrivateSessions || !savedInUse}
       <!-- sessions need somewhere to go: one of the two stays on -->
       <p class="hint">{savedInUse ? "Private sessions are off, so Saved sessions stay on." : "Private sessions stay on until a settings folder is chosen with Use Sessions.xml on."}</p>
@@ -316,6 +340,14 @@
 
   label.check {
     display: flex;
+  }
+
+  /* a sessions file's checkbox, with its Show in Finder / File Explorer at the right */
+  .file {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   input,

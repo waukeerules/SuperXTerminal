@@ -514,8 +514,9 @@ enum SessionScript {
     Url { url: String, profile: Option<String> },
     /// The script's text, and where it's from as written (`source`: a path), whose .rhai says it's a Rhai script
     Text { text: String, profile: Option<String>, source: String },
-    /// A file that isn't there, e.g. a Windows path (C:\...)
-    Missing { path: String, profile: Option<String> },
+    /// A file that isn't there, e.g. a Windows path (C:\...) on the Mac. `looked` is where a relative one was looked
+    /// for, in this computer's settings folder, so the tab can say where to save a copy of its own
+    Missing { path: String, looked: Option<String>, profile: Option<String> },
 }
 
 /// Which script a session runs as it opens, and the profile it comes from (None for the session's own): the session's
@@ -611,10 +612,11 @@ fn read_script(spec: &str, profile: Option<String>, folder: &std::path::Path) ->
     }
     let path = PathBuf::from(spec.strip_prefix("file://").unwrap_or(spec));
     // a relative one typed on Windows ("scripts\login.spsl") is found on the Mac too, where \ is a letter in a name
-    let path = if path.is_absolute() { path } else { folder.join(spec.replace('\\', "/")) };
+    let relative = !path.is_absolute();
+    let path = if relative { folder.join(spec.replace('\\', "/")) } else { path };
     match std::fs::read_to_string(&path) {
         Ok(text) => SessionScript::Text { text, profile, source: spec.to_string() },
-        Err(_) => SessionScript::Missing { path: spec.to_string(), profile },
+        Err(_) => SessionScript::Missing { path: spec.to_string(), looked: relative.then(|| path.display().to_string()), profile },
     }
 }
 
@@ -3159,7 +3161,9 @@ mod tests {
         for spec in ["scripts/login.spsl", r"scripts\login.spsl"] {
             assert!(matches!(super::read_script(spec, None, &dir), super::SessionScript::Text { ref text, .. } if text == "SENDLINE x"), "{spec}");
         }
-        assert!(matches!(super::read_script("scripts/other.spsl", None, &dir), super::SessionScript::Missing { .. }));
+        // where a copy of its own would go, for the tab's warning
+        let looked = dir.join("scripts/other.spsl").display().to_string();
+        assert!(matches!(super::read_script("scripts/other.spsl", None, &dir), super::SessionScript::Missing { looked: Some(ref l), .. } if *l == looked));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

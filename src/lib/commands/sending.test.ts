@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { context, fillScriptPlaceholders, openingLanguage, openingScriptWarning, sessionValues, tabValues } from "./sending.svelte";
 import type { SessionView } from "../sessions/api";
+import { isMac } from "../shortcuts";
 
 /** A saved SSH session, as the tree has it */
 const SW1 = {
@@ -72,8 +73,18 @@ describe("a session's or profile's login script", () => {
   });
 
   it("is warned of when its file isn't on this computer or its address gives nothing, and not otherwise", () => {
-    expect(openingScriptWarning({ kind: "missing", path: "C:/Users/me/Downloads/jump-host.spsl" }, "", "Switch's"))
-      .toMatch(/^Switch's login script C:\/Users\/me\/Downloads\/jump-host\.spsl isn't on this (Mac|PC), so the session opens without it\.$/);
+    const here = isMac ? "this Mac" : "this PC";
+    // a shared session's script someone else has: saved under the same name here, where the session looks for it
+    expect(openingScriptWarning({ kind: "missing", path: "scripts/jump-host.spsl", looked: "/settings/scripts/jump-host.spsl" }, "", "Switch's"))
+      .toBe(`Switch's login script scripts/jump-host.spsl isn't on ${here}, so the session opens without it. To run it here, save your own copy as /settings/scripts/jump-host.spsl.`);
+    // a full path of this system's: a copy at that path does
+    const ours = isMac ? "/Users/me/Downloads/jump-host.spsl" : "C:/Users/me/Downloads/jump-host.spsl";
+    expect(openingScriptWarning({ kind: "missing", path: ours, looked: null }, "", "Switch's"))
+      .toBe(`Switch's login script ${ours} isn't on ${here}, so the session opens without it. To run it here, save your own copy at that path.`);
+    // the other system's full path can't be had here: the scripts folder instead
+    const theirs = isMac ? "C:/Users/me/Downloads/jump-host.spsl" : "/Users/me/Downloads/jump-host.spsl";
+    expect(openingScriptWarning({ kind: "missing", path: theirs, looked: null }, "", "Switch's"))
+      .toBe(`Switch's login script ${theirs} isn't on ${here}, so the session opens without it. That's a ${isMac ? "Windows" : "Mac"} path: to run it here, put a copy in the settings folder's scripts folder and choose it from there.`);
     expect(openingScriptWarning({ kind: "url", url: "https://example.test/login.spsl" }, "", "The Linux profile's"))
       .toBe("The Linux profile's login script https://example.test/login.spsl couldn't be fetched, so the session opens without it.");
     expect(openingScriptWarning({ kind: "url", url: "https://example.test/login.spsl" }, "#!/bin/spsl", "Switch's")).toBe("");

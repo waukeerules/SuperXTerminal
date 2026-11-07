@@ -344,7 +344,7 @@
    * The script a tab opens with, as the core finds it (session_script, quick_connect_script): none, its text, an
    * http(s) address to fetch, or a file that isn't there; with the profile it's from, when it's a profile's
    */
-  type FoundScript = { kind: string; text?: string; url?: string; path?: string; source?: string; profile?: string | null };
+  type FoundScript = { kind: string; text?: string; url?: string; path?: string; looked?: string | null; source?: string; profile?: string | null };
 
   /** Open a session from the tree in a new tab */
   function openSession(session: SessionView, environment: string | null): void {

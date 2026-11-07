@@ -12,6 +12,8 @@ import { resolveSnippet, askOne } from "../scripting/asking.svelte";
 import { parseSendString } from "../scripting/sendString";
 import { clipboardText } from "../clipboard";
 import { THIS_COMPUTER } from "../platform";
+import { isMac } from "../shortcuts";
+import { isOtherSystemsPath } from "../scripting/scriptPath";
 import { ScriptRun, runScript, scriptVariables, SESSION_VARIABLES, type ScriptHost } from "../scripting/spsl";
 import { envNames, runRhai } from "../scripting/rhai";
 import type { SessionView } from "../sessions/api";
@@ -180,16 +182,23 @@ export function openingLanguage(text: string, source = ""): "spsl" | "rhai" | nu
 /**
  * The warning for a login script a tab can't run, or "": a file that isn't on this computer (a full path picked on
  * the other system, or a file moved), or an address that gave nothing. The session opens without it either way, as
- * SuperXPuTTY's does
- * @param found What the core found for the tab (session_script): its kind, and the path or address
+ * SuperXPuTTY's does. A missing file's warning says how to run it here: a shared session's script that someone else
+ * has can be saved under the same name on this computer, where the session looks for it, with no change to the
+ * session; one named by the other system's full path can't, so that says to use the settings folder's scripts folder
+ * @param found What the core found for the tab (session_script): its kind, the path or address, and for a relative
+ *   path where it was looked for (`looked`, in this computer's settings folder)
  * @param text The script's text as read or fetched
  * @param whose Whose script it is: "Switch's", "The Linux profile's"
  */
-export function openingScriptWarning(found: { kind: string; path?: string; url?: string }, text: string, whose: string): string {
-  const problem = found.kind === "missing" ? `${found.path} isn't on ${THIS_COMPUTER}`
-    : found.kind === "url" && !text ? `${found.url} couldn't be fetched`
-    : "";
-  return problem && `${whose} login script ${problem}, so the session opens without it.`;
+export function openingScriptWarning(found: { kind: string; path?: string; looked?: string | null; url?: string }, text: string, whose: string): string {
+  if (found.kind === "url" && !text) return `${whose} login script ${found.url} couldn't be fetched, so the session opens without it.`;
+  if (found.kind !== "missing") return "";
+  const warning = `${whose} login script ${found.path} isn't on ${THIS_COMPUTER}, so the session opens without it.`;
+  const path = found.path ?? "";
+  const toRun = found.looked ? `To run it here, save your own copy as ${found.looked}.`
+    : isOtherSystemsPath(path) ? `That's a ${isMac ? "Windows" : "Mac"} path: to run it here, put a copy in the settings folder's scripts folder and choose it from there.`
+    : "To run it here, save your own copy at that path.";
+  return `${warning} ${toRun}`;
 }
 
 /**

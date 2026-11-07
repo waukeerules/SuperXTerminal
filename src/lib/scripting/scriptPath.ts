@@ -7,6 +7,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { THIS_COMPUTER } from "../platform";
+import { isMac } from "../shortcuts";
 
 /**
  * A script file picked in the file dialog, as it's kept: relative to the settings folder when it's in there
@@ -24,6 +25,18 @@ export function chosenScript(path: string): Promise<string> {
 export function isFullPath(spec: string): boolean {
   const s = spec.trim().replace(/^file:\/\//i, "");
   return /^[a-z]:[\\/]/i.test(s) || s.startsWith("\\\\") || s.startsWith("/") || s.startsWith("~");
+}
+
+/**
+ * Whether a full path is the other system's, which no file on this computer can have: a Windows drive or share
+ * (C:\..., \\server\...) on the Mac, a Unix one (/Users/..., ~/...) on Windows
+ * @param spec The login script as typed or chosen
+ */
+export function isOtherSystemsPath(spec: string): boolean {
+  const s = spec.trim().replace(/^file:\/\//i, "");
+  const windows = /^[a-z]:[\\/]/i.test(s) || s.startsWith("\\\\");
+  const unix = s.startsWith("/") || s.startsWith("~");
+  return isMac ? windows : unix;
 }
 
 /**

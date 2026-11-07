@@ -1133,7 +1133,7 @@
             { label: 'Default Size (' + chosenFontDefaultSize() + ' px)', checked: !(parseInt(loadPref('fontSize'), 10) > 0), action: function () { savePref('fontSize', '0'); applyFont(); } },
             '-',
             { label: 'From Theme (' + themeFont().family.split(',')[0].replace(/"/g, '') + ')', checked: chosenFamily === '', action: setFamily('') },
-            { label: 'From PuTTY Profile (' + profileFont.family + ', ' + profileFont.points + ' pt)', checked: chosenFamily === 'profile', action: setFamily('profile') },
+            { label: 'From the Profile (' + profileFontName() + ')', checked: chosenFamily === 'profile', action: setFamily('profile') },
             '-'
         ].concat(installedFonts.map(function (name) {
             return { label: name, checked: chosenFamily === name, action: setFamily(name) };
@@ -1439,8 +1439,11 @@
 
     // ---- font -----------------------------------------------------------------------------------------------------
 
-    /** The PuTTY profile's font (Window > Appearance), from TerminalControl */
-    var profileFont = { family: 'Courier New', points: 10 };
+    /**
+     * The profile's font (PuTTY's Window > Appearance; SuperXTerminal's Settings > Profiles > Font), from
+     * TerminalControl: its family ("" for none) and size in points (0 for none). What it doesn't set is the theme's
+     */
+    var profileFont = { family: '', points: 0 };
 
     /** The installed monospaced fonts, from TerminalControl */
     var installedFonts = [];
@@ -1455,15 +1458,18 @@
     }
 
     /**
-     * The font to draw with: the preference's family (the theme's, the PuTTY profile's, or a named font) and size
-     * (the preference's, else the profile's points as pixels at 96 dpi, else the theme's)
+     * The font to draw with: the preference's family (the theme's, the profile's, or a named font) and size (the
+     * preference's, else the profile's points as pixels at 96 dpi, else the theme's). The profile's family or size,
+     * when it has none, is the theme's
      */
     function chosenFont() {
         var family = loadPref('fontFamily');
         var size = parseInt(loadPref('fontSize'), 10) || 0;
         var font;
         if (family === 'profile') {
-            font = { family: '"' + profileFont.family + '", monospace', size: Math.round(profileFont.points * 96 / 72) };
+            font = themeFont();
+            if (profileFont.family) { font.family = '"' + profileFont.family + '", monospace'; }
+            if (profileFont.points > 0) { font.size = Math.round(profileFont.points * 96 / 72); }
         } else if (family) {
             font = { family: '"' + family + '", monospace', size: themeFont().size };
         } else {
@@ -1471,6 +1477,12 @@
         }
         if (size > 0) { font.size = size; }
         return font;
+    }
+
+    /** The profile's font as the menu names it: "Cascadia Mono, 12 pt", or the theme's for what it doesn't set */
+    function profileFontName() {
+        var family = profileFont.family || themeFont().family.split(',')[0].replace(/"/g, '') + ' from the theme';
+        return family + (profileFont.points > 0 ? ', ' + profileFont.points + ' pt' : '');
     }
 
     /** Draw with the chosen font, and refit the columns and rows to it */
@@ -1645,6 +1657,8 @@
             case 'commandColor': markCommand(message.color); break;
             // the profile was saved with other colours (SuperXTerminal)
             case 'colors': profileColours = message.colors || {}; profileTheme = message.theme || null; applyTheme(); break;
+            // the profile was saved with another font or size (SuperXTerminal)
+            case 'profileFont': profileFont = message.font || { family: '', points: 0 }; applyFont(); break;
         }
     }
 

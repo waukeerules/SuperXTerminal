@@ -15,12 +15,12 @@ import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
 import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
-import { DEFAULT_PROFILE, listProfiles, profileColours, PROFILES_CHANGED, saveProfile } from "../settings/profiles";
+import { DEFAULT_PROFILE, listProfiles, profileColours, profileFont, PROFILES_CHANGED, saveProfile } from "../settings/profiles";
 import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailure";
 import { antiIdleKeys } from "./antiIdle";
 import { running } from "../commands/sending.svelte";
 import { checkPaste } from "./pasting.svelte";
-import { THIS_COMPUTER } from "../platform";
+import { MONOSPACE_FONTS, THIS_COMPUTER } from "../platform";
 import { clipboardText } from "../clipboard";
 import { isMac, loadShortcuts, shortcutLabel } from "../shortcuts";
 import { listen } from "@tauri-apps/api/event";
@@ -32,7 +32,7 @@ type PtyEvent =
   | { type: "notice"; text: string; kind: string }
   | { type: "started"; local: boolean; look: Look; link: string };
 
-/** The profile's cursor and bell for the page (`Look` in `src-tauri/src/launch.rs`) */
+/** The profile's cursor, bell, colours and font for the page (`Look` in `src-tauri/src/launch.rs`) */
 interface Look {
   cursor: string;
   blink: boolean;
@@ -50,6 +50,10 @@ interface Look {
   cursorColor?: string;
   /** The profile's tab colour ("#rrggbb"), else Default Settings'; "" or absent for none */
   tabColor?: string;
+  /** The profile's font, else Default Settings'; "" or absent for the theme's */
+  fontFamily?: string;
+  /** The profile's font size in points, else Default Settings'; 0 or absent for the theme's */
+  fontSize?: number;
   /** The profile's anti-idle string, as KiTTY writes it; "" or absent for none */
   antiIdle?: string;
   /** Seconds without typing before it's typed; 0 with no string */
@@ -104,8 +108,6 @@ function menuKeyLabels(): Record<string, string> {
  */
 const STAND_IN_THEMES = [{ name: "PuTTY", base: "vs-dark", colors: { background: "#000000", foreground: "#FFFFFF" } }];
 
-/** Monospaced fonts that come with macOS, for the page's font menu */
-const MAC_MONOSPACE_FONTS = ["Menlo", "Monaco", "SF Mono", "Courier New", "Andale Mono", "PT Mono"];
 
 /** The bell's sound: a short tone (Windows plays its default beep) */
 function beep(): void {
@@ -316,13 +318,14 @@ export class PageHost implements ScriptTarget {
    */
   tabColor: string | null = null;
 
-  /** A profile was saved or removed: the tab takes its profile's colours again, its tab's colour included */
+  /** A profile was saved or removed: the tab takes its profile's colours and font again, its tab's colour included */
   private readonly onProfilesChanged = (): void => {
     const name = this.profile;
     if (name === null) return;
     void listProfiles().then((profiles) => {
       const { theme, tab, ...colors } = profileColours(profiles, name);
       this.post({ type: "colors", colors, theme });
+      this.post({ type: "profileFont", font: profileFont(profiles, name) });
       this.tabColor = tab || null;
       this.onState();
     }).catch(() => {});
@@ -778,11 +781,13 @@ export class PageHost implements ScriptTarget {
       // the Special Commands this tab sends itself (the page then offers them instead of Open in PuTTY)
       specials: specialCommands(this.link),
       prefs: allPrefs(),
-      fonts: MAC_MONOSPACE_FONTS,
+      // the system's own monospaced fonts, for the page's font menu
+      fonts: MONOSPACE_FONTS,
       // PuTTY's defaults (the profile's Terminal > Keyboard and Bell settings aren't in SuperXTerminal's profiles)
       keys: { backspace: "del", homeEnd: "standard", functionKeys: "tilde" },
       bellOverload: { on: true, count: 5, windowMs: 2000, quietMs: 5000 },
-      profileFont: { family: "Menlo", points: 12 },
+      // the profile's font (Settings > Profiles > Font), else Default Settings'; "" and 0: the theme's
+      profileFont: { family: look.fontFamily ?? "", points: look.fontSize ?? 0 },
       menuKeys: MENU_KEYS,
       keyLabels: (await loadShortcuts(), menuKeyLabels()),
       sessionRules: look.rules,

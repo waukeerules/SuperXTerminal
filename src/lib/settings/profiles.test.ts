@@ -1,7 +1,7 @@
-// A profile's terminal colours and Tab colour as its tabs take them again when it's saved: its own, else Default
-// Settings'.
+// A profile's terminal colours, Tab colour and font as its tabs take them again when it's saved: its own, else
+// Default Settings'.
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PROFILE, emptyProfile, profileColours } from "./profiles";
+import { DEFAULT_PROFILE, emptyProfile, profileColours, profileFont } from "./profiles";
 
 describe("profileColours", () => {
   const profiles = [
@@ -38,5 +38,22 @@ describe("profileColours", () => {
     // not #rrggbb: Default Settings'
     expect(profileColours(tabbed, "Odd").tab).toBe("#1f6feb");
     expect(profileColours([emptyProfile(DEFAULT_PROFILE)], "Gone").tab).toBe("");
+  });
+});
+
+describe("profileFont", () => {
+  const profiles = [
+    { ...emptyProfile(DEFAULT_PROFILE), fontFamily: "Consolas", fontSize: 11 },
+    { ...emptyProfile("Projector"), fontSize: 20 },
+    { ...emptyProfile("Lab"), fontFamily: " Courier New ", fontSize: 99 },
+  ];
+
+  it("takes the profile's own, else Default Settings', a size brought within what the tab can draw", () => {
+    expect(profileFont(profiles, "projector")).toEqual({ family: "Consolas", points: 20 });
+    expect(profileFont(profiles, "Lab")).toEqual({ family: "Courier New", points: 36 });
+    // a profile that isn't there: Default Settings'
+    expect(profileFont(profiles, "gone")).toEqual({ family: "Consolas", points: 11 });
+    // none anywhere: the theme's
+    expect(profileFont([emptyProfile(DEFAULT_PROFILE)], DEFAULT_PROFILE)).toEqual({ family: "", points: 0 });
   });
 });

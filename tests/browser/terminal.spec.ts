@@ -485,6 +485,49 @@ test("a file dropped on the terminal doesn't open in its place", async ({ page }
   expect(stopped).toBe(true);
 });
 
+test.describe("the profile's font", () => {
+  /** The font the terminal draws with now: its family and size in pixels */
+  const drawn = (page: Page) => page.evaluate(() => {
+    const options = (window as any).terminalDev.term.options;
+    return { family: options.fontFamily as string, size: options.fontSize as number };
+  });
+
+  /** Open the page as the app does, Settings > Terminal > Font being `family` and the profile's font `profileFont` */
+  async function openWith(page: Page, prefs: Record<string, string>, profileFont: { family: string; points: number }) {
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    await page.evaluate(([prefs, profileFont]) => (window as any).terminalDev.message({
+      type: "config", prefs, profileFont, themes: [{ name: "PuTTY", colors: {}, font: { family: "Consolas", size: 14 } }],
+    }), [prefs, profileFont] as const);
+    await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+  }
+
+  test("draws in the profile's font and size (points at 96 dpi) while Settings > Terminal says The profile's", async ({ page }) => {
+    await openWith(page, { fontFamily: "profile", fontSize: "0" }, { family: "Courier New", points: 15 });
+    await expect.poll(() => drawn(page)).toEqual({ family: '"Courier New", monospace', size: 20 });
+  });
+
+  test("takes the theme's for what the profile doesn't set", async ({ page }) => {
+    await openWith(page, { fontFamily: "profile", fontSize: "0" }, { family: "", points: 12 });
+    await expect.poll(() => drawn(page)).toEqual({ family: "Consolas", size: 16 });
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "profileFont", font: { family: "", points: 0 } }));
+    await expect.poll(() => drawn(page)).toEqual({ family: "Consolas", size: 14 });
+  });
+
+  test("follows the profile when it's saved with another font, and a size chosen in Settings or with Ctrl+wheel wins", async ({ page }) => {
+    await openWith(page, { fontFamily: "profile", fontSize: "0" }, { family: "Courier New", points: 15 });
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "profileFont", font: { family: "Lucida Console", points: 9 } }));
+    await expect.poll(() => drawn(page)).toEqual({ family: '"Lucida Console", monospace', size: 12 });
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs", prefs: { fontFamily: "profile", fontSize: "18" } }));
+    await expect.poll(() => drawn(page)).toEqual({ family: '"Lucida Console", monospace', size: 18 });
+  });
+
+  test("is left alone while Settings > Terminal names the theme's or a font of its own", async ({ page }) => {
+    await openWith(page, { fontFamily: "", fontSize: "0" }, { family: "Courier New", points: 15 });
+    await expect.poll(() => drawn(page)).toEqual({ family: "Consolas", size: 14 });
+  });
+});
+
 test.describe("Find", () => {
   /** Watch what the page sends TerminalControl (through host/webview.js, to the page itself here) */
   async function watchSent(page: Page) {

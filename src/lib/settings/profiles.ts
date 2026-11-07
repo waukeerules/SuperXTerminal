@@ -48,6 +48,10 @@ export interface Profile {
   cursor: string;
   cursorBlink: boolean | null;
   bell: string;
+  /** The terminal's font, an installed font's name; "" for Default Settings', else the theme's */
+  fontFamily: string;
+  /** The font's size in points, as PuTTY's; 0 for Default Settings', else the theme's */
+  fontSize: number;
   /**
    * Which colours its tabs have: "" or "default" (Default Settings'), "theme" (Settings > Terminal's theme), "dark", "light" or
    * "custom" (the colours below); a profile with colours and no choice is custom
@@ -87,7 +91,7 @@ export interface Profile {
 export function emptyProfile(name: string): Profile {
   return {
     name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", olderAlgorithms: null, serverLoad: null, algorithms: "",
-    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
+    sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", fontFamily: "", fontSize: 0, colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
   };
 }
 
@@ -130,6 +134,25 @@ export function ownColoursChoice(profile: Profile | undefined): string {
 /** The Colours choice a profile's tabs go by: its own, else Default Settings', else "theme" (`colours_choice` in launch.rs) */
 export function coloursChoice(profile: Profile | undefined, fallback: Profile | undefined): string {
   return ownColoursChoice(profile) || ownColoursChoice(fallback) || "theme";
+}
+
+/** The smallest and largest font size a profile can give, in points (MIN_FONT_POINTS in src-tauri/src/launch.rs) */
+export const MIN_FONT_POINTS = 5;
+export const MAX_FONT_POINTS = 36;
+
+/**
+ * A profile's font as a session's tab takes it (`look` in src-tauri/src/launch.rs): its own, else Default Settings';
+ * "" and 0 for the theme's. For a tab already open when the profile is saved
+ */
+export function profileFont(profiles: Profile[], name: string): { family: string; points: number } {
+  const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
+  const fallback = find(DEFAULT_PROFILE);
+  const profile = find(name) ?? fallback;
+  const points = [profile?.fontSize, fallback?.fontSize].find((s) => s) ?? 0;
+  return {
+    family: profile?.fontFamily?.trim() || fallback?.fontFamily?.trim() || "",
+    points: points ? Math.min(MAX_FONT_POINTS, Math.max(MIN_FONT_POINTS, points)) : 0,
+  };
 }
 
 /**

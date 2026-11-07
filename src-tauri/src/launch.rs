@@ -46,6 +46,10 @@ pub struct Look {
     /// The profile's tab colour, else Default Settings', whatever the Colours choice; "" for none. The session's
     /// environment colour wins over it
     pub tab_color: String,
+    /// The profile's font, else Default Settings'; "" for the theme's
+    pub font_family: String,
+    /// The profile's font size in points, else Default Settings'; 0 for the theme's
+    pub font_size: u32,
     /// The profile's anti-idle string as written (KiTTY's escapes), else Default Settings'; "" for none
     pub anti_idle: String,
     /// Seconds without typing before it's sent: the profile's, else Default Settings', else KiTTY's 180; 0 with no string
@@ -480,6 +484,8 @@ fn look(profile: &Profile, default: &Profile) -> Look {
         cursor_color: own(&profile.cursor_color, &default.cursor_color),
         // not a terminal colour, so not only when the colours are custom
         tab_color: colour(&profile.tab_color, &default.tab_color),
+        font_family: first(profile.font_family.trim(), default.font_family.trim()).to_string(),
+        font_size: [profile.font_size, default.font_size].into_iter().find(|s| *s != 0).map_or(0, |s| s.clamp(MIN_FONT_POINTS, MAX_FONT_POINTS)),
         anti_idle: anti_idle.to_string(),
         anti_idle_seconds: if anti_idle.is_empty() {
             0
@@ -495,6 +501,10 @@ fn look(profile: &Profile, default: &Profile) -> Look {
 fn shell_look(profile: &Profile, default: &Profile) -> Look {
     Look { anti_idle: String::new(), anti_idle_seconds: 0, ..look(profile, default) }
 }
+
+/// The smallest and largest font size a profile can give, in points: the page draws 6 to 48 pixels, 5 to 36 points
+pub const MIN_FONT_POINTS: u32 = 5;
+pub const MAX_FONT_POINTS: u32 = 36;
 
 /// Seconds without typing before the anti-idle string is sent when no profile says: KiTTY's (6 of its 30 s ticks)
 pub const ANTI_IDLE_SECONDS: u32 = 180;
@@ -1064,6 +1074,23 @@ mod tests {
         // none anywhere, or not a colour: none
         assert_eq!(super::look(&Profile::default(), &Profile::default()).tab_color, "");
         assert_eq!(super::look(&Profile { tab_color: "green".into(), ..Profile::default() }, &Profile::default()).tab_color, "");
+    }
+
+    #[test]
+    fn a_profiles_font_and_size_reach_its_tabs_else_default_settings() {
+        let default = Profile { font_family: "Consolas".into(), font_size: 11, ..Profile::default() };
+        let big = Profile { font_family: " Cascadia Mono ".into(), font_size: 16, ..Profile::default() };
+        let page = serde_json::to_value(super::look(&big, &default)).unwrap();
+        assert_eq!((page["fontFamily"].as_str(), page["fontSize"].as_u64()), (Some("Cascadia Mono"), Some(16)));
+        // none of its own: Default Settings'; only a size: Default Settings' font at that size
+        let none = super::look(&Profile::default(), &default);
+        assert_eq!((none.font_family.as_str(), none.font_size), ("Consolas", 11));
+        let sized = super::look(&Profile { font_size: 14, ..Profile::default() }, &default);
+        assert_eq!((sized.font_family.as_str(), sized.font_size), ("Consolas", 14));
+        // none anywhere: the theme's (""/0); a size the page can't draw is brought within it
+        let theme = super::look(&Profile::default(), &Profile::default());
+        assert_eq!((theme.font_family.as_str(), theme.font_size), ("", 0));
+        assert_eq!(super::look(&Profile { font_size: 200, ..Profile::default() }, &Profile::default()).font_size, super::MAX_FONT_POINTS);
     }
 
     #[test]

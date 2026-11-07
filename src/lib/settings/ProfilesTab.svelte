@@ -6,7 +6,7 @@
   colleague's or another computer's.
 -->
 <script lang="ts">
-  import { SECRET_STORE, SSH_KEYS } from "../platform";
+  import { MONOSPACE_FONTS, SECRET_STORE, SSH_KEYS } from "../platform";
   import { onMount } from "svelte";
   import { ask, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
@@ -14,7 +14,7 @@
   import { context } from "../commands/sending.svelte";
   import { keyFetchExamples } from "./keyFetchExamples";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
-  import { coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, ownColoursChoice, saveProfile, type Profile } from "./profiles";
+  import { coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, MAX_FONT_POINTS, ownColoursChoice, saveProfile, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
   import { drawnTheme, pref } from "../terminal/prefs";
   import { highlighting } from "../terminal/highlighting";
@@ -110,7 +110,7 @@
    */
   function meaning(profile: Profile, field: keyof Profile): unknown {
     const value = profile[field];
-    if (field === "port" || field === "keepalive" || field === "keyLifetime" || field === "antiIdleSeconds") return Number(value) || 0;
+    if (field === "port" || field === "keepalive" || field === "keyLifetime" || field === "antiIdleSeconds" || field === "fontSize") return Number(value) || 0;
     if (isDefault && field === "addressFamily") return value || "auto";
     if (isDefault && field === "offerKeys") return value ?? true;
     if (isDefault && field === "askUsername") return value ?? false;
@@ -134,7 +134,7 @@
     "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions", "cursor", "cursorBlink", "bell",
-    "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
+    "fontFamily", "fontSize", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
   ];
 
   /** The button bars' names (ButtonBars.xml in the settings folder), for the Button bar box */
@@ -530,6 +530,13 @@
           <option value="sound">Sound</option>
           <option value="none">None</option>
         </select></label>
+      <label>{@render caption("Font", "fontFamily")}<input bind:value={draft.fontFamily} list="profile-fonts"
+        placeholder={isDefault || !defaultProfile?.fontFamily ? "the theme's; or an installed font" : `From Default Settings (${defaultProfile.fontFamily})`} /></label>
+      <datalist id="profile-fonts">{#each MONOSPACE_FONTS as font (font)}<option value={font}></option>{/each}</datalist>
+      <label>{@render caption("Font size", "fontSize")}<input class="short" type="number" min="0" max={MAX_FONT_POINTS} bind:value={draft.fontSize} />
+        <span class="note">{isDefault || !defaultProfile?.fontSize ? "points (0: the theme's)" : `points (0: Default Settings', ${defaultProfile.fontSize})`}</span></label>
+      <p class="note under">As PuTTY's Window > Appearance > Font. Its tabs draw in it while Settings > Terminal > Font is
+        The profile's (the default); a font or size chosen there, or a size from Ctrl+wheel, wins over it.</p>
       <label>{@render caption("Colours", "colours")}
         <select value={shownChoice(draft)} onchange={(e) => (draft.colours = e.currentTarget.value)}>
           {#if !isDefault}<option value="default">From Default Settings ({SHORT[coloursChoice(defaultProfile, undefined)]})</option>{/if}

@@ -80,6 +80,12 @@ pub struct Profile {
     pub cursor_blink: Option<bool>,
     /// The bell: "" (default), "visual", "sound" or "none"
     pub bell: String,
+    /// The terminal's font, an installed font's name, as PuTTY's Window > Appearance > Font; "" for Default Settings',
+    /// else the theme's. Settings > Terminal > Font chosen there (not The profile's) wins over it
+    pub font_family: String,
+    /// The font's size in points, as PuTTY's; 0 for Default Settings', else the theme's. A size chosen in Settings >
+    /// Terminal or with Ctrl+wheel wins over it
+    pub font_size: u32,
     /// Which colours its tabs have: "" or "default" (Default Settings'), "theme" (Settings > Terminal's theme), "dark" or "light"
     /// (the Dark or Light theme), or "custom" (the colours below). A profile with colours and no choice is custom.
     pub colours: String,

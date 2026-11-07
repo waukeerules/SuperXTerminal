@@ -248,6 +248,23 @@ describe("Settings > Profiles", () => {
     expect(bar().selectedOptions[0].text).toBe("Retired (not in the button bars)");
   });
 
+  it("saves a font and size for the profile's tabs, and shows Default Settings' when it has none", async () => {
+    stored = stored.map((p) => (p.name === DEFAULT_PROFILE ? { ...p, fontFamily: "Courier New", fontSize: 11 } : p));
+    await open("root");
+    const font = () => screen.getByLabelText("Font") as HTMLInputElement;
+    const size = () => screen.getByLabelText(/^Font size/) as HTMLInputElement;
+    expect(font().placeholder).toBe("From Default Settings (Courier New)");
+    expect(size().closest("label")!.textContent).toContain("0: Default Settings', 11");
+    // the system's own monospaced fonts are offered, and any other can be typed
+    expect(document.querySelectorAll("#profile-fonts option").length).toBeGreaterThan(2);
+    await userEvent.type(font(), "Lucida Console");
+    await userEvent.clear(size());
+    await userEvent.type(size(), "16");
+    expect(dots()).toHaveLength(2);
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", fontFamily: "Lucida Console", fontSize: 16 });
+  });
+
   it("saves an SPSL script for the profile's sessions, typed or chosen, and shows Default Settings' when it has none", async () => {
     stored = stored.map((p) => (p.name === DEFAULT_PROFILE ? { ...p, script: "every.spsl" } : p));
     await open("root");

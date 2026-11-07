@@ -17,8 +17,11 @@ export const PREF_DEFAULTS: Record<string, string> = {
   colorSelection: "",
   /** The cursor's; a session's or folder's environment colour wins over it */
   colorCursor: "",
-  /** "" for the theme's, "profile", or a font's name */
-  fontFamily: "",
+  /**
+   * "profile" (the default: the profile's, Settings > Profiles > Font, else the theme's), "" for the theme's whatever
+   * the profile says, or a font's name. Was "" by default: with no profile font the two draw the same
+   */
+  fontFamily: "profile",
   /** Pixels; "0" for the theme's or profile's */
   fontSize: "0",
   /** "profile", "block", "underline" or "bar" */

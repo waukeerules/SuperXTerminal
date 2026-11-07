@@ -8,6 +8,7 @@
   import { allPrefs, drawnTheme, PREF_DEFAULTS, setPrefs } from "../terminal/prefs";
   import { highlighting } from "../terminal/highlighting";
   import { settings } from "./store.svelte";
+  import { MONOSPACE_FONTS } from "../platform";
 
   /** The colours a terminal theme sets, for showing what each colour box has when the user hasn't picked one */
   interface ThemeColours {
@@ -59,8 +60,8 @@
   const colour = (c: (typeof COLOURS)[number]) =>
     prefs[c.pref] || shownTheme[c.theme] || (c.theme === "cursor" ? shownTheme.foreground : "") || "#000000";
 
-  /** The fonts offered; any other can be typed */
-  const FONTS = ["Menlo", "Monaco", "SF Mono", "Courier New", "Andale Mono", "PT Mono"];
+  /** The fonts offered: the system's own monospaced ones */
+  const FONTS = MONOSPACE_FONTS;
 
   /** Set a terminal preference, which every tab takes at once */
   function set(name: string, value: string): void {
@@ -103,8 +104,8 @@
     </div>
     <label>Font
       <select value={prefs.fontFamily} onchange={(e) => set("fontFamily", e.currentTarget.value)}>
+        <option value="profile">The profile's (Settings > Profiles > Font), else the theme's</option>
         <option value="">The theme's</option>
-        <option value="profile">The profile's</option>
         {#each FONTS as font}<option value={font}>{font}</option>{/each}
       </select>
     </label>

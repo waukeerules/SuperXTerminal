@@ -136,6 +136,12 @@ fn profiles_save(
         Some(index) => profiles.profiles[index] = profile,
         None => profiles.profiles.push(profile),
     }
+    // the profiles based on a renamed one follow it, rather than falling back to Default Settings
+    if renaming {
+        for other in profiles.profiles.iter_mut().filter(|p| p.based_on.trim().eq_ignore_ascii_case(&key)) {
+            other.based_on = name.clone();
+        }
+    }
     profiles.save(&state.user_folder)?;
     Ok(profiles.profiles.clone())
 }

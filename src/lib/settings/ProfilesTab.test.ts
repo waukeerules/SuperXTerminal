@@ -53,9 +53,11 @@ beforeEach(() => {
 /** Render the tab and wait for the list to load */
 async function open(initial: string | null = null) {
   render(ProfilesTab, { initial });
-  await screen.findByRole("option", { name: "root" });
+  await within(await screen.findByRole("listbox", { name: "Profiles" })).findByRole("option", { name: "root" });
 }
 
+/** The list of profiles, to find one in apart from the Based on choices */
+const listed = () => within(screen.getByRole("listbox", { name: "Profiles" }));
 /** A button by its name */
 const button = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
 /** The dots beside fields that have changed */
@@ -64,7 +66,7 @@ const dots = () => screen.queryAllByLabelText("changed");
 describe("Settings > Profiles", () => {
   it("opens on the profile asked for, matched whatever its case", async () => {
     await open("ROOT");
-    expect(screen.getByRole("option", { name: "root" }).getAttribute("aria-selected")).toBe("true");
+    expect(listed().getByRole("option", { name: "root" }).getAttribute("aria-selected")).toBe("true");
     expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("root");
   });
 
@@ -85,7 +87,7 @@ describe("Settings > Profiles", () => {
     await userEvent.type(screen.getByLabelText("Username"), "x");
     expect(button("New").disabled).toBe(true);
     expect(button("Remove").disabled).toBe(true);
-    expect(screen.getByRole("option", { name: DEFAULT_PROFILE }).getAttribute("aria-disabled")).toBe("true");
+    expect(listed().getByRole("option", { name: DEFAULT_PROFILE }).getAttribute("aria-disabled")).toBe("true");
   });
 
   it("doesn't count retyping the saved value as a change", async () => {
@@ -120,19 +122,19 @@ describe("Settings > Profiles", () => {
 
   it("duplicates from the list's menu under the next free name, without the password", async () => {
     await open("root");
-    await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("option", { name: "root" }) });
+    await userEvent.pointer({ keys: "[MouseRight]", target: listed().getByRole("option", { name: "root" }) });
     await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Duplicate" }));
     const save = calls.find((c) => c.cmd === "profiles_save");
     expect((save?.args.profile as Profile).name).toBe("root-1");
     expect(save?.args.previousName).toBe("");
     expect(save?.args.password).toBeNull();
-    expect(await screen.findByRole("option", { name: "root-1" })).toBeTruthy();
+    expect(await within(await screen.findByRole("listbox", { name: "Profiles" })).findByRole("option", { name: "root-1" })).toBeTruthy();
   });
 
   it("exports the profile right-clicked to the file chosen, and says its password isn't in it", async () => {
     stored = stored.map((p) => (p.name === "root" ? { ...p, hasPassword: true } : p));
     await open("root");
-    await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("option", { name: "root" }) });
+    await userEvent.pointer({ keys: "[MouseRight]", target: listed().getByRole("option", { name: "root" }) });
     await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Export…" }));
     expect(await screen.findByText(`Exported "root". Its password isn't in the file.`)).toBeTruthy();
     expect(calls.find((c) => c.cmd === "profiles_export")?.args).toEqual({ name: "root", path: "/tmp/root profile.json" });
@@ -141,7 +143,7 @@ describe("Settings > Profiles", () => {
   it("imports the profiles in a file, one already here under the next free name, without passwords", async () => {
     inFile = [{ ...emptyProfile("root"), username: "admin" }, { ...emptyProfile("lab"), port: 2200 }];
     await open("root");
-    await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("option", { name: "root" }) });
+    await userEvent.pointer({ keys: "[MouseRight]", target: listed().getByRole("option", { name: "root" }) });
     await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Import…" }));
     expect(await screen.findByText(/Imported 2 profiles\. Already here, so imported "root" as "root-1"\./)).toBeTruthy();
     const saves = calls.filter((c) => c.cmd === "profiles_save");
@@ -149,7 +151,7 @@ describe("Settings > Profiles", () => {
     // the root here is left as it was; the imported one is beside it, and the last one opens
     expect(stored.find((p) => p.name === "root")?.username).toBe("root");
     expect(stored.find((p) => p.name === "root-1")?.username).toBe("admin");
-    expect(screen.getByRole("option", { name: "lab" }).getAttribute("aria-selected")).toBe("true");
+    expect(listed().getByRole("option", { name: "lab" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("shows how old a fetched key is, and when the next session will fetch another", async () => {
@@ -175,7 +177,7 @@ describe("Settings > Profiles", () => {
 
   it("can't delete Default Settings from the menu", async () => {
     await open();
-    await userEvent.pointer({ keys: "[MouseRight]", target: screen.getByRole("option", { name: DEFAULT_PROFILE }) });
+    await userEvent.pointer({ keys: "[MouseRight]", target: listed().getByRole("option", { name: DEFAULT_PROFILE }) });
     const remove = within(screen.getByRole("menu")).getByRole("menuitem", { name: "Delete…" });
     expect(remove.getAttribute("aria-disabled")).toBe("true");
   });
@@ -243,7 +245,7 @@ describe("Settings > Profiles", () => {
     await userEvent.click(button("Save"));
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", buttonBar: "Cisco" });
     // a bar since renamed or deleted
-    await userEvent.click(screen.getByRole("option", { name: "Old" }));
+    await userEvent.click(listed().getByRole("option", { name: "Old" }));
     expect(bar().value).toBe("Retired");
     expect(bar().selectedOptions[0].text).toBe("Retired (not in the button bars)");
   });
@@ -311,6 +313,29 @@ describe("Settings > Profiles", () => {
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", scrollback: 100000, sessionLog: true });
   });
 
+  it("bases a profile on another, its empty fields then showing that one's, and never offers a loop", async () => {
+    stored = [
+      ...stored,
+      { ...emptyProfile("netops"), username: "admin", fontFamily: "Consolas", basedOn: "" },
+      { ...emptyProfile("netops-old"), basedOn: "netops" },
+    ];
+    await open("netops");
+    const basedOn = () => screen.getByRole("combobox", { name: /^Based on/ }) as HTMLSelectElement;
+    // not itself, not Default Settings, and not netops-old, which is based on it
+    expect([...basedOn().options].map((o) => o.value)).toEqual(["", "root", "CyberArk"]);
+    await userEvent.click(listed().getByRole("option", { name: "netops-old" }));
+    expect(basedOn().value).toBe("netops");
+    // what it leaves empty shows as netops'
+    expect((screen.getByLabelText("Font") as HTMLInputElement).placeholder).toBe("From netops (Consolas)");
+    expect([...(screen.getByRole("combobox", { name: /^Backspace sends/ }) as HTMLSelectElement).options].map((o) => o.text)[0]).toBe("From netops");
+    // based on Default Settings alone again
+    await userEvent.selectOptions(basedOn(), "");
+    expect((screen.getByLabelText("Font") as HTMLInputElement).placeholder).toBe("the theme's; or an installed font");
+    await userEvent.selectOptions(basedOn(), "root");
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "netops-old", basedOn: "root" });
+  });
+
   it("saves a device's character set, UTF-8 on Default Settings being no choice of its own", async () => {
     await open("root");
     const charset = () => screen.getByRole("combobox", { name: /^Character set/ }) as HTMLSelectElement;
@@ -318,7 +343,7 @@ describe("Settings > Profiles", () => {
     await userEvent.selectOptions(charset(), "cp437");
     await userEvent.click(button("Save"));
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", charset: "cp437" });
-    await userEvent.click(screen.getByRole("option", { name: DEFAULT_PROFILE }));
+    await userEvent.click(listed().getByRole("option", { name: DEFAULT_PROFILE }));
     expect(charset().value).toBe("utf8");
     await userEvent.selectOptions(charset(), "latin1");
     await userEvent.selectOptions(charset(), "utf8");
@@ -336,7 +361,7 @@ describe("Settings > Profiles", () => {
     await userEvent.click(button("Save"));
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", keyBackspace: "bs", keyHomeEnd: "", keyFunction: "vt100" });
     // Default Settings has PuTTY's defaults shown, not a From Default Settings of its own
-    await userEvent.click(screen.getByRole("option", { name: DEFAULT_PROFILE }));
+    await userEvent.click(listed().getByRole("option", { name: DEFAULT_PROFILE }));
     expect(backspace().value).toBe("del");
     expect([...backspace().options].map((o) => o.value)).toEqual(["del", "bs"]);
   });
@@ -366,7 +391,7 @@ describe("Settings > Profiles", () => {
     await userEvent.click(button("Save"));
     expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", logInHere: true });
     // Default Settings is every session's, so it would send them all to one host
-    await userEvent.click(screen.getByRole("option", { name: DEFAULT_PROFILE }));
+    await userEvent.click(listed().getByRole("option", { name: DEFAULT_PROFILE }));
     expect(screen.queryByRole("checkbox", { name: /Log in here/ })).toBeNull();
   });
 

@@ -14,7 +14,7 @@
   import { context } from "../commands/sending.svelte";
   import { keyFetchExamples } from "./keyFetchExamples";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
-  import { coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, MAX_FONT_POINTS, ownColoursChoice, saveProfile, type Forward, type Profile } from "./profiles";
+  import { baseChain, coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, MAX_FONT_POINTS, mergedProfile, ownColoursChoice, resolvedProfile, saveProfile, type Forward, type Profile } from "./profiles";
   import AlgorithmsDialog from "../sessions/AlgorithmsDialog.svelte";
   import { drawnTheme, pref } from "../terminal/prefs";
   import { highlighting } from "../terminal/highlighting";
@@ -49,7 +49,24 @@
   /** Whether the profile shown is Default Settings, which can't be renamed or deleted */
   const isDefault = $derived(originalName.toLowerCase() === DEFAULT_PROFILE.toLowerCase());
   /** Default Settings, whose values a profile's empty fields show */
-  const defaultProfile = $derived(profiles.find((p) => p.name.toLowerCase() === DEFAULT_PROFILE.toLowerCase()));
+  const defaultSettings = $derived(profiles.find((p) => p.name.toLowerCase() === DEFAULT_PROFILE.toLowerCase()));
+  /** The profile chosen in Based on, if it's there (not Default Settings, itself, or one based on this one) */
+  const base = $derived(!isDefault && draft.basedOn.trim() ? profiles.find((p) => p.name.toLowerCase() === draft.basedOn.trim().toLowerCase()) : undefined);
+  /**
+   * What a field this profile leaves empty comes from: the profile it's based on, filled along its own Based on and
+   * then from Default Settings; else Default Settings. Its hints show these values
+   */
+  const defaultProfile = $derived(base ? mergedProfile(resolvedProfile(profiles, base.name)!, defaultSettings) : defaultSettings);
+  /** Where an empty field comes from, as the editor says it: the base profile's name, else Default Settings */
+  const FALLBACK = $derived(base?.name ?? DEFAULT_PROFILE);
+  /** "From netops" or "From Default Settings", for the choices that leave a field to it */
+  const FROM = $derived(`From ${FALLBACK}`);
+  /**
+   * The profiles this one can be based on: not Default Settings (every profile is, already), not itself, and not one
+   * based on it along the way, which would go round in a loop
+   */
+  const bases = $derived(profiles.filter((p) => p.name !== DEFAULT_PROFILE && p.name.toLowerCase() !== originalName.toLowerCase()
+    && !baseChain(profiles, p.name).some((n) => n.toLowerCase() === originalName.toLowerCase() && originalName !== "")));
 
   /** The Colours box's choices (Settings > Terminal's theme is Follow the theme) */
   const CHOICES: Record<string, string> = { theme: "Follow the theme (Settings > Terminal)", dark: "Dark", light: "Light", custom: "Custom" };
@@ -136,7 +153,7 @@
 
   /** The fields the editor shows, for counting the changes */
   const FIELDS: Field[] = [
-    "name", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
+    "name", "basedOn", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions",
     "agentForwarding", "x11Forwarding", "compression", "forwards", "cursor", "cursorBlink", "bell",
@@ -415,6 +432,17 @@
     <fieldset>
       <legend>Profile</legend>
       <label>{@render caption("Name", "name")}<input bind:value={draft.name} disabled={isDefault} placeholder="e.g. root" /></label>
+      {#if !isDefault}
+        <label>{@render caption("Based on", "basedOn")}
+          <select value={draft.basedOn} onchange={(e) => (draft.basedOn = e.currentTarget.value)}>
+            <option value="">Default Settings only</option>
+            {#each bases as p (p.name)}<option value={p.name}>{p.name}</option>{/each}
+            {#if draft.basedOn && !base}<option value={draft.basedOn}>{draft.basedOn} (not among the profiles)</option>{/if}
+          </select></label>
+        <p class="note under">What this profile leaves empty comes from the one it's based on (and what that one leaves,
+          from its own), then Default Settings: netops-old can be netops with older algorithms, and follow netops' other
+          changes. Its password too, when it has none of its own.</p>
+      {/if}
     </fieldset>
 
     <fieldset>
@@ -450,7 +478,7 @@
       <label>{@render caption("SSH keys", "offerKeys")}
         <select value={triToValue(isDefault ? (draft.offerKeys ?? true) : draft.offerKeys)}
           onchange={(e) => (draft.offerKeys = valueToTri(e.currentTarget.value))}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="on">Offer {SSH_KEYS} and the agent's</option>
           <option value="off">Don't offer them: ask for the password (switches, routers)</option>
         </select></label>
@@ -459,7 +487,7 @@
       <label>{@render caption("No username", "askUsername")}
         <select value={triToValue(isDefault ? (draft.askUsername ?? false) : draft.askUsername)}
           onchange={(e) => (draft.askUsername = valueToTri(e.currentTarget.value))}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="off">Use this computer's user name (ssh's own)</option>
           <option value="on">Ask in the tab ("login as:")</option>
         </select></label>
@@ -483,16 +511,16 @@
           {"{host_address}"}, {"{host_port}"} and {"{session_username}"}: for example
           SENDLINE ssh {"{session_username}@{host_address}"}. See docs/SPSL.md.</p>
       {/if}
-      <label>{@render caption("Keep-alive", "keepalive")}<input class="short" type="number" min="0" bind:value={draft.keepalive} /> <span class="note">{isDefault ? "seconds (0: 15, so a lost connection ends the session in about 45 s)" : "seconds (0: Default Settings')"}</span></label>
+      <label>{@render caption("Keep-alive", "keepalive")}<input class="short" type="number" min="0" bind:value={draft.keepalive} /> <span class="note">{isDefault ? "seconds (0: 15, so a lost connection ends the session in about 45 s)" : `seconds (0: ${FALLBACK}')`}</span></label>
       <label>{@render caption("Internet protocol", "addressFamily")}
         <select value={draft.addressFamily || (isDefault ? "auto" : "")} onchange={(e) => (draft.addressFamily = e.currentTarget.value)}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="auto">Auto: any address the name has</option>
           <option value="ipv4">IPv4 only</option>
           <option value="ipv6">IPv6 only</option>
         </select></label>
       <label>{@render caption("Anti-idle string", "antiIdle")}<input bind:value={draft.antiIdle} placeholder={isDefault ? "none; e.g. \\x05\\ (Ctrl+E)" : "from Default Settings"} /></label>
-      <label>{@render caption("Anti-idle after", "antiIdleSeconds")}<input class="short" type="number" min="0" bind:value={draft.antiIdleSeconds} /> <span class="note">{isDefault ? "seconds without typing (0: 180)" : "seconds without typing (0: Default Settings', else 180)"}</span></label>
+      <label>{@render caption("Anti-idle after", "antiIdleSeconds")}<input class="short" type="number" min="0" bind:value={draft.antiIdleSeconds} /> <span class="note">{isDefault ? "seconds without typing (0: 180)" : `seconds without typing (0: ${FALLBACK}', else 180)`}</span></label>
       <p class="note under">Typed into the session after that long with nothing typed, and again after each such spell, as
         KiTTY's: a device's own idle timeout (a Cisco's exec-timeout) doesn't see ssh's keep-alives and logs the session
         out. KiTTY's escapes: \xHH a character by its hex code (\x05 is Ctrl+E, the end of the line on a Cisco, which
@@ -500,14 +528,14 @@
         script runs in the tab, nor in a local shell, cmd or PowerShell tab: only sessions to another device.</p>
       <label>{@render caption("Older algorithms", "olderAlgorithms")}
         <select value={triToValue(draft.olderAlgorithms)} onchange={(e) => (draft.olderAlgorithms = valueToTri(e.currentTarget.value))}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="on">Allow (older Cisco and similar devices)</option>
           <option value="off">Don't allow</option>
         </select></label>
       <label>{@render caption("Server load", "serverLoad")}
         <select value={triToValue(isDefault ? (draft.serverLoad ?? false) : draft.serverLoad)}
           onchange={(e) => (draft.serverLoad = valueToTri(e.currentTarget.value))}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="on">Show in the status bar (Linux servers)</option>
           <option value="off">Don't show</option>
         </select></label>
@@ -518,7 +546,7 @@
         only: leave it off for Cisco and other network devices, which would log the attempt as a command, and for
         sessions through CyberArk. Not for a Log in here profile.</p>
       <label>{@render caption("SSH algorithms", "algorithms")}
-        <button onclick={() => (algorithming = true)} title={draft.algorithms ? `Its own: ${draft.algorithms}` : isDefault ? "ssh's own lists" : "From Default Settings"}>
+        <button onclick={() => (algorithming = true)} title={draft.algorithms ? `Its own: ${draft.algorithms}` : isDefault ? "ssh's own lists" : FROM}>
           Choose…</button>
         <span class="note">{draft.algorithms ? "its own lists" : isDefault ? "ssh's own lists" : "from Default Settings"}</span></label>
       <label>{@render caption("SSH config host", "sshConfigHost")}<input bind:value={draft.sshConfigHost} placeholder="a Host in ~/.ssh/config" /></label>
@@ -527,7 +555,7 @@
         {@const key = field as "agentForwarding" | "x11Forwarding" | "compression"}
         <label>{@render caption(label, key)}
           <select value={triToValue(isDefault ? (draft[key] ?? false) : draft[key])} onchange={(e) => (draft[key] = valueToTri(e.currentTarget.value))}>
-            {#if !isDefault}<option value="">From Default Settings</option>{/if}
+            {#if !isDefault}<option value="">{FROM}</option>{/if}
             <option value="on">{on}</option>
             <option value="off">Off</option>
           </select></label>
@@ -553,7 +581,7 @@
       <p class="note under">As PuTTY's Tunnels. Local: a port on {THIS_COMPUTER} reaches host:port as seen from the
         server (8080 to localhost:80 shows its web page at localhost:8080 here). Remote: a port on the server reaches
         host:port from here. Dynamic: a SOCKS proxy on {THIS_COMPUTER} going out through the server. This profile's own
-        {isDefault ? "(for sessions with no profile of their own)" : "(not Default Settings')"}: each opens with every tab, and a
+        {isDefault ? "(for sessions with no profile of their own)" : "(or the profile it's based on's, never Default Settings')"}: each opens with every tab, and a
         second tab on the same port says it's in use. File Transfer leaves them to the tab.</p>
     </fieldset>
 
@@ -561,7 +589,7 @@
       <legend>Terminal</legend>
       <label>{@render caption("Cursor", "cursor")}
         <select value={isDefault ? draft.cursor || "block" : draft.cursor} onchange={(e) => (draft.cursor = e.currentTarget.value)}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="block">Block</option>
           <option value="underline">Underline</option>
           <option value="bar">Vertical line</option>
@@ -569,39 +597,39 @@
       <label>{@render caption("Cursor blinks", "cursorBlink")}
         <select value={triToValue(isDefault ? (draft.cursorBlink ?? true) : draft.cursorBlink)}
           onchange={(e) => (draft.cursorBlink = valueToTri(e.currentTarget.value))}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="on">Yes</option>
           <option value="off">No</option>
         </select></label>
       <label>{@render caption("Bell", "bell")}
         <select value={isDefault ? draft.bell || "visual" : draft.bell} onchange={(e) => (draft.bell = e.currentTarget.value)}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="visual">Flash</option>
           <option value="sound">Sound</option>
           <option value="none">None</option>
         </select></label>
       <label>{@render caption("Font", "fontFamily")}<input bind:value={draft.fontFamily} list="profile-fonts"
-        placeholder={isDefault || !defaultProfile?.fontFamily ? "the theme's; or an installed font" : `From Default Settings (${defaultProfile.fontFamily})`} /></label>
+        placeholder={isDefault || !defaultProfile?.fontFamily ? "the theme's; or an installed font" : `${FROM} (${defaultProfile.fontFamily})`} /></label>
       <datalist id="profile-fonts">{#each MONOSPACE_FONTS as font (font)}<option value={font}></option>{/each}</datalist>
       <label>{@render caption("Font size", "fontSize")}<input class="short" type="number" min="0" max={MAX_FONT_POINTS} bind:value={draft.fontSize} />
-        <span class="note">{isDefault || !defaultProfile?.fontSize ? "points (0: the theme's)" : `points (0: Default Settings', ${defaultProfile.fontSize})`}</span></label>
+        <span class="note">{isDefault || !defaultProfile?.fontSize ? "points (0: the theme's)" : `points (0: ${FALLBACK}', ${defaultProfile.fontSize})`}</span></label>
       <p class="note under">As PuTTY's Window > Appearance > Font. Its tabs draw in it while Settings > Terminal > Font is
         The profile's (the default); a font or size chosen there, or a size from Ctrl+wheel, wins over it.</p>
       <label>{@render caption("Backspace sends", "keyBackspace")}
         <select value={isDefault ? draft.keyBackspace || "del" : draft.keyBackspace} onchange={(e) => (draft.keyBackspace = e.currentTarget.value)}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="del">Control-? (127, PuTTY's default)</option>
           <option value="bs">Control-H (8)</option>
         </select></label>
       <label>{@render caption("Home and End", "keyHomeEnd")}
         <select value={isDefault ? draft.keyHomeEnd || "standard" : draft.keyHomeEnd} onchange={(e) => (draft.keyHomeEnd = e.currentTarget.value)}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="standard">Standard (ESC[1~ and ESC[4~)</option>
           <option value="rxvt">rxvt</option>
         </select></label>
       <label>{@render caption("Function keys", "keyFunction")}
         <select value={isDefault ? draft.keyFunction || "tilde" : draft.keyFunction} onchange={(e) => (draft.keyFunction = e.currentTarget.value)}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="tilde">ESC[n~ (PuTTY's default)</option>
           <option value="linux">Linux console</option>
           <option value="xtermr6">Xterm R6</option>
@@ -612,10 +640,10 @@
         or switch that deletes with Control-H shows ^? when Backspace is pressed. Settings > Terminal > Keys set to xterm's
         turns these off for every tab; a local shell always has xterm's.</p>
       <label>{@render caption("Scrollback", "scrollback")}<input class="short" type="number" min="0" step="1000" bind:value={draft.scrollback} />
-        <span class="note">{isDefault || !defaultProfile?.scrollback ? "lines (0: Settings > Terminal's)" : `lines (0: Default Settings', ${defaultProfile.scrollback})`}</span></label>
+        <span class="note">{isDefault || !defaultProfile?.scrollback ? "lines (0: Settings > Terminal's)" : `lines (0: ${FALLBACK}', ${defaultProfile.scrollback})`}</span></label>
       <label>{@render caption("Session log", "sessionLog")}
         <select value={triToValue(draft.sessionLog)} onchange={(e) => (draft.sessionLog = valueToTri(e.currentTarget.value))}>
-          <option value="">{isDefault ? "As Settings > General > Session logs says" : "From Default Settings"}</option>
+          <option value="">{isDefault ? "As Settings > General > Session logs says" : FROM}</option>
           <option value="on">Keep a log of each session</option>
           <option value="off">Don't keep logs</option>
         </select></label>
@@ -624,7 +652,7 @@
         is deleted when it closes.</p>
       <label>{@render caption("Character set", "charset")}
         <select value={isDefault ? draft.charset || "utf8" : draft.charset} onchange={(e) => (draft.charset = e.currentTarget.value === "utf8" && isDefault ? "" : e.currentTarget.value)}>
-          {#if !isDefault}<option value="">From Default Settings</option>{/if}
+          {#if !isDefault}<option value="">{FROM}</option>{/if}
           <option value="utf8">UTF-8</option>
           <option value="latin1">ISO-8859-1 (Latin-1)</option>
           <option value="latin9">ISO-8859-15 (Latin-9, with €)</option>
@@ -637,7 +665,7 @@
         characters into UTF-8 before SuperXTerminal sees them.{/if}</p>
       <label>{@render caption("Colours", "colours")}
         <select value={shownChoice(draft)} onchange={(e) => (draft.colours = e.currentTarget.value)}>
-          {#if !isDefault}<option value="default">From Default Settings ({SHORT[coloursChoice(defaultProfile, undefined)]})</option>{/if}
+          {#if !isDefault}<option value="default">{FROM} ({SHORT[coloursChoice(defaultProfile, undefined)]})</option>{/if}
           {#each Object.entries(CHOICES) as [value, label] (value)}<option {value}>{label}</option>{/each}
         </select></label>
       {#each COLOURS as c (c.field)}
@@ -646,9 +674,9 @@
           <span class="colour">
             <input type="color" value={off ? fallbackColour(c.field) : draft[c.field] || fallbackColour(c.field)} aria-label={c.label} disabled={off}
               oninput={(e) => (draft[c.field] = e.currentTarget.value)} />
-            <span class="hint">{off ? (choice === "theme" ? "the theme's" : `the ${CHOICES[choice]} theme's`) : draft[c.field] || (isDefault ? "Settings > Terminal's" : defaultProfile?.[c.field] ? `From Default Settings (${defaultProfile[c.field]})` : "From Default Settings")}</span>
+            <span class="hint">{off ? (choice === "theme" ? "the theme's" : `the ${CHOICES[choice]} theme's`) : draft[c.field] || (isDefault ? "Settings > Terminal's" : defaultProfile?.[c.field] ? `${FROM} (${defaultProfile[c.field]})` : FROM)}</span>
             <button disabled={off || !draft[c.field]} onclick={(e) => { e.preventDefault(); draft[c.field] = ""; }}
-              title={isDefault ? "Use Settings > Terminal's colour" : "Use Default Settings' colour"}>{isDefault ? "Settings'" : "Default's"}</button>
+              title={isDefault ? "Use Settings > Terminal's colour" : `Use ${FALLBACK}' colour`}>{isDefault ? "Settings'" : "Default's"}</button>
           </span></label>
       {/each}
       <!-- not a terminal colour, so it can be set whatever the Colours choice; an environment colour wins over it -->
@@ -656,19 +684,19 @@
         <span class="colour">
           <input type="color" value={draft.tabColor || (!isDefault && defaultProfile?.tabColor) || NO_TAB_COLOUR} aria-label="Tab colour"
             oninput={(e) => (draft.tabColor = e.currentTarget.value)} />
-          <span class="hint">{draft.tabColor || (!isDefault && defaultProfile?.tabColor ? `From Default Settings (${defaultProfile.tabColor})` : "None")}</span>
+          <span class="hint">{draft.tabColor || (!isDefault && defaultProfile?.tabColor ? `${FROM} (${defaultProfile.tabColor})` : "None")}</span>
           <button disabled={!draft.tabColor} onclick={(e) => { e.preventDefault(); draft.tabColor = ""; }}
-            title={isDefault ? "No tab colour" : "Use Default Settings' tab colour"}>{isDefault ? "None" : "Default's"}</button>
+            title={isDefault ? "No tab colour" : `Use ${FALLBACK}' tab colour`}>{isDefault ? "None" : "Default's"}</button>
         </span></label>
       <!-- the bar shown while one of the profile's tabs is active; a bar picked by hand still wins until the tab changes -->
       <label>{@render caption("Button bar", "buttonBar")}
         <select value={draft.buttonBar} onchange={(e) => (draft.buttonBar = e.currentTarget.value)}>
-          <option value="">{isDefault || !defaultProfile?.buttonBar ? "The one for the tab's icon" : `From Default Settings (${defaultProfile.buttonBar})`}</option>
+          <option value="">{isDefault || !defaultProfile?.buttonBar ? "The one for the tab's icon" : `${FROM} (${defaultProfile.buttonBar})`}</option>
           {#each barNames as name (name)}<option value={name}>{name}</option>{/each}
           {#if missingBar}<option value={missingBar}>{missingBar} (not in the button bars)</option>{/if}
         </select></label>
       <label>{@render caption("Login script", "script")}<input bind:value={draft.script}
-          placeholder={isDefault ? "none; a file, or an http(s) address" : defaultProfile?.script ? `From Default Settings (${defaultProfile.script})` : "none; a file, or an http(s) address"} />
+          placeholder={isDefault ? "none; a file, or an http(s) address" : defaultProfile?.script ? `${FROM} (${defaultProfile.script})` : "none; a file, or an http(s) address"} />
         <button onclick={chooseScript}>Choose…</button></label>
       <p class="note under">Run in each of the profile's tabs as it opens, when the session has no login script of its
         own (Edit Session > Terminal), so a session can be just a name and a host. SPSL, starting with #!/bin/spsl; or
@@ -693,7 +721,7 @@
 
 {#if algorithming}
   <AlgorithmsDialog title={`SSH algorithms: ${draft.name || "new profile"}`} text={draft.algorithms ?? ""}
-    otherwise={isDefault ? "ssh's own list (with the older algorithms, if allowed)" : "Default Settings' list"}
+    otherwise={isDefault ? "ssh's own list (with the older algorithms, if allowed)" : `${FALLBACK}' list`}
     onCancel={() => (algorithming = false)} onDone={(text) => { draft.algorithms = text; algorithming = false; }} />
 {/if}
 

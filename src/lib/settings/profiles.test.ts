@@ -1,7 +1,7 @@
 // A profile's terminal colours, Tab colour and font as its tabs take them again when it's saved: its own, else
 // Default Settings'.
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PROFILE, emptyProfile, profileColours, profileFont, profileKeys } from "./profiles";
+import { baseChain, DEFAULT_PROFILE, emptyProfile, profileColours, profileFont, profileKeys, resolvedProfile } from "./profiles";
 
 describe("profileColours", () => {
   const profiles = [
@@ -66,5 +66,30 @@ describe("profileKeys", () => {
     ];
     expect(profileKeys(profiles, "old unix")).toEqual({ backspace: "bs", homeEnd: "rxvt", functionKeys: "tilde" });
     expect(profileKeys([emptyProfile(DEFAULT_PROFILE)], DEFAULT_PROFILE)).toEqual({ backspace: "del", homeEnd: "standard", functionKeys: "tilde" });
+  });
+});
+
+describe("a profile based on another", () => {
+  const profiles = [
+    { ...emptyProfile(DEFAULT_PROFILE), keyBackspace: "bs", fontSize: 11 },
+    { ...emptyProfile("netops"), username: "admin", fontFamily: "Consolas", forwards: [{ kind: "local" as const, listen: "8080", to: "localhost:80" }] },
+    { ...emptyProfile("netops-old"), basedOn: "NetOps", algorithms: "kex=diffie-hellman-group1-sha1", logInHere: false },
+    { ...emptyProfile("a"), basedOn: "b", username: "a" },
+    { ...emptyProfile("b"), basedOn: "a", port: 2200 },
+  ];
+
+  it("takes what it leaves empty from that one, its name and Based on its own, as the core does", () => {
+    const old = resolvedProfile(profiles, "netops-old")!;
+    expect([old.name, old.basedOn, old.username, old.fontFamily, old.algorithms, old.forwards.length]).toEqual(["netops-old", "NetOps", "admin", "Consolas", "kex=diffie-hellman-group1-sha1", 1]);
+    // a tab of it takes netops' font, and Default Settings' size and keys
+    expect(profileFont(profiles, "netops-old")).toEqual({ family: "Consolas", points: 11 });
+    expect(profileKeys(profiles, "netops-old").backspace).toBe("bs");
+  });
+
+  it("stops at a loop, and at a profile that isn't there", () => {
+    expect(baseChain(profiles, "a")).toEqual(["a", "b"]);
+    expect(resolvedProfile(profiles, "a")).toMatchObject({ username: "a", port: 2200 });
+    expect(baseChain([{ ...emptyProfile("x"), basedOn: "gone" }], "x")).toEqual(["x"]);
+    expect(resolvedProfile(profiles, "nobody")).toBeUndefined();
   });
 });

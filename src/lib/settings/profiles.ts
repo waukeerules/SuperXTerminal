@@ -20,6 +20,11 @@ export interface Forward {
 /** One profile; empty fields aren't set and fall back to Default Settings */
 export interface Profile {
   name: string;
+  /**
+   * The profile it's based on: what it leaves empty comes from that one (and what that one leaves, from the one it's
+   * based on...), then Default Settings. "" for Default Settings alone
+   */
+  basedOn: string;
   username: string;
   port: number;
   keyFile: string;
@@ -122,7 +127,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", forwards: [], agentForwarding: null, x11Forwarding: null, compression: null, olderAlgorithms: null, serverLoad: null, algorithms: "",
+    name, basedOn: "", username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", forwards: [], agentForwarding: null, x11Forwarding: null, compression: null, olderAlgorithms: null, serverLoad: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", fontFamily: "", fontSize: 0, keyBackspace: "", keyHomeEnd: "", keyFunction: "", scrollback: 0, sessionLog: null, charset: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
   };
 }
@@ -168,6 +173,49 @@ export function coloursChoice(profile: Profile | undefined, fallback: Profile | 
   return ownColoursChoice(profile) || ownColoursChoice(fallback) || "theme";
 }
 
+/** A profile's own fields that never come from the profile it's based on (`KEPT_OWN` in src-tauri/src/profiles.rs) */
+const KEPT_OWN = new Set(["name", "basedOn", "hasPassword", "logInHere"]);
+
+/** Whether a field's value means "not set here" (`unset` in src-tauri/src/profiles.rs): "", 0, null or no tunnels */
+function unset(value: unknown): boolean {
+  return value === "" || value === 0 || value === null || value === undefined || (Array.isArray(value) && value.length === 0);
+}
+
+/** `profile` with each field it leaves unset taken from `base`, except its own name, Based on, password and Log in here */
+export function mergedProfile(profile: Profile, base: Profile | undefined): Profile {
+  if (!base) return profile;
+  const merged: Record<string, unknown> = { ...profile };
+  for (const [field, value] of Object.entries(base)) {
+    if (!KEPT_OWN.has(field) && unset(merged[field])) merged[field] = value;
+  }
+  return merged as unknown as Profile;
+}
+
+/**
+ * The names along a profile's Based on, its own first, as far as Default Settings (left out), a profile that isn't
+ * there, or one already passed (a loop: netops based on netops-old based on netops)
+ */
+export function baseChain(profiles: Profile[], name: string): string[] {
+  const chain: string[] = [];
+  let next = name.trim();
+  while (next && !chain.some((n) => n.toLowerCase() === next.toLowerCase()) && next.toLowerCase() !== DEFAULT_PROFILE.toLowerCase()) {
+    const found = profiles.find((p) => p.name.toLowerCase() === next.toLowerCase());
+    if (!found) break;
+    chain.push(found.name);
+    next = found.basedOn?.trim() ?? "";
+  }
+  return chain;
+}
+
+/**
+ * A profile as its sessions take it, before Default Settings (`Profiles::resolved` in src-tauri/src/profiles.rs):
+ * what it leaves unset filled from the profile it's based on, and so on along the chain; undefined when there's none
+ */
+export function resolvedProfile(profiles: Profile[], name: string): Profile | undefined {
+  const chain = baseChain(profiles, name).map((n) => profiles.find((p) => p.name === n)!);
+  return chain.reduceRight<Profile | undefined>((base, profile) => mergedProfile(profile, base), undefined);
+}
+
 /** The smallest and largest font size a profile can give, in points (MIN_FONT_POINTS in src-tauri/src/launch.rs) */
 export const MIN_FONT_POINTS = 5;
 export const MAX_FONT_POINTS = 36;
@@ -179,7 +227,7 @@ export const MAX_FONT_POINTS = 36;
 export function profileFont(profiles: Profile[], name: string): { family: string; points: number } {
   const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
   const fallback = find(DEFAULT_PROFILE);
-  const profile = find(name) ?? fallback;
+  const profile = resolvedProfile(profiles, name) ?? fallback;
   const points = [profile?.fontSize, fallback?.fontSize].find((s) => s) ?? 0;
   return {
     family: profile?.fontFamily?.trim() || fallback?.fontFamily?.trim() || "",
@@ -194,7 +242,7 @@ export function profileFont(profiles: Profile[], name: string): { family: string
 export function profileScrollback(profiles: Profile[], name: string): number {
   const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
   const fallback = find(DEFAULT_PROFILE);
-  const profile = find(name) ?? fallback;
+  const profile = resolvedProfile(profiles, name) ?? fallback;
   return Number(profile?.scrollback) || Number(fallback?.scrollback) || 0;
 }
 
@@ -212,7 +260,7 @@ export const KEY_CHOICES = {
 export function profileKeys(profiles: Profile[], name: string): { backspace: string; homeEnd: string; functionKeys: string } {
   const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
   const fallback = find(DEFAULT_PROFILE);
-  const profile = find(name) ?? fallback;
+  const profile = resolvedProfile(profiles, name) ?? fallback;
   const pick = (field: "keyBackspace" | "keyHomeEnd" | "keyFunction", choices: readonly string[]) => {
     const value = profile?.[field]?.trim() || fallback?.[field]?.trim() || "";
     return choices.includes(value) ? value : choices[0];
@@ -232,7 +280,7 @@ export function profileKeys(profiles: Profile[], name: string): { backspace: str
 export function profileColours(profiles: Profile[], name: string): { theme: string; background: string; foreground: string; selection: string; cursor: string; tab: string } {
   const find = (n: string) => profiles.find((p) => p.name.toLowerCase() === n.trim().toLowerCase());
   const fallback = find(DEFAULT_PROFILE);
-  const profile = find(name) ?? fallback;
+  const profile = resolvedProfile(profiles, name) ?? fallback;
   const choice = coloursChoice(profile, fallback);
   const pick = (field: "background" | "foreground" | "selection" | "cursorColor") =>
     choice === "custom" ? hexColour(profile?.[field]) || hexColour(fallback?.[field]) : "";

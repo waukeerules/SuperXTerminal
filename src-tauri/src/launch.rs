@@ -315,7 +315,9 @@ fn private_key(path: &std::path::Path) -> std::io::Result<()> {
 /// shell, its rc file read so a shell function (`pam`, say) works, or PowerShell on Windows
 pub fn key_fetch(profiles: &Profiles, values: &HashMap<String, String>, profile_name: &str) -> Result<Launch, String> {
     let default = profiles.default_profile();
-    let profile = if profiles::is_default(profile_name) { default } else { profiles.get(profile_name).unwrap_or(default) };
+    // the profile with what it leaves empty from the profile it's based on
+    let resolved = if profiles::is_default(profile_name) { None } else { profiles.resolved(profile_name) };
+    let profile = resolved.as_ref().unwrap_or(default);
     let key_file = expand_home(&profile.key_file);
     if profile.key_fetch.trim().is_empty() || profile.key_file.trim().is_empty() {
         return Err(format!("Profile \"{}\" has no key fetch: set its Fetch command and Key file in Settings > Profiles.", profile.name));
@@ -403,7 +405,9 @@ fn stream(
         }
     }
     let default = profiles.default_profile();
-    let profile = if profiles::is_default(&profile_name) { default } else { profiles.get(&profile_name).unwrap_or(default) };
+    // the profile with what it leaves empty from the profile it's based on
+    let resolved = if profiles::is_default(&profile_name) { None } else { profiles.resolved(&profile_name) };
+    let profile = resolved.as_ref().unwrap_or(default);
     let host = variables::substitute(session.get("Host").trim(), values);
     if host.is_empty() {
         return Err(format!("The session has no {}.", if proto == "SERIAL" { "serial line" } else { "host" }));
@@ -657,9 +661,11 @@ fn ssh(
 
     let mut notices = Vec::new();
     let default = profiles.default_profile();
+    // the profile with what it leaves empty from the profile it's based on (netops-old: netops, older algorithms)
+    let resolved = if profiles::is_default(&profile_name) { None } else { profiles.resolved(&profile_name) };
     let profile = if profiles::is_default(&profile_name) {
         default
-    } else if let Some(profile) = profiles.get(&profile_name) {
+    } else if let Some(profile) = resolved.as_ref() {
         profile
     } else {
         notices.push(format!(
@@ -792,13 +798,13 @@ fn ssh(
         return Err(format!("{USERNAME_NEEDED}{host}"));
     }
     // Quick connect's password (never stored), else the session's own (Edit Session's Password, this computer's
-    // only), else its -pw, else its profile's, else Default Settings'
+    // only), else its -pw, else its profile's (or the first along its Based on), else Default Settings'
     // (with Log in here, the session's are the target's: only the profile's log in to the jump server)
     let password = Some(session.get(QUICK_PASSWORD).to_string())
         .filter(|p| !p.is_empty() && !log_in_here)
         .or_else(|| Some(session.id()).filter(|id| !id.is_empty() && !log_in_here).and_then(crate::session_passwords::get))
         .or_else(|| extra.password.clone())
-        .or_else(|| profiles::password(&profile.name))
+        .or_else(|| profiles.password_along(&profile.name))
         .or_else(|| if profile.name == default.name { None } else { profiles::password(&default.name) });
     if port != 0 && port != 22 {
         args.extend(["-p".into(), port.to_string()]);

@@ -23,6 +23,10 @@ pub const DEFAULT_PROFILE: &str = "Default Settings";
 #[serde(rename_all = "camelCase", default)]
 pub struct Profile {
     pub name: String,
+    /// The profile it's based on: what it leaves empty comes from that one (then that one's base...), before Default
+    /// Settings ([`Profiles::resolved`]). "" for Default Settings alone. So netops-old can be netops with older
+    /// algorithms, and follow netops' other changes
+    pub based_on: String,
     pub username: String,
     /// 0 for not set
     pub port: u16,
@@ -202,14 +206,72 @@ impl Profiles {
     pub fn default_profile(&self) -> &Profile {
         self.get(DEFAULT_PROFILE).expect("Default Settings always exists")
     }
+
+    /// The names along a profile's Based on, its own first, as far as Default Settings (left out), a profile that
+    /// isn't there, or one already passed (a loop)
+    pub fn chain(&self, name: &str) -> Vec<String> {
+        let mut chain: Vec<String> = Vec::new();
+        let mut next = name.trim().to_string();
+        while !is_default(&next) && !chain.iter().any(|n| n.eq_ignore_ascii_case(&next)) {
+            let Some(found) = self.get(&next) else { break };
+            chain.push(found.name.clone());
+            next = found.based_on.trim().to_string();
+        }
+        chain
+    }
+
+    /// A profile as its sessions take it, before Default Settings: what it leaves empty filled from the profile it's
+    /// based on, and so on along the chain (its own name, Based on, password and Log in here stay its own). None when
+    /// there's no such profile
+    pub fn resolved(&self, name: &str) -> Option<Profile> {
+        let chain = self.chain(name);
+        let mut profiles = chain.iter().rev().filter_map(|n| self.get(n).cloned());
+        let first = profiles.next()?;
+        Some(profiles.fold(first, |base, profile| merged(profile, &base)))
+    }
+
+    /// A profile's stored password, else the first along its Based on that has one
+    pub fn password_along(&self, name: &str) -> Option<String> {
+        self.chain(name).iter().find_map(|n| password(n))
+    }
+}
+
+/// A profile's own fields that never come from the profile it's based on, in Profiles.json's names
+const KEPT_OWN: [&str; 4] = ["name", "basedOn", "hasPassword", "logInHere"];
+
+/// Whether a field's value means "not set here" in Profiles.json: "", 0, null, or no tunnels
+fn unset(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => true,
+        serde_json::Value::String(s) => s.is_empty(),
+        serde_json::Value::Number(n) => n.as_f64() == Some(0.0),
+        serde_json::Value::Array(a) => a.is_empty(),
+        _ => false,
+    }
+}
+
+/// `profile` with each field it leaves unset taken from `base`, but for [`KEPT_OWN`]. Field by field through
+/// Profiles.json's shape, so a field added later follows without a line here
+fn merged(profile: Profile, base: &Profile) -> Profile {
+    let (Ok(serde_json::Value::Object(mut own)), Ok(serde_json::Value::Object(from))) = (serde_json::to_value(&profile), serde_json::to_value(base)) else {
+        return profile;
+    };
+    for (field, value) in from {
+        if !KEPT_OWN.contains(&field.as_str()) && own.get(&field).is_none_or(unset) {
+            own.insert(field, value);
+        }
+    }
+    let has_password = profile.has_password;
+    serde_json::from_value(serde_json::Value::Object(own)).map(|p| Profile { has_password, ..p }).unwrap_or(profile)
 }
 
 /// The script a session with no script of its own runs: its profile's, else Default Settings'; "" for none. With
 /// the profile's name, for saying whose script it is
 pub fn script_of<'a>(profiles: &'a Profiles, profile_name: &str) -> Option<(&'a str, &'a str)> {
     let default = profiles.default_profile();
-    let profile = if is_default(profile_name) { default } else { profiles.get(profile_name).unwrap_or(default) };
-    [profile, default].into_iter().find(|p| !p.script.trim().is_empty()).map(|p| (p.script.trim(), p.name.as_str()))
+    // along its Based on, the first with a script
+    let chain = if is_default(profile_name) { Vec::new() } else { profiles.chain(profile_name) };
+    chain.iter().filter_map(|n| profiles.get(n)).chain([default]).find(|p| !p.script.trim().is_empty()).map(|p| (p.script.trim(), p.name.as_str()))
 }
 
 /// Whether a profile name means "Default Settings" (also empty, as SuperXPuTTY's FolderSettings.IsDefaultProfile)
@@ -268,6 +330,37 @@ pub fn import_text(text: &str) -> Result<Vec<Profile>, String> {
 #[cfg(test)]
 mod tests {
     use super::{export_text, import_text, script_of, Profile, Profiles};
+
+    #[test]
+    fn a_profile_based_on_another_takes_what_it_leaves_empty_from_it_and_that_ones_base() {
+        let profiles = Profiles {
+            profiles: vec![
+                Profile { name: "Default Settings".into(), keepalive: 30, ..Profile::default() },
+                Profile { name: "netops".into(), username: "admin".into(), port: 2222, jump_host: "bastion".into(), font_size: 12, ..Profile::default() },
+                Profile { name: "netops-old".into(), based_on: "netops".into(), algorithms: "kex=diffie-hellman-group1-sha1".into(), port: 22, ..Profile::default() },
+                Profile { name: "netops-old-lab".into(), based_on: "NETOPS-OLD".into(), log_in_here: false, ..Profile::default() },
+                Profile { name: "jump".into(), log_in_here: true, ..Profile::default() },
+                Profile { name: "loop-a".into(), based_on: "loop-b".into(), username: "a".into(), ..Profile::default() },
+                Profile { name: "loop-b".into(), based_on: "loop-a".into(), port: 2200, ..Profile::default() },
+            ],
+        };
+        let old = profiles.resolved("netops-old").unwrap();
+        // its own name, algorithms and port; netops' username, jump host and font size; Default Settings' keep-alive
+        // isn't filled in here (the launch takes it, as for any profile)
+        assert_eq!((old.name.as_str(), old.port, old.algorithms.as_str()), ("netops-old", 22, "kex=diffie-hellman-group1-sha1"));
+        assert_eq!((old.username.as_str(), old.jump_host.as_str(), old.font_size, old.keepalive), ("admin", "bastion", 12, 0));
+        // two along, whatever the case of the name it's based on
+        assert_eq!(profiles.chain("netops-old-lab"), ["netops-old-lab", "netops-old", "netops"]);
+        assert_eq!(profiles.resolved("netops-old-lab").unwrap().username, "admin");
+        // a loop stops where it comes round again
+        assert_eq!(profiles.chain("loop-a"), ["loop-a", "loop-b"]);
+        let looped = profiles.resolved("loop-a").unwrap();
+        assert_eq!((looped.username.as_str(), looped.port), ("a", 2200));
+        // Log in here is never taken from the base
+        let based_on_jump = Profiles { profiles: vec![profiles.profiles[4].clone(), Profile { name: "via".into(), based_on: "jump".into(), ..Profile::default() }] };
+        assert!(!based_on_jump.resolved("via").unwrap().log_in_here);
+        assert!(profiles.resolved("nobody").is_none());
+    }
 
     #[test]
     fn an_exported_profile_has_no_password_and_imports_as_it_was() {

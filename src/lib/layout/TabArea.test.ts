@@ -179,6 +179,28 @@ describe("a split's ▾ list", () => {
     // the tab switcher and Next Tab still go through them all
     expect(tabs.allTabs().map((t) => t.id)).toEqual([sw1, sw2, sw3]);
   });
+
+  it("closes on a second click on its ▾, and opens again once it's gone; another split's ▾ opens that one's", () => {
+    const sw1 = open("sw1");
+    open("sw2");
+    const right = tabs.api.addGroup({ referenceGroup: tabs.api.getPanel(sw1)!.group, direction: "right" });
+    tabs.api.getPanel(open("sw3"))!.api.moveTo({ group: right });
+    /** What App was told, in order: "open <first tab's title>" or "close" */
+    const told: string[] = [];
+    tabs.onTabList = (_right, _bottom, group) => told.push(`open ${tabs.allTabs(group)[0].title}`);
+    tabs.onTabListClose = () => told.push("close");
+    const [left, rightArrow] = [...element.querySelectorAll<HTMLButtonElement>("button[aria-label='Open tabs']")];
+    left.click();
+    left.click();
+    expect(told).toEqual(["open sw1", "close"]);
+    // shown again, then gone another way (a tab chosen, a click elsewhere): App says so, and the ▾ opens it again
+    left.click();
+    tabs.tabListClosed();
+    left.click();
+    // with the left one showing, the right split's ▾ opens its own list, not a close
+    rightArrow.click();
+    expect(told).toEqual(["open sw1", "close", "open sw1", "open sw1", "open sw3"]);
+  });
 });
 
 describe("what the Sessions tree is told", () => {

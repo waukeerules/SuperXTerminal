@@ -1,6 +1,7 @@
 <!--
   A right-click menu, drawn in the app's theme like the terminal's own menu: items, separators, greyed items with
-  the reason as their tooltip, and one level of submenus. Closes on choosing, Escape or a click elsewhere.
+  the reason as their tooltip, and one level of submenus. Closes on choosing, Escape, a click elsewhere (its owner's
+  window click), or a click in a terminal, which takes the window's focus.
 -->
 <script lang="ts" module>
   /** One menu entry */
@@ -70,7 +71,9 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && onClose()} />
+<!-- a click in a terminal (its own page, in an iframe) never reaches this window as a click, but takes the focus from
+  it: the menu closes then too, as for a click elsewhere, and when the app goes to the background -->
+<svelte:window onkeydown={(e) => e.key === "Escape" && onClose()} onblur={() => !nested && onClose()} />
 
 <div class="menu" class:nested role="menu" tabindex="-1" bind:this={element} onclick={(e) => e.stopPropagation()}
   onkeydown={() => {}} style:margin-top={nested && lift ? `-${lift}px` : null} style:left={nested ? null : `${left}px`} style:top={nested ? null : `${top}px`}>

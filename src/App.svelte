@@ -100,7 +100,13 @@
   let naming = $state<{ title: string; value: string; onOk: (name: string) => void } | null>(null);
   /** The window's first tabs are open: the automatic layout may be saved from then on */
   let begun = false;
-  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  /** The menu showing: a tab's, a ▾ list of a split's tabs (tabList), ...; null for none */
+  let menu = $state<{ x: number; y: number; items: MenuItem[]; tabList?: boolean } | null>(null);
+
+  // the ▾ list gone (or another menu in its place): the next click on a ▾ opens a list again, rather than closing it
+  $effect(() => {
+    if (!menu?.tabList) tabs?.tabListClosed();
+  });
   let renaming = $state<{ id: string; title: string } | null>(null);
   /** The serial tab whose Serial Settings are open */
   let serialTab = $state<{ title: string; host: PageHost; session: { store: Store; id: string } | null } | null>(null);
@@ -205,8 +211,11 @@
         x: right - 240,
         y: bottom + 2,
         items: t.allTabs(group).map((tab) => ({ label: tab.title, icon: tab.icon, environment: tab.environment, checked: tab.active, action: () => t.activate(tab.id) })),
+        tabList: true,
       };
     };
+    // the same ▾ clicked again: its list closes
+    tabs.onTabListClose = () => (menu = null);
     tabs.onTabMenu = (id, x, y) => {
       if (!tabs || !tree) return;
       const t = tree;

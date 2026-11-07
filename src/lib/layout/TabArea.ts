@@ -141,7 +141,7 @@ class TabListButton implements IHeaderActionsRenderer {
       // not a click elsewhere, which closes menus
       event.stopPropagation();
       const rect = list.getBoundingClientRect();
-      if (this.group) this.tabs.onTabList?.(rect.right, rect.bottom, this.group.id);
+      if (this.group) this.tabs.toggleTabList(rect.right, rect.bottom, this.group.id);
     });
     this.element.append(close, list);
   }
@@ -444,6 +444,10 @@ export class TabArea {
   private readonly listeners = new Set<() => void>();
   /** A tab strip's ▾ was clicked at (right, bottom): App shows the tabs of its split (`group`, for allTabs) */
   onTabList: ((right: number, bottom: number, group: string) => void) | null = null;
+  /** The ▾ of the split whose list is showing was clicked again: App closes the list */
+  onTabListClose: (() => void) | null = null;
+  /** The split whose ▾ list is showing, so a second click on its ▾ closes it rather than opening it again */
+  private tabListShowing: string | null = null;
   /** A tab was right-clicked: App shows its menu */
   onTabMenu: ((id: string, x: number, y: number) => void) | null = null;
   /** An output alert to show in the status bar (Watch for Activity and Silence) */
@@ -961,6 +965,25 @@ export class TabArea {
   activate(id: string): void {
     this.api.getPanel(id)?.api.setActive();
     setTimeout(() => this.focusActive(), 0);
+  }
+
+  /**
+   * A split's ▾ was clicked: its tabs' list opens (onTabList), or closes (onTabListClose) when it's this split's list
+   * that's showing, as a menu's own button toggles it. Another split's ▾ opens that split's list in its place
+   */
+  toggleTabList(right: number, bottom: number, group: string): void {
+    if (this.tabListShowing === group) {
+      this.tabListShowing = null;
+      this.onTabListClose?.();
+      return;
+    }
+    this.tabListShowing = group;
+    this.onTabList?.(right, bottom, group);
+  }
+
+  /** App's ▾ list has gone (a tab chosen, Escape, a click elsewhere, or another menu in its place) */
+  tabListClosed(): void {
+    this.tabListShowing = null;
   }
 
   /** The open terminal tabs in the order they show, group by group */

@@ -4,7 +4,7 @@
 // login script is in (openingLanguage). The Rust side is stood in for by mockIPC: variables_fill knows {site} only.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { context, fillScriptPlaceholders, openingLanguage, sessionValues, tabValues } from "./sending.svelte";
+import { context, fillScriptPlaceholders, openingLanguage, openingScriptWarning, sessionValues, tabValues } from "./sending.svelte";
 import type { SessionView } from "../sessions/api";
 
 /** A saved SSH session, as the tree has it */
@@ -69,5 +69,15 @@ describe("a session's or profile's login script", () => {
     expect(openingLanguage("WAITPROMPT", "login.spsl")).toBeNull();
     expect(openingLanguage("echo hi", "notes.txt")).toBeNull();
     expect(openingLanguage("", "")).toBeNull();
+  });
+
+  it("is warned of when its file isn't on this computer or its address gives nothing, and not otherwise", () => {
+    expect(openingScriptWarning({ kind: "missing", path: "C:/Users/me/Downloads/jump-host.spsl" }, "", "Switch's"))
+      .toMatch(/^Switch's login script C:\/Users\/me\/Downloads\/jump-host\.spsl isn't on this (Mac|PC), so the session opens without it\.$/);
+    expect(openingScriptWarning({ kind: "url", url: "https://example.test/login.spsl" }, "", "The Linux profile's"))
+      .toBe("The Linux profile's login script https://example.test/login.spsl couldn't be fetched, so the session opens without it.");
+    expect(openingScriptWarning({ kind: "url", url: "https://example.test/login.spsl" }, "#!/bin/spsl", "Switch's")).toBe("");
+    expect(openingScriptWarning({ kind: "text", path: "scripts/login.spsl" }, "#!/bin/spsl", "Switch's")).toBe("");
+    expect(openingScriptWarning({ kind: "none" }, "", "Switch's")).toBe("");
   });
 });

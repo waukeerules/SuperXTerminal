@@ -713,3 +713,20 @@ test.describe("Highlighting and Find on the text they match", () => {
     expect(await page.evaluate(() => (window as any).terminalDev.term.getSelection())).toBe("uplink");
   });
 });
+
+test.describe("notices", () => {
+  /** The palette colour a line's first cell is drawn in (3 is yellow, 6 cyan, 1 red), or -1 for the default */
+  const firstColour = (page: Page, line: number) =>
+    page.evaluate((line) => {
+      const cell = (window as any).terminalDev.term.buffer.active.getLine(line)?.getCell(0);
+      return cell && cell.isFgPalette() ? (cell.getFgColor() as number) : -1;
+    }, line);
+
+  test("a warning is yellow, beside the cyan of information and the red of errors", async ({ page }) => {
+    await openTerminal(page, {});
+    for (const [text, kind] of [["Switch's login script isn't on this PC", "warn"], ["Reconnecting...", "info"], ["Session ended", "error"]]) {
+      await page.evaluate(([text, kind]) => (window as any).terminalDev.message({ type: "notice", text, kind }), [text, kind]);
+    }
+    await expect.poll(() => Promise.all([0, 1, 2].map((l) => firstColour(page, l)))).toEqual([3, 6, 1]);
+  });
+});

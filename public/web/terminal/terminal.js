@@ -1629,9 +1629,9 @@
         }
     }
 
-    /** Show a message from SuperPuTTY in the terminal, on its own line, in red (errors) or cyan */
+    /** Show a message from SuperPuTTY in the terminal, on its own line, in red (errors), yellow (warnings) or cyan */
     function notice(text, kind) {
-        var colour = kind === 'error' ? '1;31' : '36';
+        var colour = kind === 'error' ? '1;31' : kind === 'warn' ? '33' : '36';
         var buffer = term.buffer.active;
         var lead = buffer.cursorX > 0 ? '\r\n' : '';
         term.write(lead + '\x1b[' + colour + 'm' + text + '\x1b[0m\r\n');

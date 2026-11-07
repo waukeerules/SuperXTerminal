@@ -4,7 +4,6 @@
   front's server load).
 -->
 <script lang="ts">
-  import { THIS_COMPUTER } from "./lib/platform";
   import Icon from "./lib/icons/Icon.svelte";
   import { onMount, tick } from "svelte";
   import { TabArea } from "./lib/layout/TabArea";
@@ -25,7 +24,7 @@
   import ScriptStatus from "./lib/commands/ScriptStatus.svelte";
   import Ask from "./lib/scripting/Ask.svelte";
   import PasteCheck from "./lib/terminal/PasteCheck.svelte";
-  import { context, openingLanguage, rhaiEnvReady, runRhaiIn, runScriptIn } from "./lib/commands/sending.svelte";
+  import { context, openingLanguage, openingScriptWarning, rhaiEnvReady, runRhaiIn, runScriptIn } from "./lib/commands/sending.svelte";
   import { saveSettings } from "./lib/settings/store.svelte";
   import type { CustomIcon } from "./lib/icons/custom";
   import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
@@ -393,16 +392,22 @@
 
   /**
    * Run the script a tab opens with (a session's own or its profile's, as the core found it) once the tab has started:
-   * SPSL or Rhai, as openingLanguage tells them apart, else nothing; a file that isn't there is told in the status bar
+   * SPSL or Rhai, as openingLanguage tells them apart, else nothing. A file that isn't there, or an address that
+   * can't be fetched, is warned of at the top of the tab and in the status bar, and the session goes on without it
    */
   async function runOpeningScript(found: FoundScript, name: string, tabId: string): Promise<void> {
     let script = found.text ?? "";
     if (found.kind === "url" && found.url) script = await fetch(found.url).then((r) => (r.ok ? r.text() : "")).catch(() => "");
     const whose = found.profile ? `The ${found.profile} profile's` : `${name}'s`;
-    if (found.kind === "missing") status = `${whose} script ${found.path} isn't on ${THIS_COMPUTER}`;
+    const tab = tabs?.tabList().find((t) => t.id === tabId);
+    const warning = openingScriptWarning(found, script, whose);
+    if (warning) {
+      status = warning;
+      void tab?.host.notice?.(warning, "warn");
+      return;
+    }
     const language = openingLanguage(script, found.url ?? found.source ?? "");
     if (!language) return;
-    const tab = tabs?.tabList().find((t) => t.id === tabId);
     if (!tab) return;
     await tab.host.started;
     const text = script.replace(/\r\n/g, "\n");

@@ -11,6 +11,7 @@ import { settings } from "../settings/store.svelte";
 import { resolveSnippet, askOne } from "../scripting/asking.svelte";
 import { parseSendString } from "../scripting/sendString";
 import { clipboardText } from "../clipboard";
+import { THIS_COMPUTER } from "../platform";
 import { ScriptRun, runScript, scriptVariables, SESSION_VARIABLES, type ScriptHost } from "../scripting/spsl";
 import { envNames, runRhai } from "../scripting/rhai";
 import type { SessionView } from "../sessions/api";
@@ -174,6 +175,21 @@ export function openingLanguage(text: string, source = ""): "spsl" | "rhai" | nu
   if (text.startsWith("#!/bin/spsl")) return "spsl";
   if (text.startsWith("#!/bin/rhai") || /\.rhai$/i.test(source.trim().replace(/[?#].*$/, ""))) return "rhai";
   return null;
+}
+
+/**
+ * The warning for a login script a tab can't run, or "": a file that isn't on this computer (a full path picked on
+ * the other system, or a file moved), or an address that gave nothing. The session opens without it either way, as
+ * SuperXPuTTY's does
+ * @param found What the core found for the tab (session_script): its kind, and the path or address
+ * @param text The script's text as read or fetched
+ * @param whose Whose script it is: "Switch's", "The Linux profile's"
+ */
+export function openingScriptWarning(found: { kind: string; path?: string; url?: string }, text: string, whose: string): string {
+  const problem = found.kind === "missing" ? `${found.path} isn't on ${THIS_COMPUTER}`
+    : found.kind === "url" && !text ? `${found.url} couldn't be fetched`
+    : "";
+  return problem && `${whose} login script ${problem}, so the session opens without it.`;
 }
 
 /**

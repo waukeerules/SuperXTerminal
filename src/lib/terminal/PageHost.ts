@@ -273,6 +273,8 @@ export class PageHost implements ScriptTarget {
   private waiting = false;
   /** Settles once the page has its settings; output is held until then */
   private configured: Promise<void> | null = null;
+  /** Notices from outside the tab waiting to go before its first output (notice) */
+  private pendingNotices: PageMessage[] = [];
   private settled = false;
   /** The size the page last asked for, kept until the pseudo terminal is open */
   private size = { cols: 80, rows: 24 };
@@ -757,6 +759,31 @@ export class PageHost implements ScriptTarget {
     this.action("find");
   }
 
+  /**
+   * A notice in the tab from outside it, e.g. a login script that isn't there (App's runOpeningScript), at the top:
+   * it's posted just before the connection's first output goes to the page, which can be before the tab hears its
+   * program has started, else once it has started and the page has its settings, for a program that's quiet
+   * @param kind "warn" (yellow) for something the session goes on without, "error" (red) or "info" (cyan)
+   */
+  async notice(text: string, kind: "warn" | "error" | "info" = "warn"): Promise<void> {
+    const message = { type: "notice", text, kind };
+    if (this.settled) {
+      this.post(message);
+      return;
+    }
+    this.pendingNotices.push(message);
+    await this.started;
+    await this.configured;
+    this.postPendingNotices();
+  }
+
+  /** Post the notices waiting for the page's settings (notice), in the order they came */
+  private postPendingNotices(): void {
+    const waiting = this.pendingNotices;
+    this.pendingNotices = [];
+    for (const message of waiting) this.post(message);
+  }
+
   /** Refresh tab: fit the terminal to the tab again and redraw it */
   refresh(): void {
     this.frame.contentWindow?.dispatchEvent(new Event("resize"));
@@ -1144,6 +1171,7 @@ export class PageHost implements ScriptTarget {
     if (!this.settled) {
       void this.configured.then(() => {
         this.settled = true;
+        this.postPendingNotices();
         this.flush();
       });
       return;

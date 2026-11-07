@@ -382,3 +382,31 @@ describe("Find", () => {
     expect(pageKeys).toEqual([]);
   });
 });
+
+describe("a notice from outside the tab", () => {
+  it("waits for the program to start, then comes as a warning at the top, before the connection's output", async () => {
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    const told = host.notice("Switch's login script jump-host.spsl isn't on this PC, so the session opens without it.");
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    expect(notices()).toEqual([]);
+    const send = (event: unknown) => (channel!.onmessage as (e: unknown) => void)(event);
+    send({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "root" }, link: "pty" });
+    send({ type: "data", data: btoa("(admin@192.168.0.50) Password: ") });
+    await told;
+    await expect.poll(() => posted.findIndex((m) => m.type === "output" || m.type === "data")).toBeGreaterThan(-1);
+    const warning = posted.findIndex((m) => m.type === "notice");
+    expect(posted[warning]).toMatchObject({ kind: "warn", text: expect.stringContaining("so the session opens without it") });
+    expect(warning).toBeLessThan(posted.findIndex((m) => m.type === "output" || m.type === "data"));
+  });
+
+  it("still comes for a program that says nothing, once it has started", async () => {
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    const told = host.notice("Switch's login script jump-host.spsl isn't on this PC, so the session opens without it.");
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    (channel!.onmessage as (e: unknown) => void)({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "root" }, link: "pty" });
+    await told;
+    expect(notices()).toEqual(["Switch's login script jump-host.spsl isn't on this PC, so the session opens without it."]);
+  });
+});

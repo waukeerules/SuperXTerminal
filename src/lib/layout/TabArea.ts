@@ -333,6 +333,8 @@ export interface CommandTarget extends ScriptTarget {
   readonly canReceiveCommands: boolean;
   /** A button's command starts here: its lines' numbers take the button's colour (a terminal's; Remote Desktop has none) */
   markCommand?(color: string): void;
+  /** A notice at the top of the tab, such as a login script that isn't there (a terminal's; Remote Desktop has none) */
+  notice?(text: string, kind?: "warn" | "error" | "info"): Promise<void>;
 }
 
 /** A tab that commands can go to: a terminal, or (`rdp`) a Remote Desktop */

@@ -852,6 +852,10 @@ fn ssh(
                 notices.push(format!("Logging in with the key {item} from 1Password, through its SSH agent."));
                 login.key_file = path.clone();
                 args.extend(["-i".into(), path, "-o".into(), "IdentitiesOnly=yes".into()]);
+                // on the Mac ssh's agent is the system's unless ~/.ssh/config says otherwise: 1Password's, for its key
+                if let Some(agent) = dirs::home_dir().and_then(|home| crate::onepassword::mac_agent(&home)) {
+                    args.extend(["-o".into(), format!("IdentityAgent={agent}")]);
+                }
             }
             Err(why) => notices.push(format!("{}; connecting without it.", why.trim_end_matches('.'))),
         }

@@ -92,6 +92,24 @@ pub fn public_key_file(reference: &str) -> Result<(String, String), String> {
     Ok((file.display().to_string(), item))
 }
 
+/// 1Password's SSH agent on the Mac, for ssh's IdentityAgent: its short link (~/.1password/agent.sock) when it's
+/// there, else its socket in its Group Container, quoted for its space. None when neither is (1Password isn't
+/// installed, or its agent is off), and on Windows, where it takes over the OpenSSH agent's pipe that ssh uses anyway
+pub fn mac_agent(home: &std::path::Path) -> Option<String> {
+    if cfg!(windows) {
+        return None;
+    }
+    let link = home.join(".1password/agent.sock");
+    let socket = home.join("Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock");
+    if link.exists() {
+        Some(link.display().to_string())
+    } else if socket.exists() {
+        Some(format!("\"{}\"", socket.display()))
+    } else {
+        None
+    }
+}
+
 /// What went wrong reading references since this was last asked, each once: for the tab opening now to say
 pub fn take_problems() -> Vec<String> {
     with_kept(|kept| {
@@ -303,6 +321,25 @@ mod tests {
         // a field that isn't an SSH key's
         keep("op://Private/Not a key/public key", "hello");
         assert!(public_key_file("op://Private/Not a key/password").unwrap_err().contains("isn't an SSH public key"));
+    }
+
+    /// The Mac's agent, for a key in 1Password: its short link first, else its socket, quoted; none on Windows
+    #[test]
+    fn the_macs_1password_agent_is_its_link_else_its_socket() {
+        let home = std::env::temp_dir().join(format!("sxt-op-agent-{}", std::process::id()));
+        let socket = home.join("Library/Group Containers/2BUA8C4S2C.com.1password/t");
+        std::fs::create_dir_all(&socket).unwrap();
+        assert_eq!(mac_agent(&home), None);
+        std::fs::write(socket.join("agent.sock"), "").unwrap();
+        if cfg!(windows) {
+            assert_eq!(mac_agent(&home), None);
+        } else {
+            assert_eq!(mac_agent(&home), Some(format!("\"{}\"", socket.join("agent.sock").display())));
+            std::fs::create_dir_all(home.join(".1password")).unwrap();
+            std::fs::write(home.join(".1password/agent.sock"), "").unwrap();
+            assert_eq!(mac_agent(&home), Some(home.join(".1password/agent.sock").display().to_string()));
+        }
+        std::fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]

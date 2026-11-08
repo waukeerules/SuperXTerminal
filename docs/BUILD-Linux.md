@@ -1,7 +1,7 @@
 # Building SuperXTerminal for Linux
 
-How to make the Linux packages (`.deb`, `.rpm` and AppImage) from the Mac, and try them on a Linux machine. Linux
-comes after the Mac and Windows (see [PLAN.md](PLAN.md)); these builds are for testing, not yet released.
+How to make the Linux packages (`.deb`, `.rpm` and AppImage) from the Mac or Windows, and try them on a Linux
+machine. Linux comes after the Mac and Windows (see [PLAN.md](PLAN.md)); these builds are for testing, not yet released.
 
 The Mac build is in [BUILD-macOS.md](BUILD-macOS.md), the Windows one in [BUILD-Windows.md](BUILD-Windows.md).
 
@@ -20,6 +20,12 @@ volumes or Docker itself loses nothing but time: the next build makes them again
 - Docker Desktop (`open -a Docker`) or OrbStack, running.
 - On Apple silicon, for x86_64 packages: Docker Desktop's Settings > General > "Use Rosetta for x86_64/amd64
   emulation on Apple Silicon" turned on. It works without, but slower.
+- On Windows: Docker Desktop with Linux containers, and Git for Windows (npm runs the script with its bash, or
+  MSYS2's if that comes first on the PATH; the script turns the repository's path into one Docker understands).
+  amd64 builds run natively there (about 6 minutes for Rust). Docker's 2 GB default isn't enough: the compiles are
+  killed ("signal: 9, SIGKILL"). Give it 16 GB (Settings > Resources > Advanced, then Apply & restart) and check with
+  `docker info --format "{{.MemTotal}}"`; or set `CARGO_BUILD_JOBS` (e.g. `4`) before `npm run build:linux`, and
+  the container uses it.
 - The machine to try it on: check its CPU with `uname -m`. `x86_64` is the usual PC (the default build, amd64);
   `aarch64` is ARM (build with `--arm64`).
 

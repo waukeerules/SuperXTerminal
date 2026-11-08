@@ -38,8 +38,14 @@ done
 root="$(cd "$(dirname "$0")/.." && pwd)"
 image="superxterminal-linux-build:$arch"
 
+# On Windows, npm runs this with Git's or MSYS2's bash. Docker there wants the repository as a Windows path (C:/...),
+# and MSYS would otherwise rewrite the container's own paths (/src, /usr/local/cargo/registry) into Windows ones.
+case "$(uname -s)" in
+  MINGW*|MSYS*) root="$(cd "$root" && pwd -W)"; export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' ;;
+esac
+
 if ! docker info >/dev/null 2>&1; then
-  echo "build-linux: Docker isn't running. Start Docker Desktop (open -a Docker) or OrbStack, then try again." >&2
+  echo "build-linux: Docker isn't running. Start Docker Desktop (or OrbStack on the Mac), then try again." >&2
   exit 1
 fi
 
@@ -54,6 +60,7 @@ run=(docker run --rm -i --platform "linux/$arch"
   -v "sxt-linux-node-modules-$arch":/src/node_modules
   -v "sxt-linux-target-$arch":/src/src-tauri/target
   -v "sxt-linux-cargo-registry-$arch":/usr/local/cargo/registry
+  -e CARGO_BUILD_JOBS
   -w /src)
 [ -t 0 ] && [ -t 1 ] && run+=(-t)
 

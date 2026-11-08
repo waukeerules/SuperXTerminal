@@ -1,0 +1,3 @@
+# Scripts run by Linux (in the Docker build) or macOS: LF even in a Windows checkout, or bash stops at the first CR
+*.sh text eol=lf
+*.Dockerfile text eol=lf

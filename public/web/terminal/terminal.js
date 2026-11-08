@@ -508,68 +508,6 @@
         return joinBytes(pieces);
     }
 
-    /**
-     * The bytes with each of ConPTY's redraws kept to the terminal's rows. After a resize ConPTY sends its screen again
-     * between hiding and showing the cursor (ESC[?25l ... ESC[?25h), every row with a line break after it, and for a
-     * quick run of resizes once for each size on the way (the first naming it, ESC[8;rows;cols t). Some start from the
-     * top (ESC[H), some from where the cursor is, some go to the top only at the end. When ConPTY's screen had more
-     * rows than the terminal has now, the line breaks past its last row scrolled the terminal, and the next redraw
-     * landed a row or two lower: the session's first line showed twice ("Last login" over the prompt). Seen in
-     * captures of ssh logins through ConPTY on Windows 11. So, for a while after a resize, a redraw's line breaks past
-     * the terminal's last row are left out: those rows are blank, or redrawn by the next redraw, for the terminal's
-     * size. The cursor's row is followed through the chunk: the page writes a chunk once the last one is drawn, so
-     * the terminal's cursor is where the chunk starts
-     */
-    function fitConptyRedraw(bytes) {
-        if (Date.now() - conpty.resizedAt > REDRAW_WITHIN_MS) { return bytes; }
-        // the escape sequences are ASCII: one character per byte keeps the positions
-        var text = String.fromCharCode.apply(null, bytes);
-        if (text.indexOf('\x1b[?25l') < 0) { return bytes; }
-        var row = term.buffer.active.cursorY;
-        var bottom = term.rows - 1;
-        /** Follow the cursor's row through text: its last move to a row, then the line breaks after it */
-        function follow(piece) {
-            var move = /\x1b\[(\d*)(?:;\d*)?H/g;
-            var found;
-            var after = 0;
-            while ((found = move.exec(piece)) !== null) {
-                row = Math.min(bottom, (parseInt(found[1], 10) || 1) - 1);
-                after = move.lastIndex;
-            }
-            row = Math.min(bottom, row + piece.slice(after).split('\r\n').length - 1);
-        }
-        var hidden = /\x1b\[\?25l/g;
-        var found;
-        var out = '';
-        var at = 0;
-        var trimmed = false;
-        while ((found = hidden.exec(text)) !== null) {
-            var end = text.indexOf('\x1b[?25h', hidden.lastIndex);
-            if (end < 0) { break; }
-            follow(text.slice(at, found.index));
-            var redraw = text.slice(found.index, end);
-            // where it starts painting: the top when it begins by going there, else where the cursor is
-            var start = /^\x1b\[\?25l(?:\x1b\[8;\d+;\d+t)?\x1b\[H/.test(redraw) ? 0 : row;
-            var rows = redraw.split('\r\n');
-            var room = bottom - start;
-            if (rows.length - 1 > room) {
-                // the rows that fit, then its last, which ends with where the cursor goes
-                rows = rows.slice(0, Math.max(0, room)).concat(rows[rows.length - 1]);
-                redraw = rows.join('\r\n');
-                trimmed = true;
-            }
-            out += text.slice(at, found.index) + redraw;
-            follow(redraw);
-            at = end;
-            hidden.lastIndex = end;
-        }
-        if (!trimmed) { return bytes; }
-        out += text.slice(at);
-        var fitted = new Uint8Array(out.length);
-        for (var i = 0; i < out.length; i++) { fitted[i] = out.charCodeAt(i); }
-        return fitted;
-    }
-
     /** Byte arrays one after another, as one */
     function joinBytes(pieces) {
         var length = pieces.reduce(function (sum, piece) { return sum + piece.length; }, 0);
@@ -581,7 +519,7 @@
 
     /** Write output and ask for the next chunk once it's drawn */
     function write(bytes) {
-        term.write(fitConptyRedraw(dropConptyRedraw(bytes)), function () {
+        term.write(dropConptyRedraw(bytes), function () {
             post({ type: 'ack' });
             scheduleSettle();
         });

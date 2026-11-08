@@ -1,13 +1,16 @@
 <!--
   Tools > Environment Variables, as SuperXPuTTY's: the user's values for {key} placeholders in sessions, so one
   shared Sessions.xml works for everyone ("{user}@{domain}", "-pw {admin_password}"). Secret values are kept in
-  the Keychain, never shown again: leave one empty to keep it, type to replace it. A secret copied over from
-  Windows can't be read on a Mac (it was encrypted for that PC), so it asks to be typed again.
+  the Keychain or Windows Credential Manager, never shown again: leave one empty to keep it, type to replace it. A
+  secret copied over from Windows can't be read on a Mac (it was encrypted for that PC), so it asks to be typed again.
+  A value can be a 1Password reference (op://vault/item/field), read as a session uses it (onepassword.rs).
 
-  Beside the user's own: where each is used, the placeholders used that have no value yet, the ones SuperXTerminal
-  fills itself (which no variable can be named), and a preview of a template filled in, secrets as dots. Export…
-  and Import… pass a set on as SuperXPuTTY's EnvironmentVariables.json, secrets by name only (variablesFile.ts);
-  an import fills the window, and OK saves it.
+  Laid out to stay calm as it grows: one list, each row a name, its value (a 1Password reference shown as its item,
+  a secret as stored), how many places use it, and a ⋯ menu for Secret and Remove. Placeholders used but not set are
+  rows in the same list, under a warning, a few shown and the rest folded; one is added by clicking its value. The
+  longer help (?), the built-in placeholders and a template's preview are folded away. Filter narrows the list.
+  Export… and Import… pass a set on as SuperXPuTTY's EnvironmentVariables.json, secrets by name only
+  (variablesFile.ts); an import fills the window, and Save saves it.
   It opens in front of Edit Session, whose Environment Variables… button opens it for a placeholder with no value.
 -->
 <script lang="ts" module>
@@ -25,14 +28,15 @@
 <script lang="ts">
   import { isMac } from "../shortcuts";
   import { SECRET_STORE } from "../platform";
-  import { OP_REFERENCE_HINT } from "./onepassword";
-  import { onMount } from "svelte";
+  import { OP_REFERENCE_HINT, isReference, referencedItem } from "./onepassword";
+  import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { exportVariables, importVariables, type Variable } from "./variablesFile";
+  import Menu, { type MenuItem } from "../ui/Menu.svelte";
 
   interface Props {
-    /** OK, Cancel or Escape: the window closes */
+    /** Save, Cancel or Escape: the window closes */
     onClose: () => void;
   }
 
@@ -45,6 +49,21 @@
   let builtIn = $state<[string, string][]>([]);
   let template = $state("");
   let message = $state("");
+  /** What Filter narrows the list to: a name's or a value's words */
+  let filter = $state("");
+  /** The longer help, behind ? */
+  let helpOpen = $state(false);
+  /** All the placeholders not set, rather than the first few */
+  let allUnset = $state(false);
+  /** The row whose 1Password reference is being edited, shown as its text rather than its item */
+  let editing = $state<number | null>(null);
+  /** A row's ⋯ menu, where it opened */
+  let menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  /** The list's element, to put the cursor in a row just added */
+  let list = $state<HTMLElement>();
+
+  /** How many placeholders not set show before the rest fold */
+  const UNSET_SHOWN = 3;
 
   onMount(() => {
     shown = true;
@@ -76,18 +95,31 @@
 
   /** Each row's problem, or "" when it can be saved */
   const problems = $derived(rows.map((r, i) => problem(r, i)));
-  /** Whether any row has a problem, which keeps OK greyed */
+  /** Whether any row has a problem, which keeps Save greyed */
   const blocked = $derived(problems.some(Boolean));
 
+  /** Whether a name or value has Filter's words in it */
+  const matches = (...texts: string[]) => !filter.trim() || texts.some((t) => t.toLowerCase().includes(filter.trim().toLowerCase()));
+
+  /** The rows to show, with their place in `rows`: those Filter leaves, and a row just added whatever its name */
+  const shownRows = $derived(rows.map((row, i) => ({ row, i })).filter(({ row }) => !row.key.trim() || matches(row.key, row.secret ? "" : row.value)));
+
   /** Placeholders used somewhere that are neither the user's nor built in: they'd stop a session opening */
-  const undefinedUsed = $derived(
+  const unset = $derived(
     Object.entries(usage)
       .filter(([name]) => !builtInNames.has(name) && !rows.some((r) => r.key.trim().toLowerCase() === name))
       .sort(([a], [b]) => a.localeCompare(b)),
   );
+  /** Those Filter leaves; the first few unless all are asked for */
+  const unsetShown = $derived.by(() => {
+    const left = unset.filter(([name]) => matches(name));
+    return allUnset || filter.trim() ? left : left.slice(0, UNSET_SHOWN);
+  });
 
   /** Where a variable is used, for its row */
   const usedBy = (key: string) => usage[key.trim().toLowerCase()] ?? [];
+  /** How many places use a name, as its row says it */
+  const usedText = (places: string[]) => (places.length ? `${places.length} place${places.length === 1 ? "" : "s"}` : "unused");
 
   /** The template with the user's values filled in: secrets as dots, built-ins and unknowns left as written */
   const preview = $derived.by(() =>
@@ -99,9 +131,38 @@
     }),
   );
 
-  /** Add an empty row, or one for a placeholder that's used but has no value */
-  function add(key = ""): void {
+  /**
+   * Add a row, empty or for a placeholder that's used but not set, and put the cursor in it: in its value when it
+   * has a name, else in its name
+   */
+  async function add(key = ""): Promise<void> {
     rows = [...rows, { key, value: "", secret: /pass|pw|secret|token/i.test(key), hasValue: false, fromWindows: false }];
+    await tick();
+    const fields = list?.querySelectorAll<HTMLInputElement>(key ? "[data-value]" : "[data-key]");
+    fields?.[fields.length - 1]?.focus();
+  }
+
+  /** A row's ⋯ menu: Secret, and Remove */
+  function showMenu(event: MouseEvent, index: number): void {
+    event.stopPropagation();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const row = rows[index];
+    menu = {
+      x: rect.right - 180,
+      y: rect.bottom + 2,
+      items: [
+        { label: "Secret", checked: row.secret, action: () => (rows[index].secret = !rows[index].secret) },
+        { separator: true },
+        { label: "Remove", action: () => (rows = rows.filter((_, j) => j !== index)) },
+      ],
+    };
+  }
+
+  /** Edit a 1Password reference's text, shown till then as its item */
+  async function editReference(index: number): Promise<void> {
+    editing = index;
+    await tick();
+    list?.querySelector<HTMLInputElement>(`[data-row="${index}"] [data-value]`)?.focus();
   }
 
   /** Save and close */
@@ -129,7 +190,7 @@
     }
   }
 
-  /** Import…: a file's variables into the window, for OK to save; nothing here is removed */
+  /** Import…: a file's variables into the window, for Save to save; nothing here is removed */
   async function importFile(): Promise<void> {
     const path = await open({ filters: [{ name: "Environment Variables", extensions: ["json"] }] });
     if (typeof path !== "string") return;
@@ -138,7 +199,7 @@
       rows = imported.rows;
       const { toType } = imported;
       message = `Imported ${imported.count} variables. `
-        + (toType.length ? `Type the value${toType.length === 1 ? "" : "s"} of ${toType.join(", ")}, then OK to save.` : "OK saves them.");
+        + (toType.length ? `Type the value${toType.length === 1 ? "" : "s"} of ${toType.join(", ")}, then Save.` : "Save keeps them.");
     } catch (e) {
       message = e instanceof Error ? e.message : `Couldn't import: ${e}`;
     }
@@ -146,97 +207,111 @@
 
   /** What an empty secret field says */
   function secretHint(row: Variable): string {
-    if (row.hasValue) return `Stored in ${SECRET_STORE} (type to replace)`;
+    if (row.hasValue) return `Stored in ${SECRET_STORE}`;
     if (row.fromWindows) return isMac ? "Set on Windows: type it again here" : "Set for another Windows account: type it again here";
-    return "Type the value";
+    return "Type the secret";
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && onClose()} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && !menu && onClose()} onclick={() => (menu = null)} />
 
 <div class="backdrop" role="presentation">
   <div class="dialog" role="dialog" aria-modal="true" aria-label="Environment Variables">
-    <header>Environment Variables</header>
-    <p class="hint">
-      Sessions can use these as <code>{"{key}"}</code> in the host, username, extra arguments and jump host, e.g.
-      <code>{"{user}@{domain}"}</code> or <code>-pw {"{admin_password}"}</code>. They're yours only, kept beside your settings.
-    </p>
-    <p class="hint">{OP_REFERENCE_HINT} A reference isn't a secret itself, so it can be a plain value.</p>
-
-    <div class="body">
-      <div class="table">
-        <div class="head">Key</div>
-        <div class="head">Value</div>
-        <div class="head">Secret</div>
-        <div class="head">Used by</div>
-        <div class="head"></div>
-        {#each rows as row, i}
-          <input bind:value={row.key} placeholder="e.g. user" aria-label="Key" class:bad={!!problems[i]} title={problems[i]} />
-          {#if row.secret}
-            <input type="password" bind:value={row.value} placeholder={secretHint(row)} aria-label="Secret value" />
-          {:else}
-            <input bind:value={row.value} aria-label="Value" />
-          {/if}
-          <input type="checkbox" bind:checked={row.secret} aria-label="Secret" />
-          <span class="used" title={usedBy(row.key).join("\n")}>
-            {usedBy(row.key).length ? `${usedBy(row.key).length} place${usedBy(row.key).length === 1 ? "" : "s"}` : row.key.trim() ? "none" : ""}
-          </span>
-          <button title="Remove" aria-label="Remove {row.key}" onclick={() => (rows = rows.filter((_, j) => j !== i))}>✕</button>
-          {#if problems[i]}<p class="problem">{problems[i]}</p>{/if}
-        {/each}
+    <div class="top">
+      <header>Environment Variables</header>
+      <input class="filter" bind:value={filter} placeholder="Filter" aria-label="Filter" />
+      <button class="help-button" class:on={helpOpen} onclick={() => (helpOpen = !helpOpen)} aria-label="How these work" aria-expanded={helpOpen}
+        title="How these work">?</button>
+    </div>
+    <p class="hint">Your values for <code>{"{placeholders}"}</code> in sessions, profiles and scripts. Only on {isMac ? "this Mac" : "this PC"}.</p>
+    {#if helpOpen}
+      <div class="help" role="note" aria-label="How Environment Variables work">
+        <p>A session can use them in its host, username, extra arguments and jump host, e.g.
+          <code>{"{user}@{domain}"}</code> or <code>-pw {"{admin_password}"}</code>; so can profiles and scripts. They're
+          yours only, kept beside your settings. A secret is kept in {SECRET_STORE}, never in a file, and isn't shown
+          again: leave it empty to keep it, type to replace it.</p>
+        <p>{OP_REFERENCE_HINT} A reference isn't a secret itself, so it needn't be marked Secret.</p>
       </div>
+    {/if}
 
-      {#if undefinedUsed.length}
-        <section>
-          <h3>Used but not defined</h3>
-          <p class="hint">A session using one of these says it has no value yet, and doesn't open.</p>
-          <ul>
-            {#each undefinedUsed as [name, places] (name)}
-              <!-- each place cut from the front when there isn't room, so its session's name shows and Add stays in view -->
-              <li><code title={`{${name}}`}>{`{${name}}`}</code>
-                <span class="where" title={places.join("\n")}>
-                  {#each places.slice(0, 3) as place, i (i)}
-                    <span class="place"><bdi>{place}</bdi></span>{#if i < Math.min(places.length, 3) - 1}<span class="sep">,</span>{/if}
-                  {/each}
-                  {#if places.length > 3}<span class="more">and {places.length - 3} more</span>{/if}
-                </span>
-                <button onclick={() => add(name)}>Add</button></li>
-            {/each}
-          </ul>
-        </section>
+    <div class="body" bind:this={list}>
+      <div class="row head" aria-hidden="true"><span>Name</span><span>Value</span><span class="used">Used</span><span></span></div>
+      {#each shownRows as { row, i } (i)}
+        <div class="row" data-row={i}>
+          <input class="key" data-key bind:value={row.key} placeholder="name" aria-label="Key" class:bad={!!problems[i]} title={problems[i]} spellcheck="false" />
+          {#if row.secret}
+            <span class="value">
+              <span class="badge">Secret</span>
+              <input data-value type="password" bind:value={row.value} placeholder={secretHint(row)} aria-label="Secret value" />
+            </span>
+          {:else if isReference(row.value) && editing !== i}
+            <!-- a 1Password reference as the item it names; a click edits its text -->
+            <button class="value reference" onclick={() => void editReference(i)} title={`${row.value.trim()}: read from 1Password as a session uses it. Click to edit`}>
+              <span class="item">{referencedItem(row.value)}</span><span class="badge op">1Password</span>
+            </button>
+          {:else}
+            <span class="value">
+              <input data-value bind:value={row.value} aria-label="Value" placeholder="value" onblur={() => editing === i && (editing = null)} />
+              {#if isReference(row.value)}<span class="badge op">1Password</span>{/if}
+            </span>
+          {/if}
+          <span class="used" title={usedBy(row.key).join("\n")}>{row.key.trim() ? usedText(usedBy(row.key)) : ""}</span>
+          <button class="more" aria-label="More for {row.key || 'the new variable'}" title="Secret, Remove" onclick={(e) => showMenu(e, i)}>⋯</button>
+          {#if problems[i]}<p class="problem">{problems[i]}</p>{/if}
+        </div>
+      {/each}
+
+      {#if unset.length}
+        <p class="warn" role="note" aria-label="Used but not set">Used but not set: sessions using these won't open until they have a value.</p>
+        {#each unsetShown as [name, places] (name)}
+          <div class="row unset">
+            <code class="key" title={`{${name}}`}>{name}</code>
+            <button class="value add" onclick={() => void add(name)} aria-label="Set {name}">Type a value</button>
+            <span class="used" title={places.join("\n")}>{usedText(places)}</span>
+            <span></span>
+          </div>
+        {/each}
+        {#if !filter.trim() && unset.length > UNSET_SHOWN}
+          <button class="fold" onclick={() => (allUnset = !allUnset)}>{allUnset ? "▾ Fewer" : `▸ ${unset.length - UNSET_SHOWN} more not set`}</button>
+        {/if}
       {/if}
 
-      <section>
-        <h3>Built in</h3>
-        <p class="hint">Filled by SuperXTerminal itself, so no variable can have these names.</p>
-        <ul>
-          {#each builtIn as [name, about] (name)}
-            <li><code>{`{${name}}`}</code> <span class="where">{about}</span></li>
-          {/each}
-        </ul>
-      </section>
-
-      <section>
-        <h3>Preview</h3>
-        <input class="template" bind:value={template} aria-label="Template to preview"
-          placeholder="Type a template, e.g. {'{'}ad_username{'}'}@{'{'}domain{'}'}#{'{'}cyberark_region{'}'}" />
-        {#if template}
-          <p class="filled" aria-label="Preview">{preview}</p>
-          <p class="hint">Secrets show as dots; built-in and undefined placeholders stay as written.</p>
-        {/if}
-      </section>
+      <div class="extras">
+        <details>
+          <summary>Try a template</summary>
+          <input class="template" bind:value={template} aria-label="Template to preview"
+            placeholder="A template, e.g. {'{'}ad_username{'}'}@{'{'}domain{'}'}" />
+          {#if template}
+            <p class="filled" aria-label="Preview">{preview}</p>
+            <p class="hint">Secrets show as dots; built-in placeholders and ones not set stay as written.</p>
+          {/if}
+        </details>
+        <details>
+          <summary>Built-in placeholders ({builtIn.length})</summary>
+          <p class="hint">Filled by SuperXTerminal itself, so no variable can have these names.</p>
+          <ul>
+            {#each builtIn as [name, about] (name)}
+              <li><code>{`{${name}}`}</code> <span class="hint">{about}</span></li>
+            {/each}
+          </ul>
+        </details>
+      </div>
     </div>
 
     <footer>
-      <button onclick={() => add()}>Add</button>
+      <button onclick={() => void add()}>Add</button>
       <button onclick={importFile} title="Add or update variables from a file; nothing here is removed">Import…</button>
       <button onclick={exportFile} title="Save these to a file to pass on; secrets go by name only, without their values">Export…</button>
       <span class="message">{message || (blocked ? "Fix the names marked in red to save." : "")}</span>
-      <button class="primary" onclick={save} disabled={blocked}>OK</button>
       <button onclick={onClose}>Cancel</button>
+      <button class="primary" onclick={save} disabled={blocked}>Save</button>
     </footer>
   </div>
 </div>
+
+{#if menu}
+  <Menu items={menu.items} x={menu.x} y={menu.y} onClose={() => (menu = null)} />
+{/if}
 
 <style>
   .backdrop {
@@ -251,11 +326,11 @@
   }
 
   .dialog {
-    width: min(760px, 94vw);
+    width: min(720px, 94vw);
     max-height: 90vh;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     padding: 14px 16px;
     background: var(--bg-window);
     border: 1px solid var(--border);
@@ -263,8 +338,29 @@
     box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
   }
 
+  .top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   header {
+    flex: 1;
     font-weight: 600;
+  }
+
+  .filter {
+    width: 180px;
+  }
+
+  .help-button {
+    width: 26px;
+    border-radius: 50%;
+    padding: 2px 0;
+  }
+
+  .help-button.on {
+    border-color: var(--accent);
   }
 
   .hint {
@@ -272,36 +368,133 @@
     color: var(--text-muted);
   }
 
+  .help {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+  }
+
+  .help p {
+    margin: 0 0 6px;
+  }
+
+  .help p:last-child {
+    margin: 0;
+  }
+
   code {
     white-space: nowrap;
   }
 
-  /* the rows and the sections below scroll; the title and OK stay put */
+  /* the list scrolls; the title and Save stay put */
   .body {
     flex: 1;
     min-height: 0;
     overflow: auto;
     display: flex;
     flex-direction: column;
-    gap: 14px;
   }
 
-  .table {
+  /* a variable: its name, its value, where it's used, and its ⋯ */
+  .row {
     display: grid;
-    grid-template-columns: 200px 1fr 60px 70px 32px;
-    gap: 6px;
+    grid-template-columns: 170px minmax(0, 1fr) 72px 28px;
+    gap: 8px;
     align-items: center;
+    padding: 5px 0;
+    border-top: 1px solid var(--border);
   }
 
-  .head {
+  .row.head {
+    border-top: none;
+    padding-top: 0;
     color: var(--text-muted);
     font-size: 12px;
   }
 
-  .used,
-  .where {
+  /* the name, quiet until it's worked on */
+  .key {
+    font-family: Menlo, Consolas, monospace;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  input.key {
+    border-color: transparent;
+    background: transparent;
+  }
+
+  input.key:hover,
+  input.key:focus {
+    border-color: var(--border);
+    background: var(--bg-input);
+  }
+
+  input.key.bad {
+    border-color: #e5534b;
+  }
+
+  .value {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .value input {
+    flex: 1;
+  }
+
+  /* a reference shown as its item: a field-like button to edit it */
+  .value.reference {
+    justify-content: space-between;
+    text-align: left;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 6px;
+  }
+
+  .item {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .badge {
+    flex: none;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  .badge.op {
+    color: #fff;
+    background: #1a5fd0;
+    border-color: transparent;
+  }
+
+  .used {
     color: var(--text-muted);
     font-size: 12px;
+    text-align: right;
+  }
+
+  .more {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--text-muted);
+    font-size: 16px;
+  }
+
+  .more:hover {
+    color: var(--text);
   }
 
   .problem {
@@ -311,19 +504,54 @@
     font-size: 12px;
   }
 
-  input.bad {
-    border-color: #e5534b;
+  .warn {
+    margin: 12px 0 2px;
+    color: #d29922;
+    font-size: 12px;
   }
 
-  section {
+  .row.unset .key {
+    color: #d29922;
+  }
+
+  /* a placeholder not set: a dashed field whose click adds it, ready to type */
+  .value.add {
+    justify-content: flex-start;
+    color: var(--text-muted);
+    background: none;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    padding: 4px 6px;
+  }
+
+  .fold {
+    align-self: flex-start;
+    border: none;
+    background: none;
+    padding: 4px 0;
+    color: var(--text-muted);
+  }
+
+  .extras {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  summary {
+    color: var(--text-muted);
+    cursor: default;
+    padding: 2px 0;
+  }
+
+  details[open] {
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-
-  h3 {
-    margin: 0;
-    font-size: 13px;
+    padding-bottom: 6px;
   }
 
   ul {
@@ -333,61 +561,6 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-  }
-
-  li {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  li button {
-    flex: none;
-    margin-left: auto;
-  }
-
-  /* a long placeholder name is cut at its end, keeping room for where it's used */
-  li code {
-    flex: none;
-    max-width: 40%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* where it's used, on one line between the name and Add: what doesn't fit is cut, never pushing Add out */
-  .where {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    align-items: baseline;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  /* each place cut from the front ("…Floor 3/Core Switch"), so the session's own name shows: right-to-left puts the
-     ellipsis on the left, and the bdi keeps the text itself reading left to right */
-  .place {
-    flex: 0 1 auto;
-    min-width: 2em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    direction: rtl;
-    text-align: left;
-  }
-
-  .place bdi {
-    direction: ltr;
-  }
-
-  .sep {
-    flex: none;
-    margin-right: 0.4em;
-  }
-
-  .more {
-    flex: none;
-    margin-left: 0.4em;
   }
 
   .template {
@@ -403,13 +576,24 @@
     word-break: break-all;
   }
 
-  input:not([type="checkbox"]),
+  input,
   button {
     background: var(--bg-input);
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: 4px 6px;
     min-width: 0;
+  }
+
+  /* Save: the one accented button */
+  .primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .primary:disabled {
+    opacity: 0.45;
   }
 
   footer {

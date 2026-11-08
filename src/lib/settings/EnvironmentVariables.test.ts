@@ -1,6 +1,8 @@
-// Tools > Environment Variables: names that clash can't be saved, placeholders used but not defined are listed, the
-// preview fills a template with secrets hidden, and Export… and Import… pass the variables on in SuperXPuTTY's file,
-// secrets by name only; and a placeholder used in long-named places keeps its Add button in view. The Rust side, and the dialogs choosing the file, are stood in for by mockIPC.
+// Tools > Environment Variables: names that clash can't be saved, placeholders used but not set are rows of their own
+// that a click adds, a 1Password reference shows as its item, a row's ⋯ menu marks it Secret or removes it, Filter
+// narrows the list, the preview (folded away) fills a template with secrets hidden, and Export… and Import… pass the
+// variables on in SuperXPuTTY's file, secrets by name only. The Rust side, and the dialogs choosing the file, are
+// stood in for by mockIPC.
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -30,6 +32,7 @@ beforeEach(() => {
       return [
         { key: "ad_username", value: "tim", secret: false, hasValue: false, fromWindows: false },
         { key: "admin_password", value: "", secret: true, hasValue: true, fromWindows: false },
+        { key: "enable", value: '"op://Private/Cisco Switch/password"', secret: false, hasValue: false, fromWindows: false },
       ];
     if (cmd === "variables_usage")
       return {
@@ -61,23 +64,65 @@ async function open() {
 
 /** Every Key field, in order */
 const keys = () => screen.getAllByLabelText("Key") as HTMLInputElement[];
-/** The OK button */
-const ok = () => screen.getByRole("button", { name: "OK" }) as HTMLButtonElement;
+/** The Save button */
+const ok = () => screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+/** Add, at the foot of the window */
+const addButton = () => screen.getByRole("button", { name: "Add" });
 
 describe("Environment Variables", () => {
-  it("lists placeholders used but not defined, not built-in ones, and adds one", async () => {
+  it("shows placeholders used but not set as rows of their own, not built-in ones, and a click adds one ready to type", async () => {
     await open();
-    expect(screen.getByText("{cyberark_region}")).toBeTruthy();
-    // host_address is used too, but built in: not listed as undefined
-    expect(screen.getByText("Used but not defined").closest("section")!.textContent).not.toContain("{host_address}");
-    const row = screen.getByText("{cyberark_region}").closest("li") as HTMLElement;
-    await userEvent.click(within(row).getByRole("button", { name: "Add" }));
+    expect(screen.getByRole("note", { name: "Used but not set" })).toBeTruthy();
+    const set = screen.getByRole("button", { name: "Set cyberark_region" });
+    // host_address is used too, but built in: no row for it
+    expect(screen.queryByRole("button", { name: "Set host_address" })).toBeNull();
+    // where it's used: how many places, each on hover
+    const used = set.closest(".row")!.querySelector(".used")!;
+    expect(used.textContent).toBe("2 places");
+    expect(used.getAttribute("title")).toBe("profile CyberArk\nsession Region 4/Switch - CyberArk");
+    await userEvent.click(set);
     expect(keys().map((k) => k.value)).toContain("cyberark_region");
+    expect(screen.queryByRole("button", { name: "Set cyberark_region" })).toBeNull();
+    expect((document.activeElement as HTMLInputElement).getAttribute("aria-label")).toBe("Value");
+  });
+
+  it("shows a 1Password reference as the item it names, and its text to edit on a click", async () => {
+    await open();
+    const reference = screen.getByRole("button", { name: /Private\/Cisco Switch/ });
+    expect(reference.textContent).toBe("Private/Cisco Switch1Password");
+    await userEvent.click(reference);
+    expect(screen.getByDisplayValue('"op://Private/Cisco Switch/password"')).toBe(document.activeElement);
+  });
+
+  it("marks a variable Secret, and removes one, from its ⋯ menu", async () => {
+    await open();
+    await userEvent.click(screen.getByRole("button", { name: "More for ad_username" }));
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /Secret/ }));
+    expect(screen.getAllByLabelText("Secret value")).toHaveLength(2);
+    await userEvent.click(screen.getByRole("button", { name: "More for ad_username" }));
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Remove" }));
+    expect(keys().map((k) => k.value)).toEqual(["admin_password", "enable"]);
+  });
+
+  it("narrows the list to the names and values Filter has", async () => {
+    await open();
+    await userEvent.type(screen.getByLabelText("Filter"), "admin");
+    expect(keys().map((k) => k.value)).toEqual(["admin_password"]);
+    // a placeholder not set, by its name
+    expect(screen.getByRole("button", { name: "Set admin_username" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Set cyberark_region" })).toBeNull();
+  });
+
+  it("keeps the longer help behind ?, and says a reference needn't be secret", async () => {
+    await open();
+    expect(screen.queryByRole("note", { name: "How Environment Variables work" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "How these work" }));
+    expect(screen.getByRole("note", { name: "How Environment Variables work" }).textContent).toMatch(/needn't be marked Secret/);
   });
 
   it("won't save a name that's there twice, whatever its case", async () => {
     await open();
-    await userEvent.click(screen.getAllByRole("button", { name: "Add" }).at(-1)!);
+    await userEvent.click(addButton());
     await userEvent.type(keys().at(-1)!, "AD_Username");
     expect(ok().disabled).toBe(true);
     expect(screen.getByText("{AD_Username} is there twice")).toBeTruthy();
@@ -87,7 +132,7 @@ describe("Environment Variables", () => {
 
   it("won't save a built-in name", async () => {
     await open();
-    await userEvent.click(screen.getAllByRole("button", { name: "Add" }).at(-1)!);
+    await userEvent.click(addButton());
     await userEvent.type(keys().at(-1)!, "key_file");
     expect(ok().disabled).toBe(true);
     expect(screen.getByText(/\{key_file\} is built in/)).toBeTruthy();
@@ -95,6 +140,7 @@ describe("Environment Variables", () => {
 
   it("previews a template with secrets as dots, built-ins and unknowns as written", async () => {
     await open();
+    await userEvent.click(screen.getByText("Try a template"));
     await userEvent.type(screen.getByLabelText("Template to preview"), "{{ad_username}@{{host_address} -pw {{admin_password} {{nope}");
     expect(screen.getByLabelText("Preview").textContent).toBe("tim@{host_address} -pw •••• {nope}");
   });
@@ -109,6 +155,7 @@ describe("Environment Variables", () => {
       Variables: [
         { Key: "ad_username", Value: "tim", Secret: false },
         { Key: "admin_password", Secret: true },
+        { Key: "enable", Value: '"op://Private/Cisco Switch/password"', Secret: false },
       ],
     });
   });
@@ -124,15 +171,16 @@ describe("Environment Variables", () => {
     });
     await open();
     await userEvent.click(screen.getByRole("button", { name: "Import…" }));
-    expect(keys().map((k) => k.value)).toEqual(["ad_username", "admin_password", "domain", "enable_secret"]);
+    expect(keys().map((k) => k.value)).toEqual(["ad_username", "admin_password", "enable", "domain", "enable_secret"]);
     expect(screen.getByDisplayValue("pat")).toBeTruthy();
     expect(screen.getByDisplayValue("lab.local")).toBeTruthy();
-    expect(screen.getByText("Imported 4 variables. Type the value of enable_secret, then OK to save.")).toBeTruthy();
+    expect(screen.getByText("Imported 4 variables. Type the value of enable_secret, then Save.")).toBeTruthy();
     await userEvent.click(ok());
     expect(saved).toEqual([
       { key: "ad_username", value: "pat", secret: false, hasValue: false, fromWindows: false },
       // stored here already: an empty value keeps it
       { key: "admin_password", value: "", secret: true, hasValue: true, fromWindows: false },
+      { key: "enable", value: '"op://Private/Cisco Switch/password"', secret: false, hasValue: false, fromWindows: false },
       { key: "domain", value: "lab.local", secret: false, hasValue: false, fromWindows: false },
       { key: "enable_secret", value: "", secret: true, hasValue: false, fromWindows: false },
     ]);
@@ -143,24 +191,6 @@ describe("Environment Variables", () => {
     await open();
     await userEvent.click(screen.getByRole("button", { name: "Import…" }));
     expect(screen.getByText(/isn't an Environment Variables file/)).toBeTruthy();
-    expect(keys().map((k) => k.value)).toEqual(["ad_username", "admin_password"]);
-  });
-
-  it("shows each place a placeholder is used on its own, to be cut from the front, so Add stays in view", async () => {
-    // a long folder or session name pushed Add off the window's right edge: each place is now its own piece, which
-    // the window's styles cut from the front ("…Core Switch - with a very long name indeed") so the session's name
-    // shows, with "and N more" and Add beside them, never cut
-    await open();
-    const row = screen.getByText("{admin_username}").closest("li") as HTMLElement;
-    const places = [...row.querySelectorAll(".place")].map((p) => p.textContent);
-    expect(places).toEqual([
-      "session Customers/North America/Region 4/Building 12/Floor 3/Core Switch - with a very long name indeed",
-      "session Live Test/Lab Switch",
-      "session Live Test/Lab Switchsdfsdf",
-    ]);
-    expect(row.querySelector(".more")?.textContent).toBe("and 2 more");
-    // every place, in full, on hover
-    expect(row.querySelector(".where")?.getAttribute("title")?.split("\n")).toHaveLength(5);
-    expect(within(row).getByRole("button", { name: "Add" }).parentElement).toBe(row);
+    expect(keys().map((k) => k.value)).toEqual(["ad_username", "admin_password", "enable"]);
   });
 });

@@ -556,6 +556,13 @@ fn forwarding(profile: &Profile, default: &Profile, notices: &mut Vec<String>, t
         args.push("-C".to_string());
     }
     let word = |s: &str| !s.is_empty() && !s.contains(char::is_whitespace);
+    // turned off in the profile, kept for later: none opened, and the tab says why
+    if profile.tunnels_off == Some(true) {
+        if !profile.forwards.is_empty() {
+            notices.push(format!("The profile's tunnels are off (Settings > Profiles > {} > Tunnels).", profile.name));
+        }
+        return args;
+    }
     for forward in &profile.forwards {
         let (listen, to) = (forward.listen.trim(), forward.to.trim());
         let arg = match forward.kind.as_str() {
@@ -1585,6 +1592,32 @@ mod tests {
         // the tab is told the tunnels ssh was given, for its links and icon: not the one left out
         let launch = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &session(&[("PuttySession", "web")])).unwrap();
         assert_eq!(launch.look.tunnels, vec![forward("local", "8080", "localhost:80"), forward("remote", "127.0.0.1:9000", "localhost:22")]);
+    }
+
+    #[test]
+    fn a_profiles_tunnels_turned_off_arent_opened_but_stay_in_it() {
+        use crate::profiles::Forward;
+        let web = Profile {
+            name: "web".into(),
+            compression: Some(true),
+            forwards: vec![Forward { kind: "local".into(), listen: "8080".into(), to: "localhost:80".into() }],
+            tunnels_off: Some(true),
+            ..Profile::default()
+        };
+        let profiles = Profiles { profiles: vec![Profile { name: profiles::DEFAULT_PROFILE.into(), ..Profile::default() }, web] };
+        let opened = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &session(&[("PuttySession", "web")])).unwrap();
+        let args = opened.command.get_argv().iter().map(|a| a.to_string_lossy().to_string()).collect::<Vec<_>>().join(" ");
+        assert!(!args.contains("-L"), "{args}");
+        // the rest of the profile's forwarding still goes
+        assert!(args.contains("-C"), "{args}");
+        assert!(opened.look.tunnels.is_empty());
+        assert!(opened.notices.contains(&"The profile's tunnels are off (Settings > Profiles > web > Tunnels).".to_string()), "{:?}", opened.notices);
+        // a profile based on it, with no tunnels of its own, has its tunnels, off as they are
+        let child = Profile { name: "web2".into(), based_on: "web".into(), ..Profile::default() };
+        let mut profiles = profiles;
+        profiles.profiles.push(child);
+        let opened = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &session(&[("PuttySession", "web2")])).unwrap();
+        assert!(opened.look.tunnels.is_empty());
     }
 
     #[test]

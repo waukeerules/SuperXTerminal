@@ -52,6 +52,11 @@ export interface Profile {
   sshOptions: string;
   /** Its own tunnels (ssh's -L, -R, -D), as PuTTY's Tunnels; not taken from Default Settings */
   forwards: Forward[];
+  /**
+   * Its tunnels turned off (true) without clearing them; null: on, or as the profile it's based on has them, whose
+   * tunnels it then uses too
+   */
+  tunnelsOff: boolean | null;
   /** Agent forwarding (-A); null: Default Settings', else off */
   agentForwarding: boolean | null;
   /** X11 forwarding (-X); null: Default Settings', else off. Needs an X server on this computer */
@@ -127,7 +132,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, basedOn: "", username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", forwards: [], agentForwarding: null, x11Forwarding: null, compression: null, olderAlgorithms: null, serverLoad: null, algorithms: "",
+    name, basedOn: "", username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", forwards: [], tunnelsOff: null, agentForwarding: null, x11Forwarding: null, compression: null, olderAlgorithms: null, serverLoad: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", fontFamily: "", fontSize: 0, keyBackspace: "", keyHomeEnd: "", keyFunction: "", scrollback: 0, sessionLog: null, charset: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
   };
 }

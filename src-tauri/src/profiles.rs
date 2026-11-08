@@ -69,6 +69,9 @@ pub struct Profile {
     /// Its tunnels, as PuTTY's Connection > SSH > Tunnels: ssh's -L, -R and -D. This profile's alone, not taken from
     /// Default Settings: every session opening one would ask for the same port, and all but the first would fail
     pub forwards: Vec<Forward>,
+    /// Its tunnels turned off (Some(true)) without clearing them, for a while they're not wanted; None: on, or as the
+    /// profile it's based on has them, whose tunnels it then uses too
+    pub tunnels_off: Option<bool>,
     /// ssh-agent forwarding (ssh's -A), as PuTTY's Allow agent forwarding; None: the default's, else off
     pub agent_forwarding: Option<bool>,
     /// X11 forwarding (ssh's -X), as PuTTY's Enable X11 forwarding; None: the default's, else off. Needs an X server

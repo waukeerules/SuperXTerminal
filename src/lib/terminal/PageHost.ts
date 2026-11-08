@@ -16,7 +16,7 @@ import type { ScriptTarget } from "../scripting/spsl";
 import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
 import { DEFAULT_PROFILE, listProfiles, profileColours, profileFont, profileKeys, profileScrollback, PROFILES_CHANGED, resolvedProfile, saveProfile, type Forward } from "../settings/profiles";
-import { completeTunnels, holdTunnels, releaseTunnels, sameTunnels, tunnelNotices } from "./tunnels";
+import { holdTunnels, profileTunnels, releaseTunnels, sameTunnels, tunnelNotices } from "./tunnels";
 import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailure";
 import { antiIdleKeys } from "./antiIdle";
 import { running } from "../commands/sending.svelte";
@@ -366,7 +366,7 @@ export class PageHost implements ScriptTarget {
       this.tabColor = tab || null;
       // an SSH session's tunnels, as its profile now gives them: different from what ssh opened, a restart uses them
       if (this.link === "pty" && !this.local && !this.ended) {
-        const changed = !sameTunnels(completeTunnels(resolvedProfile(profiles, name)?.forwards ?? []), this.tunnels);
+        const changed = !sameTunnels(profileTunnels(resolvedProfile(profiles, name)), this.tunnels);
         if (changed && !this.tunnelsChanged) {
           this.post({ type: "notice", text: "The profile's tunnels changed: Restart session (in the tab's menu) to use them.", kind: "info" });
         }

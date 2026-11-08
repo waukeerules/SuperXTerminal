@@ -2,7 +2,7 @@
 // top of the tab and its Tunnels panel, and which of a profile's tunnels ssh is given. Plain functions; this test's
 // jsdom isn't a Mac, so the words are Windows' (this PC, curl.exe).
 import { describe, expect, it } from "vitest";
-import { completeTunnels, describeTunnel, holdTunnels, listenAddress, releaseTunnels, sameTunnels, sampleFor, TUNNEL_SAMPLES, tunnelNotices } from "./tunnels";
+import { completeTunnels, describeTunnel, profileTunnels, holdTunnels, listenAddress, releaseTunnels, sameTunnels, sampleFor, TUNNEL_SAMPLES, tunnelNotices } from "./tunnels";
 import { isMac } from "../shortcuts";
 import type { Forward } from "../settings/profiles";
 
@@ -111,5 +111,14 @@ describe("Tunnel Samples", () => {
     expect(sampleFor(web, [])).toEqual(tunnel("local", "8080", "localhost:80"));
     expect(sampleFor(web, [tunnel("local", "8080", "localhost:80"), tunnel("dynamic", "8081")])).toEqual(tunnel("local", "8082", "localhost:80"));
     expect(sampleFor(web, [tunnel("remote", "8080", "localhost:80")]).listen).toBe("8080");
+  });
+});
+
+describe("a profile's tunnels", () => {
+  it("are none while turned off, its list kept", () => {
+    const forwards = [tunnel("local", "8080", "localhost:80"), tunnel("local", "8081", "")];
+    expect(profileTunnels({ forwards, tunnelsOff: null })).toEqual([tunnel("local", "8080", "localhost:80")]);
+    expect(profileTunnels({ forwards, tunnelsOff: true })).toEqual([]);
+    expect(profileTunnels(undefined)).toEqual([]);
   });
 });

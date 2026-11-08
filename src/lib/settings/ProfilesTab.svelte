@@ -171,7 +171,7 @@
     "name", "basedOn", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions",
-    "agentForwarding", "x11Forwarding", "compression", "forwards", "cursor", "cursorBlink", "bell",
+    "agentForwarding", "x11Forwarding", "compression", "forwards", "tunnelsOff", "cursor", "cursorBlink", "bell",
     "fontFamily", "fontSize", "keyBackspace", "keyHomeEnd", "keyFunction", "scrollback", "sessionLog", "charset", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
   ];
 
@@ -695,11 +695,17 @@
       <div class="tunnels">
         <span class="caption">{@render caption("Tunnels", "forwards")}</span>
         {#if draft.forwards.length}
+          <!-- off keeps them, for later: the session opens none -->
+          <label class="check tunnels-on"><input type="checkbox" checked={draft.tunnelsOff !== true}
+              onchange={(e) => (draft.tunnelsOff = e.currentTarget.checked ? null : true)} />
+            <span>Open these tunnels: {draft.tunnelsOff === true
+              ? "off, kept here, but the profile's sessions open none until it's ticked again"
+              : "each tab of the profile's sessions opens them"}</span></label>
           <!-- the columns' names: which side each port is on changes with the type, as the hints say -->
           <div class="tunnel head" aria-hidden="true"><span>Type</span><span>Listens on</span><span>Goes to</span></div>
         {/if}
         {#each draft.forwards as forward, i (i)}
-          <div class="tunnel">
+          <div class="tunnel" class:off={draft.tunnelsOff === true}>
             <select aria-label="Tunnel {i + 1} kind" value={forward.kind} onchange={(e) => setForward(i, { kind: e.currentTarget.value as Forward["kind"] })}>
               <option value="local">Local (-L)</option>
               <option value="remote">Remote (-R)</option>
@@ -1070,6 +1076,11 @@
     grid-template-columns: 150px 1fr 1fr 30px;
     font-size: 12px;
     color: var(--text-muted);
+  }
+
+  /* the tunnels turned off: still there to edit, shown as not in use */
+  .tunnel.off {
+    opacity: 0.55;
   }
 
   .tunnel-buttons {

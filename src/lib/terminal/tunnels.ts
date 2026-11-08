@@ -165,6 +165,15 @@ export function completeTunnels(forwards: readonly Forward[]): Forward[] {
 }
 
 /**
+ * The tunnels a session's ssh is given from its profile (already merged along Based on): its complete ones, none
+ * while they're turned off (Settings > Profiles > Tunnels), as launch.rs's `forwarding`
+ * @param profile The profile, or undefined for none
+ */
+export function profileTunnels(profile: { forwards?: Forward[]; tunnelsOff?: boolean | null } | undefined): Forward[] {
+  return profile?.tunnelsOff === true ? [] : completeTunnels(profile?.forwards ?? []);
+}
+
+/**
  * Whether two lists of tunnels are the same, in order: a tab whose profile's tunnels changed after it opened says
  * to restart it, as ssh can't add or drop a tunnel on a connection it has made
  * @param a One list

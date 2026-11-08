@@ -50,6 +50,11 @@ describe("what a profile gives a session", () => {
     expect(profileRows("ssh", all, "Cisco", { ...NONE, algorithms: true }).some((r) => r.field === "algorithms")).toBe(false);
   });
 
+  it("says a profile's tunnels are off, and which are kept", () => {
+    const all = profiles({}, { tunnelsOff: true, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }] });
+    expect(said(profileRows("connection", all, "Cisco", NONE))).toEqual(["Tunnels: off (kept: Local 8080 → localhost:80) -> forwards"]);
+  });
+
   it("follows Based on, naming the session's profile", () => {
     const all = [...profiles({}, { charset: "latin1" }), { ...emptyProfile("Cisco old"), basedOn: "Cisco" }];
     expect(profileRows("terminal", all, "Cisco old", NONE)).toEqual([{ label: "Character set", value: "ISO-8859-1 (Latin-1)", whose: "Cisco old", field: "charset" }]);

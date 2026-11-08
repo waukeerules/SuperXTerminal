@@ -77,7 +77,9 @@ export function profileRows(tab: ProfileTab, profiles: Profile[], name: string, 
   if (tab === "connection") {
     // a profile's own tunnels only (Default Settings' for its own sessions): every session would clash on them
     const tunnels = completeTunnels(profile?.forwards ?? []).map((t) => (t.kind === "dynamic" ? `SOCKS ${t.listen}` : `${describeTunnel(t).kind} ${t.listen} → ${t.to}`));
-    if (tunnels.length) rows.push({ label: "Tunnels", value: tunnels.join("; "), whose, field: "forwards" });
+    // turned off, they're kept: said so, as a session's tunnels don't open
+    const off = profile?.tunnelsOff === true;
+    if (tunnels.length) rows.push({ label: "Tunnels", value: off ? `off (kept: ${tunnels.join("; ")})` : tunnels.join("; "), whose, field: "forwards" });
     add("Agent forwarding", "agentForwarding", on);
     add("X11 forwarding", "x11Forwarding", on);
     add("Compression", "compression", on);

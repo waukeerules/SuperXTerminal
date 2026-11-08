@@ -273,6 +273,21 @@ describe("Settings > Profiles", () => {
     expect(document.querySelector(".caption.revealed")?.textContent).toBe("Tunnels");
   });
 
+  it("turns the tunnels off and on again without losing them", async () => {
+    stored = stored.map((p) => (p.name === "root" ? { ...p, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }] } : p));
+    await open("root");
+    const on = () => screen.getByRole("checkbox", { name: /^Open these tunnels/ }) as HTMLInputElement;
+    expect(on().checked).toBe(true);
+    await userEvent.click(on());
+    expect(on().closest("label")!.textContent).toMatch(/off, kept here/);
+    await userEvent.click(button("Save"));
+    const saves = () => calls.filter((c) => c.cmd === "profiles_save").map((c) => c.args.profile as Profile);
+    expect(saves().at(-1)).toMatchObject({ tunnelsOff: true, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }] });
+    await userEvent.click(on());
+    await userEvent.click(button("Save"));
+    expect(saves().at(-1)).toMatchObject({ tunnelsOff: null, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }] });
+  });
+
   it("says under Jump host what a jump server needs", async () => {
     await open("root");
     expect(screen.getByRole("note", { name: "What a jump server needs" }).textContent).toMatch(/^The jump server must allow TCP forwarding/);

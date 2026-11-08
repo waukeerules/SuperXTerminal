@@ -508,6 +508,42 @@
         return joinBytes(pieces);
     }
 
+    /**
+     * The bytes with each of ConPTY's redraws kept to the terminal's rows. A quick run of resizes gets a redraw for each,
+     * the first for the size on the way (ESC[8;rows;cols t), and each writes every row of its screen with a line break
+     * after it. When that size had more rows than the terminal has now, its last line breaks scrolled the terminal, so
+     * the next redraw, from the top of the screen, landed a row or two lower, and the session's first line showed twice
+     * ("Last login" over the prompt). The line breaks past the terminal's last row are left out: those rows are blank,
+     * or gone with the next redraw, which is for the size the terminal has
+     */
+    function fitConptyRedraw(bytes) {
+        // the escape sequences are ASCII: one character per byte keeps the positions
+        var text = String.fromCharCode.apply(null, bytes);
+        var redraw = /\x1b\[\?25l(?:\x1b\[8;\d+;\d+t)?\x1b\[H/g;
+        var found;
+        var out = '';
+        var at = 0;
+        var trimmed = false;
+        while ((found = redraw.exec(text)) !== null) {
+            var end = text.indexOf('\x1b[?25h', redraw.lastIndex);
+            if (end < 0) { break; }
+            var rows = text.slice(redraw.lastIndex, end).split('\r\n');
+            if (rows.length > term.rows) {
+                // the rows that fit, then the redraw's last row, which ends with where the cursor goes
+                rows = rows.slice(0, term.rows - 1).concat(rows[rows.length - 1]);
+                out += text.slice(at, redraw.lastIndex) + rows.join('\r\n');
+                at = end;
+                trimmed = true;
+            }
+            redraw.lastIndex = end;
+        }
+        if (!trimmed) { return bytes; }
+        out += text.slice(at);
+        var fitted = new Uint8Array(out.length);
+        for (var i = 0; i < out.length; i++) { fitted[i] = out.charCodeAt(i); }
+        return fitted;
+    }
+
     /** Byte arrays one after another, as one */
     function joinBytes(pieces) {
         var length = pieces.reduce(function (sum, piece) { return sum + piece.length; }, 0);
@@ -519,7 +555,7 @@
 
     /** Write output and ask for the next chunk once it's drawn */
     function write(bytes) {
-        term.write(dropConptyRedraw(bytes), function () {
+        term.write(fitConptyRedraw(dropConptyRedraw(bytes)), function () {
             post({ type: 'ack' });
             scheduleSettle();
         });

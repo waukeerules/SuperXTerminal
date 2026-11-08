@@ -404,6 +404,22 @@ test.describe("Windows' pseudo console redrawing its screen after a resize (ConP
     await expect.poll(async () => (await rows(page)).filter(Boolean)).toEqual(["$ ls", "file", "$"]);
   });
 
+  test("two quick resizes don't show the session's first line twice", async ({ page }) => {
+    // as ConPTY sent them for an ssh login to an OpenMediaVault server: a redraw for each size, the first for a
+    // screen taller than the terminal ends up, every row with a line break after it, then one for the terminal's own
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "config", prefs: { theme: "PuTTY" }, themes: [{ name: "PuTTY", colors: {} }] }));
+    await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+    const login = "Last login: Sat Nov  7 19:04:28 2026 from 192.168.0.25";
+    await feed(page, `${login}\r\nroot@openmediavault:~# `);
+    const [cols, rowCount] = (await size(page)).split("x").map(Number);
+    const screen = (count: number) =>
+      `\x1b[H${login}\x1b[K\r\nroot@openmediavault:~#\x1b[K` + "\r\n\x1b[K".repeat(count - 2) + "\x1b[2;24H\x1b[?25h";
+    await feed(page, `\x1b[?25l\x1b[8;${rowCount + 2};${cols}t` + screen(rowCount + 2) + "\x1b[?25l" + screen(rowCount));
+    await expect.poll(async () => (await rows(page)).filter(Boolean)).toEqual([login, "root@openmediavault:~#"]);
+  });
+
   test("without a clear, the redraw is drawn as ConPTY sent it", async ({ page }) => {
     await listed(page);
     await themeChanged(page);

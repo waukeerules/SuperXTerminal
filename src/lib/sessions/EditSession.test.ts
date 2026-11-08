@@ -278,6 +278,38 @@ describe("Edit Session with a jump server profile", () => {
   });
 });
 
+describe("Edit Session with a profile that has a jump host", () => {
+  beforeEach(() => {
+    profileList = [
+      { name: "Default Settings", script: "" },
+      { name: "Jump Test", jumpHost: "root@omv.example", script: "" },
+      { name: "Jump Child", basedOn: "Jump Test", script: "" },
+    ];
+  });
+
+  /** The note on the General tab saying how the session gets to its host, spaces run together */
+  const said = async () => (await screen.findByRole("note", { name: "Jump host" })).textContent?.replace(/\s+/g, " ");
+
+  it("says on the General tab that the session goes through the profile's jump host", async () => {
+    open({ ...SESSION, extraArgs: "", profile: "Jump Test" });
+    expect(await said()).toBe('Through the jump host root@omv.example (profile "Jump Test"): ssh connects to it first, then on to 192.168.0.50 from there.');
+  });
+
+  it("says the same for a profile based on one with a jump host", async () => {
+    open({ ...SESSION, extraArgs: "", profile: "Jump Child" });
+    expect(await said()).toBe('Through the jump host root@omv.example (profile "Jump Child"): ssh connects to it first, then on to 192.168.0.50 from there.');
+  });
+
+  it("names the session's own jump host when it has one, and says nothing with none", async () => {
+    open({ ...SESSION, extraArgs: "", profile: "Jump Test", jumpHost: "me@bastion:22" });
+    expect(await said()).toBe("Through the jump host me@bastion:22 (this session's Jump host, on the Connection tab): ssh connects to it first, then on to 192.168.0.50 from there.");
+    cleanup();
+    open({ ...SESSION, extraArgs: "", profile: "root" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("note", { name: "Jump host" })).toBeNull();
+  });
+});
+
 describe("Edit Session with a CyberArk profile", () => {
   /** The CyberArk profile: a gateway as its Host, and a key its Fetch command gets, good for 240 minutes */
   const CYBERARK = { name: "CyberArk", username: "unknown", host: "gw.example.test", keyFile: "~/.ssh/cyberark_key", keyFetch: "sftp ...", keyLifetime: 240, script: "", hasPassword: false };

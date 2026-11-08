@@ -17,7 +17,7 @@
   import { PALETTE } from "../icons/palette";
   import { highlighting } from "../terminal/highlighting";
   import { loadBars } from "../commands/bars";
-  import { listProfiles, DEFAULT_PROFILE, PROFILES_CHANGED, type Profile } from "../settings/profiles";
+  import { listProfiles, DEFAULT_PROFILE, PROFILES_CHANGED, resolvedProfile, type Profile } from "../settings/profiles";
   import { settingsShown } from "../settings/Settings.svelte";
   import { variablesShown, VARIABLES_CHANGED } from "../settings/EnvironmentVariables.svelte";
   import { context } from "../commands/sending.svelte";
@@ -202,6 +202,24 @@
   const jumpServer = $derived((draft.protocol.toUpperCase() || "SSH") === "SSH" && openingProfile?.logInHere ? openingProfile : undefined);
   /** Default Settings, which every profile falls back to */
   const defaultProfile = $derived(profileNamed(DEFAULT_PROFILE));
+  /**
+   * The jump host the session goes through (ssh -J), as a launch picks it, and where it's set: its own (Connection
+   * tab), else its folders', else its profile's (or the profile it's based on), else Default Settings'. Undefined for
+   * none, for anything but SSH, and through a Log in here profile, whose own note says how that goes. The tab says it
+   * again as it connects (launch.rs)
+   */
+  const jumpVia = $derived.by(() => {
+    if ((draft.protocol.toUpperCase() || "SSH") !== "SSH" || jumpServer) return undefined;
+    const own = draft.jumpHost.trim();
+    if (own) return { host: own, from: "this session's Jump host, on the Connection tab" };
+    const folder = folders.find((f) => f.jumpHost?.trim());
+    if (folder) return { host: folder.jumpHost.trim(), from: `folder ${folder.path}` };
+    const name = openingProfile?.name ?? DEFAULT_PROFILE;
+    const viaProfile = (resolvedProfile(profiles, name) ?? openingProfile)?.jumpHost?.trim();
+    if (viaProfile) return { host: viaProfile, from: `profile "${name}"` };
+    const viaDefault = defaultProfile?.jumpHost?.trim();
+    return viaDefault ? { host: viaDefault, from: DEFAULT_PROFILE } : undefined;
+  });
   /** Whether the session is SSH, the only kind that logs in through a gateway, a jump server or a key */
   const isSsh = $derived((draft.protocol.toUpperCase() || "SSH") === "SSH");
   /** The username a launch uses: the session's, else its folders', else its profile's, else Default Settings' */
@@ -472,6 +490,10 @@
         <p class="note jump" role="note" aria-label="Jump server">Through the jump server: the tab logs in to {jumpServer.host || "(no Host set)"}{jumpServer.username ? ` as ${jumpServer.username}` : ""}
           (profile "{jumpServer.name}", Log in here). This session's host, username and port are where its login script goes
           on to{profileScript ? `: ${profileScript}` : ", but no login script is set"}.</p>
+      {/if}
+      {#if jumpVia}
+        <p class="note jump" role="note" aria-label="Jump host">Through the jump host {jumpVia.host} ({jumpVia.from}): ssh
+          connects to it first, then on to {draft.host.trim() || "this session's host"} from there.</p>
       {/if}
       {#if gateway}
         <p class="note jump" role="note" aria-label="Gateway">Through the gateway: the tab connects to

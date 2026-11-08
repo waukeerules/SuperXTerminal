@@ -422,7 +422,7 @@ fn stream(
     let via = if jump_host.is_empty() || proto == "SERIAL" {
         None
     } else {
-        Some(jump_address(sessions, values, store, session, &jump_host)?)
+        Some(jump_address(sessions, profiles, values, store, session, &jump_host)?)
     };
     let target = match proto {
         "TELNET" => crate::streams::Target::Telnet { host, port: if port == 0 { 23 } else { port }, via, family: address_family(profile, default) },
@@ -921,7 +921,7 @@ fn ssh(
         args.extend(["-o".into(), "PreferredAuthentications=keyboard-interactive,password,publickey".into()]);
     }
     if !jump_host.is_empty() {
-        let via = jump_address(sessions, values, store, session, &jump_host)?;
+        let via = jump_address(sessions, profiles, values, store, session, &jump_host)?;
         // said at the top of the tab, as the gateway is: the login prompts that follow may be the jump host's
         let named = if via == jump_host.trim() { via.clone() } else { format!("{} ({via})", jump_host.trim()) };
         notices.push(format!("Connecting to {host} through the jump host {named}, from {jump_from}."));
@@ -982,10 +982,12 @@ pub fn openssh(program: &str) -> std::ffi::OsString {
 }
 
 /// A jump host as `ssh -J` takes it, as SuperXPuTTY's JumpHosts.Resolve: a saved session (by its id, in the same
-/// store, Saved sessions, or Database sessions' path), with its folders' username and port and its placeholders, or
-/// "user@host:port" as it is. Chains aren't followed, and a session can't jump through itself.
+/// store, Saved sessions, or Database sessions' path), with its username and port as opening it would take them (its
+/// own, else its folders', else its profile's, else Default Settings') and its placeholders, or "user@host:port" as
+/// it is. Chains aren't followed, and a session can't jump through itself.
 fn jump_address(
     sessions: &Sessions,
+    profiles: &Profiles,
     values: &HashMap<String, String>,
     store: Store,
     from: &StoredSession,
@@ -1006,6 +1008,7 @@ fn jump_address(
     }
     let mut username = session.get("Username").to_string();
     let mut port = session.port();
+    let mut profile_name = session.get("PuttySession").to_string();
     for folder in sessions.along(jump_store, session.folder()) {
         if username.is_empty() {
             username = folder.username.clone();
@@ -1013,6 +1016,20 @@ fn jump_address(
         if port == 0 {
             port = folder.port;
         }
+        if profiles::is_default(&profile_name) && !folder.putty_profile.is_empty() {
+            profile_name = folder.putty_profile.clone();
+        }
+    }
+    // then its profile's (along Based on), else Default Settings', as opening the session itself would: a session
+    // whose username was its profile's went as the user this computer's ssh guessed, and the server refused it
+    let default = profiles.default_profile();
+    let resolved = if profiles::is_default(&profile_name) { None } else { profiles.resolved(&profile_name) };
+    let profile = resolved.as_ref().unwrap_or(default);
+    if username.is_empty() {
+        username = first(&profile.username, &default.username).to_string();
+    }
+    if port == 0 {
+        port = if profile.port != 0 { profile.port } else { default.port };
     }
     let mut address = variables::substitute(session.get("Host").trim(), values);
     let username = variables::substitute(&username, values);
@@ -1792,11 +1809,38 @@ mod tests {
         let values: HashMap<String, String> = [("dc".to_string(), "lon".to_string())].into();
         let from = session(&[]);
         // a saved session: its folder's username and port, its placeholders filled
-        assert_eq!(jump_address(&sessions, &values, Store::Saved, &from, "Bastions/b1").unwrap(), "ops@lon-bastion:2222");
+        let none = profiles();
+        assert_eq!(jump_address(&sessions, &none, &values, Store::Saved, &from, "Bastions/b1").unwrap(), "ops@lon-bastion:2222");
         // user@host:port as it is
-        assert_eq!(jump_address(&sessions, &values, Store::Saved, &from, "me@jump:22").unwrap(), "me@jump:22");
-        assert!(jump_address(&sessions, &values, Store::Saved, &from, "not a host").is_err());
-        assert!(jump_address(&sessions, &values, Store::Saved, &bastion, "Bastions/b1").is_err(), "not through itself");
+        assert_eq!(jump_address(&sessions, &none, &values, Store::Saved, &from, "me@jump:22").unwrap(), "me@jump:22");
+        assert!(jump_address(&sessions, &none, &values, Store::Saved, &from, "not a host").is_err());
+        assert!(jump_address(&sessions, &none, &values, Store::Saved, &bastion, "Bastions/b1").is_err(), "not through itself");
+    }
+
+    #[test]
+    fn a_jump_host_session_with_no_username_of_its_own_takes_its_profiles() {
+        // the user's OMV session: its username and port are its profile's ("root"); the jump went as the user this
+        // computer's ssh guessed (the Windows account), and the server said Permission denied
+        let omv = StoredSession {
+            attributes: vec![("SessionId".into(), "Live Test/Media Server".into()), ("Host".into(), "192.168.3.2".into()), ("PuttySession".into(), "root".into())],
+        };
+        let sessions = Sessions { private: vec![omv], ..Sessions::default() };
+        let profiles = Profiles {
+            profiles: vec![
+                Profile { name: profiles::DEFAULT_PROFILE.into(), username: "everyone".into(), ..Profile::default() },
+                Profile { name: "root".into(), username: "root".into(), port: 2222, ..Profile::default() },
+                Profile { name: "plain".into(), ..Profile::default() },
+            ],
+        };
+        let from = session(&[]);
+        assert_eq!(jump_address(&sessions, &profiles, &HashMap::new(), Store::Private, &from, "Live Test/Media Server").unwrap(), "root@192.168.3.2:2222");
+        // a profile with none: Default Settings'
+        let mut plain = Sessions { private: sessions.private.clone(), ..Sessions::default() };
+        plain.private[0].set("PuttySession", "plain");
+        assert_eq!(jump_address(&plain, &profiles, &HashMap::new(), Store::Private, &from, "Live Test/Media Server").unwrap(), "everyone@192.168.3.2");
+        // the session's own still wins
+        plain.private[0].set("Username", "admin");
+        assert_eq!(jump_address(&plain, &profiles, &HashMap::new(), Store::Private, &from, "Live Test/Media Server").unwrap(), "admin@192.168.3.2");
     }
 
     #[test]

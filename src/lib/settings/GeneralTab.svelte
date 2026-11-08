@@ -65,8 +65,8 @@
   /** 1Password's CLI install command here, and its getting-started page (onepassword.rs's INSTALL, GET_STARTED) */
   const OP_INSTALL = isMac ? "brew install 1password-cli" : "winget install 1password-cli";
   const OP_GET_STARTED = "https://www.1password.dev/cli/get-started";
-  /** How SuperXTerminal uses 1Password: docs/ONEPASSWORD.md on GitHub */
-  const OP_DOC = "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/ONEPASSWORD.md";
+  /** How SuperXTerminal uses 1Password: docs/1PASSWORD.md on GitHub */
+  const OP_DOC = "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/1PASSWORD.md";
 
   /**
    * Check 1Password: whether its CLI works here, through the 1Password app, listing the vaults it can read, which

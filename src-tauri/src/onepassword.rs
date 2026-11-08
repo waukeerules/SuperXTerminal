@@ -29,9 +29,21 @@ struct Kept {
 
 static KEPT: Mutex<Option<Kept>> = Mutex::new(None);
 
-/// Whether a value is a 1Password secret reference, to be read rather than used as it is
+/// A value without the spaces and the quotes round it: 1Password's Copy Secret Reference puts a reference with a space
+/// in it ("op://Private/Cisco Switch/password") in double quotes, for a shell
+fn unquoted(value: &str) -> &str {
+    let value = value.trim();
+    for quote in ['"', '\''] {
+        if let Some(inner) = value.strip_prefix(quote).and_then(|v| v.strip_suffix(quote)) {
+            return inner.trim();
+        }
+    }
+    value
+}
+
+/// Whether a value is a 1Password secret reference, to be read rather than used as it is, quoted or not
 pub fn is_reference(value: &str) -> bool {
-    value.trim_start().to_ascii_lowercase().starts_with("op://")
+    unquoted(value).to_ascii_lowercase().starts_with("op://")
 }
 
 /// A value as it's used: a secret reference read from 1Password, anything else as it is. A reference that can't be
@@ -40,7 +52,7 @@ pub fn resolved(value: &str) -> String {
     if !is_reference(value) {
         return value.to_string();
     }
-    match read(value.trim()) {
+    match read(unquoted(value)) {
         Ok(secret) => secret,
         Err(problem) => {
             with_kept(|kept| kept.problems.push(problem));
@@ -212,6 +224,13 @@ mod tests {
         assert!(is_reference("  OP://lab/x/y"));
         assert!(!is_reference("cisco123"));
         assert!(!is_reference("see op://Lab/x/y"));
+        // as 1Password's Copy Secret Reference gives one with a space in it, in quotes; or in single quotes
+        assert!(is_reference("\"op://Private/Cisco Switch/password\""));
+        assert!(is_reference(" 'op://Private/Cisco Switch/password' "));
+        assert_eq!(unquoted("\"op://Private/Cisco Switch/password\""), "op://Private/Cisco Switch/password");
+        // a password that only has a quote in it isn't touched
+        assert_eq!(unquoted("pa\"ss"), "pa\"ss");
+        assert!(!is_reference("\"cisco123\""));
         // a plain value is used as it is, without 1Password
         assert_eq!(resolved("cisco123"), "cisco123");
     }
@@ -227,9 +246,7 @@ mod tests {
         assert_eq!(read_with(reference, run), Ok("s3cret".into()));
         assert_eq!(read_with(reference, run), Ok("s3cret".into()));
         assert_eq!(runs.get(), 1);
-        forget();
-        assert_eq!(read_with(reference, run), Ok("s3cret".into()));
-        assert_eq!(runs.get(), 2);
+        // (forget(), which clears them all, isn't tried here: the tests run together, and others keep values too)
         // one that fails isn't kept: it's tried again next time
         let failing = "op://Lab/failing-test/password";
         assert!(read_with(failing, |_| Err("nope".into())).is_err());

@@ -1821,6 +1821,10 @@ mod tests {
         let values: HashMap<String, String> = [("admin_password".to_string(), "op://Lab/launch-test/password".to_string())].into();
         let placeholder = launch(&Sessions::default(), &profiles(), &values, &BTreeMap::new(), Store::Saved, &session(&[("ExtraArgs", "-pw {admin_password}")])).unwrap();
         assert_eq!(placeholder.password.as_deref(), Some("s3cret"));
+        // the same reference as 1Password copies it, in quotes for its spaces
+        let values: HashMap<String, String> = [("admin_password".to_string(), "\"op://Lab/launch-test/password\"".to_string())].into();
+        let quoted = launch(&Sessions::default(), &profiles(), &values, &BTreeMap::new(), Store::Saved, &session(&[("ExtraArgs", "-pw {admin_password}")])).unwrap();
+        assert_eq!(quoted.password.as_deref(), Some("s3cret"));
         // one that can't be read: no password (ssh asks in the tab), and why, for the tab to say
         crate::onepassword::take_problems();
         let values: HashMap<String, String> = [("admin_password".to_string(), "op://Lab/launch-test-missing/password".to_string())].into();

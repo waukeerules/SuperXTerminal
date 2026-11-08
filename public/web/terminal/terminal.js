@@ -1665,39 +1665,12 @@
         }
     }
 
-    /** The widest a notice's lines are written, whatever the terminal's width: see noticeLines */
-    var NOTICE_WIDTH = 80;
-
-    /**
-     * A notice's text broken into lines at spaces, none wider than the terminal or NOTICE_WIDTH. Windows' pseudo
-     * console doesn't know the page's own lines: it asks where the cursor is as it starts (ESC[6n) and redraws from that
-     * row after a resize. A notice left to wrap was joined up again when the tab widened, moving everything below it
-     * up a row, and the redraw then wrote the session's first line twice ("Last login" over the prompt). Lines of their
-     * own don't join; and kept to 80 columns, a tab would have to shrink below that to wrap one
-     */
-    function noticeLines(text) {
-        var width = Math.max(20, Math.min(term.cols, NOTICE_WIDTH));
-        var lines = [];
-        var line = '';
-        text.split(' ').forEach(function (word) {
-            while (word.length > width) {
-                if (line) { lines.push(line); line = ''; }
-                lines.push(word.slice(0, width));
-                word = word.slice(width);
-            }
-            if (line && line.length + 1 + word.length > width) { lines.push(line); line = word; }
-            else { line = line ? line + ' ' + word : word; }
-        });
-        if (line || lines.length === 0) { lines.push(line); }
-        return lines;
-    }
-
-    /** Show a message from SuperPuTTY in the terminal, on lines of its own, in red (errors), yellow (warnings) or cyan */
+    /** Show a message from SuperPuTTY in the terminal, on its own line, in red (errors), yellow (warnings) or cyan */
     function notice(text, kind) {
         var colour = kind === 'error' ? '1;31' : kind === 'warn' ? '33' : '36';
         var buffer = term.buffer.active;
         var lead = buffer.cursorX > 0 ? '\r\n' : '';
-        term.write(lead + noticeLines(text).map(function (line) { return '\x1b[' + colour + 'm' + line + '\x1b[0m\r\n'; }).join(''));
+        term.write(lead + '\x1b[' + colour + 'm' + text + '\x1b[0m\r\n');
     }
 
     /** Where a decoration is drawn, for the tests (terminalDev): its row, column and width in cells */

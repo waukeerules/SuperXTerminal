@@ -6,7 +6,8 @@
  * page has the keyboard, which is nearly always, so `catchShortcuts` catches them in the main window and in every
  * tab's page (same-origin iframes) and runs them as the menu would. On the Mac the menu bar catches them, except some
  * (⌘W, ⌘K) while a tab's page has the keyboard, so there it catches them in the tabs' pages only; the main window's
- * own ⌘ keys (Settings' ⌘F) stay its own, and `fromMenu` drops the menu's copy of a key a page has already run. Labels in menus and hints come from `keyLabel`, `shortcutLabel` and `commandLabel`.
+ * own ⌘ keys (Settings' ⌘F) stay its own, and `fromMenu` drops the menu's copy of a key a page has already run. An
+ * element in the main window can keep some keys from the shortcuts (`keepKeys`): a Remote Desktop tab's Ctrl keys. Labels in menus and hints come from `keyLabel`, `shortcutLabel` and `commandLabel`.
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -30,6 +31,26 @@ let paused = false;
 let caught: { id: string; at: number } | null = null;
 /** How long after a page runs an action the menu bar's same action is taken as that key again, in ms */
 const SAME_PRESS_MS = 500;
+/** Elements that keep some keys from the shortcuts while they or what's in them have the keyboard (`keepKeys`) */
+const keepers = new WeakMap<Element, (event: KeyboardEvent) => boolean>();
+
+/**
+ * Let an element keep keys from the shortcuts while it, or something in it, has the keyboard: a Remote Desktop tab
+ * sends Ctrl+W to the remote computer, as Remote Desktop Connection does, though Ctrl+W is Close Tab here
+ * @param element The element
+ * @param keeps Whether it keeps a key press, asked as each comes
+ */
+export function keepKeys(element: Element, keeps: (event: KeyboardEvent) => boolean): void {
+  keepers.set(element, keeps);
+}
+
+/** Whether the element the key was pressed in, or one holding it, keeps the key (`keepKeys`) */
+function kept(event: KeyboardEvent): boolean {
+  for (let node = event.target instanceof Element ? event.target : null; node; node = node.parentElement) {
+    if (keepers.get(node)?.(event)) return true;
+  }
+  return false;
+}
 
 /**
  * Whether a menu bar item's command should run: not when it's the key a tab's page has just run (the Mac's menu bar
@@ -168,7 +189,7 @@ export function catchShortcuts(run: (id: string) => void): void {
     const row = rows.find((r) => r.key && normalKey(r.key) === wanted);
     if (!row) return;
     const keeps = own().trim();
-    if (keeps === "*" || keeps.split(/\s+/).includes(row.id)) return;
+    if (keeps === "*" || keeps.split(/\s+/).includes(row.id) || kept(event)) return;
     event.preventDefault();
     event.stopPropagation();
     if (isMac) caught = { id: row.id, at: Date.now() };

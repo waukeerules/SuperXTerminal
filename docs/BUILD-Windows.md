@@ -195,7 +195,9 @@ Windows keeps Alt+F4, and the terminal page keeps Ctrl+Shift+C/V and Ctrl/Shift+
 Shortcuts won't give them to an action. On Windows a menu's keys don't fire while the page has the keyboard, so
 `src/lib/shortcuts.ts` catches them in the window and in each tab's page. In RDP tabs the Windows key goes to the
 remote computer as itself, and Ctrl+Alt+End is Ctrl+Alt+Delete (Windows keeps that one), as in Remote Desktop
-Connection.
+Connection. While the session's Windows key combinations go to the remote computer, so do Ctrl and Alt keys without
+Shift, even ones that are shortcuts here (Ctrl+W, Ctrl+Tab, Ctrl+,); the Ctrl+Shift ones stay SuperXTerminal's, and
+Ctrl+Alt+Home takes the keyboard back from the tab, after which every shortcut is SuperXTerminal's again.
 
 ## What still has to be done for Windows
 

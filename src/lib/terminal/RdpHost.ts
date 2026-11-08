@@ -11,7 +11,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { askLogin, askOne } from "../scripting/asking.svelte";
 import { settings } from "../settings/store.svelte";
-import { isMac } from "../shortcuts";
+import { isMac, keepKeys } from "../shortcuts";
 
 /** What the core says about the session: connecting, where the pointer is and how it looks, or that it ended */
 type Event =
@@ -112,6 +112,7 @@ export class RdpHost {
     this.overlay.className = "rdp-overlay";
     this.element.append(this.canvas, this.overlay);
     this.bindInput();
+    keepKeys(this.canvas, (e) => this.remoteKey(e));
     this.observer = new ResizeObserver(() => this.sizeChanged());
     this.observer.observe(this.element);
   }
@@ -348,6 +349,15 @@ export class RdpHost {
         void this.sendCombo(["ControlLeft", "AltLeft", "Delete"]);
         return;
       }
+      // Ctrl+Alt+Home gives the keyboard back to SuperXTerminal, as it brings back Remote Desktop Connection's bar:
+      // the way out when the tab keeps Ctrl+W and the rest (remoteKey)
+      if (down && !isMac && e.ctrlKey && e.altKey && e.code === "Home") {
+        e.preventDefault();
+        e.stopPropagation();
+        this.releaseKeys();
+        this.canvas.blur();
+        return;
+      }
       // Caps Lock goes as the lock's state (macOS reports it on and off, not as presses)
       if (e.code === "CapsLock") {
         this.syncLocks(e, true);
@@ -442,6 +452,19 @@ export class RdpHost {
       for (const [, [scancode, extended]] of this.held) void invoke("rdp_key", { id: this.id, scancode, extended, down: false }).catch(() => {});
     }
     this.held.clear();
+  }
+
+  /**
+   * Whether a key press goes to the remote computer though it's one of SuperXTerminal's shortcuts: on Windows, Ctrl
+   * and Alt keys without Shift (Ctrl+W, Ctrl+Tab), while the Windows key combinations option sends them there, as
+   * Remote Desktop Connection does. The Ctrl+Shift ones, Windows' defaults here, stay SuperXTerminal's, so the tab
+   * can still be closed or left; and Ctrl+Alt+Home takes the keyboard back. The Mac's ⌘ keys are sorted in the key
+   * handler (APP_COMMANDS).
+   */
+  private remoteKey(e: KeyboardEvent): boolean {
+    if (isMac || this.id === null || this.ended || !this.windowsKeys()) return false;
+    if (!(e.ctrlKey || e.altKey) || e.shiftKey || e.metaKey) return false;
+    return !(e.ctrlKey && e.altKey && e.code === "Home");
   }
 
   /** Whether ⌘ and a key go to Windows as the Windows key and it now */

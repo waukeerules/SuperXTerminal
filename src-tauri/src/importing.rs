@@ -149,6 +149,43 @@ pub fn export(list: &[(Store, &StoredSession)], path: &Path) -> Result<(), Strin
     std::fs::write(path, format!("\u{feff}{}", to_csv(list))).map_err(|e| e.to_string())
 }
 
+/// The template's example rows, for File > Import Sessions > CSV's Save a Template: Source, Folder, Name, then
+/// session attributes by name. Made-up addresses (10.0.0.x, example.test), one of each common kind, so a new user has
+/// the columns and what goes in them to copy
+const TEMPLATE_ROWS: &[(&str, &str, &str, &[(&str, &str)])] = &[
+    ("Saved", "Lab/Switches", "core-sw1", &[
+        ("Proto", "SSH"), ("Host", "10.0.0.1"), ("Port", "22"), ("Username", "admin"), ("PuttySession", "Cisco"),
+        ("ImageKey", "switch"), ("Note", "Core switch; its profile (PuTTY profile) holds the login"), ("Color", "#2E7D32"),
+    ]),
+    ("Private", "Lab/Linux", "web1", &[
+        ("Proto", "SSH"), ("Host", "web1.example.test"), ("Username", "root"), ("JumpHost", "admin@10.0.0.254:22"),
+        ("Note", "Port left empty: the protocol's own (22). Through a jump host"),
+    ]),
+    ("Saved", "Lab/Consoles", "console-com3", &[
+        ("Proto", "Serial"), ("Host", "COM3"), ("ExtraArgs", "-sercfg 9600,8,n,1,N"), ("Note", "A serial console: its port, then speed and line settings"),
+    ]),
+    ("Saved", "Lab/Desktops", "desk1", &[
+        ("Proto", "RDP"), ("Host", "10.0.0.20"), ("Port", "3389"), ("Username", "user"), ("Note", "Remote Desktop"),
+    ]),
+];
+
+/// A CSV template: the header the import reads and the export writes, then [`TEMPLATE_ROWS`]
+pub fn template() -> String {
+    let mut csv = String::new();
+    let header: Vec<&str> = ["Source", "Folder", "Name"].into_iter().chain(COLUMNS.iter().map(|c| c.header)).collect();
+    write_row(&mut csv, header.iter().map(|h| h.to_string()));
+    for (source, folder, name, values) in TEMPLATE_ROWS {
+        let value = |attribute: &str| values.iter().find(|(a, _)| *a == attribute).map_or(String::new(), |(_, v)| v.to_string());
+        write_row(&mut csv, [source.to_string(), folder.to_string(), name.to_string()].into_iter().chain(COLUMNS.iter().map(|c| value(c.attribute))));
+    }
+    csv
+}
+
+/// Write the template to a file, as an export is written (UTF-8 with a byte order mark, for Excel)
+pub fn write_template(path: &Path) -> Result<(), String> {
+    std::fs::write(path, format!("\u{feff}{}", template())).map_err(|e| e.to_string())
+}
+
 /// Add a row of values to the CSV, each quoted as it needs, ending with CRLF as SuperXPuTTY's
 fn write_row(csv: &mut String, values: impl Iterator<Item = String>) {
     csv.push_str(&values.map(|v| quote(&v)).collect::<Vec<_>>().join(","));
@@ -1195,6 +1232,22 @@ mod tests {
         let args = &row.values.iter().find(|(n, _)| n == "ExtraArgs").unwrap().1;
         assert_eq!(keep_password(args, sw1.get("ExtraArgs")), "-pw cisco -L 8080:localhost:80");
         assert_eq!(keep_password(args, ""), "-L 8080:localhost:80");
+    }
+
+    #[test]
+    fn the_template_has_every_column_and_imports_as_it_is() {
+        let csv = template();
+        let lines: Vec<&str> = csv.split("\r\n").filter(|l| !l.is_empty()).collect();
+        // the export's header, so a template and an export are the same shape
+        assert_eq!(lines[0], to_csv(&[]).trim_end());
+        assert_eq!(lines.len(), 1 + TEMPLATE_ROWS.len());
+        let existing = Existing { saved: &[], private: &[], use_saved: true };
+        let plan = plan_csv(&csv, &existing);
+        let summary = plan.summary();
+        assert_eq!((summary.adds, summary.updates, summary.skips), (TEMPLATE_ROWS.len(), 0, 0), "{:?}", summary.skipped);
+        assert!(plan.ignored.is_empty(), "{:?}", plan.ignored);
+        let serial = plan.rows.iter().find(|r| r.values.contains(&("Host".into(), "COM3".into()))).unwrap();
+        assert!(serial.values.contains(&("ExtraArgs".into(), "-sercfg 9600,8,n,1,N".into())), "{:?}", serial.values);
     }
 
     #[test]

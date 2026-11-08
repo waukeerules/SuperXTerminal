@@ -14,11 +14,14 @@ import ImportSessions from "./ImportSessions.svelte";
 let planned: string[][];
 let saved: { name: string; text: string }[];
 let picked: number;
+/** Where the CSV template was saved (sessions_csv_template's path) */
+let templates: string[];
 
 beforeEach(() => {
   planned = [];
   saved = [];
   picked = 0;
+  templates = [];
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as { paths?: string[]; name?: string; data?: string };
     if (cmd === "sessions_import_source") return null;
@@ -29,6 +32,11 @@ beforeEach(() => {
     if (cmd === "dropped_file_save") {
       saved.push({ name: payload.name!, text: atob(payload.data!) });
       return `/tmp/SuperXTerminal-dropped/1/${payload.name}`;
+    }
+    if (cmd === "plugin:dialog|save") return "/Users/me/Downloads/sessions-template.csv";
+    if (cmd === "sessions_csv_template") {
+      templates.push(String((args as { path: string }).path));
+      return null;
     }
     if (cmd === "plugin:dialog|open") {
       picked++;
@@ -94,5 +102,20 @@ describe("Import Sessions' drop zone", () => {
     await user.click(open());
     await expect.poll(() => planned).toEqual([["/Users/me/Downloads/picked.xml"]]);
     expect(picked).toBe(1);
+  });
+});
+
+describe("Import Sessions from a CSV file", () => {
+  it("saves a template to fill in, and says what to do with it", async () => {
+    render(ImportSessions, { kind: "csv", savedAvailable: true, onDone: () => {}, onCancel: () => {} });
+    expect(screen.getByText(/Every column, with an example SSH, serial and Remote Desktop session to copy/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Save a Template…" }));
+    await expect.poll(() => templates).toEqual(["/Users/me/Downloads/sessions-template.csv"]);
+    expect(await screen.findByText(/Saved as sessions-template\.csv: replace its example rows with your sessions, then drop it here\./)).toBeTruthy();
+  });
+
+  it("isn't offered for another app's sessions", () => {
+    open();
+    expect(screen.queryByRole("button", { name: "Save a Template…" })).toBeNull();
   });
 });

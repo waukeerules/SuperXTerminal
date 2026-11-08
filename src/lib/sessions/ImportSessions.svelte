@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { open, save } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import DropZone from "../ui/DropZone.svelte";
   import { base64Of } from "../ui/fileDrops";
@@ -120,6 +120,25 @@
     return true;
   }
 
+  /** Where the CSV template was saved, to say so; "" until it is */
+  let templateSaved = $state("");
+
+  /**
+   * Save a CSV template: the columns this import reads (the export's), with an example row for each common kind of
+   * session, to fill in and drop here (importing.rs's template)
+   */
+  async function saveTemplate(): Promise<void> {
+    error = "";
+    const path = await save({ title: "Save a CSV template for sessions", defaultPath: "sessions-template.csv", filters: [{ name: "CSV files", extensions: ["csv"] }] });
+    if (!path) return;
+    try {
+      await invoke("sessions_csv_template", { path });
+      templateSaved = path;
+    } catch (e) {
+      error = `Couldn't save the template: ${e}`;
+    }
+  }
+
   /** Work out what importing would do */
   async function plan(): Promise<void> {
     error = "";
@@ -165,6 +184,12 @@
       <p class="note">Sessions are matched by Source, Folder and Name: existing Saved and Private sessions get the file's
         values, others are added{savedAvailable ? "" : " to Private sessions (Saved sessions are off)"}. Database rows are
         skipped; a -pw written as ******** keeps the session's password.</p>
+      <div class="template">
+        <button onclick={() => void saveTemplate()}>Save a Template…</button>
+        <span class="note">{templateSaved
+          ? `Saved as ${fileName(templateSaved)}: replace its example rows with your sessions, then drop it here.`
+          : "Every column, with an example SSH, serial and Remote Desktop session to copy. An export is the same shape."}</span>
+      </div>
     {:else}
       <label class="store">Add them to
         <select bind:value={store} onchange={() => void plan()} disabled={!savedAvailable || !privateAvailable}>
@@ -269,6 +294,13 @@
 
   .note {
     color: var(--text-muted);
+  }
+
+  /* the CSV template's button, with what it gives beside it */
+  .template {
+    display: flex;
+    gap: 10px;
+    align-items: center;
   }
 
   .store {

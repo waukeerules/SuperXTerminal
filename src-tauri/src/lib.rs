@@ -1880,6 +1880,12 @@ fn sessions_export_csv(state: State<'_, AppState>, items: Option<Vec<(sessions::
     Ok((list.len(), masked))
 }
 
+/// Save a CSV template for File > Import Sessions: the columns, with example rows to copy (importing::template)
+#[tauri::command]
+fn sessions_csv_template(path: PathBuf) -> Result<(), String> {
+    importing::write_template(&path)
+}
+
 /// The plan for importing sessions (`kind` "csv", "mobaxterm", "rdp" or "ssh"), worked out without changing anything
 fn import_plan(state: &AppState, kind: &str, paths: &[PathBuf], store: sessions::Store) -> Result<importing::Plan, String> {
     let all = state.sessions.lock().unwrap();
@@ -2818,6 +2824,7 @@ pub fn run() {
             overrides_get,
             sessions_bulk_edit,
             sessions_export_csv,
+            sessions_csv_template,
             window_new,
             layouts_list,
             applog_since,

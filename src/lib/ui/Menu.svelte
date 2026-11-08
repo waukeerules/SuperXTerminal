@@ -45,6 +45,11 @@
 
   let element: HTMLDivElement;
   let open = $state<number | null>(null);
+  /**
+   * A menu taller than the window scrolls, as the tab list (▾) does with many tabs open; not one with submenus, which
+   * open beside their item and would be cut off by the scrolling
+   */
+  const scrolls = $derived(!nested && !items.some((item) => "items" in item && item.items));
   let left = $state(0);
   let top = $state(0);
 
@@ -61,6 +66,8 @@
     const rect = element.getBoundingClientRect();
     left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 4));
     top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 4));
+    // the ticked item (the tab in front) in view, in one that scrolls (jsdom, in the tests, has no scrolling)
+    if (scrolls) element.querySelector("[data-checked]")?.scrollIntoView?.({ block: "nearest" });
   });
 
   /** Run an item's action and close */
@@ -75,13 +82,14 @@
   it: the menu closes then too, as for a click elsewhere, and when the app goes to the background -->
 <svelte:window onkeydown={(e) => e.key === "Escape" && onClose()} onblur={() => !nested && onClose()} />
 
-<div class="menu" class:nested role="menu" tabindex="-1" bind:this={element} onclick={(e) => e.stopPropagation()}
+<div class="menu" class:nested class:scrolls role="menu" tabindex="-1" bind:this={element} onclick={(e) => e.stopPropagation()}
   onkeydown={() => {}} style:margin-top={nested && lift ? `-${lift}px` : null} style:left={nested ? null : `${left}px`} style:top={nested ? null : `${top}px`}>
   {#each items as item, index}
     {#if "separator" in item}
       <div class="separator" role="separator"></div>
     {:else}
       <div class="item" class:bold={item.bold} class:disabled={!!item.disabled} role="menuitem" tabindex="-1"
+        data-checked={item.checked ? "" : undefined}
         aria-disabled={!!item.disabled} title={typeof item.disabled === "string" ? item.disabled : ""}
         onmouseenter={() => (open = item.items ? index : null)} onclick={() => choose(item)}
         onkeydown={(e) => e.key === "Enter" && choose(item)}>
@@ -113,6 +121,12 @@
     border-radius: 6px;
     box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
     font-size: 13px;
+  }
+
+  /* taller than the window: it scrolls within it, a margin left at the bottom */
+  .scrolls {
+    max-height: calc(100vh - 8px);
+    overflow-y: auto;
   }
 
   .nested {

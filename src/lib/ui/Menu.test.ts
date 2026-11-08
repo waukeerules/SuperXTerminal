@@ -14,6 +14,24 @@ describe("a menu", () => {
     expect(closed).toBe(1);
   });
 
+  it("scrolls when it's long, with the ticked item in view, but not one with submenus, which would be cut off", async () => {
+    const shown: string[] = [];
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) { shown.push(this.textContent?.trim() ?? ""); };
+    try {
+      // thirty tabs, the one in front far down the list
+      const items = Array.from({ length: 30 }, (_, i) => ({ label: `Media Server ${i + 1}`, checked: i === 25 }));
+      const { unmount } = render(Menu, { items, x: 10, y: 10, onClose: () => {} });
+      expect(screen.getByRole("menu").classList.contains("scrolls")).toBe(true);
+      await expect.poll(() => shown.map((s) => s.replace(/\s+/g, " "))).toContain("✓ Media Server 26");
+      unmount();
+      render(Menu, { items: [{ label: "New session", items: [{ label: "sw1" }] }], x: 10, y: 10, onClose: () => {} });
+      expect(screen.getByRole("menu").classList.contains("scrolls")).toBe(false);
+    } finally {
+      Element.prototype.scrollIntoView = scrollIntoView;
+    }
+  });
+
   it("closes once, not again for its open submenu", async () => {
     let closed = 0;
     render(Menu, { items: [{ label: "New session", items: [{ label: "sw1" }] }], x: 10, y: 10, onClose: () => closed++ });

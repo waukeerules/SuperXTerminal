@@ -233,12 +233,16 @@ describe("Settings > Profiles", () => {
 
   it("explains each kind of tunnel with an everyday use, what the server must allow, and where the tab shows them", async () => {
     await open("root");
-    const help = screen.getByRole("note", { name: "About tunnels" }).textContent ?? "";
-    expect(help).toContain("Local (the usual one): a port on this PC opens host:port as the server sees it.");
-    expect(help).toContain("https://localhost:8443");
-    expect(help).toContain("Dynamic: a SOCKS proxy on this PC");
+    const note = screen.getByRole("note", { name: "About tunnels" });
+    const help = note.textContent ?? "";
+    // each type in the tunnels' own columns and names, with an example row
+    const rows = [...note.querySelectorAll("tr")].map((r) => [...r.children].map((c) => c.textContent?.replace(/\s+/g, " ").trim()));
+    expect(rows[0]).toEqual(["Type", "Listens on", "Goes to", "Then"]);
+    expect(rows.slice(1).map((r) => r[0])).toEqual(["Local (-L)", "Remote (-R)", "Dynamic, SOCKS (-D)"]);
+    expect(rows[1]).toEqual(["Local (-L)", "a port on this PC: 8443", "host:port as the server sees it: 10.0.0.5:443", "https://localhost:8443 here opens the device's web page"]);
+    expect(rows[2][1]).toBe("a port on the server: 9090");
     expect(help).toContain("AllowTcpForwarding");
-    expect(help).toContain("tunnel icon (or Tunnels… in its menu)");
+    expect(help).toContain("its tunnel icon shows how to test each");
   });
 
   it("names the tunnels' columns, says which side each port is on by type, and adds a sample with a free port", async () => {
@@ -250,8 +254,8 @@ describe("Settings > Profiles", () => {
     // the same sample again: 8080 is taken, so 8081
     await userEvent.click(button("Tunnel Samples…"));
     await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "The server's own web page (HTTP)" }));
-    expect(screen.getByText("Listens on")).toBeTruthy();
-    expect(screen.getByText("Goes to")).toBeTruthy();
+    // the header over the tunnels themselves (the help below has the same columns)
+    expect(document.querySelector(".tunnel.head")?.textContent).toBe("TypeListens onGoes to");
     const port = (n: number) => screen.getByLabelText(`Tunnel ${n} port`) as HTMLInputElement;
     const to = (n: number) => screen.getByLabelText(`Tunnel ${n} to`) as HTMLInputElement;
     expect([port(1).value, to(1).value, port(3).value]).toEqual(["8080", "localhost:80", "8081"]);

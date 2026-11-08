@@ -729,22 +729,25 @@
       </div>
       <div class="note under tunnels-help" role="note" aria-label="About tunnels">
         <p>A tunnel reaches something through the SSH connection, as if you were on the server: for what the server can
-          reach and {THIS_COMPUTER} can't. As PuTTY's Tunnels.</p>
-        <p><b>Local</b> (the usual one): a port on {THIS_COMPUTER} opens host:port as the server sees it. A device's web
-          page on a network only the server reaches: 8443 to 10.0.0.5:443, then https://localhost:8443 here. A database
-          that only listens on the server: 5432 to localhost:5432.</p>
-        <p><b>Remote</b>: a port on the server opens host:port as {THIS_COMPUTER} sees it, e.g. for a device to fetch a
-          file from a web server here.</p>
-        <p><b>Dynamic</b>: a SOCKS proxy on {THIS_COMPUTER}, e.g. 1080. A browser set to use it opens pages from the
-          server's side, a whole lab's without a tunnel for each.</p>
-        <p>The tunnels open with each tab of the profile's sessions; the tab lists them at the top, with links, and its
-          tunnel icon (or Tunnels… in its menu) shows how to test each. The server must allow TCP forwarding
-          (AllowTcpForwarding in its sshd_config, or its SSH settings). Changed tunnels take effect when the session
-          restarts. This profile's own {isDefault ? "(for sessions with no profile of their own)" : "(or the profile it's based on's, never Default Settings')"},
-          and File Transfer leaves them to the tab.</p>
-        <p><b>One tab at a time</b>: a port on {THIS_COMPUTER} can be only one tab's tunnel. With two of the profile's
-          sessions open, the first tab has the Local and SOCKS tunnels; the second connects without them and says
-          which tab has them.</p>
+          reach and {THIS_COMPUTER} can't. Each type, in the columns above:</p>
+        <!-- the same columns as the tunnels, each type with an example row and what it does -->
+        <table class="tunnel-kinds">
+          <thead><tr><th>Type</th><th>Listens on</th><th>Goes to</th><th>Then</th></tr></thead>
+          <tbody>
+            <tr><td>Local (-L)</td><td>a port on {THIS_COMPUTER}: 8443</td><td>host:port as the server sees it: 10.0.0.5:443</td>
+              <td>https://localhost:8443 here opens the device's web page</td></tr>
+            <tr><td>Remote (-R)</td><td>a port on the server: 9090</td><td>host:port as {THIS_COMPUTER} sees it: localhost:8000</td>
+              <td>the server's localhost:9090 reaches a web server here</td></tr>
+            <tr><td>Dynamic, SOCKS (-D)</td><td>a port on {THIS_COMPUTER}: 1080</td><td>nothing: anywhere it's asked</td>
+              <td>a browser set to SOCKS proxy localhost:1080 browses from the server's side</td></tr>
+          </tbody>
+        </table>
+        <p>Local is the usual one; Tunnel Samples… has more. Each tab of the profile's sessions opens them, lists them at
+          its top with links, and its tunnel icon shows how to test each. Changes take effect when the session restarts.
+          The server must allow TCP forwarding (AllowTcpForwarding in its sshd_config, or its SSH settings).</p>
+        <p>This profile's own {isDefault ? "(for sessions with no profile of their own)" : "(or the profile it's based on's, never Default Settings')"}.
+          A port on {THIS_COMPUTER} can be only one tab's: a second tab of the profile's sessions connects without the
+          Local and SOCKS tunnels, and says which tab has them. File Transfer leaves them to the tab.</p>
       </div>
     </fieldset>
 
@@ -1020,6 +1023,29 @@
   /* the tunnels' explanation: a paragraph for each kind */
   .tunnels-help p {
     margin: 0 0 4px;
+  }
+
+  /* each type of tunnel in the tunnels' own columns, with an example */
+  .tunnel-kinds {
+    border-collapse: collapse;
+    margin: 2px 0 6px;
+  }
+
+  .tunnel-kinds th,
+  .tunnel-kinds td {
+    padding: 2px 8px 2px 0;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .tunnel-kinds th {
+    font-weight: normal;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tunnel-kinds td:first-child {
+    white-space: nowrap;
+    color: var(--text);
   }
 
   /* a note for the row above, lined up with its control (label's first column and gap) */

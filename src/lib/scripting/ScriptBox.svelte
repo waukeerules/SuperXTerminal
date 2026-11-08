@@ -4,7 +4,8 @@
   above it at the right (WrapLines.svelte, kept in the preferences as scriptWrap), or in the dialog's own row
   instead (Edit Button's Icon row: `ownWrap` off). The box fills the space its dialog gives it and has no size handle of its own, so it can't
   be dragged past the dialog: for more of a long script, the dialog itself is big (Edit Button takes most of the
-  window, and the Script Editor can be resized from its corner). Until the page says it's ready (and in tests, where no page loads), a plain text box stands in, so the
+  window, and the Script Editor can be resized from its corner). Its colours are the app's, or those it's given
+  (`look`: Edit Themes…'s preview, of a theme not yet in use). Until the page says it's ready (and in tests, where no page loads), a plain text box stands in, so the
   text can always be read and written.
 -->
 <script lang="ts">
@@ -24,9 +25,17 @@
     placeholder?: string;
     /** Whether the box shows its own Wrap lines above it; off where the dialog shows WrapLines elsewhere */
     ownWrap?: boolean;
+    /**
+     * Colours to draw it in instead of the app's: light or dark, and a theme of the user's own's colours (null for
+     * Monaco's own). Edit Themes… previews the theme being edited with it, as the app's theme isn't that one yet
+     */
+    look?: { dark: boolean; colors: Record<string, string> | null };
   }
 
-  let { value = $bindable(), language, label, placeholder = "", ownWrap = true }: Props = $props();
+  let { value = $bindable(), language, label, placeholder = "", ownWrap = true, look }: Props = $props();
+
+  /** Light or dark, and a theme's colours: what it's given, else the app's */
+  const colours = $derived(look ?? { dark: isDark(), colors: ownThemeColours() });
 
   /** This box's page, by the id in its URL, which every message carries */
   const id = `script-${Math.random().toString(36).slice(2)}`;
@@ -53,7 +62,7 @@
     if (message.type === "ready") {
       ready = true;
       shown = value;
-      post({ type: "set", text: value, language, wrap, dark: isDark(), colors: ownThemeColours() });
+      post({ type: "set", text: value, language, wrap, ...colours });
     } else if (message.type === "change") {
       shown = message.text ?? "";
       value = shown;
@@ -76,9 +85,10 @@
   $effect(() => {
     if (ready) post({ type: "wrap", wrap });
   });
-  // light or dark, and a theme of the user's own's colours (null for none), as the app is drawn
+  // light or dark, and a theme of the user's own's colours (null for none), as the app is drawn or as given
   $effect(() => {
-    if (ready) post({ type: "dark", dark: isDark(), colors: ownThemeColours() });
+    const { dark, colors } = colours;
+    if (ready) post({ type: "dark", dark, colors });
   });
 
   /** Put text at the cursor, in place of what's selected (the SPSL panel's double-click) */

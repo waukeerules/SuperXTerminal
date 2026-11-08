@@ -72,6 +72,71 @@ describe("Edit Themes", () => {
     expect(ownThemeColours()).toMatchObject({ scriptComment: "#00ff00" });
   });
 
+  it("takes a colour's code typed or pasted, and puts back one that isn't a colour", async () => {
+    open();
+    await userEvent.click(screen.getByRole("button", { name: "New" }));
+    const code = screen.getByLabelText("Window background code") as HTMLInputElement;
+    const picker = screen.getByLabelText("Window background") as HTMLInputElement;
+    // typed: taken as soon as it's whole, the picker following
+    await userEvent.clear(code);
+    await userEvent.type(code, "#102030");
+    expect(token("--bg-window")).toBe("#102030");
+    expect(picker.value).toBe("#102030");
+    // pasted as copied from elsewhere: no #, capitals, a space
+    const accent = screen.getByLabelText("Selected rows and highlights code") as HTMLInputElement;
+    await userEvent.clear(accent);
+    await userEvent.click(accent);
+    await userEvent.paste(" FF8800 ");
+    expect(token("--accent")).toBe("#ff8800");
+    // the short form, once the field is left
+    const check = screen.getByLabelText("Checkboxes code") as HTMLInputElement;
+    await userEvent.clear(check);
+    await userEvent.type(check, "#2a4{Enter}");
+    expect(token("--check")).toBe("#22aa44");
+    expect(check.value).toBe("#22aa44");
+    // not a colour: nothing changes, and leaving the field puts the colour's code back
+    await userEvent.clear(code);
+    await userEvent.type(code, "blue");
+    await userEvent.tab();
+    expect(token("--bg-window")).toBe("#102030");
+    expect(code.value).toBe("#102030");
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(file[0].colors).toEqual({ bgWindow: "#102030", accent: "#ff8800", check: "#22aa44" });
+  });
+
+  it("shows a sample script in the Preview, drawn in the theme being edited as its colours are picked", async () => {
+    open();
+    await userEvent.click(screen.getByRole("button", { name: "New" }));
+    // the Preview's page (Monaco) stood in for: what the box sends it recorded, and the page saying it's ready
+    const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Preview"]')!;
+    const sent: { type: string; [key: string]: unknown }[] = [];
+    frame.contentWindow!.postMessage = ((envelope: { message: { type: string } }) => sent.push(envelope.message)) as typeof window.postMessage;
+    const tab = new URL(frame.src, location.href).searchParams.get("tab");
+    window.dispatchEvent(new MessageEvent("message", {
+      data: { channel: "sxt-page", tab, message: { type: "ready" } }, source: frame.contentWindow, origin: location.origin,
+    }));
+    await expect.poll(() => sent[0]).toMatchObject({ type: "set", language: "spsl", text: expect.stringContaining("WAITFOR /re") });
+
+    // a script colour picked shows in the Preview, though the app's theme is still Follow the system
+    await fireEvent.input(screen.getByLabelText("Comments"), { target: { value: "#00ff00" } });
+    await expect.poll(() => sent.at(-1)).toMatchObject({ type: "dark", colors: { scriptComment: "#00ff00" } });
+    expect(settings.theme).toBe("system");
+    // and the window's colours too, which the box is drawn in (its background is the fields')
+    await fireEvent.input(screen.getByLabelText("Fields and buttons"), { target: { value: "#203040" } });
+    await expect.poll(() => sent.at(-1)).toMatchObject({ colors: { bgInput: "#203040", scriptComment: "#00ff00" } });
+    // Based on: light or dark
+    await userEvent.selectOptions(screen.getByLabelText("Based on"), "dark");
+    await expect.poll(() => sent.at(-1)).toMatchObject({ type: "dark", dark: true });
+    await userEvent.selectOptions(screen.getByLabelText("Based on"), "light");
+    await expect.poll(() => sent.at(-1)).toMatchObject({ type: "dark", dark: false });
+
+    // Rhai's sample instead
+    await userEvent.selectOptions(screen.getByLabelText("Preview script"), "rhai");
+    await expect.poll(() => sent.filter((m) => m.type === "language").at(-1)).toEqual({ type: "language", language: "rhai" });
+    expect(sent.filter((m) => m.type === "text").at(-1)).toMatchObject({ text: expect.stringContaining("send_line(user);") });
+  });
+
   it("puts the app back as it was on Cancel, and on Escape", async () => {
     uiThemes.list = [{ name: "Harbour", base: "dark", colors: { accent: "#ff8800" } }];
     open();

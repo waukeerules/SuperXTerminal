@@ -4,7 +4,7 @@
  * at once.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { applyUiTheme, BASE_COLOURS, COLOUR_TOKENS, loadUiThemes, uiThemeNamed } from "./uiThemes.svelte";
+import { applyUiTheme, loadUiThemes, themeColours, uiThemeNamed } from "./uiThemes.svelte";
 import { open } from "@tauri-apps/plugin-dialog";
 
 /** The settings, as the Rust core keeps them */
@@ -186,9 +186,7 @@ export function isDark(): boolean {
  */
 export function ownThemeColours(): Record<string, string> | null {
   const custom = uiThemeNamed(settings.theme);
-  if (!custom) return null;
-  const base = BASE_COLOURS[custom.base];
-  return { ...Object.fromEntries(COLOUR_TOKENS.map((t) => [t.key, base[t.key]])), ...custom.colors };
+  return custom ? themeColours(custom) : null;
 }
 
 /** Read the settings from the core */

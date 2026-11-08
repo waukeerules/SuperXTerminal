@@ -78,6 +78,30 @@ export const BASE_COLOURS: Record<"light" | "dark", Record<string, string>> = {
   },
 };
 
+/**
+ * A theme's colours as the pages in frames of their own need them (the script box's Monaco): the window's, each one it
+ * leaves alone its base's, and the script colours it sets, the rest left to Monaco's own Light or Dark
+ * @param theme The theme, saved or (Edit Themes…'s preview) being edited
+ */
+export function themeColours(theme: UiTheme): Record<string, string> {
+  const base = BASE_COLOURS[theme.base];
+  return { ...Object.fromEntries(COLOUR_TOKENS.map((t) => [t.key, base[t.key]])), ...theme.colors };
+}
+
+/**
+ * A colour typed or pasted into Edit Themes…'s code field, as a theme keeps it ("#rrggbb", small letters); null for
+ * anything else. The # is optional and spaces around it are ignored, as a value copied from elsewhere may have them.
+ * The short form (#f80) only when the field is left, as it's also the start of a long one being typed
+ * @param text What's in the field
+ * @param short Whether a three-digit code counts too
+ */
+export function hexColour(text: string, short = false): string | null {
+  const hex = text.trim().replace(/^#/, "").toLowerCase();
+  if (/^[0-9a-f]{6}$/.test(hex)) return `#${hex}`;
+  if (short && /^[0-9a-f]{3}$/.test(hex)) return `#${[...hex].map((c) => c + c).join("")}`;
+  return null;
+}
+
 /** The themes saved, read when the settings are (store.svelte.ts) and again when Edit Themes… saves */
 export const uiThemes = $state<{ list: UiTheme[] }>({ list: [] });
 

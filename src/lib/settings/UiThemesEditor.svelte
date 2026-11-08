@@ -2,8 +2,11 @@
   Settings > General > Look's Edit Themes…: the window's own themes (uiThemes.svelte.ts), each a name, the built-in
   theme it starts from (Light or Dark) and its colours: the window's background, bars, panes, fields, borders, text,
   muted text, selected rows and highlights, and checkboxes; and, under Script colours, the script box's words (SPSL's
-  and Rhai's commands, strings, comments...). A colour left alone is its base's, and Reset gives one back to it. The theme chosen in the list is drawn on the whole app while the window is open, so a change shows as
-  it's made; Cancel puts the app back as it was. Save writes UiThemes.json in the user's folder; Use This Theme saves
+  and Rhai's commands, strings, comments...). Each colour has its picker and its code, which can be typed or pasted
+  (#rrggbb, the # optional). A colour left alone is its base's, and Reset gives one back to it. The theme chosen in
+  the list is drawn on the whole app while the window is open, so a change shows as it's made; the script colours,
+  which only the script box has, show in the Preview beside them, a sample SPSL or Rhai script in that box, drawn in
+  the theme being edited. Cancel puts the app back as it was. Save writes UiThemes.json in the user's folder; Use This Theme saves
   and makes it Settings' theme. A theme in use that's renamed stays in use, and one deleted goes back to Follow the
   system.
 -->
@@ -20,7 +23,10 @@
   import { onMount, untrack } from "svelte";
   import { SYSTEM } from "../platform";
   import { applyTheme, saveSettings, settings } from "./store.svelte";
-  import { applyUiTheme, BASE_COLOURS, COLOUR_TOKENS, SCRIPT_COLOURS, saveUiThemes, uiThemes, type UiTheme } from "./uiThemes.svelte";
+  import ScriptBox from "../scripting/ScriptBox.svelte";
+  import {
+    applyUiTheme, BASE_COLOURS, COLOUR_TOKENS, hexColour, SCRIPT_COLOURS, saveUiThemes, themeColours, uiThemes, type UiTheme,
+  } from "./uiThemes.svelte";
 
   interface Props {
     /** Saved, Cancel or Escape: the window closes */
@@ -54,6 +60,77 @@
 
   /** A colour as the theme shown has it, else its base's */
   const colourOf = (key: string) => current?.colors[key] ?? BASE_COLOURS[current?.base ?? "dark"][key];
+
+  /**
+   * A colour's code typed or pasted: kept when it's one (#rrggbb, the # optional; #rgb too once the field is left),
+   * else, once the field is left, the field shows the colour as it was
+   * @param key The colour's name (COLOUR_TOKENS', SCRIPT_COLOURS')
+   * @param field The code's field
+   * @param done Whether the field is being left (Enter, Tab, a click elsewhere), not typed in
+   */
+  function typeColour(key: string, field: HTMLInputElement, done: boolean): void {
+    const colour = hexColour(field.value, done);
+    if (colour && current) current.colors[key] = colour;
+    if (done) field.value = colour ?? colourOf(key);
+  }
+
+  /**
+   * The sample scripts in the Preview, a line or more of each kind of word Script colours names: SPSL's commands,
+   * flow, labels, text, {placeholders}, options, regular expressions, comments and numbers, and Rhai's (which has no
+   * options or regular expressions of its own)
+   */
+  const SAMPLES = {
+    spsl: [
+      "# A login, to show the script colours",
+      "LIMIT 2m",
+      "SET user {session_username}",
+      ":login",
+      "WAITFOR /t:10 /i login:",
+      "SENDLINE {user}",
+      "EXPECT /t:20 /else:failed",
+      "  CASE /password:/i",
+      "    PWDPROMPT",
+      "    AGAIN",
+      "  CASE \"#\"",
+      "END",
+      "WAITFOR /re ^\\S+[>#]\\s*$",
+      "SENDKEY ENTER",
+      "SLEEP 500",
+      "IF {user} == admin",
+      "  SENDLINE show version",
+      "ELSE",
+      "  GOTO done",
+      "END",
+      ":failed",
+      "STOP No login on {host_address}",
+      ":done",
+    ].join("\n"),
+    rhai: [
+      "// A login, to show the script colours",
+      "let user = session.session_username;",
+      "",
+      "fn must(found, what) {",
+      "    if !found {",
+      "        throw `${what} didn't come`;",
+      "    }",
+      "}",
+      "",
+      "must(wait_for(\"login:\", 10), \"The login prompt\");",
+      "send_line(user);",
+      "let secret = env.enable_secret;",
+      "for tries in 0..3 {",
+      "    if wait_prompt(20) { break; }",
+      "    sleep(500);",
+      "}",
+      "status(`Logged in to ${session.host_address}`);",
+    ].join("\n"),
+  };
+  /** Which sample the Preview shows */
+  let previewLanguage = $state<"spsl" | "rhai">("spsl");
+  /** The Preview's text: the sample, which can be typed over to try a script's own words (it isn't kept) */
+  let previewText = $state(SAMPLES.spsl);
+  /** The theme shown, as the Preview's box is drawn: its base, and its colours over the base's */
+  const previewLook = $derived(current ? { dark: current.base === "dark", colors: themeColours($state.snapshot(current) as UiTheme) } : undefined);
 
   /**
    * A new theme, from the base the app is drawn in now, with no colours of its own yet (its base's, to change); or a
@@ -148,7 +225,11 @@
               <span>{token.label}</span>
               <input type="color" value={colourOf(token.key)} aria-label={token.label}
                 oninput={(e) => current && (current.colors[token.key] = e.currentTarget.value)} />
-              <code>{colourOf(token.key)}</code>
+              <input class="code" value={colourOf(token.key)} aria-label="{token.label} code" spellcheck="false"
+                title="The colour's code: #rrggbb, typed or pasted"
+                oninput={(e) => typeColour(token.key, e.currentTarget, false)}
+                onchange={(e) => typeColour(token.key, e.currentTarget, true)}
+                onkeydown={(e) => e.key === "Enter" && typeColour(token.key, e.currentTarget, true)} />
               {#if current?.colors[token.key] && current.colors[token.key] !== BASE_COLOURS[current.base][token.key]}
                 <button class="link" onclick={() => current && delete current.colors[token.key]} title="Back to {current.base === 'dark' ? 'Dark' : 'Light'}'s">Reset</button>
               {/if}
@@ -158,6 +239,20 @@
           <h3>Script colours</h3>
           <p class="hint">The words of a script in the Script Editor and Edit Button, SPSL's and Rhai's.</p>
           {#each SCRIPT_COLOURS as token (token.key)}{@render colour(token)}{/each}
+        </div>
+        <div class="preview">
+          <div class="preview-head">
+            <h3>Preview</h3>
+            <select value={previewLanguage} aria-label="Preview script"
+              onchange={(e) => { previewLanguage = e.currentTarget.value as "spsl" | "rhai"; previewText = SAMPLES[previewLanguage]; }}>
+              <option value="spsl">SPSL</option>
+              <option value="rhai">Rhai</option>
+            </select>
+          </div>
+          <p class="hint">The script box in this theme. Type in it to try your own words; it isn't kept.</p>
+          <div class="preview-box">
+            <ScriptBox bind:value={previewText} language={previewLanguage} label="Preview" ownWrap={false} look={previewLook} />
+          </div>
         </div>
       {/if}
     </div>
@@ -186,7 +281,7 @@
   }
 
   .dialog {
-    width: min(680px, 94vw);
+    width: min(1080px, 96vw);
     max-height: 90vh;
     display: flex;
     flex-direction: column;
@@ -212,7 +307,8 @@
     min-height: 0;
     display: flex;
     gap: 14px;
-    overflow: auto;
+    /* the colours scroll on their own, so the Preview beside them stays in view */
+    overflow: hidden;
   }
 
   .side {
@@ -253,7 +349,11 @@
   }
 
   .form {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 320px;
+    min-height: 0;
+    overflow: auto;
+    padding-right: 4px;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -268,25 +368,53 @@
 
   .colour {
     display: grid;
-    grid-template-columns: 1fr 44px 70px 50px;
+    grid-template-columns: 1fr 44px 78px 50px;
     align-items: center;
     gap: 8px;
   }
 
-  .colour input {
+  .colour input[type="color"] {
     width: 44px;
     height: 24px;
     padding: 0;
   }
 
+  /* the colour's code, typed or pasted: as the code was shown, in a field */
+  .colour input.code {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 2px 4px;
+    font-family: Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+
+  /* beside the colours, as tall as the body, so the script colours' changes show as they're picked */
+  .preview {
+    flex: 1.1;
+    min-width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .preview-head h3 {
+    margin: 0;
+  }
+
+  .preview-box {
+    flex: 1;
+    min-height: 260px;
+  }
+
   h3 {
     margin: 10px 0 0;
     font-size: 13px;
-  }
-
-  code {
-    color: var(--text-muted);
-    font-size: 12px;
   }
 
   button.link {

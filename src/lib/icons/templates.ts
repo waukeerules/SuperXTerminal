@@ -586,20 +586,23 @@ function paintFirewall(c: Canvas, body: string): void {
 
 /** VPN concentrator: a box with two tunnels through it, traffic going each way, their mouths on the side */
 function paintVpn(c: Canvas, body: string): void {
-  isoBox(c, body, 0.04, 0.30, 0.62, 0.64, 0.28, 0.32);
-  const tube: Pen = { color: GLYPH, width: 0.045 };
-  const tops = [0.38, 0.66];
-  for (let i = 0; i < 2; i++) {
-    c.stroke(roundRect(0.10, tops[i], 0.56, 0.20, 0.10), tube);
-    const y = tops[i] + 0.10;
-    if (i === 0) {
-      arrow(c, GLYPH, [0.18, y], [0.60, y], 0.04, 0.08);
-    } else {
-      arrow(c, GLYPH, [0.58, y], [0.16, y], 0.04, 0.08);
+  // a little lower than the C#, whose box's top face runs past the top of the square and is cut off there
+  c.transformed("translate(0 0.04)", () => {
+    isoBox(c, body, 0.04, 0.30, 0.62, 0.64, 0.28, 0.32);
+    const tube: Pen = { color: GLYPH, width: 0.045 };
+    const tops = [0.38, 0.66];
+    for (let i = 0; i < 2; i++) {
+      c.stroke(roundRect(0.10, tops[i], 0.56, 0.20, 0.10), tube);
+      const y = tops[i] + 0.10;
+      if (i === 0) {
+        arrow(c, GLYPH, [0.18, y], [0.60, y], 0.04, 0.08);
+      } else {
+        arrow(c, GLYPH, [0.58, y], [0.16, y], 0.04, 0.08);
+      }
+      // the side face rises as it goes back, so each tunnel's mouth sits higher than the tunnel
+      c.strokeEllipse(tube, 0.75, tops[i] - 0.13, 0.10, 0.20);
     }
-    // the side face rises as it goes back, so each tunnel's mouth sits higher than the tunnel
-    c.strokeEllipse(tube, 0.75, tops[i] - 0.13, 0.10, 0.20);
-  }
+  });
 }
 
 /** Wireless: an access point with signal arcs above it */
@@ -823,15 +826,21 @@ function paintHouse(c: Canvas, body: string): void {
   c.fillRect(shade(body, -0.25), 0.43, 0.64, 0.16, 0.3);
 }
 
-/** Globe: a sphere with meridians and parallels */
+/**
+ * Globe: a sphere seen side on, as the usual globe sign: the rim, the meridians curving round it (the centre one
+ * straight), the equator, and two latitudes as straight lines across, as they look from level with the equator. The
+ * latitudes stop short of the rim, so the grid reads at a tab's 16 pixels
+ */
 function paintGlobe(c: Canvas, body: string): void {
   fillBody(c, new Path().ellipse(0.06, 0.06, 0.88, 0.88), body);
-  const line: Pen = { color: { color: GLYPH, alpha: 200 }, width: 0.045 };
-  c.strokeEllipse(line, 0.3, 0.07, 0.4, 0.86);
-  c.line(line, 0.5, 0.07, 0.5, 0.93);
-  c.line(line, 0.07, 0.5, 0.93, 0.5);
-  c.strokeArc(line, 0.12, 0.16, 0.76, 0.3, 20, 140);
-  c.strokeArc(line, 0.12, 0.54, 0.76, 0.3, 200, 140);
+  const line: Pen = { color: { color: GLYPH, alpha: 225 }, width: 0.05 };
+  c.strokeEllipse(line, 0.31, 0.08, 0.38, 0.84);
+  c.line(line, 0.5, 0.08, 0.5, 0.92);
+  c.line(line, 0.08, 0.5, 0.92, 0.5);
+  // a latitude 0.2 above and below the equator: the chord of the 0.42 circle there
+  const half = Math.sqrt(0.42 * 0.42 - 0.2 * 0.2);
+  c.line(line, 0.5 - half, 0.3, 0.5 + half, 0.3);
+  c.line(line, 0.5 - half, 0.7, 0.5 + half, 0.7);
 }
 
 /** Map: a folded map with a route and a pin */
@@ -911,10 +920,11 @@ function paintChat(c: Canvas, body: string): void {
 /** Feed: the RSS symbol on a rounded square */
 function paintRss(c: Canvas, body: string): void {
   fillBody(c, roundRect(0.06, 0.06, 0.88, 0.88, 0.16), body);
+  // the dot and both arcs round the same centre, the outer arc ending well inside the square's edge
+  const [x, y] = [0.28, 0.72];
   const arc: Pen = { color: GLYPH, width: 0.1 };
-  c.fillEllipse(GLYPH, 0.2, 0.66, 0.15, 0.15);
-  c.strokeArc(arc, -0.08, 0.38, 0.66, 0.66, 270, 90);
-  c.strokeArc(arc, -0.34, 0.12, 1.18, 1.18, 270, 90);
+  c.fillEllipse(GLYPH, x - 0.075, y - 0.075, 0.15, 0.15);
+  for (const r of [0.24, 0.43]) c.strokeArc(arc, x - r, y - r, r * 2, r * 2, 270, 90);
 }
 
 /** Clock: a face with hands inside a coloured rim */

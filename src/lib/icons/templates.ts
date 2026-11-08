@@ -584,25 +584,36 @@ function paintFirewall(c: Canvas, body: string): void {
   }
 }
 
-/** VPN concentrator: a box with two tunnels through it, traffic going each way, their mouths on the side */
+/** A shield's outline, a flat top and curved sides meeting at a point: the VPN's and the Shield's (General) */
+function shieldPath(): Path {
+  return new Path().line(0.5, 0.05, 0.88, 0.17).bezier(0.88, 0.17, 0.9, 0.6, 0.72, 0.82, 0.5, 0.95)
+    .bezier(0.5, 0.95, 0.28, 0.82, 0.1, 0.6, 0.12, 0.17).close();
+}
+
+/**
+ * A padlock centred on (cx, cy), `size` its height: a shackle over a body with a keyhole, in `color`, the keyhole
+ * `hole`
+ */
+function padlock(c: Canvas, cx: number, cy: number, size: number, color: string, hole: string): void {
+  const w = size * 0.78, bodyH = size * 0.56, top = cy - size / 2;
+  const shackle: Pen = { color, width: size * 0.13 };
+  const sw = w * 0.62;
+  c.strokeArc(shackle, cx - sw / 2, top + size * 0.065, sw, size * 0.62, 180, 180);
+  c.line(shackle, cx - sw / 2, top + size * 0.37, cx - sw / 2, top + size * 0.5);
+  c.line(shackle, cx + sw / 2, top + size * 0.37, cx + sw / 2, top + size * 0.5);
+  c.fill(roundRect(cx - w / 2, cy + size / 2 - bodyH, w, bodyH, size * 0.08), color);
+  const ky = cy + size / 2 - bodyH * 0.62;
+  c.fillEllipse(hole, cx - size * 0.075, ky - size * 0.075, size * 0.15, size * 0.15);
+  c.fillRect(hole, cx - size * 0.03, ky, size * 0.06, size * 0.17);
+}
+
+/**
+ * VPN: a shield with a padlock. SuperXPuTTY's is a box with two tunnels through it, which can't be told at a tab's
+ * 16 pixels; this reads as a secured connection there. The Shield icon (General) has a tick where this has the lock
+ */
 function paintVpn(c: Canvas, body: string): void {
-  // a little lower than the C#, whose box's top face runs past the top of the square and is cut off there
-  c.transformed("translate(0 0.04)", () => {
-    isoBox(c, body, 0.04, 0.30, 0.62, 0.64, 0.28, 0.32);
-    const tube: Pen = { color: GLYPH, width: 0.045 };
-    const tops = [0.38, 0.66];
-    for (let i = 0; i < 2; i++) {
-      c.stroke(roundRect(0.10, tops[i], 0.56, 0.20, 0.10), tube);
-      const y = tops[i] + 0.10;
-      if (i === 0) {
-        arrow(c, GLYPH, [0.18, y], [0.60, y], 0.04, 0.08);
-      } else {
-        arrow(c, GLYPH, [0.58, y], [0.16, y], 0.04, 0.08);
-      }
-      // the side face rises as it goes back, so each tunnel's mouth sits higher than the tunnel
-      c.strokeEllipse(tube, 0.75, tops[i] - 0.13, 0.10, 0.20);
-    }
-  });
+  fillBody(c, shieldPath(), body);
+  padlock(c, 0.5, 0.47, 0.42, GLYPH, body);
 }
 
 /** Wireless: an access point with signal arcs above it */
@@ -1040,8 +1051,7 @@ function paintKey(c: Canvas, body: string): void {
 
 /** Shield: a shield with a tick, for something secured */
 function paintShield(c: Canvas, body: string): void {
-  fillBody(c, new Path().line(0.5, 0.05, 0.88, 0.17).bezier(0.88, 0.17, 0.9, 0.6, 0.72, 0.82, 0.5, 0.95)
-    .bezier(0.5, 0.95, 0.28, 0.82, 0.1, 0.6, 0.12, 0.17).close(), body);
+  fillBody(c, shieldPath(), body);
   c.lines({ color: GLYPH, width: 0.09, cap: "round", join: "round" }, [[0.31, 0.5], [0.45, 0.64], [0.7, 0.36]]);
 }
 
@@ -1305,7 +1315,7 @@ add("router", "Router", "#1E63B4", paintRouter);
 add("voicerouter", "Voice router", "#6A3D9A", paintVoiceRouter);
 add("nexus", "Data centre switch", "#2E7D32", paintNexus);
 add("firewall", "Firewall", "#C64B2B", paintFirewall);
-add("vpn", "VPN concentrator", "#6A3D9A", paintVpn);
+add("vpn", "VPN", "#6A3D9A", paintVpn);
 add("wireless", "Wireless", "#1E63B4", paintWireless);
 add("accesspoint", "Access point", "#1E63B4", paintAccessPoint);
 add("wlc", "Wireless controller", "#1E63B4", paintWirelessController);

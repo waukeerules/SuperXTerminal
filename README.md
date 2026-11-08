@@ -112,7 +112,7 @@ Every session can have an icon, so the tree reads like a network diagram: you lo
 firewall, an Ubuntu server, without reading a name.
 
 - **Network symbols** drawn for the job: switch, core, distribution, stack, layer 3 and data centre switches, router,
-  voice router, firewall, load balancer, VPN concentrator, access point and wireless controller, console server, IP
+  voice router, firewall, load balancer, VPN, access point and wireless controller, console server, IP
   phone, UPS, server, storage, database, workstation and more.
 - **Any colour.** The same symbol in any colour, so a team can make its own code: green switches for layer 2, blue for
   layer 3, orange for the lab.

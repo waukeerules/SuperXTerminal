@@ -729,4 +729,28 @@ test.describe("notices", () => {
     }
     await expect.poll(() => Promise.all([0, 1, 2].map((l) => firstColour(page, l)))).toEqual([3, 6, 1]);
   });
+
+  test("a long one keeps its rows when the tab widens, so ConPTY's redraw lands where its text is", async ({ page }) => {
+    // Windows' pseudo console doesn't know the page's own lines: it asks where the cursor is as it starts (ESC[6n)
+    // and redraws at that row after a resize. A notice that wrapped, then joined up when the tab widened, moved its
+    // text up a row, and the redraw wrote "Last login" again over the prompt
+    await page.setViewportSize({ width: 500, height: 400 });
+    await openTerminal(page, {});
+    const long = "Tunnel (SOCKS proxy): A SOCKS proxy at localhost:1080 on this PC: set a browser's SOCKS proxy to it, and what it opens goes out through the server, as if from there.";
+    await page.evaluate((text) => (window as any).terminalDev.message({ type: "notice", text, kind: "info" }), long);
+    await expect.poll(() => page.evaluate(() => (window as any).terminalDev.term.buffer.active.cursorY)).toBeGreaterThan(1);
+    // where ConPTY is told its screen starts, as xterm answers ESC[6n: the cursor's row now
+    const anchor = await page.evaluate(() => (window as any).terminalDev.term.buffer.active.cursorY + 1);
+    await feed(page, "Last login: Sat Nov  7 18:48:37 2026 from 192.168.0.25\r\nroot@omv:~# ");
+    await page.setViewportSize({ width: 1400, height: 400 });
+    await expect.poll(() => cols(page)).toBeGreaterThan(160);
+    // ConPTY's redraw for the new size, from the row it was told
+    await feed(page, `\x1b[?25l\x1b[${anchor};1HLast login: Sat Nov  7 18:48:37 2026 from 192.168.0.25\x1b[K\r\nroot@omv:~# \x1b[K\x1b[?25h`);
+    const text = () => page.evaluate(() => {
+      const buffer = (window as any).terminalDev.term.buffer.active;
+      return Array.from({ length: buffer.length as number }, (_, i) => (buffer.getLine(i).translateToString(true) as string).trimEnd()).join("\n");
+    });
+    await expect.poll(async () => (await text()).match(/Last login/g)?.length).toBe(1);
+    expect(await text()).toContain("root@omv:~#");
+  });
 });

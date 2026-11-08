@@ -897,9 +897,10 @@ function paintEmail(c: Canvas, body: string): void {
 
 /** Chat: a speech bubble with dots */
 function paintChat(c: Canvas, body: string): void {
-  // FillMode.Winding as in the C#. The tail runs the other way round from the bubble, so where they overlap
-  // (just above the bubble's bottom edge) winds to zero and shows through, in GDI+ and here alike
-  const bubble = roundRect(0.06, 0.1, 0.88, 0.6, 0.16).polygon([[0.24, 0.62], [0.2, 0.92], [0.48, 0.66]]);
+  // FillMode.Winding as in the C#, with the tail running the same way round as the bubble, so where they overlap
+  // (just above the bubble's bottom edge) stays filled. The C#'s tail runs the other way, which winds to zero there
+  // and leaves a hole the background shows through
+  const bubble = roundRect(0.06, 0.1, 0.88, 0.6, 0.16).polygon([[0.48, 0.66], [0.2, 0.92], [0.24, 0.62]]);
   bubble.winding = true;
   c.fill(bubble, { from: [0, 0.08], to: [0, 0.94], start: shade(body, 0.18), end: shade(body, -0.12) });
   for (const dx of [0.26, 0.44, 0.62]) {

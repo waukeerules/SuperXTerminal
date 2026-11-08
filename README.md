@@ -244,6 +244,17 @@ Installers are on the [Releases page](https://github.com/waukeerules/SuperXTermi
 silicon Macs, and an MSI or setup `.exe` for Windows. The Mac build isn't notarised yet, so on first open right-click
 the app and choose Open; Windows SmartScreen warns about the unsigned installer the first time it runs.
 
+## Guides
+
+- **[docs/SPSL.md](docs/SPSL.md):** SPSL, the script language: how a script sees the output, every command, patterns
+  that work, pitfalls and complete examples. Written so a person or an LLM can write a working script from it alone.
+- **[docs/RHAI.md](docs/RHAI.md):** Rhai scripts, for what SPSL can't do: deciding, counting and remembering, with
+  examples to copy.
+- **[docs/CYBERARK.md](docs/CYBERARK.md):** sessions through CyberArk's SSH gateway: the profile, the username built
+  from Environment Variables, and the short-lived key.
+- **[docs/1PASSWORD.md](docs/1PASSWORD.md):** passwords and SSH keys kept in 1Password: references read as a session
+  opens, and keys from its SSH agent.
+
 ## Building
 
 - **[docs/BUILD-macOS.md](docs/BUILD-macOS.md):** what you need, the signing certificate, running it while developing,
@@ -255,8 +266,7 @@ the app and choose Open; Windows SmartScreen warns about the unsigned installer 
 - **[docs/PLAN.md](docs/PLAN.md):** the plan: the chosen stack (Tauri 2 and Svelte 5, with xterm.js and Monaco),
   licensing, the feature matrix, data compatibility and open questions.
 - **[docs/ROADMAP.md](docs/ROADMAP.md):** one line per feature, ticked as each is delivered.
-- **[docs/SPSL.md](docs/SPSL.md):** SPSL, the script language: how a script sees the output, every command, patterns
-  that work, pitfalls and complete examples. Written so a person or an LLM can write a working script from it alone.
+- **[docs/TESTING.md](docs/TESTING.md):** the test suites, what each covers, and capturing what a tab is sent.
 
 The short version, on a Mac with Rust and Node:
 

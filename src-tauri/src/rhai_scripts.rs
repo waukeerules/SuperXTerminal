@@ -267,7 +267,10 @@ impl Values {
     fn get(&self, name: &str) -> Result<String, Box<EvalAltResult>> {
         let key = name.to_lowercase();
         if let Some(value) = self.values.get(&key) {
-            return Ok(value.clone());
+            // a 1Password reference (op://..., as SPSL's {placeholders} are filled): read now, as the script uses
+            // it, on the script's own thread; one that can't be read stops the script saying why, rather than typing
+            // the reference itself
+            return crate::onepassword::value(value).map_err(fail);
         }
         let session_name = SESSION_NAMES.contains(&key.as_str());
         Err(fail(match (self.source, session_name) {
@@ -684,6 +687,27 @@ mod tests {
         assert_eq!(check("send(\"a\");\nlet = 5;").len(), 1);
         assert_eq!(check("send(\"a\");\nlet = 5;")[0].line, 2);
         assert!(check("send(\"a\"); wait_for(\"#\");").is_empty());
+    }
+
+    #[test]
+    fn an_environment_variable_that_is_a_1password_reference_is_read_when_the_script_uses_it() {
+        // as 1Password copies it, in quotes; Rhai read env straight from the stored values, so the script typed the
+        // reference itself as the enable secret ("% Bad secrets"), where SPSL's {enable_secret} was read
+        crate::onepassword::keep("op://Private/rhai-test/password", "s3cret");
+        let fake = Fake::start_with_env("send_line(env.enable_secret);\nsend_line(env.unread);", &[], &[
+            ("enable_secret", "\"op://Private/rhai-test/password\""),
+            ("unread", "op://Private/rhai-test-gone/password"),
+        ]);
+        let (id, _, _, args) = fake.call();
+        assert_eq!(args["text"], "s3cret");
+        fake.answer(id, Ok(Value::Null));
+        // one that can't be read stops the script saying why, rather than typing the reference
+        match fake.next() {
+            RhaiEvent::Done { error: Some(error), line: 2, .. } => {
+                assert_eq!(error, "op://Private/rhai-test-gone/password wasn't read: no op in the tests.");
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

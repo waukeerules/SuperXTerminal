@@ -110,6 +110,16 @@ pub fn mac_agent(home: &std::path::Path) -> Option<String> {
     }
 }
 
+/// A value as it's used, saying why when it's a reference that can't be read (where [`resolved`] gives "" and leaves
+/// the reason for the tab): for a Rhai script's `env.name`, which stops the script with it
+pub fn value(value: &str) -> Result<String, String> {
+    if is_reference(value) {
+        read(unquoted(value))
+    } else {
+        Ok(value.to_string())
+    }
+}
+
 /// What went wrong reading references since this was last asked, each once: for the tab opening now to say
 pub fn take_problems() -> Vec<String> {
     with_kept(|kept| {

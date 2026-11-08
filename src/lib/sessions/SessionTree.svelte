@@ -2,7 +2,8 @@
   The Sessions pane, as in SuperXPuTTY: the search box, the toolbar (new session, new folder, expand all, collapse
   all, sort), and the tree: Favorites and Recent (the user's own shortcuts), Saved sessions from Sessions.xml,
   Private sessions from PrivateSessions.xml and Database sessions from the team's table. A search opens every
-  folder holding a match; clearing it puts the tree back as it was.
+  folder holding a match; clearing it puts the tree back as it was. A folder made during a search shows among the
+  matches, so what's found can be dragged into it.
 -->
 <script lang="ts">
   import { MOD } from "../platform";
@@ -206,10 +207,10 @@
   const searchError = $derived(searchProblem(query, searchOptions));
   /**
    * A root as the tree shows it: none while a search leaves it no matches, rather than "Saved sessions (0)", which read
-   * as though the root itself were empty
+   * as though the root itself were empty; kept, though, while it holds a folder just made (New Folder during a search)
    */
   function unlessEmptySearch(root: FolderNode | null): FolderNode | null {
-    return root && query.trim() !== "" && root.count === 0 ? null : root;
+    return root && query.trim() !== "" && root.count === 0 && root.folders.length === 0 ? null : root;
   }
   /** The Saved sessions root, as the search leaves it */
   const saved = $derived(unlessEmptySearch(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending, searchOptions) : null));
@@ -1012,12 +1013,21 @@
       : { path: folder.path, color: "", username: "", puttyProfile: "", port: 0, jumpHost: "", highlightRules: "" };
   }
 
-  /** Why a new folder name can't be used in a folder, or "" */
+  /**
+   * Why a new folder name can't be used in a folder, or "". During a search the folder shows only its folders holding
+   * a match, so the name is checked against all of them, from the tree as it is unsearched
+   */
   function folderNameProblem(parent: FolderNode, name: string, except = ""): string {
     if (!name) return "Empty folder name";
     if (name.includes("/")) return 'A name can\'t contain "/"';
-    if (name !== except && parent.folders.some((f) => f.name.toLowerCase() === name.toLowerCase())) return "A folder with that name is already here";
+    const all = searching ? folderAt(buildTree(parent.store, "", shown, "", newFolders[parent.store]), parent.path) ?? parent : parent;
+    if (name !== except && all.folders.some((f) => f.name.toLowerCase() === name.toLowerCase())) return "A folder with that name is already here";
     return "";
+  }
+
+  /** The folder at a path in a tree, or null */
+  function folderAt(node: FolderNode, path: string): FolderNode | null {
+    return node.path === path ? node : node.folders.map((f) => folderAt(f, path)).find(Boolean) ?? null;
   }
 
   /** The folder node a path is in (its parent), searching from a root */
@@ -1039,6 +1049,11 @@
         const path = parent.path ? `${parent.path}/${name}` : name;
         newFolders = { ...newFolders, [parent.store]: [...newFolders[parent.store], path] };
         expanded = new Set([...expanded, parent.key]);
+        // and open where it is in a search's own view, so it shows among the matches to drag into it
+        if (searching) {
+          closedInSearch = new Set([...closedInSearch].filter((k) => k !== parent.key));
+          openedInSearch = new Set([...openedInSearch, parent.key]);
+        }
         selected = `${parent.store}:folder:${path}`;
         prompt = null;
       },

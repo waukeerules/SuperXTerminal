@@ -1,11 +1,12 @@
 // The Sessions tree's selection of folders and sessions together; an open session's state on its icon (a yellow dot
 // while connecting, green once connected, or the tab's red cross once its session has dropped); Cmd+click and Shift+click pick both, and the
-// selection's menu moves them to a folder; a search hides the roots it leaves no matches in; Show in Sessions tree opens a Recent session's folders and scrolls to it;
+// selection's menu moves them to a folder; a search hides the roots it leaves no matches in, and shows a folder made
+// during it, for a match to be dragged into; Show in Sessions tree opens a Recent session's folders and scrolls to it;
 // on a clean install, the first session saved shows; and a folder's menu edits and turns on or off the local
 // overrides of every session in it. The Rust side is stood in for by mockIPC; moves are
 // recorded. jsdom doesn't scroll, so scrollIntoView is stood in for, recording the rows it's asked to show.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import SessionTree from "./SessionTree.svelte";
@@ -109,6 +110,42 @@ describe("searching", () => {
     // and back when the search is cleared
     await user.clear(search);
     await expect.poll(rootsShown).toEqual(["Saved sessions", "Private sessions"]);
+  });
+
+
+  it("shows a folder made during a search, for a session found to be dragged into it", async () => {
+    await open();
+    await user.type(screen.getByPlaceholderText(/Type to search/), "sw1");
+    await expect.poll(() => screen.queryByText("sw2")).toBeNull();
+    // New folder in Saved sessions, the search kept
+    await user.click(row(/^Saved sessions/));
+    await user.click(screen.getByTitle("New folder (in the selected folder)"));
+    const name = screen.getByRole("textbox", { name: "" }) as HTMLInputElement;
+    await user.clear(name);
+    await user.type(name, "To sort{Enter}");
+    const folder = await screen.findByText(/^To sort/);
+    expect(screen.getByText("sw1")).toBeTruthy();
+
+    // sw1, found, dragged into it
+    const store = new Map<string, string>();
+    const dataTransfer = { setData: (t: string, v: string) => store.set(t, v), getData: (t: string) => store.get(t) ?? "", get types() { return [...store.keys()]; }, effectAllowed: "" };
+    await fireEvent.dragStart(row("sw1"), { dataTransfer });
+    await fireEvent.dragOver(folder.closest(".row")!, { dataTransfer });
+    await fireEvent.drop(folder.closest(".row")!, { dataTransfer });
+    await expect.poll(() => calls.find((c) => c.cmd === "session_move")?.args).toMatchObject({ store: "saved", id: "Imported/Core/sw1", folder: "To sort" });
+  });
+
+  it("won't make a folder during a search with the name of one there that has no match", async () => {
+    await open();
+    await user.type(screen.getByPlaceholderText(/Type to search/), "sw1");
+    await expect.poll(() => screen.queryByText(/^Lab/)).toBeNull();
+    await user.click(row(/^Saved sessions/));
+    await user.click(screen.getByTitle("New folder (in the selected folder)"));
+    const name = screen.getByRole("textbox", { name: "" }) as HTMLInputElement;
+    await user.clear(name);
+    await user.type(name, "lab");
+    expect(screen.getByText("A folder with that name is already here")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "OK" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

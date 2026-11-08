@@ -28,7 +28,8 @@ export type Group = "favorites" | "recent";
 /**
  * Build one store's tree from its sessions; `query` keeps only sessions matching it (and the folders holding them).
  * `extraFolders` are folders made in the tree that have no sessions yet, which exist only there until one is
- * added, as in SuperXPuTTY.
+ * added, as in SuperXPuTTY. They're kept during a search too, so a folder made while searching shows, for the
+ * sessions found to be dragged into it.
  */
 export function buildTree(
   store: Store,
@@ -41,7 +42,7 @@ export function buildTree(
 ): FolderNode {
   const root = folder(store, title, "");
   const test = searchTest(query, options);
-  if (!test) for (const path of extraFolders) place(root, store, path);
+  for (const path of extraFolders) place(root, store, path);
   for (const session of sessions) {
     if (session.store !== store || (test && !test(session))) continue;
     place(root, store, session.folder).sessions.push(session);

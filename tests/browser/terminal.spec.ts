@@ -404,20 +404,54 @@ test.describe("Windows' pseudo console redrawing its screen after a resize (ConP
     await expect.poll(async () => (await rows(page)).filter(Boolean)).toEqual(["$ ls", "file", "$"]);
   });
 
-  test("two quick resizes don't show the session's first line twice", async ({ page }) => {
-    // as ConPTY sent them for an ssh login to an OpenMediaVault server: a redraw for each size, the first for a
-    // screen taller than the terminal ends up, every row with a line break after it, then one for the terminal's own
+  /**
+   * The page open at one size, then resized as a tab settles, so ConPTY's redraws for it are expected; the session's
+   * login and prompt written as ConPTY first sent them when `before` says
+   */
+  async function resizedWith(page: Page, before: string): Promise<{ cols: number; rowCount: number }> {
+    await page.setViewportSize({ width: 1000, height: 500 });
     await page.goto("/web/terminal/index.html");
     await page.waitForFunction(() => !!(window as any).terminalDev);
     await page.evaluate(() => (window as any).terminalDev.message({ type: "config", prefs: { theme: "PuTTY" }, themes: [{ name: "PuTTY", colors: {} }] }));
     await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
-    const login = "Last login: Sat Nov  7 19:04:28 2026 from 192.168.0.25";
-    await feed(page, `${login}\r\nroot@openmediavault:~# `);
+    if (before) await feed(page, before);
+    const was = await size(page);
+    await page.setViewportSize({ width: 1100, height: 600 });
+    await expect.poll(() => size(page)).not.toBe(was);
     const [cols, rowCount] = (await size(page)).split("x").map(Number);
-    const screen = (count: number) =>
-      `\x1b[H${login}\x1b[K\r\nroot@openmediavault:~#\x1b[K` + "\r\n\x1b[K".repeat(count - 2) + "\x1b[2;24H\x1b[?25h";
+    return { cols, rowCount };
+  }
+
+  /** Every row the terminal holds, blank ones included, from the first with text */
+  const fromFirst = async (page: Page) => {
+    const all = await rows(page);
+    const first = all.findIndex(Boolean);
+    const last = all.length - [...all].reverse().findIndex(Boolean);
+    return all.slice(first, last);
+  };
+
+  const login = "Last login: Sat Nov  7 19:04:28 2026 from 192.168.0.25";
+  const prompt = "root@openmediavault:~#";
+
+  test("two quick resizes don't show the session's first line twice", async ({ page }) => {
+    // as ConPTY sent them for an ssh login to an OpenMediaVault server: a redraw for each size, from the top, the
+    // first for a screen taller than the terminal ends up, every row with a line break after it, then one for its own
+    const { cols, rowCount } = await resizedWith(page, `${login}\r\n${prompt} `);
+    const screen = (count: number) => `\x1b[H${login}\x1b[K\r\n${prompt}\x1b[K` + "\r\n\x1b[K".repeat(count - 2) + "\x1b[2;24H\x1b[?25h";
     await feed(page, `\x1b[?25l\x1b[8;${rowCount + 2};${cols}t` + screen(rowCount + 2) + "\x1b[?25l" + screen(rowCount));
-    await expect.poll(async () => (await rows(page)).filter(Boolean)).toEqual([login, "root@openmediavault:~#"]);
+    await expect.poll(() => fromFirst(page)).toEqual([login, prompt]);
+  });
+
+  test("a redraw from where the cursor is, after one that goes to the top only at its end, isn't shown twice either", async ({ page }) => {
+    // the other shapes ConPTY sent when the resizes came as the login arrived: a blank screen, taller than the
+    // terminal, its line breaks first and the move to the top last; then the login from where the cursor was
+    const { cols, rowCount } = await resizedWith(page, "");
+    const tall = rowCount + 2;
+    await feed(page, `\x1b[?25l\x1b[8;${tall};${cols}t` + "\x1b[K\r\n".repeat(tall - 1) + "\x1b[K\x1b[H\x1b[?25h");
+    await feed(page, `\x1b[?25l${login}\x1b[K` + "\r\n\x1b[K".repeat(tall - 1) + "\x1b[2;1H\x1b[?25h");
+    await feed(page, `\x1b[?2004h${prompt} `);
+    // the login on the terminal's first row, the prompt under it: nothing scrolled away above them
+    await expect.poll(async () => (await rows(page)).slice(0, 2)).toEqual([login, prompt]);
   });
 
   test("without a clear, the redraw is drawn as ConPTY sent it", async ({ page }) => {

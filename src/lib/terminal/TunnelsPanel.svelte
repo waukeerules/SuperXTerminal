@@ -28,7 +28,7 @@
     onClose: () => void;
     /** Open a link in the browser */
     onOpenLink: (url: string) => void;
-    /** Open the profile in Settings > Profiles */
+    /** Open the profile in Settings > Profiles, scrolled to its Tunnels */
     onEdit: () => void;
     /** Restart the session, so its tunnels are the profile's now */
     onRestart: () => void;

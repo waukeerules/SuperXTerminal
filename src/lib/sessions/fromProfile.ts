@@ -85,7 +85,7 @@ export function profileRows(tab: ProfileTab, profiles: Profile[], name: string, 
     add("X11 forwarding", "x11Forwarding", on);
     add("Compression", "compression", on);
     add("Keep-alive", "keepalive", (v) => (v ? `every ${v} s` : ""));
-    add("More ssh options", "sshOptions", text);
+    add("Extra ssh arguments", "sshOptions", text);
     add("SSH config host", "sshConfigHost", text);
     if (!own.jumpHost) add("Jump host", "jumpHost", text);
   } else if (tab === "ssh") {

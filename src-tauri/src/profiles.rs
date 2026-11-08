@@ -64,7 +64,9 @@ pub struct Profile {
     pub anti_idle: String,
     /// Seconds without typing before the anti-idle string is sent; 0 for Default Settings', else KiTTY's 180
     pub anti_idle_seconds: u32,
-    /// More ssh arguments, e.g. "-o Compression=yes"
+    /// Extra ssh arguments (Settings > Profiles > Connection), passed to ssh as written, e.g. "-o Compression=yes",
+    /// before a session's own Extra arguments, which are PuTTY's and translated (launch.rs); "" for Default Settings'.
+    /// Kept as sshOptions in Profiles.json, as before it was named so
     pub ssh_options: String,
     /// Its tunnels, as PuTTY's Connection > SSH > Tunnels: ssh's -L, -R and -D. This profile's alone, not taken from
     /// Default Settings: every session opening one would ask for the same port, and all but the first would fail

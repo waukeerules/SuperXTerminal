@@ -687,7 +687,8 @@
           Choose…</button>
         <span class="note">{draft.algorithms ? "its own lists" : isDefault ? "ssh's own lists" : "from Default Settings"}</span></label>
       <label>{@render caption("SSH config host", "sshConfigHost")}<input bind:value={draft.sshConfigHost} placeholder={`a Host in ${SSH_CONFIG}`} /></label>
-      <label>{@render caption("More ssh options", "sshOptions")}<input bind:value={draft.sshOptions} placeholder="e.g. -o Compression=yes" /></label>
+      <label>{@render caption("Extra ssh arguments", "sshOptions")}<input bind:value={draft.sshOptions} placeholder="ssh's own, e.g. -o Compression=yes"
+        title="Passed to ssh as written, before a session's own Extra arguments (which are PuTTY's, translated)" /></label>
       {#each [["agentForwarding", "Agent forwarding", "Forward ssh-agent (-A): a login from there onwards uses your keys"], ["x11Forwarding", "X11 forwarding", "Forward X11 (-X): needs an X server on " + THIS_COMPUTER], ["compression", "Compression", "Compress (-C): for a slow link"]] as [field, label, on] (field)}
         {@const key = field as "agentForwarding" | "x11Forwarding" | "compression"}
         <label>{@render caption(label, key)}

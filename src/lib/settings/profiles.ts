@@ -49,6 +49,10 @@ export interface Profile {
   antiIdle: string;
   /** Seconds without typing before it's typed; 0 for Default Settings', else 180 */
   antiIdleSeconds: number;
+  /**
+   * Extra ssh arguments (Settings > Profiles > Connection), passed to ssh as written ("-o Compression=yes"), before a
+   * session's own Extra arguments, which are PuTTY's and translated; "" for Default Settings'
+   */
   sshOptions: string;
   /** Its own tunnels (ssh's -L, -R, -D), as PuTTY's Tunnels; not taken from Default Settings */
   forwards: Forward[];

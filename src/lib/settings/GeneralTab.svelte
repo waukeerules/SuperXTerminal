@@ -59,7 +59,6 @@
   /** How SPSL scripts work in SuperXTerminal: docs/SPSL.md on GitHub */
   const SPSL_DOC = "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/SPSL.md";
 
-  /** A link in Settings opens in the default browser: in the app's own window it would replace the app */
   /** Edit Themes… is open */
   let editingThemes = $state(false);
 
@@ -91,6 +90,7 @@
     }
   }
 
+  /** A link in Settings opens in the default browser: in the app's own window it would replace the app */
   function openLink(event: MouseEvent): void {
     event.preventDefault();
     const url = (event.currentTarget as HTMLAnchorElement).href;
@@ -273,7 +273,7 @@
 
   <fieldset>
     <legend>Look</legend>
-    <label>Theme
+    <label class="theme">Theme
       <select value={settings.theme} onchange={(e) => void saveSettings({ theme: e.currentTarget.value })}>
         <option value="system">Follow {SYSTEM}</option>
         <option value="light">Light</option>
@@ -468,6 +468,16 @@
 
   label.check {
     display: flex;
+  }
+
+  /* Theme, with Edit Themes… at the drop-down's right rather than wrapped under it */
+  label.theme {
+    grid-template-columns: 170px 220px auto;
+    justify-items: start;
+  }
+
+  label.theme select {
+    justify-self: stretch;
   }
 
   /* a sessions file's checkbox, with its Restore from Backup and Show in Finder / File Explorer at the right */

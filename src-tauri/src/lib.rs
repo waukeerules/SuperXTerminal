@@ -7,6 +7,7 @@ mod buttonbars;
 mod cli;
 mod charset;
 mod onepassword;
+mod ui_themes;
 mod clipboard;
 mod command_history;
 mod command_tap;
@@ -1882,6 +1883,18 @@ fn sessions_export_csv(state: State<'_, AppState>, items: Option<Vec<(sessions::
     Ok((list.len(), masked))
 }
 
+/// The window's own themes (Settings > General > Look > Theme), from UiThemes.json in the user's folder
+#[tauri::command]
+fn ui_themes_load(state: State<'_, AppState>) -> Vec<ui_themes::UiTheme> {
+    ui_themes::load(&state.user_folder)
+}
+
+/// Save the window's own themes, whole; what's saved (names trimmed), or why they can't be
+#[tauri::command]
+fn ui_themes_save(state: State<'_, AppState>, themes: Vec<ui_themes::UiTheme>) -> Result<Vec<ui_themes::UiTheme>, String> {
+    ui_themes::save(&state.user_folder, &themes)
+}
+
 /// Settings > General's Check 1Password: whether its CLI works here, through the 1Password app (onepassword.rs).
 /// async: it waits for the user to approve it in 1Password
 #[tauri::command(async)]
@@ -2835,6 +2848,8 @@ pub fn run() {
             sessions_export_csv,
             sessions_csv_template,
             onepassword_check,
+            ui_themes_load,
+            ui_themes_save,
             window_new,
             layouts_list,
             applog_since,

@@ -4,6 +4,7 @@
  * at once.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { applyUiTheme, loadUiThemes, uiThemeNamed } from "./uiThemes.svelte";
 import { open } from "@tauri-apps/plugin-dialog";
 
 /** The settings, as the Rust core keeps them */
@@ -167,14 +168,18 @@ export function databaseCheckSeconds(): number {
 const systemDark = $state({ value: matchMedia("(prefers-color-scheme: dark)").matches });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => (systemDark.value = e.matches));
 
-/** Whether the app is drawn dark: the theme chosen, or macOS's when it's "system" */
+/** Whether the app is drawn dark: the theme chosen (a custom one's base), or macOS's when it's "system" */
 export function isDark(): boolean {
+  const custom = uiThemeNamed(settings.theme);
+  if (custom) return custom.base === "dark";
   return settings.theme === "dark" || (settings.theme !== "light" && systemDark.value);
 }
 
 /** Read the settings from the core */
 export async function loadSettings(): Promise<void> {
   Object.assign(settings, await invoke<AppSettings>("settings_get"), { loaded: true });
+  // the window's own themes too, for a theme chosen that's one of them
+  await loadUiThemes();
   applyTheme();
 }
 
@@ -194,8 +199,14 @@ export async function chooseSettingsFolder(): Promise<boolean> {
   return true;
 }
 
-/** Mark the page with the chosen theme, which app.css's colours follow ("system" leaves it to macOS) */
-function applyTheme(): void {
-  if (settings.theme === "light" || settings.theme === "dark") document.documentElement.dataset.theme = settings.theme;
+/**
+ * Mark the page with the chosen theme, which app.css's colours follow ("system" leaves it to macOS); a custom one
+ * (uiThemes.svelte.ts) marks its base and sets its own colours over it. Also run when Edit Themes… saves
+ */
+export function applyTheme(): void {
+  const custom = uiThemeNamed(settings.theme);
+  const base = custom?.base ?? settings.theme;
+  if (base === "light" || base === "dark") document.documentElement.dataset.theme = base;
   else delete document.documentElement.dataset.theme;
+  applyUiTheme(custom);
 }

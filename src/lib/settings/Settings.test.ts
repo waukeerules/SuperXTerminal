@@ -9,6 +9,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import Settings from "./Settings.svelte";
 import { emptyProfile, DEFAULT_PROFILE } from "./profiles";
 import { settings } from "./store.svelte";
+import { uiThemes } from "./uiThemes.svelte";
 import { FILE_MANAGER } from "../platform";
 
 /** The settings saved, as settings_save was given them */
@@ -208,5 +209,21 @@ describe("Settings > General > 1Password", () => {
     expect(screen.getByText("winget install 1password-cli").tagName).toBe("CODE");
     await userEvent.click(screen.getByRole("link", { name: "1Password CLI: get started" }));
     expect(opened).toEqual(["https://www.1password.dev/cli/get-started"]);
+  });
+});
+
+describe("Look's Theme", () => {
+  it("lists the themes of your own by name, and Escape in Edit Themes closes it alone, not Settings", async () => {
+    const user = userEvent.setup();
+    uiThemes.list = [{ name: "Harbour", base: "dark", colors: { accent: "#ff8800" } }];
+    let closed = 0;
+    render(Settings, { onClose: () => closed++ });
+    expect(screen.getByRole("option", { name: "Harbour" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Edit Themes…" }));
+    expect(screen.getByRole("dialog", { name: "Edit Themes" })).toBeTruthy();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Edit Themes" })).toBeNull();
+    expect(closed).toBe(0);
+    uiThemes.list = [];
   });
 });

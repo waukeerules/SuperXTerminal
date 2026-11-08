@@ -21,6 +21,8 @@
   import { parseRules } from "../icons/environment";
   import EnvironmentColours from "./EnvironmentColours.svelte";
   import RestoreBackup from "./RestoreBackup.svelte";
+  import UiThemesEditor from "./UiThemesEditor.svelte";
+  import { uiThemes } from "./uiThemes.svelte";
 
   let editingColours = $state(false);
   /** Which sessions file Restore from Backup… is open for; null while it's closed */
@@ -58,6 +60,9 @@
   const SPSL_DOC = "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/SPSL.md";
 
   /** A link in Settings opens in the default browser: in the app's own window it would replace the app */
+  /** Edit Themes… is open */
+  let editingThemes = $state(false);
+
   /** Check 1Password's state: waiting for it, what it said, and whether that's a problem (which shows how to install) */
   let opChecking = $state(false);
   let opMessage = $state("");
@@ -273,8 +278,12 @@
         <option value="system">Follow {SYSTEM}</option>
         <option value="light">Light</option>
         <option value="dark">Dark</option>
+        <!-- the user's own (Edit Themes…), by name -->
+        {#each uiThemes.list as theme (theme.name)}<option value={theme.name}>{theme.name}</option>{/each}
       </select>
+      <button onclick={() => (editingThemes = true)} title="Make themes of your own: the window's background, panes, text, selected rows, checkboxes…">Edit Themes…</button>
     </label>
+    {#if editingThemes}<UiThemesEditor onClose={() => (editingThemes = false)} />{/if}
     <label>Icon size
       <select value={String(settings.iconSize)} onchange={(e) => void saveSettings({ iconSize: Number(e.currentTarget.value) })}>
         <option value="16">16 px</option>

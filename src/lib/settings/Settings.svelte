@@ -21,6 +21,7 @@
   import TerminalTab from "./TerminalTab.svelte";
   import ShortcutsTab from "./ShortcutsTab.svelte";
   import RemoteDesktopTab from "./RemoteDesktopTab.svelte";
+  import { themesEditorShown } from "./UiThemesEditor.svelte";
 
   interface Props {
     /** Close, or Escape */
@@ -141,6 +142,8 @@
 
   /** Cmd+F (Ctrl+F) goes to the search box; Escape clears it, then closes */
   function onKey(e: KeyboardEvent): void {
+    // Edit Themes, opened over Settings, closes on it alone
+    if (e.key === "Escape" && themesEditorShown()) return;
     if (e.key === "Escape") {
       if (query) {
         query = "";

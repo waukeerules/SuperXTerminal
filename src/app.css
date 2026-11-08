@@ -16,6 +16,8 @@
   /* the row the pointer or keys are on in a list of choices, as a select's own list draws it */
   --list-highlight: #dadada;
   --list-highlight-text: #1e1e1e;
+  /* checkboxes and radio buttons: the accent, unless a theme of the user's own gives them a colour of their own */
+  --check: var(--accent);
   color-scheme: light;
 }
 
@@ -81,4 +83,11 @@ select,
 button {
   font: inherit;
   color: inherit;
+}
+
+/* checkboxes and radio buttons in the theme's colour for them (--check, the accent unless a theme of the user's own
+ * sets it), rather than the system's */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--check);
 }

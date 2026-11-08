@@ -163,6 +163,11 @@
     </div>
     <p class="hint">Beside the tab list, one ✕ stays in the same place at the right of the tab strip and closes the
       tab that's showing; {shortcutLabel("closeTab") || "Close Tab"} and each tab's right-click menu close tabs either way.</p>
+    <label class="check"><input type="checkbox" checked={settings.tabListSwitchSession}
+        onchange={(e) => void saveSettings({ tabListSwitchSession: e.currentTarget.checked })} />
+      The tab list (▾) opens Switch Session</label>
+    <p class="hint">Its tabs with a box to type in, to find one among many by its name or its folder, as
+      {shortcutLabel("switchSession") || "Switch Session"} shows every tab in the window. Off, ▾ lists them plainly.</p>
   </fieldset>
 
   <fieldset>

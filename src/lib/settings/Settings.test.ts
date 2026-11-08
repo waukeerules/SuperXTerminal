@@ -81,6 +81,16 @@ describe("Use PrivateSessions.xml", () => {
   /** The checkbox, in General */
   const privateBox = () => screen.getByRole("checkbox", { name: /Use PrivateSessions\.xml/ }) as HTMLInputElement;
 
+  it("has the tab list (▾) open Switch Session when ticked under Tabs", async () => {
+    const user = userEvent.setup();
+    Object.assign(settings, { tabListSwitchSession: false });
+    render(Settings, { onClose: () => {} });
+    const box = screen.getByRole("checkbox", { name: /The tab list \(▾\) opens Switch Session/ }) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    await user.click(box);
+    await expect.poll(() => saved.at(-1)?.tabListSwitchSession).toBe(true);
+  });
+
   it("can't be turned off until Saved sessions are in use: sessions need somewhere to go", async () => {
     Object.assign(settings, { settingsFolder: null, useSessionsXml: true, usePrivateSessions: true });
     render(Settings, { onClose: () => {} });

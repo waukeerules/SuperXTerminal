@@ -94,7 +94,8 @@
   let variablesOpen = $state(false);
   let coloursOpen = $state(false);
   /** The Quick Selector open: its title and entries, and what choosing one does */
-  let quick = $state<{ title: string; items: QuickItem[]; choose: (item: QuickItem) => void } | null>(null);
+  /** The Quick Selector showing (Switch Session, Open Session…); `tabList` when a ▾ opened it */
+  let quick = $state<{ title: string; items: QuickItem[]; choose: (item: QuickItem) => void; tabList?: boolean } | null>(null);
   let databaseOpen = $state(false);
   let editorOpen = $state(false);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
@@ -112,7 +113,7 @@
 
   // the ▾ list gone (or another menu in its place): the next click on a ▾ opens a list again, rather than closing it
   $effect(() => {
-    if (!menu?.tabList) tabs?.tabListClosed();
+    if (!menu?.tabList && !quick?.tabList) tabs?.tabListClosed();
   });
   let renaming = $state<{ id: string; title: string } | null>(null);
   /** The tab whose tunnels are showing (its tunnel icon, or Tunnels… in its menu), and where */
@@ -217,6 +218,11 @@
     // a tab strip's ▾: its split's tabs, the one in front ticked; a click switches to it
     tabs.onTabList = (right, bottom, group) => {
       if (!tabs) return;
+      // Settings > General > Tabs: its tabs in Switch Session, with a filter, for a window with many open
+      if (settings.tabListSwitchSession) {
+        quickSwitch(group);
+        return;
+      }
       const t = tabs;
       menu = {
         x: right - 240,
@@ -226,7 +232,10 @@
       };
     };
     // the same ▾ clicked again: its list closes
-    tabs.onTabListClose = () => (menu = null);
+    tabs.onTabListClose = () => {
+      menu = null;
+      if (quick?.tabList) quick = null;
+    };
     tabs.onTunnels = (id, x, y) => (tunnelsOf = { id, x, y });
     tabs.onTabMenu = (id, x, y) => {
       if (!tabs || !tree) return;
@@ -455,14 +464,18 @@
     };
   }
 
-  /** Window > Switch Session… (Cmd+Shift+O): the open tabs, as SuperXPuTTY's Switch session */
-  function quickSwitch(): void {
+  /**
+   * Window > Switch Session… (Cmd+Shift+O): the open tabs, as SuperXPuTTY's Switch session
+   * @param group A split's tabs only, when its ▾ opened it (Settings > General > Tabs); every tab otherwise
+   */
+  function quickSwitch(group?: string): void {
     const t = tabs;
     if (!t) return;
     const sessions = tree?.allSessions() ?? [];
     quick = {
       title: "Switch Session",
-      items: t.allTabs().map((tab) => {
+      tabList: group !== undefined,
+      items: t.allTabs(group).map((tab) => {
         const session = sessions.find((s) => `${s.store}:${s.id}` === tab.session);
         return { key: tab.id, name: tab.title, detail: session ? pathOf(session) : "", icon: tab.icon, environment: tab.environment, current: tab.active };
       }),

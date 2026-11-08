@@ -74,6 +74,8 @@ export interface AppSettings {
   filezillaPasswords: boolean;
   /** Tabs' close button: on each tab, or one beside the tab list's ▾ that closes the active tab */
   tabClose: "tab" | "right";
+  /** The tab list's ▾ opens Switch Session (its tabs, with a filter) rather than a plain list */
+  tabListSwitchSession: boolean;
   /** The Sessions tree's dotted lines, as SuperXPuTTY's */
   treeLines: boolean;
   /** While searching, the Sessions pane widens (up to a limit) so the matches' names fit */
@@ -146,6 +148,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   rdpDefaults: "",
   filezillaPasswords: false,
   tabClose: "tab",
+  tabListSwitchSession: false,
   treeLines: true,
   searchWidensPane: true,
   treeSearchCase: false,

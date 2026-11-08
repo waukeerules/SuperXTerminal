@@ -119,12 +119,15 @@ describe("a theme of your own in use", () => {
     applyTheme();
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(token("--bg-pane")).toBe("#fffbe8");
+    // marked as a theme of your own, for app.css to draw the system's buttons and scroll bars in its colours
+    expect(document.documentElement.dataset.ownTheme).toBe("");
     expect(isDark()).toBe(false);
 
     settings.theme = "dark";
     applyTheme();
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(token("--bg-pane")).toBe("");
+    expect(document.documentElement.dataset.ownTheme).toBeUndefined();
     expect(isDark()).toBe(true);
   });
 });

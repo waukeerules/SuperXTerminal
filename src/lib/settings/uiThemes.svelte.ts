@@ -80,12 +80,16 @@ export function uiThemeNamed(name: string): UiTheme | undefined {
 }
 
 /**
- * Draw the page in a theme: its base marked (data-theme) and its colours set over the base's; or, for none, every
- * colour the page set taken off, back to app.css's
+ * Draw the page in a theme: its colours set over its base's, and the page marked as in a theme of the user's own
+ * (data-own-theme), for app.css to draw the buttons and scroll bars the system would, in its colours; or, for none,
+ * every colour the page set taken off, back to app.css's. The base itself (data-theme) is store.svelte.ts's applyTheme
  * @param theme The theme, or undefined for a built-in one
  */
 export function applyUiTheme(theme: UiTheme | undefined): void {
-  const style = document.documentElement.style;
+  const root = document.documentElement;
+  if (theme) root.dataset.ownTheme = "";
+  else delete root.dataset.ownTheme;
+  const style = root.style;
   for (const token of COLOUR_TOKENS) {
     const value = theme?.colors[token.key];
     if (value) style.setProperty(token.css, value);

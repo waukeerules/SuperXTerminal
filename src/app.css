@@ -91,3 +91,28 @@ input[type="checkbox"],
 input[type="radio"] {
   accent-color: var(--check);
 }
+
+/*
+ * A theme of the user's own (Settings > General > Look > Edit Themes…): the buttons a window leaves to the system,
+ * and the scroll bars, in its colours. The system draws them from the theme's base, Light's or Dark's, which needn't
+ * be anything like its colours: a light button under the theme's white text can't be read. In :where(), so a
+ * window's own style for a button still wins. Light and Dark keep the system's.
+ */
+:where(:root[data-own-theme] button) {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 10px;
+}
+
+:where(:root[data-own-theme] button:not(:disabled):hover) {
+  border-color: var(--accent);
+}
+
+:where(:root[data-own-theme] button:disabled) {
+  opacity: 0.5;
+}
+
+:root[data-own-theme] {
+  scrollbar-color: var(--text-muted) var(--bg-pane);
+}

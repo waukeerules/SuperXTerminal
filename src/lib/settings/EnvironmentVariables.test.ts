@@ -1,8 +1,8 @@
 // Tools > Environment Variables: names that clash can't be saved, placeholders used but not set are rows of their own
-// that a click adds, a 1Password reference shows as its item, a row's ⋯ menu marks it Secret or removes it, Filter
-// narrows the list, the preview (folded away) fills a template with secrets hidden, and Export… and Import… pass the
-// variables on in SuperXPuTTY's file, secrets by name only. The Rust side, and the dialogs choosing the file, are
-// stood in for by mockIPC.
+// that a click adds, a 1Password reference shows as its item, a row's ⋯ menu marks it Secret or removes it, the
+// header's boxes filter by name and by value, the variables set scroll in a box of their own, the preview (folded
+// away) fills a template with secrets hidden, and Export… and Import… pass the variables on in SuperXPuTTY's file,
+// secrets by name only. The Rust side, and the dialogs choosing the file, are stood in for by mockIPC.
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -104,13 +104,29 @@ describe("Environment Variables", () => {
     expect(keys().map((k) => k.value)).toEqual(["admin_password", "enable"]);
   });
 
-  it("narrows the list to the names and values Filter has", async () => {
+  it("filters by name and by value, each in its column's header", async () => {
     await open();
-    await userEvent.type(screen.getByLabelText("Filter"), "admin");
+    await userEvent.type(screen.getByLabelText("Filter by name"), "admin");
     expect(keys().map((k) => k.value)).toEqual(["admin_password"]);
     // a placeholder not set, by its name
     expect(screen.getByRole("button", { name: "Set admin_username" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Set cyberark_region" })).toBeNull();
+    await userEvent.clear(screen.getByLabelText("Filter by name"));
+    // by value: a reference by its text; a secret's value isn't searched, and placeholders not set have none
+    await userEvent.type(screen.getByLabelText("Filter by value"), "cisco");
+    expect(keys().map((k) => k.value)).toEqual(["enable"]);
+    expect(screen.queryByRole("button", { name: /^Set / })).toBeNull();
+    await userEvent.clear(screen.getByLabelText("Filter by value"));
+    await userEvent.type(screen.getByLabelText("Filter by value"), "nothing like it");
+    expect(screen.getByText("No variable matches.")).toBeTruthy();
+  });
+
+  it("keeps the variables set in a box of their own, which scrolls, with the ones not set below it", async () => {
+    await open();
+    const box = screen.getByRole("group", { name: "Variables" });
+    expect(box.classList.contains("rows")).toBe(true);
+    expect([...box.querySelectorAll("[data-key]")].map((k) => (k as HTMLInputElement).value)).toEqual(["ad_username", "admin_password", "enable"]);
+    expect(box.contains(screen.getByRole("button", { name: "Set cyberark_region" }))).toBe(false);
   });
 
   it("keeps the longer help behind ?, and says a reference needn't be secret", async () => {
@@ -136,6 +152,22 @@ describe("Environment Variables", () => {
     await userEvent.type(keys().at(-1)!, "key_file");
     expect(ok().disabled).toBe(true);
     expect(screen.getByText(/\{key_file\} is built in/)).toBeTruthy();
+  });
+
+  it("scrolls a folded section into view as it opens, with Try a template's box ready to type in", async () => {
+    const shown: string[] = [];
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) { shown.push(this.querySelector("summary")?.textContent ?? ""); };
+    try {
+      await open();
+      await userEvent.click(screen.getByText("Try a template"));
+      await expect.poll(() => shown).toEqual(["Try a template"]);
+      expect(document.activeElement).toBe(screen.getByLabelText("Template to preview"));
+      await userEvent.click(screen.getByText(/Built-in placeholders/));
+      await expect.poll(() => shown).toEqual(["Try a template", "Built-in placeholders (3)"]);
+    } finally {
+      Element.prototype.scrollIntoView = scrollIntoView;
+    }
   });
 
   it("previews a template with secrets as dots, built-ins and unknowns as written", async () => {

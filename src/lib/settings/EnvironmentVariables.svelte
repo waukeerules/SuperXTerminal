@@ -8,7 +8,9 @@
   Laid out to stay calm as it grows: one list, each row a name, its value (a 1Password reference shown as its item,
   a secret as stored), how many places use it, and a ⋯ menu for Secret and Remove. Placeholders used but not set are
   rows in the same list, under a warning, a few shown and the rest folded; one is added by clicking its value. The
-  longer help (?), the built-in placeholders and a template's preview are folded away. Filter narrows the list.
+  variables set scroll in a box of their own, about ten rows, so a long list doesn't push the rest off the window;
+  the header's Name and Value boxes filter by each column. The window is a fixed size, so filtering doesn't resize it. The longer help (?), the built-in placeholders and a
+  template's preview are folded away.
   Export… and Import… pass a set on as SuperXPuTTY's EnvironmentVariables.json, secrets by name only
   (variablesFile.ts); an import fills the window, and Save saves it.
   It opens in front of Edit Session, whose Environment Variables… button opens it for a placeholder with no value.
@@ -49,8 +51,9 @@
   let builtIn = $state<[string, string][]>([]);
   let template = $state("");
   let message = $state("");
-  /** What Filter narrows the list to: a name's or a value's words */
-  let filter = $state("");
+  /** What the header's boxes narrow the list to: words in a name, and in a value (a secret's isn't searched) */
+  let nameFilter = $state("");
+  let valueFilter = $state("");
   /** The longer help, behind ? */
   let helpOpen = $state(false);
   /** All the placeholders not set, rather than the first few */
@@ -98,11 +101,18 @@
   /** Whether any row has a problem, which keeps Save greyed */
   const blocked = $derived(problems.some(Boolean));
 
-  /** Whether a name or value has Filter's words in it */
-  const matches = (...texts: string[]) => !filter.trim() || texts.some((t) => t.toLowerCase().includes(filter.trim().toLowerCase()));
+  /** Whether a text has a filter's words in it, ignoring case; an empty filter lets everything through */
+  const has = (text: string, filter: string) => text.toLowerCase().includes(filter.trim().toLowerCase());
+  /** Whether either filter is in use */
+  const filtering = $derived(!!nameFilter.trim() || !!valueFilter.trim());
 
-  /** The rows to show, with their place in `rows`: those Filter leaves, and a row just added whatever its name */
-  const shownRows = $derived(rows.map((row, i) => ({ row, i })).filter(({ row }) => !row.key.trim() || matches(row.key, row.secret ? "" : row.value)));
+  /**
+   * The rows to show, with their place in `rows`: those both filters leave (a secret's value counts as empty, and a
+   * reference is matched by its text), and a row just added, still without a name, whatever they say
+   */
+  const shownRows = $derived(
+    rows.map((row, i) => ({ row, i })).filter(({ row }) => !row.key.trim() || (has(row.key, nameFilter) && has(row.secret ? "" : row.value, valueFilter))),
+  );
 
   /** Placeholders used somewhere that are neither the user's nor built in: they'd stop a session opening */
   const unset = $derived(
@@ -112,8 +122,9 @@
   );
   /** Those Filter leaves; the first few unless all are asked for */
   const unsetShown = $derived.by(() => {
-    const left = unset.filter(([name]) => matches(name));
-    return allUnset || filter.trim() ? left : left.slice(0, UNSET_SHOWN);
+    // they have no value yet: a value filter leaves none
+    const left = unset.filter(([name]) => has(name, nameFilter) && !valueFilter.trim());
+    return allUnset || filtering ? left : left.slice(0, UNSET_SHOWN);
   });
 
   /** Where a variable is used, for its row */
@@ -163,6 +174,17 @@
     editing = index;
     await tick();
     list?.querySelector<HTMLInputElement>(`[data-row="${index}"] [data-value]`)?.focus();
+  }
+
+  /**
+   * A folded section opened (Try a template, Built-in placeholders): scrolled into view, as it opens at the foot of
+   * the list, and Try a template's box ready to type in. (jsdom, in the tests, has no scrolling)
+   */
+  function opened(event: Event): void {
+    const section = event.currentTarget as HTMLDetailsElement;
+    if (!section.open) return;
+    section.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    section.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
   }
 
   /** Save and close */
@@ -219,7 +241,6 @@
   <div class="dialog" role="dialog" aria-modal="true" aria-label="Environment Variables">
     <div class="top">
       <header>Environment Variables</header>
-      <input class="filter" bind:value={filter} placeholder="Filter" aria-label="Filter" />
       <button class="help-button" class:on={helpOpen} onclick={() => (helpOpen = !helpOpen)} aria-label="How these work" aria-expanded={helpOpen}
         title="How these work">?</button>
     </div>
@@ -235,7 +256,13 @@
     {/if}
 
     <div class="body" bind:this={list}>
-      <div class="row head" aria-hidden="true"><span>Name</span><span>Value</span><span class="used">Used</span><span></span></div>
+      <!-- the columns' names, each a box to filter it by -->
+      <div class="row head">
+        <input class="column" bind:value={nameFilter} placeholder="Name" aria-label="Filter by name" title="Show the variables whose name has these words" />
+        <input class="column" bind:value={valueFilter} placeholder="Value" aria-label="Filter by value" title="Show the variables whose value has these words (a secret's isn't searched)" />
+        <span class="used">Used</span><span></span>
+      </div>
+      <div class="rows" aria-label="Variables" role="group">
       {#each shownRows as { row, i } (i)}
         <div class="row" data-row={i}>
           <input class="key" data-key bind:value={row.key} placeholder="name" aria-label="Key" class:bad={!!problems[i]} title={problems[i]} spellcheck="false" />
@@ -260,6 +287,8 @@
           {#if problems[i]}<p class="problem">{problems[i]}</p>{/if}
         </div>
       {/each}
+      {#if filtering && !shownRows.length}<p class="hint none">No variable matches.</p>{/if}
+      </div>
 
       {#if unset.length}
         <p class="warn" role="note" aria-label="Used but not set">Used but not set: sessions using these won't open until they have a value.</p>
@@ -271,13 +300,13 @@
             <span></span>
           </div>
         {/each}
-        {#if !filter.trim() && unset.length > UNSET_SHOWN}
+        {#if !filtering && unset.length > UNSET_SHOWN}
           <button class="fold" onclick={() => (allUnset = !allUnset)}>{allUnset ? "▾ Fewer" : `▸ ${unset.length - UNSET_SHOWN} more not set`}</button>
         {/if}
       {/if}
 
       <div class="extras">
-        <details>
+        <details ontoggle={opened}>
           <summary>Try a template</summary>
           <input class="template" bind:value={template} aria-label="Template to preview"
             placeholder="A template, e.g. {'{'}ad_username{'}'}@{'{'}domain{'}'}" />
@@ -286,7 +315,7 @@
             <p class="hint">Secrets show as dots; built-in placeholders and ones not set stay as written.</p>
           {/if}
         </details>
-        <details>
+        <details ontoggle={opened}>
           <summary>Built-in placeholders ({builtIn.length})</summary>
           <p class="hint">Filled by SuperXTerminal itself, so no variable can have these names.</p>
           <ul>
@@ -325,9 +354,10 @@
     justify-content: center;
   }
 
+  /* a fixed size: filtering, folding or adding a row changes what's inside it, never the window itself */
   .dialog {
     width: min(720px, 94vw);
-    max-height: 90vh;
+    height: min(640px, 90vh);
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -349,9 +379,6 @@
     font-weight: 600;
   }
 
-  .filter {
-    width: 180px;
-  }
 
   .help-button {
     width: 26px;
@@ -411,6 +438,25 @@
     padding-top: 0;
     color: var(--text-muted);
     font-size: 12px;
+  }
+
+  /* a column's name, which takes words to filter it by */
+  input.column {
+    font-size: 12px;
+    padding: 2px 6px;
+  }
+
+  /* the variables set: a box of their own, about ten rows, which scrolls, so many of them don't push what's below
+     off the window */
+  .rows {
+    flex: none;
+    max-height: 340px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .none {
+    padding: 8px 0;
   }
 
   /* the name, quiet until it's worked on */

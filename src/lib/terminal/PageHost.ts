@@ -16,7 +16,7 @@ import type { ScriptTarget } from "../scripting/spsl";
 import { askChoice, askOne } from "../scripting/asking.svelte";
 import { allPrefs, onPrefsChanged, pref, setPrefs } from "./prefs";
 import { DEFAULT_PROFILE, listProfiles, profileColours, profileFont, profileKeys, profileScrollback, PROFILES_CHANGED, resolvedProfile, saveProfile, type Forward } from "../settings/profiles";
-import { completeTunnels, sameTunnels, tunnelNotices } from "./tunnels";
+import { completeTunnels, holdTunnels, releaseTunnels, sameTunnels, tunnelNotices } from "./tunnels";
 import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailure";
 import { antiIdleKeys } from "./antiIdle";
 import { running } from "../commands/sending.svelte";
@@ -339,6 +339,12 @@ export class PageHost implements ScriptTarget {
   tunnels: Forward[] = [];
 
   /**
+   * Those of its tunnels whose port another of this window's tabs held already, so its ssh couldn't open them: their
+   * listen, and that tab's title (tunnels.ts's holdTunnels)
+   */
+  tunnelsTaken: Map<string, string> = new Map();
+
+  /**
    * The profile's tunnels were changed after the session started: ssh can't add or drop one on a connection it has
    * made, so they take effect when the session restarts, which the tab and Tunnels… say
    */
@@ -372,6 +378,7 @@ export class PageHost implements ScriptTarget {
 
   /** Close the pseudo terminal and stop listening; called when the tab closes */
   dispose(): void {
+    releaseTunnels(this.tab);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.answeredTimer) clearTimeout(this.answeredTimer);
     if (this.antiIdleTimer) clearInterval(this.antiIdleTimer);
@@ -910,7 +917,9 @@ export class PageHost implements ScriptTarget {
         // what the tunnels make reachable, at the top, with their links: a tunnel is otherwise invisible
         this.tunnels = event.look.tunnels ?? [];
         this.tunnelsChanged = false;
-        for (const text of tunnelNotices(this.tunnels)) this.post({ type: "notice", text, kind: "info" });
+        // a port another tab holds can't be this one's too: its ssh goes on without it, and the tab says whose it is
+        this.tunnelsTaken = holdTunnels(this.tab, this.title, this.tunnels);
+        for (const { text, kind } of tunnelNotices(this.tunnels, this.tunnelsTaken)) this.post({ type: "notice", text, kind });
       } else if (event.type === "notice") {
         this.post({ type: "notice", text: event.text, kind: event.kind });
       } else if (event.type === "exit") {
@@ -922,6 +931,8 @@ export class PageHost implements ScriptTarget {
           return;
         }
         this.ended = true;
+        // its tunnels closed with it: their ports are another tab's to open
+        releaseTunnels(this.tab);
         this.notAnswered();
         // a tab of its own for a key fetch (Log in & cache key): it stays, saying how it went; Enter runs it again
         if (this.target.kind === "keyFetch") {

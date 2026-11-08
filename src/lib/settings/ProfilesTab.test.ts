@@ -241,6 +241,31 @@ describe("Settings > Profiles", () => {
     expect(help).toContain("tunnel icon (or Tunnels… in its menu)");
   });
 
+  it("names the tunnels' columns, says which side each port is on by type, and adds a sample with a free port", async () => {
+    await open("root");
+    await userEvent.click(button("Tunnel Samples…"));
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "The server's own web page (HTTP)" }));
+    await userEvent.click(button("Tunnel Samples…"));
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Let the server reach a web server on this computer" }));
+    // the same sample again: 8080 is taken, so 8081
+    await userEvent.click(button("Tunnel Samples…"));
+    await userEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "The server's own web page (HTTP)" }));
+    expect(screen.getByText("Listens on")).toBeTruthy();
+    expect(screen.getByText("Goes to")).toBeTruthy();
+    const port = (n: number) => screen.getByLabelText(`Tunnel ${n} port`) as HTMLInputElement;
+    const to = (n: number) => screen.getByLabelText(`Tunnel ${n} to`) as HTMLInputElement;
+    expect([port(1).value, to(1).value, port(3).value]).toEqual(["8080", "localhost:80", "8081"]);
+    // a local tunnel listens here and goes on from the server; a remote one the other way round
+    expect([port(1).placeholder, to(1).placeholder]).toEqual(["a port on this PC", "host:port, as the server sees it"]);
+    expect([port(2).placeholder, to(2).placeholder]).toEqual(["a port on the server", "host:port, as this PC sees it"]);
+    await userEvent.click(button("Save"));
+    expect((calls.find((c) => c.cmd === "profiles_save")?.args.profile as Profile).forwards).toEqual([
+      { kind: "local", listen: "8080", to: "localhost:80" },
+      { kind: "remote", listen: "9090", to: "localhost:8000" },
+      { kind: "local", listen: "8081", to: "localhost:80" },
+    ]);
+  });
+
   it("says under Jump host what a jump server needs", async () => {
     await open("root");
     expect(screen.getByRole("note", { name: "What a jump server needs" }).textContent).toMatch(/^The jump server must allow TCP forwarding/);

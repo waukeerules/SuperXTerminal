@@ -1,13 +1,14 @@
 <!--
   A tab's tunnels, from its tunnel icon or Tunnels… in its menu: what each one the session's ssh opened makes
-  reachable (tunnels.ts), a link to open for a web page, and a command to check it works, with Copy. Edit Tunnels…
+  reachable (tunnels.ts), a link to open for a web page, and a command to check it works, with Copy; or, for one
+  whose port another tab already holds, that it isn't open here and whose it is. Edit Tunnels…
   opens the tab's profile in Settings > Profiles; ssh can't add or drop a tunnel on a connection it has made, so a
   change takes effect when the session restarts, which Restart Session does here. Placed at the pointer, kept inside
   the window; closes on Escape or a click outside.
 -->
 <script lang="ts">
   import type { Forward } from "../settings/profiles";
-  import { describeTunnel } from "./tunnels";
+  import { describeTunnel, takenText } from "./tunnels";
 
   interface Props {
     /** The tab's title, for the heading */
@@ -16,6 +17,8 @@
     tunnels: readonly Forward[];
     /** The profile's tunnels changed since the session started */
     changed: boolean;
+    /** Those whose port another tab held already, so they aren't open here: their listen, and that tab's title */
+    taken?: ReadonlyMap<string, string>;
     /** The profile the session uses, for Edit Tunnels…; "" for none */
     profile: string;
     /** Where it opens: the pointer, in the window's pixels */
@@ -31,9 +34,9 @@
     onRestart: () => void;
   }
 
-  let { title, tunnels, changed, profile, x, y, onClose, onOpenLink, onEdit, onRestart }: Props = $props();
+  let { title, tunnels, changed, taken = new Map(), profile, x, y, onClose, onOpenLink, onEdit, onRestart }: Props = $props();
 
-  const rows = $derived(tunnels.map((t) => ({ tunnel: t, info: describeTunnel(t) })));
+  const rows = $derived(tunnels.map((t) => ({ tunnel: t, info: describeTunnel(t), holder: taken.get(t.listen) })));
   /** The test command last copied, so its button says so for a moment */
   let copied = $state<string | null>(null);
 
@@ -67,8 +70,9 @@
       tunnels of a connection it has made.</p>
   {/if}
   <ul>
-    {#each rows as { tunnel, info } (`${tunnel.kind} ${tunnel.listen} ${tunnel.to}`)}
+    {#each rows as { tunnel, info, holder } (`${tunnel.kind} ${tunnel.listen} ${tunnel.to}`)}
       <li>
+        {#if holder !== undefined}<p class="changed" role="note" aria-label="Port in use">{takenText(tunnel, holder)}</p>{/if}
         <div class="what"><span class="kind">{info.kind}</span>
           {#if info.link}<a href={info.link} onclick={(e) => { e.preventDefault(); onOpenLink(info.link!); }}>{info.link}</a>{/if}
         </div>

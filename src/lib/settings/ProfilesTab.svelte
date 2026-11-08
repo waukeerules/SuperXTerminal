@@ -15,6 +15,7 @@
   import { keyFetchExamples } from "./keyFetchExamples";
   import { chosenScript, isFullPath } from "../scripting/scriptPath";
   import { JUMP_HOST_NEEDS } from "../sessions/api";
+  import { sampleFor, TUNNEL_SAMPLES } from "../terminal/tunnels";
   import ScriptPathNote from "../scripting/ScriptPathNote.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { baseChain, coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, MAX_FONT_POINTS, mergedProfile, ownColoursChoice, resolvedProfile, saveProfile, type Forward, type Profile } from "./profiles";
@@ -452,6 +453,24 @@
   const valueToTri = (v: string) => (v === "" ? null : v === "on");
 
   /**
+   * Tunnel Samples…: common uses to start from (tunnels.ts), each added as a tunnel to adjust, its port moved up when
+   * the profile has one on it already. Shown under the button
+   */
+  function showSamples(event: MouseEvent): void {
+    // the window's click closes the menu: not this one, which opens it
+    event.stopPropagation();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    menu = {
+      x: rect.left,
+      y: rect.bottom + 2,
+      items: TUNNEL_SAMPLES.map((sample) => ({
+        label: sample.label,
+        action: () => (draft.forwards = [...draft.forwards, sampleFor(sample, draft.forwards)]),
+      })),
+    };
+  }
+
+  /**
    * Change one tunnel. The list is replaced, not changed in place: the saved profile shares it, and Revert and the
    * changes count compare against that. A dynamic tunnel goes nowhere, so its destination is cleared
    */
@@ -651,6 +670,10 @@
       {/each}
       <div class="tunnels">
         <span class="caption">{@render caption("Tunnels", "forwards")}</span>
+        {#if draft.forwards.length}
+          <!-- the columns' names: which side each port is on changes with the type, as the hints say -->
+          <div class="tunnel head" aria-hidden="true"><span>Type</span><span>Listens on</span><span>Goes to</span></div>
+        {/if}
         {#each draft.forwards as forward, i (i)}
           <div class="tunnel">
             <select aria-label="Tunnel {i + 1} kind" value={forward.kind} onchange={(e) => setForward(i, { kind: e.currentTarget.value as Forward["kind"] })}>
@@ -658,14 +681,19 @@
               <option value="remote">Remote (-R)</option>
               <option value="dynamic">Dynamic, SOCKS (-D)</option>
             </select>
-            <input aria-label="Tunnel {i + 1} port" value={forward.listen} placeholder="port, or address:port"
+            <input aria-label="Tunnel {i + 1} port" value={forward.listen} placeholder={forward.kind === "remote" ? "a port on the server" : `a port on ${THIS_COMPUTER}`}
+              title={forward.kind === "remote" ? "The port it listens on, on the server" : `The port it listens on, on ${THIS_COMPUTER} (address:port for another address)`}
               oninput={(e) => setForward(i, { listen: e.currentTarget.value })} />
             <input aria-label="Tunnel {i + 1} to" value={forward.to} disabled={forward.kind === "dynamic"}
-              placeholder={forward.kind === "dynamic" ? "anywhere asked" : "host:port"} oninput={(e) => setForward(i, { to: e.currentTarget.value })} />
+              placeholder={forward.kind === "dynamic" ? "anywhere asked" : forward.kind === "remote" ? `host:port, as ${THIS_COMPUTER} sees it` : "host:port, as the server sees it"}
+              oninput={(e) => setForward(i, { to: e.currentTarget.value })} />
             <button aria-label="Remove tunnel {i + 1}" onclick={() => (draft.forwards = draft.forwards.filter((_, j) => j !== i))}>✕</button>
           </div>
         {/each}
-        <button onclick={() => (draft.forwards = [...draft.forwards, { kind: "local", listen: "", to: "" }])}>Add tunnel</button>
+        <div class="tunnel-buttons">
+          <button onclick={() => (draft.forwards = [...draft.forwards, { kind: "local", listen: "", to: "" }])}>Add tunnel</button>
+          <button onclick={showSamples}>Tunnel Samples…</button>
+        </div>
       </div>
       <div class="note under tunnels-help" role="note" aria-label="About tunnels">
         <p>A tunnel reaches something through the SSH connection, as if you were on the server: for what the server can
@@ -680,8 +708,11 @@
         <p>The tunnels open with each tab of the profile's sessions; the tab lists them at the top, with links, and its
           tunnel icon (or Tunnels… in its menu) shows how to test each. The server must allow TCP forwarding
           (AllowTcpForwarding in its sshd_config, or its SSH settings). Changed tunnels take effect when the session
-          restarts. This profile's own {isDefault ? "(for sessions with no profile of their own)" : "(or the profile it's based on's, never Default Settings')"};
-          a second tab on the same port says it's in use, and File Transfer leaves them to the tab.</p>
+          restarts. This profile's own {isDefault ? "(for sessions with no profile of their own)" : "(or the profile it's based on's, never Default Settings')"},
+          and File Transfer leaves them to the tab.</p>
+        <p><b>One tab at a time</b>: a port on {THIS_COMPUTER} can be only one tab's tunnel. With two of the profile's
+          sessions open, the first tab has the Local and SOCKS tunnels; the second connects without them and says
+          which tab has them.</p>
       </div>
     </fieldset>
 
@@ -997,14 +1028,24 @@
     grid-column: 2;
   }
 
-  .tunnels > button {
-    justify-self: start;
-  }
 
   .tunnel {
     display: grid;
     grid-template-columns: 150px 1fr 1fr auto;
     gap: 6px;
+  }
+
+  /* the columns' names, over the type, port and destination (the remove button's column left empty) */
+  .tunnel.head {
+    grid-template-columns: 150px 1fr 1fr 30px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .tunnel-buttons {
+    display: flex;
+    gap: 8px;
+    justify-self: start;
   }
 
   /* a checkbox with what it does beside it, in the field's column */

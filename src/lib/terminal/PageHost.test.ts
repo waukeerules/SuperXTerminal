@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import { PageHost, hasText } from "./PageHost";
+import { holdTunnels, releaseTunnels } from "./tunnels";
 import { catchShortcuts, loadShortcuts } from "../shortcuts";
 import { DEFAULT_PROFILE, emptyProfile, PROFILES_CHANGED, type Profile } from "../settings/profiles";
 import { settings } from "../settings/store.svelte";
@@ -435,6 +436,23 @@ describe("a session's tunnels", () => {
       "The tunnel icon on the tab, or Tunnels… in its menu, shows them with a way to test each.",
     ]);
     expect(host!.tunnels).toEqual([{ kind: "local", listen: "8080", to: "localhost:80" }]);
+  });
+
+  it("warn of one another tab already has, and free the tab's own ports when its session ends", async () => {
+    // another tab of the same profile, opened first
+    holdTunnels("t0", "OMV", [{ kind: "local", listen: "8080", to: "localhost:80" }]);
+    await startedWith([{ kind: "local", listen: "8080", to: "localhost:80" }, { kind: "local", listen: "8443", to: "localhost:443" }]);
+    await expect.poll(() => posted.filter((m) => m.type === "notice").length).toBe(3);
+    const warned = posted.filter((m) => m.type === "notice" && (m as { kind?: string }).kind === "warn").map((m) => m.text);
+    expect(warned).toEqual([`Tunnel (Local): Port 8080 on this PC is already the tunnel of the tab "OMV", so this tab's isn't open: use that tab's, or close it and restart this session.`]);
+    expect(host!.tunnelsTaken).toEqual(new Map([["8080", "OMV"]]));
+    // this tab has 8443: another tab can't, until this session ends
+    expect(holdTunnels("t9", "x", [{ kind: "local", listen: "8443", to: "localhost:443" }])).toEqual(new Map([["8443", ""]]));
+    (channel!.onmessage as (e: unknown) => void)({ type: "exit", code: 0 });
+    releaseTunnels("t9");
+    expect(holdTunnels("t9", "x", [{ kind: "local", listen: "8443", to: "localhost:443" }])).toEqual(new Map());
+    releaseTunnels("t9");
+    releaseTunnels("t0");
   });
 
   it("say so once when the profile's tunnels change, as a restart is needed to use them", async () => {

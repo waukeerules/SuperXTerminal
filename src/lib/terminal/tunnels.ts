@@ -86,19 +86,70 @@ export function describeTunnel(tunnel: Forward): TunnelInfo {
 }
 
 /**
- * The lines at the top of a tab whose session opened tunnels: one for each, its link clickable in the terminal, and
- * where to see them all again
- * @param tunnels The tunnels ssh was given
+ * What to say of a tunnel whose port another tab already holds: ssh still connects, without it, saying only
+ * "Address already in use", so the tab says which tab has it and what to do
+ * @param tunnel The tunnel this tab's ssh couldn't open
+ * @param holder The title of the tab that has its port
  */
-export function tunnelNotices(tunnels: readonly Forward[]): string[] {
+export function takenText(tunnel: Forward, holder: string): string {
+  const { port } = listenAddress(tunnel.listen.trim());
+  return `Port ${port} on ${THIS_COMPUTER} is already the tunnel of the tab "${holder}", so this tab's isn't open: use that tab's, or close it and restart this session.`;
+}
+
+/**
+ * The lines at the top of a tab whose session opened tunnels: one for each, its link clickable in the terminal, a
+ * warning for one whose port another tab already holds, and where to see them all again
+ * @param tunnels The tunnels ssh was given
+ * @param taken Those whose port another of this window's tabs holds: their listen, and that tab's title
+ */
+export function tunnelNotices(tunnels: readonly Forward[], taken: ReadonlyMap<string, string> = new Map()): { text: string; kind: "info" | "warn" }[] {
   if (tunnels.length === 0) return [];
   return [
     ...tunnels.map((t) => {
       const info = describeTunnel(t);
-      return `Tunnel (${info.kind}): ${info.text}`;
+      const holder = taken.get(t.listen);
+      return holder === undefined
+        ? { text: `Tunnel (${info.kind}): ${info.text}`, kind: "info" as const }
+        : { text: `Tunnel (${info.kind}): ${takenText(t, holder)}`, kind: "warn" as const };
     }),
-    "The tunnel icon on the tab, or Tunnels… in its menu, shows them with a way to test each.",
+    { text: "The tunnel icon on the tab, or Tunnels… in its menu, shows them with a way to test each.", kind: "info" },
   ];
+}
+
+/**
+ * The ports on this computer that this window's tabs' tunnels hold (Local and SOCKS ones; a Remote one's port is on
+ * the server), by port: the tab's id and title. Only one program can listen on a port, so a second tab of the same
+ * profile can't open the first's tunnels. A tab in another window isn't known here; its ssh still says the port is in
+ * use, in its own words
+ */
+const held = new Map<string, { tab: string; title: string }>();
+
+/**
+ * A tab's tunnels have opened: hold their ports for it, and say which another tab holds already
+ * @param tab The tab's id
+ * @param title Its title, for the other tab's warning
+ * @param tunnels The tunnels its ssh was given
+ * @returns The listen of each tunnel whose port another tab holds, with that tab's title
+ */
+export function holdTunnels(tab: string, title: string, tunnels: readonly Forward[]): Map<string, string> {
+  releaseTunnels(tab);
+  const taken = new Map<string, string>();
+  for (const t of tunnels) {
+    if (t.kind === "remote") continue;
+    const { port } = listenAddress(t.listen.trim());
+    const holder = held.get(port);
+    if (holder && holder.tab !== tab) taken.set(t.listen, holder.title);
+    else held.set(port, { tab, title });
+  }
+  return taken;
+}
+
+/**
+ * A tab's session has ended, or the tab closed: its ports are free for another
+ * @param tab The tab's id
+ */
+export function releaseTunnels(tab: string): void {
+  for (const [port, holder] of held) if (holder.tab === tab) held.delete(port);
 }
 
 /**
@@ -122,4 +173,42 @@ export function completeTunnels(forwards: readonly Forward[]): Forward[] {
 export function sameTunnels(a: readonly Forward[], b: readonly Forward[]): boolean {
   const key = (t: Forward) => `${t.kind} ${t.listen.trim()} ${t.to.trim()}`;
   return a.length === b.length && a.every((t, i) => key(t) === key(b[i]));
+}
+
+/** A common use for a tunnel, offered by Settings > Profiles > Tunnel Samples… to start from */
+export interface TunnelSample {
+  /** What it's for, as the menu lists it */
+  label: string;
+  tunnel: Forward;
+}
+
+/**
+ * The common uses, each a tunnel to adjust: the addresses 10.0.0.5 and 10.0.0.10 stand for a device and a PC behind
+ * the server. Ports here go above 10000 where the usual one may already be taken on this computer (a database or
+ * Remote Desktop of its own)
+ */
+export const TUNNEL_SAMPLES: TunnelSample[] = [
+  { label: "The server's own web page (HTTP)", tunnel: { kind: "local", listen: "8080", to: "localhost:80" } },
+  { label: "The server's own web page (HTTPS)", tunnel: { kind: "local", listen: "8443", to: "localhost:443" } },
+  { label: "A device's web page that only the server reaches (HTTPS)", tunnel: { kind: "local", listen: "9443", to: "10.0.0.5:443" } },
+  { label: "Remote Desktop to a PC that only the server reaches", tunnel: { kind: "local", listen: "13389", to: "10.0.0.10:3389" } },
+  { label: "PostgreSQL that only listens on the server", tunnel: { kind: "local", listen: "15432", to: "localhost:5432" } },
+  { label: "MySQL or MariaDB that only listens on the server", tunnel: { kind: "local", listen: "13306", to: "localhost:3306" } },
+  { label: "SOCKS proxy: browse the server's whole network", tunnel: { kind: "dynamic", listen: "1080", to: "" } },
+  { label: "Let the server reach a web server on this computer", tunnel: { kind: "remote", listen: "9090", to: "localhost:8000" } },
+];
+
+/**
+ * A sample's tunnel for a profile that has these already: its port moved up to the next free one, as two tunnels
+ * can't listen on the same port
+ * @param sample The sample picked
+ * @param have The profile's tunnels
+ */
+export function sampleFor(sample: TunnelSample, have: readonly Forward[]): Forward {
+  // a remote tunnel's port is on the server, a local or SOCKS one's here: they don't clash with each other
+  const side = (kind: string) => (kind === "remote" ? "server" : "here");
+  const used = new Set(have.filter((f) => side(f.kind) === side(sample.tunnel.kind)).map((f) => listenAddress(f.listen.trim()).port));
+  let port = Number(sample.tunnel.listen);
+  while (used.has(String(port))) port += 1;
+  return { ...sample.tunnel, listen: String(port) };
 }

@@ -2,7 +2,7 @@
 // top of the tab and its Tunnels panel, and which of a profile's tunnels ssh is given. Plain functions; this test's
 // jsdom isn't a Mac, so the words are Windows' (this PC, curl.exe).
 import { describe, expect, it } from "vitest";
-import { completeTunnels, describeTunnel, listenAddress, sameTunnels, tunnelNotices } from "./tunnels";
+import { completeTunnels, describeTunnel, holdTunnels, listenAddress, releaseTunnels, sameTunnels, sampleFor, TUNNEL_SAMPLES, tunnelNotices } from "./tunnels";
 import { isMac } from "../shortcuts";
 import type { Forward } from "../settings/profiles";
 
@@ -60,11 +60,32 @@ describe("a tunnel, explained", () => {
 describe("a tab's tunnels", () => {
   it("are listed at its top, one line each, then where to see them again; none says nothing", () => {
     const lines = tunnelNotices([tunnel("local", "8080", "localhost:80"), tunnel("dynamic", "1080")]);
-    expect(lines).toHaveLength(3);
-    expect(lines[0]).toBe("Tunnel (Local): http://localhost:8080 on this PC opens localhost:80, as the server sees it.");
-    expect(lines[1]).toMatch(/^Tunnel \(SOCKS proxy\): A SOCKS proxy at localhost:1080/);
-    expect(lines[2]).toMatch(/tunnel icon on the tab, or Tunnels… in its menu/);
+    expect(lines.map((l) => l.kind)).toEqual(["info", "info", "info"]);
+    expect(lines[0].text).toBe("Tunnel (Local): http://localhost:8080 on this PC opens localhost:80, as the server sees it.");
+    expect(lines[1].text).toMatch(/^Tunnel \(SOCKS proxy\): A SOCKS proxy at localhost:1080/);
+    expect(lines[2].text).toMatch(/tunnel icon on the tab, or Tunnels… in its menu/);
     expect(tunnelNotices([])).toEqual([]);
+  });
+
+  it("warn of one whose port another tab already holds, naming that tab", () => {
+    const lines = tunnelNotices([tunnel("local", "8080", "localhost:80")], new Map([["8080", "OMV"]]));
+    expect(lines[0]).toEqual({
+      text: `Tunnel (Local): Port 8080 on this PC is already the tunnel of the tab "OMV", so this tab's isn't open: use that tab's, or close it and restart this session.`,
+      kind: "warn",
+    });
+  });
+
+  it("hold their ports on this computer for the first tab only, until its session ends", () => {
+    const omv = [tunnel("local", "8080", "localhost:80"), tunnel("dynamic", "1080"), tunnel("remote", "9090", "localhost:8000")];
+    expect(holdTunnels("t1", "OMV", omv)).toEqual(new Map());
+    // the second tab of the same profile: its Local and SOCKS ports are the first's; a Remote one's port is on the server
+    expect(holdTunnels("t2", "OMV (2)", omv)).toEqual(new Map([["8080", "OMV"], ["1080", "OMV"]]));
+    // the first reconnecting holds them still
+    expect(holdTunnels("t1", "OMV", omv)).toEqual(new Map());
+    releaseTunnels("t1");
+    expect(holdTunnels("t3", "OMV (3)", omv)).toEqual(new Map());
+    releaseTunnels("t3");
+    releaseTunnels("t2");
   });
 
   it("are the profile's complete ones, as ssh is given them, compared in order", () => {
@@ -74,5 +95,21 @@ describe("a tab's tunnels", () => {
     expect(sameTunnels(given, [tunnel("local", "8080", "localhost:80"), tunnel("dynamic", "1080")])).toBe(true);
     expect(sameTunnels(given, [tunnel("local", "8080", "localhost:443"), tunnel("dynamic", "1080")])).toBe(false);
     expect(sameTunnels(given, given.slice(1))).toBe(false);
+  });
+});
+
+describe("Tunnel Samples", () => {
+  it("each start from a tunnel ssh would be given, with what it's for", () => {
+    for (const sample of TUNNEL_SAMPLES) {
+      expect(sample.label).not.toBe("");
+      expect(completeTunnels([sample.tunnel])).toEqual([sample.tunnel]);
+    }
+  });
+
+  it("move a sample's port up past the profile's own on the same side, not past a Remote one's on the server", () => {
+    const web = TUNNEL_SAMPLES.find((s) => s.label === "The server's own web page (HTTP)")!;
+    expect(sampleFor(web, [])).toEqual(tunnel("local", "8080", "localhost:80"));
+    expect(sampleFor(web, [tunnel("local", "8080", "localhost:80"), tunnel("dynamic", "8081")])).toEqual(tunnel("local", "8082", "localhost:80"));
+    expect(sampleFor(web, [tunnel("remote", "8080", "localhost:80")]).listen).toBe("8080");
   });
 });

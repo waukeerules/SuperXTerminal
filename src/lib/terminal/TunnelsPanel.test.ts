@@ -59,6 +59,14 @@ describe("a tab's Tunnels panel", () => {
     expect(again.edit).toHaveBeenCalledOnce();
   });
 
+  it("says a tunnel whose port another tab has isn't open here, and whose it is", () => {
+    render(TunnelsPanel, {
+      title: "OMV (2)", tunnels: [{ kind: "local", listen: "8443", to: "localhost:443" }], changed: false, taken: new Map([["8443", "OMV"]]),
+      profile: "OMV Tunnels", x: 10, y: 10, onClose: () => {}, onOpenLink: () => {}, onEdit: () => {}, onRestart: () => {},
+    });
+    expect(screen.getByRole("note", { name: "Port in use" }).textContent).toBe(`Port 8443 on this PC is already the tunnel of the tab "OMV", so this tab's isn't open: use that tab's, or close it and restart this session.`);
+  });
+
   it("closes on Escape", async () => {
     const calls = open();
     await userEvent.keyboard("{Escape}");

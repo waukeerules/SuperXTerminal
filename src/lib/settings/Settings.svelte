@@ -29,9 +29,11 @@
     tab?: string;
     /** On the Profiles tab, the profile to show first */
     profile?: string | null;
+    /** And a field of it to scroll to and light up (its name in Profile, e.g. "forwards") */
+    field?: string | null;
   }
 
-  let { onClose, tab = "General", profile = null }: Props = $props();
+  let { onClose, tab = "General", profile = null, field = null }: Props = $props();
 
   let current = $state(untrack(() => tab));
 
@@ -205,7 +207,7 @@
 </div>
 
 {#snippet tabContent(name: string, shown: boolean)}
-  {#if name === "General"}<GeneralTab />{:else if name === "Terminal"}<TerminalTab />{:else if name === "Remote Desktop"}<RemoteDesktopTab />{:else if name === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab initial={shown ? profile : null} onLeave={onClose} />{/if}
+  {#if name === "General"}<GeneralTab />{:else if name === "Terminal"}<TerminalTab />{:else if name === "Remote Desktop"}<RemoteDesktopTab />{:else if name === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab initial={shown ? profile : null} field={shown ? field : null} onLeave={onClose} />{/if}
 {/snippet}
 
 <style>

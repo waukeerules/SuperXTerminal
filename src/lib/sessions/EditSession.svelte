@@ -18,6 +18,7 @@
   import { highlighting } from "../terminal/highlighting";
   import { loadBars } from "../commands/bars";
   import { listProfiles, DEFAULT_PROFILE, PROFILES_CHANGED, resolvedProfile, type Profile } from "../settings/profiles";
+  import { completeTunnels, describeTunnel } from "../terminal/tunnels";
   import { settingsShown } from "../settings/Settings.svelte";
   import { variablesShown, VARIABLES_CHANGED } from "../settings/EnvironmentVariables.svelte";
   import { context } from "../commands/sending.svelte";
@@ -52,8 +53,11 @@
     onSaved: (id: string) => void;
     /** Cancel, or Escape: nothing changes */
     onCancel: () => void;
-    /** Open Settings > Profiles, on the named profile (the session's) when there is one */
-    onOpenProfiles: (name?: string) => void;
+    /**
+     * Open Settings > Profiles, on the named profile (the session's) when there is one, and scrolled to a field of it
+     * (its name in Profile) when one is given: the Connection tab's links to what the profile adds
+     */
+    onOpenProfiles: (name?: string, field?: string) => void;
     /** Database sessions: the columns locked in the table ("host,port"), shown greyed */
     lockedFields?: string;
     /** A free name in a folder: the name, else with -1, -2… added (`except` the session itself), as SuperXPuTTY's */
@@ -246,6 +250,45 @@
     if (!owner?.keyFile?.trim()) return undefined;
     return { file: owner.keyFile.trim(), owner: owner.name, fetched: !!owner.keyFetch?.trim(), lifetime: Number(owner.keyLifetime) || 0 };
   });
+  /**
+   * What the session's profile (or the profile it's based on, else Default Settings) adds to its SSH connection, as a
+   * launch takes it (launch.rs): tunnels, forwarding, compression, keep-alive, ssh options, an ~/.ssh/config Host,
+   * and a jump host when the session and its folders have none. None of it shows among the session's own fields, so
+   * the Connection tab lists it, each with a link to the profile's field (Settings > Profiles, scrolled to it).
+   * Each: its label, its value in words, the profile it's set in, and the field's name in Profile
+   */
+  const profileSets = $derived.by(() => {
+    if (!isSsh || jumpServer || profileNames === null) return [];
+    const name = openingProfile?.name ?? DEFAULT_PROFILE;
+    const own = resolvedProfile(profiles, name) ?? openingProfile;
+    const fallback = defaultProfile;
+    const rows: { label: string; value: string; whose: string; field: string }[] = [];
+    /** A value the profile sets, else Default Settings' */
+    const add = (label: string, field: string, mine: string, theirs: string) => {
+      if (mine) rows.push({ label, value: mine, whose: name, field });
+      else if (theirs) rows.push({ label, value: theirs, whose: DEFAULT_PROFILE, field });
+    };
+    const onOff = (v: boolean | null | undefined) => (v === true ? "on" : "");
+    // a profile's own tunnels only (or Default Settings' for its own sessions): every session would clash on them
+    const tunnels = completeTunnels(own?.forwards ?? []).map((t) => {
+      const info = describeTunnel(t);
+      return t.kind === "dynamic" ? `SOCKS ${t.listen}` : `${info.kind} ${t.listen} → ${t.to}`;
+    });
+    if (tunnels.length) rows.push({ label: "Tunnels", value: tunnels.join("; "), whose: name, field: "forwards" });
+    add("Agent forwarding", "agentForwarding", onOff(own?.agentForwarding), own?.agentForwarding == null ? onOff(fallback?.agentForwarding) : "");
+    add("X11 forwarding", "x11Forwarding", onOff(own?.x11Forwarding), own?.x11Forwarding == null ? onOff(fallback?.x11Forwarding) : "");
+    add("Compression", "compression", onOff(own?.compression), own?.compression == null ? onOff(fallback?.compression) : "");
+    add("Keep-alive", "keepalive", own?.keepalive ? `every ${own.keepalive} s` : "", fallback?.keepalive ? `every ${fallback.keepalive} s` : "");
+    add("More ssh options", "sshOptions", own?.sshOptions?.trim() ?? "", fallback?.sshOptions?.trim() ?? "");
+    add("SSH config host", "sshConfigHost", own?.sshConfigHost?.trim() ?? "", fallback?.sshConfigHost?.trim() ?? "");
+    if (!draft.jumpHost.trim() && !folders.some((f) => f.jumpHost?.trim())) {
+      add("Jump host", "jumpHost", own?.jumpHost?.trim() ?? "", fallback?.jumpHost?.trim() ?? "");
+    }
+    return rows;
+  });
+  /** The profile the Connection tab's list is of, as its heading names it */
+  const profileShown = $derived(openingProfile?.name ?? DEFAULT_PROFILE);
+
   /** Whether the profile, or Default Settings, has a password stored, which is tried before a key */
   const profilePassword = $derived(!!openingProfile?.hasPassword || !!defaultProfile?.hasPassword);
 
@@ -533,10 +576,27 @@
       {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}
       <div class="row">
         <label class="grow">{@render caption("Jump host:", "jumpHost")}<input bind:value={draft.jumpHost} disabled={locked("jump_host")} title={locked("jump_host") ? lockTip : ""}
-          placeholder={inherited("jumpHost") || "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22"} /></label>
+          placeholder={inherited("jumpHost") || (jumpVia ? `${jumpVia.host} (from ${jumpVia.from})` : "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22")} /></label>
       </div>
       {@render missing(missingVariables.jumpHost)}
       <p class="note" role="note" aria-label="What a jump server needs">{JUMP_HOST_NEEDS}</p>
+      {#if isSsh && !jumpServer && profileNames !== null}
+        <!-- what the profile adds to the connection, which the session's own fields don't show -->
+        <section class="from-profile" aria-label="From the profile">
+          <h4>From profile "{profileShown}", when the session opens</h4>
+          {#if profileSets.length}
+            <ul>
+              {#each profileSets as row (row.field)}
+                <li><span class="what">{row.label}:</span> <span>{row.value}{row.whose !== profileShown ? ` (${row.whose})` : ""}</span>
+                  <button class="link" onclick={() => onOpenProfiles(row.whose, row.field)} title="Settings > Profiles > {row.whose}, at {row.label}">Edit…</button></li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="note">No tunnels, forwarding or other connection settings.
+              <button class="link" onclick={() => onOpenProfiles(profileShown, "forwards")} title="Settings > Profiles > {profileShown}, at Tunnels">Add tunnels…</button></p>
+          {/if}
+        </section>
+      {/if}
 
     </div>
 
@@ -875,6 +935,35 @@
   .note.jump {
     border-left: 3px solid var(--accent);
     padding-left: 8px;
+  }
+
+  /* the Connection tab's list of what the profile adds */
+  .from-profile h4 {
+    margin: 8px 0 4px;
+    font-size: 13px;
+  }
+
+  .from-profile ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .from-profile li {
+    padding: 2px 0;
+  }
+
+  .from-profile .what {
+    color: var(--text-muted);
+  }
+
+  /* a link to the profile's field, in the text's flow */
+  button.link {
+    border: 0;
+    background: none;
+    padding: 0 2px;
+    color: var(--accent);
+    text-decoration: underline;
   }
 
   .note {

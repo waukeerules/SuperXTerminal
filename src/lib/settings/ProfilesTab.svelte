@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import { MONOSPACE_FONTS, SECRET_STORE, SSH_CONFIG, SSH_KEYS, THIS_COMPUTER } from "../platform";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { ask, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { isMac } from "../shortcuts";
@@ -28,11 +28,16 @@
   interface Props {
     /** The profile to show first (Quick connect's Edit…, Edit Session's Profiles…); Default Settings when it's none */
     initial?: string | null;
+    /**
+     * A field of it to show (its name in Profile, e.g. "forwards"): scrolled to and lit up for a moment, for Edit
+     * Session's links to what its profile sets
+     */
+    field?: string | null;
     /** Close Settings, for what goes on in a tab (Log in & cache key) */
     onLeave?: () => void;
   }
 
-  let { initial = null, onLeave = () => {} }: Props = $props();
+  let { initial = null, field = null, onLeave = () => {} }: Props = $props();
 
   let profiles = $state<Profile[]>([]);
   let selected = $state(DEFAULT_PROFILE);
@@ -184,8 +189,27 @@
     // a session's profile is matched by name whatever its case, as the launch matches it
     const wanted = initial ? profiles.find((p) => p.name.toLowerCase() === initial.trim().toLowerCase()) : undefined;
     select(wanted?.name ?? DEFAULT_PROFILE);
+    if (field) void reveal(field);
     await loadTemplates();
   });
+
+  /** The field lit up after Edit Session's link to it, until the light fades */
+  let revealed = $state<string | null>(null);
+
+  /**
+   * Scroll to a field's row (its caption carries the field's name) and light it up for a moment, so it's clear which
+   * setting the link was for
+   * @param name The field's name in Profile
+   */
+  async function reveal(name: string): Promise<void> {
+    await tick();
+    const caption = document.querySelector(`.profiles [data-field="${name}"]`);
+    const row = caption?.closest("label, .tunnels, .field") ?? caption;
+    // (jsdom, in the tests, has no scrolling)
+    row?.scrollIntoView?.({ block: "center" });
+    revealed = name;
+    setTimeout(() => revealed === name && (revealed = null), 2000);
+  }
 
   /** Edit a profile from the list */
   function select(name: string): void {
@@ -843,7 +867,7 @@
 
 <!-- a field's caption, with a dot while it differs from the saved profile -->
 {#snippet caption(text: string, field: Field)}
-  <span class="caption">{text}{#if changed(field)}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</span>
+  <span class="caption" class:revealed={revealed === field} data-field={field}>{text}{#if changed(field)}<span class="dot" title="Changed: not saved yet" aria-label="changed"></span>{/if}</span>
 {/snippet}
 
 {#if menu}
@@ -961,6 +985,12 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
+  }
+
+  /* the field Edit Session's link was for: lit up, then back */
+  .caption.revealed {
+    color: var(--accent);
+    font-weight: 600;
   }
 
   /* a field changed since it was loaded or saved */

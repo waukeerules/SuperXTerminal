@@ -266,6 +266,13 @@ describe("Settings > Profiles", () => {
     ]);
   });
 
+  it("opens at the field Edit Session's link was for, lit up", async () => {
+    render(ProfilesTab, { initial: "root", field: "forwards" });
+    await within(await screen.findByRole("listbox", { name: "Profiles" })).findByRole("option", { name: "root" });
+    await expect.poll(() => document.querySelector(".caption.revealed")?.getAttribute("data-field")).toBe("forwards");
+    expect(document.querySelector(".caption.revealed")?.textContent).toBe("Tunnels");
+  });
+
   it("says under Jump host what a jump server needs", async () => {
     await open("root");
     expect(screen.getByRole("note", { name: "What a jump server needs" }).textContent).toMatch(/^The jump server must allow TCP forwarding/);

@@ -29,6 +29,8 @@ let variables: string[];
 let profileList: Record<string, unknown>[];
 /** What the dialogs asked */
 let asked: string[];
+/** Settings > Profiles opened from the dialog: the profile, and the field scrolled to */
+let openedProfiles: [string | undefined, string | undefined][];
 /** Each Copy to Scripts Folder's `replace` */
 let copies: boolean[];
 
@@ -40,6 +42,7 @@ beforeEach(() => {
   variables = [];
   profileList = [{ name: "Default Settings" }, { name: "root" }];
   asked = [];
+  openedProfiles = [];
   copies = [];
   mockIPC(async (cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
@@ -87,7 +90,7 @@ beforeEach(() => {
 function open(fields: SessionFields = SESSION) {
   render(EditSession, {
     store: "saved", id: "Lab/sw1", fields, folders: [], iconSize: 24, customs: new Map(),
-    onSaved: () => {}, onCancel: () => {}, onOpenProfiles: () => {},
+    onSaved: () => {}, onCancel: () => {}, onOpenProfiles: (name?: string, field?: string) => void openedProfiles.push([name, field]),
   });
 }
 
@@ -371,5 +374,38 @@ describe("Edit Session's jump host", () => {
     // sshd's own setting, or a managed server's SSH settings: no particular product named
     expect(note).toContain("must allow TCP forwarding (AllowTcpForwarding in its sshd_config, or its SSH settings)");
     expect(note).toContain("a profile that has Log in here");
+  });
+});
+
+describe("Edit Session's Connection tab", () => {
+  it("lists what the profile adds to the connection, each with a link to it in Settings > Profiles", async () => {
+    profileList = [
+      { name: "Default Settings", script: "", keepalive: 30, forwards: [] },
+      { name: "OMV Tunnels", script: "", compression: true, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }, { kind: "dynamic", listen: "1080", to: "" }] },
+    ];
+    const user = userEvent.setup();
+    open({ ...SESSION, extraArgs: "", profile: "OMV Tunnels" });
+    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    const list = await screen.findByRole("region", { name: "From the profile" });
+    expect(within(list).getByRole("heading").textContent).toBe('From profile "OMV Tunnels", when the session opens');
+    const rows = within(list).getAllByRole("listitem").map((li) => li.textContent?.replace(/\s+/g, " ").replace(" Edit…", "").trim());
+    expect(rows).toEqual([
+      "Tunnels: Local 8080 → localhost:80; SOCKS 1080",
+      "Compression: on",
+      "Keep-alive: every 30 s (Default Settings)",
+    ]);
+    await user.click(within(within(list).getAllByRole("listitem")[0]).getByRole("button", { name: "Edit…" }));
+    await user.click(within(within(list).getAllByRole("listitem")[2]).getByRole("button", { name: "Edit…" }));
+    expect(openedProfiles).toEqual([["OMV Tunnels", "forwards"], ["Default Settings", "keepalive"]]);
+  });
+
+  it("offers to add tunnels to a profile that adds nothing", async () => {
+    const user = userEvent.setup();
+    open({ ...SESSION, extraArgs: "", profile: "root" });
+    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    const list = await screen.findByRole("region", { name: "From the profile" });
+    expect(list.textContent).toContain("No tunnels, forwarding or other connection settings.");
+    await user.click(within(list).getByRole("button", { name: "Add tunnels…" }));
+    expect(openedProfiles).toEqual([["root", "forwards"]]);
   });
 });

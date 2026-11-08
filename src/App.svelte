@@ -60,6 +60,8 @@
   let settingsTab = $state<string | null>(null);
   /** The profile Settings > Profiles shows first (Quick connect's Edit…, Edit Session's Profiles…) */
   let settingsProfile = $state<string | null>(null);
+  /** And the field of it Settings > Profiles scrolls to (Edit Session's links to what its profile sets) */
+  let settingsField = $state<string | null>(null);
 
   /** Tools > Use Local Overrides: every session's overrides used or not, each kept for later */
   async function setLocalOverrides(on: boolean): Promise<void> {
@@ -67,11 +69,15 @@
     status = on ? "Local overrides on: sessions open with your own values" : "Local overrides off: sessions open as stored";
   }
 
-  /** Open Settings > Profiles on a profile (Default Settings when none), even if Settings is already open elsewhere */
-  async function openProfiles(name: string | null = null): Promise<void> {
+  /**
+   * Open Settings > Profiles on a profile (Default Settings when none), even if Settings is already open elsewhere
+   * @param field A field to scroll to and light up (its name in Profile, e.g. "forwards")
+   */
+  async function openProfiles(name: string | null = null, field: string | null = null): Promise<void> {
     settingsTab = null;
     await tick();
     settingsProfile = name;
+    settingsField = field;
     settingsTab = "Profiles";
   }
 
@@ -79,6 +85,7 @@
   async function openSettings(tab: string): Promise<void> {
     settingsTab = null;
     await tick();
+    settingsField = null;
     settingsTab = tab;
   }
   /** This build's version, for the status bar (tauri.conf.json's) */
@@ -762,7 +769,7 @@
 {/if}
 
 {#if settingsTab}
-  <Settings tab={settingsTab} profile={settingsProfile} onClose={() => (settingsTab = null)} />
+  <Settings tab={settingsTab} profile={settingsProfile} field={settingsField} onClose={() => (settingsTab = null)} />
 {/if}
 
 <div class="window">
@@ -798,7 +805,7 @@
             </svg>
           </button>
         </div>
-        <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={(name) => void openProfiles(name)} onDatabaseSettings={() => (databaseOpen = true)} onLook={(_, icons) => {
+        <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={(name, field) => void openProfiles(name, field)} onDatabaseSettings={() => (databaseOpen = true)} onLook={(_, icons) => {
           customs = icons;
           if (tabs) tabs.customs = icons;
         }} onSelected={(s) => (selectedSession = s)} onWantWidth={(w) => (searchWidth = w)} />

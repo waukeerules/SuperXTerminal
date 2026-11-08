@@ -76,7 +76,7 @@
     onLook: (iconSize: number, customs: ReadonlyMap<string, CustomIcon>) => void;
     /** Open Settings at Profiles (from Edit Session) */
     /** Open Settings > Profiles, on the named profile when there is one */
-    onOpenProfiles: (name?: string) => void;
+    onOpenProfiles: (name?: string, field?: string) => void;
     /** Open the Database sessions settings (Tools > Database Sessions…), from the Database root's menu */
     onDatabaseSettings?: () => void;
     /** The session selected now (a shortcut in Favorites or Recent counts), or null, for Session Detail */

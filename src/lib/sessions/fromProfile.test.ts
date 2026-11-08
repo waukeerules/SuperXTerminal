@@ -55,6 +55,11 @@ describe("what a profile gives a session", () => {
     expect(said(profileRows("connection", all, "Cisco", NONE))).toEqual(["Tunnels: off (kept: Local 8080 → localhost:80) -> forwards"]);
   });
 
+  it("says a key file in 1Password is its item, through 1Password's SSH agent", () => {
+    const all = profiles({}, { keyFile: '"op://Private/SSH Key - Openmediavault/private key"' });
+    expect(said(profileRows("ssh", all, "Cisco", NONE))).toEqual(["Key file: Private/SSH Key - Openmediavault in 1Password, through its SSH agent -> keyFile"]);
+  });
+
   it("follows Based on, naming the session's profile", () => {
     const all = [...profiles({}, { charset: "latin1" }), { ...emptyProfile("Cisco old"), basedOn: "Cisco" }];
     expect(profileRows("terminal", all, "Cisco old", NONE)).toEqual([{ label: "Character set", value: "ISO-8859-1 (Latin-1)", whose: "Cisco old", field: "charset" }]);

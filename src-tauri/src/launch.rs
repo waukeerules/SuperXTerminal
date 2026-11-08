@@ -838,13 +838,24 @@ fn ssh(
     let key_file = first(&profile.key_file, &default.key_file);
     // a key fetched for a short time (the key file's own profile's fetch): missing or too old, it's fetched first
     let key_owner = if profile.key_file.is_empty() { default } else { profile };
-    if !key_file.is_empty() && !key_owner.key_fetch.trim().is_empty() {
+    if !key_file.is_empty() && !crate::onepassword::is_reference(key_file) && !key_owner.key_fetch.trim().is_empty() {
         if let Some(reason) = key_fetch_reason(key_file, key_owner.key_lifetime) {
             return Err(format!("{KEY_FETCH_NEEDED}{}\n{reason}: fetching a new one.", key_owner.name));
         }
         let _ = private_key(std::path::Path::new(&expand_home(key_file)));
     }
-    if !key_file.is_empty() {
+    if crate::onepassword::is_reference(key_file) {
+        // a key in 1Password: its public key tells ssh which of 1Password's SSH agent's keys to use, and only that
+        // one is offered (a Cisco closes after 3 failed attempts, each key offered being one)
+        match crate::onepassword::public_key_file(key_file) {
+            Ok((path, item)) => {
+                notices.push(format!("Logging in with the key {item} from 1Password, through its SSH agent."));
+                login.key_file = path.clone();
+                args.extend(["-i".into(), path, "-o".into(), "IdentitiesOnly=yes".into()]);
+            }
+            Err(why) => notices.push(format!("{}; connecting without it.", why.trim_end_matches('.'))),
+        }
+    } else if !key_file.is_empty() {
         let mut path = expand_home(key_file);
         // OpenSSH can't read PuTTY's .ppk keys: ssh gets an OpenSSH copy of it (ppk.rs), when it has no passphrase
         let usable = if !std::path::Path::new(&path).exists() {
@@ -1832,6 +1843,33 @@ mod tests {
         assert_eq!(unread.password, None);
         assert_eq!(crate::onepassword::take_problems(), ["op://Lab/launch-test-missing/password wasn't read: no op in the tests."]);
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_key_file_in_1password_has_ssh_ask_its_agent_for_that_key_alone() {
+        crate::onepassword::keep("op://Private/launch-key/public key", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILaunch omv");
+        let profiles = Profiles {
+            profiles: vec![
+                Profile { name: profiles::DEFAULT_PROFILE.into(), ..Profile::default() },
+                Profile { name: "omv".into(), key_file: "\"op://Private/launch-key/private key\"".into(), ..Profile::default() },
+            ],
+        };
+        let (args, notices) = args_of(&Sessions::default(), &profiles, &session(&[("PuttySession", "omv")]));
+        let at = args.iter().position(|a| a == "-i").unwrap_or_else(|| panic!("no -i: {args:?} {notices:?}"));
+        assert!(args[at + 1].ends_with("Private_launch-key.pub"), "{args:?}");
+        assert_eq!(std::fs::read_to_string(&args[at + 1]).unwrap(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILaunch omv");
+        assert_eq!(args[at + 2..at + 4], ["-o", "IdentitiesOnly=yes"]);
+        assert!(notices.contains(&"Logging in with the key Private/launch-key from 1Password, through its SSH agent.".to_string()), "{notices:?}");
+        // one that can't be read: connecting without it, and why
+        let missing = Profiles {
+            profiles: vec![
+                Profile { name: profiles::DEFAULT_PROFILE.into(), ..Profile::default() },
+                Profile { name: "omv".into(), key_file: "op://Private/launch-key-gone/private key".into(), ..Profile::default() },
+            ],
+        };
+        let (args, notices) = args_of(&Sessions::default(), &missing, &session(&[("PuttySession", "omv")]));
+        assert!(!args.iter().any(|a| a == "-i"), "{args:?}");
+        assert!(notices.iter().any(|n| n == "op://Private/launch-key-gone/public key wasn't read: no op in the tests; connecting without it."), "{notices:?}");
     }
 
     #[test]

@@ -295,6 +295,13 @@ describe("Settings > Profiles", () => {
     expect(password.title).toMatch(/read from 1Password, with its approval, as a session uses it/);
   });
 
+  it("offers a key in 1Password as the Key file", async () => {
+    await open("root");
+    const keyFile = screen.getByLabelText("Key file") as HTMLInputElement;
+    expect(keyFile.placeholder).toBe("ssh's own keys and the agent; or a key in 1Password, op://Vault/SSH key/private key");
+    expect(keyFile.title).toMatch(/ssh asks 1Password's SSH agent for that key alone/);
+  });
+
   it("says under Jump host what a jump server needs", async () => {
     await open("root");
     expect(screen.getByRole("note", { name: "What a jump server needs" }).textContent).toMatch(/^The jump server must allow TCP forwarding/);

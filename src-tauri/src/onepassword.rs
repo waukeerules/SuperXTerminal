@@ -61,6 +61,37 @@ pub fn resolved(value: &str) -> String {
     }
 }
 
+/// The reference to an SSH Key item's public key, from one to any of its fields ("op://Private/OMV key/private key",
+/// with or without quotes or ?ssh-format=...), or to the item itself ("op://Private/OMV key")
+fn public_key_reference(reference: &str) -> Option<String> {
+    let reference = unquoted(reference);
+    let path = reference.get(5..)?.split('?').next()?.trim_end_matches('/');
+    let parts: Vec<&str> = path.split('/').collect();
+    // the vault and item, whatever field (or none) follows
+    (parts.len() >= 2 && !parts[1].is_empty()).then(|| format!("op://{}/{}/public key", parts[0], parts[1]))
+}
+
+/// A key in 1Password, named as a profile's Key file by a reference to its SSH Key item: its public key, read from
+/// 1Password and written to a file, for ssh's -i with IdentitiesOnly, so ssh asks 1Password's SSH agent for that key
+/// alone. Its private key never leaves 1Password; the public one isn't secret. Also the item's name, for the tab
+pub fn public_key_file(reference: &str) -> Result<(String, String), String> {
+    let public = public_key_reference(reference).ok_or_else(|| format!("{} isn't a 1Password reference to an SSH Key item.", unquoted(reference)))?;
+    let key = read(&public)?;
+    let key = key.trim();
+    if !(key.starts_with("ssh-") || key.starts_with("ecdsa-") || key.starts_with("sk-")) {
+        return Err(format!("{public} isn't an SSH public key: is {} an SSH Key item?", unquoted(reference)));
+    }
+    let item = public.trim_start_matches("op://").trim_end_matches("/public key").to_string();
+    let folder = std::env::temp_dir().join("SuperXTerminal-1Password");
+    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    let name: String = item.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
+    let file = folder.join(format!("{name}.pub"));
+    if std::fs::read_to_string(&file).ok().as_deref() != Some(key) {
+        std::fs::write(&file, key).map_err(|e| e.to_string())?;
+    }
+    Ok((file.display().to_string(), item))
+}
+
 /// What went wrong reading references since this was last asked, each once: for the tab opening now to say
 pub fn take_problems() -> Vec<String> {
     with_kept(|kept| {
@@ -104,9 +135,14 @@ fn read_with(reference: &str, run: impl Fn(&str) -> Result<String, String>) -> R
 
 /// Forget every value read, so the next use reads again: called when Environment Variables or a profile's password
 /// are saved (a reference changed, or the secret behind it)
+#[cfg(not(test))]
 pub fn forget() {
     with_kept(|kept| kept.values.clear());
 }
+
+/// In the tests, nothing: they run together, and one saving a profile's password would take the values others keep
+#[cfg(test)]
+pub fn forget() {}
 
 /// Work on what's kept, made the first time
 fn with_kept<T>(work: impl FnOnce(&mut Kept) -> T) -> T {
@@ -251,6 +287,22 @@ mod tests {
         let failing = "op://Lab/failing-test/password";
         assert!(read_with(failing, |_| Err("nope".into())).is_err());
         assert_eq!(read_with(failing, |_| Ok("now".into())), Ok("now".into()));
+    }
+
+    #[test]
+    fn a_key_file_reference_becomes_its_items_public_key_for_the_agent() {
+        // any of the item's fields, quoted as 1Password copies it, or the item itself
+        for given in ["\"op://Private/OMV key/private key\"", "op://Private/OMV key/private key?ssh-format=openssh", "op://Private/OMV key"] {
+            assert_eq!(public_key_reference(given).as_deref(), Some("op://Private/OMV key/public key"), "{given}");
+        }
+        assert_eq!(public_key_reference("op://Private"), None);
+        keep("op://Private/OMV key/public key", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample omv\n");
+        let (file, item) = public_key_file("\"op://Private/OMV key/private key\"").unwrap();
+        assert_eq!(item, "Private/OMV key");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample omv");
+        // a field that isn't an SSH key's
+        keep("op://Private/Not a key/public key", "hello");
+        assert!(public_key_file("op://Private/Not a key/password").unwrap_err().contains("isn't an SSH public key"));
     }
 
     #[test]

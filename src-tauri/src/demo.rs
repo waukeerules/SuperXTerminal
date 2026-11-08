@@ -41,6 +41,22 @@ const SCRIPTS: [(&str, &str); 8] = [
 /// The layout a demo opens with (Settings > General's default layout), saved in its settings folder
 const LAYOUT: &str = "Demo";
 
+/// The environment variable naming a real Remote Desktop server for the demo's win-jump session, as user@host or
+/// host: a test machine, for a screenshot of an RDP tab. Its address is written only to the demo's own folder, and
+/// no password is: the tab asks for it
+pub const RDP_ENV: &str = "SUPERXTERMINAL_DEMO_RDP";
+
+/// The demo's Sessions.xml with win-jump pointed at `target` (user@host or host), when one is given
+fn with_rdp_target(sessions: &str, target: Option<&str>) -> String {
+    let Some(target) = target.map(str::trim).filter(|t| !t.is_empty()) else { return sessions.to_string() };
+    let (user, host) = target.split_once('@').unwrap_or(("lab", target));
+    let escape = crate::sessions::escape;
+    sessions.replace(
+        r#"Host="win-jump.lab.example.net" Port="3389" Proto="RDP" PuttySession="Default Settings" Username="lab""#,
+        &format!(r#"Host="{}" Port="3389" Proto="RDP" PuttySession="Default Settings" Username="{}""#, escape(host), escape(user)),
+    )
+}
+
 /// Whether this run is a demo, decided once from the command line and the environment
 static ON: OnceLock<bool> = OnceLock::new();
 
@@ -110,7 +126,7 @@ pub fn prepare() -> Result<(), String> {
 fn seed(user: &Path, shared: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(user)?;
     std::fs::create_dir_all(shared)?;
-    std::fs::write(shared.join("Sessions.xml"), include_str!("../demo/Sessions.xml"))?;
+    std::fs::write(shared.join("Sessions.xml"), with_rdp_target(include_str!("../demo/Sessions.xml"), std::env::var(RDP_ENV).ok().as_deref()))?;
     std::fs::write(shared.join("Folders.xml"), include_str!("../demo/Folders.xml"))?;
     std::fs::write(shared.join("ButtonBars.xml"), include_str!("../demo/ButtonBars.xml"))?;
     // the tabs it opens with: switches, a firewall and servers, split in two (dockview's own JSON, as App.svelte saves
@@ -464,6 +480,15 @@ mod tests {
         assert!(!asked(&[], Some("0")));
         assert!(!asked(&[], Some("false")));
         assert!(!asked(&["-demo".into()], None));
+    }
+
+    #[test]
+    fn the_demo_rdp_session_can_be_pointed_at_a_test_server() {
+        let sessions = include_str!("../demo/Sessions.xml");
+        assert_eq!(with_rdp_target(sessions, None), sessions);
+        let pointed = with_rdp_target(sessions, Some("admin@192.0.2.10"));
+        assert!(pointed.contains(r#"SessionId="Lab/win-jump" SessionName="win-jump" ImageKey="windows#2E7D32" Host="192.0.2.10" Port="3389" Proto="RDP" PuttySession="Default Settings" Username="admin""#));
+        assert!(with_rdp_target(sessions, Some("192.0.2.10")).contains(r#"Host="192.0.2.10" Port="3389" Proto="RDP" PuttySession="Default Settings" Username="lab""#));
     }
 
     #[test]

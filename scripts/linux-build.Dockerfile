@@ -1,5 +1,5 @@
 # The Linux build machine for SuperXTerminal: Ubuntu 22.04 with everything `npm run tauri build` needs, so the .deb,
-# .rpm and AppImage can be made from a Mac (or any computer with Docker). scripts/build-linux.sh builds this image the
+# .rpm and AppImage can be made on the Mac or the Windows PC. scripts/build-linux.mjs builds this image the
 # first time it's needed and runs the build in it; docs/BUILD-Linux.md has the steps.
 #
 # The image holds only tools and libraries. The source isn't copied in: the script mounts the repository at /src, with

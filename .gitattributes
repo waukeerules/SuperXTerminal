@@ -1,3 +1,6 @@
-# Scripts run by Linux (in the Docker build) or macOS: LF even in a Windows checkout, or bash stops at the first CR
+# Line endings the files' systems need, whatever git's core.autocrlf is on the computer checking them out.
+# LF for what Linux or macOS reads: sh stops at a CR, and the Dockerfile is piped to Docker's Linux builder, where a CR
+# after a line's \ breaks the RUN commands. CRLF for what cmd reads: it can misread a .bat with Unix endings.
 *.sh text eol=lf
 *.Dockerfile text eol=lf
+*.bat text eol=crlf

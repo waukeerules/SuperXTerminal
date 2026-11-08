@@ -1,8 +1,8 @@
 // Puts the installers in releases/<version>/ into the version's GitHub release: `npm run release:publish`. The first
 // computer to run it tags the commit (v<version>, pushed) and makes the release as a draft; the other adds its
 // installers to it (one already there is replaced). `npm run release:publish -- --final` then makes the draft public,
-// which is when the app's update check offers it, so it refuses until the Mac's .dmg and Windows' .msi and -setup.exe
-// are all in.
+// which is when the app's update check offers it, so it refuses until the Mac's .dmg, Windows' .msi and -setup.exe,
+// and the Linux .deb, .rpm and AppImage (built in Docker on the Windows PC, scripts/build-linux.mjs) are all in.
 //
 // The notes are releases/<version>/NOTES.md when it's there (what's new, the download table, how to get past
 // Gatekeeper and SmartScreen), put in whenever the script runs so they can be written or changed while it's a draft;
@@ -58,9 +58,16 @@ function releaseExists(tag) {
   return (list ? JSON.parse(list) : []).some((r) => r.tagName === tag);
 }
 
-/** The installers that must all be in before the release is public: the Mac's and Windows' two */
+/** The installers that must all be in before the release is public: the Mac's, Windows' two and Linux's three */
 function expected(version) {
-  return [`SuperXTerminal_${version}_aarch64.dmg`, `SuperXTerminal_${version}_x64_en-US.msi`, `SuperXTerminal_${version}_x64-setup.exe`];
+  return [
+    `SuperXTerminal_${version}_aarch64.dmg`,
+    `SuperXTerminal_${version}_x64_en-US.msi`,
+    `SuperXTerminal_${version}_x64-setup.exe`,
+    `SuperXTerminal_${version}_amd64.deb`,
+    `SuperXTerminal-${version}-1.x86_64.rpm`,
+    `SuperXTerminal_${version}_amd64.AppImage`,
+  ];
 }
 
 /** Stop unless this checkout is what GitHub has: tracked files as committed, and the commit origin/main's */

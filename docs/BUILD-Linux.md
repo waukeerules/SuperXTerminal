@@ -1,31 +1,32 @@
 # Building SuperXTerminal for Linux
 
-How to make the Linux packages (`.deb`, `.rpm` and AppImage) from the Mac or Windows, and try them on a Linux
-machine. Linux comes after the Mac and Windows (see [PLAN.md](PLAN.md)); these builds are for testing, not yet released.
+How to make the Linux packages (`.deb`, `.rpm` and AppImage) in Docker, on the Mac or the Windows PC, and try them on
+a Linux machine. A release builds them on the Windows PC, with Windows' installers (`release.bat`,
+[RELEASE.md](RELEASE.md)); this is for building them on their own, to test.
 
 The Mac build is in [BUILD-macOS.md](BUILD-macOS.md), the Windows one in [BUILD-Windows.md](BUILD-Windows.md).
 
 ## Why Docker
 
-Tauri can't make Linux packages on macOS: the app links against Linux's own libraries (WebKitGTK, GTK, libsecret,
-ALSA) and is bundled with Linux tools (`dpkg`, `rpmbuild`, linuxdeploy). So the build runs in an Ubuntu 22.04
-container on the Mac, and the packages are copied out to install on a real Linux machine.
+Tauri can't make Linux packages on macOS or Windows: the app links against Linux's own libraries (WebKitGTK, GTK,
+libsecret, ALSA) and is bundled with Linux tools (`dpkg`, `rpmbuild`, linuxdeploy). So the build runs in an Ubuntu
+22.04 container, and the packages are copied out to install on a real Linux machine.
 
 Everything the container needs is written down in [`scripts/linux-build.Dockerfile`](../scripts/linux-build.Dockerfile),
-and [`scripts/build-linux.sh`](../scripts/build-linux.sh) makes the image when it's missing. Deleting the image, the
+and [`scripts/build-linux.mjs`](../scripts/build-linux.mjs) makes the image when it's missing. It's Node, not a
+shell script, so the same command works on the Mac and Windows. Deleting the image, the
 volumes or Docker itself loses nothing but time: the next build makes them again.
 
 ## What you'll need
 
-- Docker Desktop (`open -a Docker`) or OrbStack, running.
+- Docker Desktop (`open -a Docker` on the Mac) or OrbStack, running. On Windows, Docker Desktop in its usual Linux
+  containers mode; amd64 builds run natively there (about 6 minutes for Rust), quicker than on Apple silicon.
+- Enough memory for Docker. Docker Desktop's 2 GB default on Windows isn't: the compiles are killed ("signal: 9,
+  SIGKILL"). Give it 16 GB (Settings > Resources > Advanced, then Apply & restart) and check with
+  `docker info --format "{{.MemTotal}}"`. On a smaller machine, set `CARGO_BUILD_JOBS` (e.g. `4`) before the build,
+  and the container uses it.
 - On Apple silicon, for x86_64 packages: Docker Desktop's Settings > General > "Use Rosetta for x86_64/amd64
   emulation on Apple Silicon" turned on. It works without, but slower.
-- On Windows: Docker Desktop with Linux containers, and Git for Windows (npm runs the script with its bash, or
-  MSYS2's if that comes first on the PATH; the script turns the repository's path into one Docker understands).
-  amd64 builds run natively there (about 6 minutes for Rust). Docker's 2 GB default isn't enough: the compiles are
-  killed ("signal: 9, SIGKILL"). Give it 16 GB (Settings > Resources > Advanced, then Apply & restart) and check with
-  `docker info --format "{{.MemTotal}}"`; or set `CARGO_BUILD_JOBS` (e.g. `4`) before `npm run build:linux`, and
-  the container uses it.
 - The machine to try it on: check its CPU with `uname -m`. `x86_64` is the usual PC (the default build, amd64);
   `aarch64` is ARM (build with `--arm64`).
 
@@ -36,7 +37,8 @@ npm run build:linux
 ```
 
 The first time it makes the image (a few minutes), then installs the npm packages and compiles everything: 10-20
-minutes for amd64 on Apple silicon, as it's emulated. Later builds only compile what changed.
+minutes for amd64 on Apple silicon, as it's emulated, and less on an x86 Windows PC, where it isn't. Later builds only
+compile what changed.
 
 The packages land in `releases/linux/<version>/`:
 
@@ -46,7 +48,8 @@ SuperXTerminal-0.7.0-1.x86_64.rpm
 SuperXTerminal_0.7.0_amd64.AppImage
 ```
 
-They're kept apart from `releases/<version>/`, as `npm run release:publish` uploads everything in that folder.
+They're kept apart from `releases/<version>/`, as `npm run release:publish` uploads everything in that folder. A
+release puts them there instead (`--into releases/<version>`).
 
 Other ways to run it:
 

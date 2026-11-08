@@ -8,6 +8,11 @@
 
 ## Release, step by step
 
+All of it but the notes is one command, `release.bat --release 0.3.0`, which also builds the Linux packages in
+Docker, so Docker Desktop must be running ([RELEASE.md](RELEASE.md#one-command-on-each-computer)). The steps it runs
+are below, for doing them one at a time; the Linux packages are `node scripts/build-linux.mjs --into releases/0.3.0`
+after step 4 ([BUILD-Linux.md](BUILD-Linux.md)).
+
 Each command is on its own, to run one after the other. The only things to change are the version in step 2 and the notes
 in step 5; the rest is the same every time. [RELEASE.md](RELEASE.md) says what each one does.
 

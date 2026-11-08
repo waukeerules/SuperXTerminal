@@ -25,6 +25,7 @@ let opProblem = "";
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = () => {};
+  settings.onePassword = false;
   opCheck = null;
   opProblem = "";
   saved = [];
@@ -189,7 +190,19 @@ describe("Show in the file manager beside the sessions files", () => {
 });
 
 describe("Settings > General > 1Password", () => {
+  it("is off until turned on: no Check 1Password, and turning it on saves it and offers the check", async () => {
+    render(Settings, { onClose: () => {} });
+    const use = screen.getByRole("checkbox", { name: "Use 1Password references" }) as HTMLInputElement;
+    expect(use.checked).toBe(false);
+    expect(screen.queryByRole("button", { name: "Check 1Password" })).toBeNull();
+    expect(screen.getByText(/Off, nothing is read from 1Password and its CLI never runs/)).toBeTruthy();
+    await userEvent.click(use);
+    await expect.poll(() => saved.at(-1)?.onePassword).toBe(true);
+    expect(await screen.findByRole("button", { name: "Check 1Password" })).toBeTruthy();
+  });
+
   it("says what 1Password's CLI can read when it works", async () => {
+    settings.onePassword = true;
     opCheck = "1Password's CLI 2.42.0 works, through the 1Password app: 3 vaults it can read.";
     render(Settings, { onClose: () => {} });
     await userEvent.click(screen.getByRole("button", { name: "Check 1Password" }));
@@ -201,6 +214,7 @@ describe("Settings > General > 1Password", () => {
   });
 
   it("says what's wrong, and how to install the CLI, with its getting-started page", async () => {
+    settings.onePassword = true;
     opProblem = "1Password's CLI (op) isn't installed: winget install 1password-cli, then turn on Integrate with 1Password CLI in 1Password's Settings > Developer (https://www.1password.dev/cli/get-started).";
     render(Settings, { onClose: () => {} });
     await userEvent.click(screen.getByRole("button", { name: "Check 1Password" }));

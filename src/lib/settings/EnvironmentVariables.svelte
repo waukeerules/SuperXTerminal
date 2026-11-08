@@ -31,6 +31,7 @@
   import { isMac } from "../shortcuts";
   import { SECRET_STORE } from "../platform";
   import { OP_REFERENCE_HINT, isReference, referencedItem } from "./onepassword";
+  import { settings } from "./store.svelte";
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -251,7 +252,7 @@
           <code>{"{user}@{domain}"}</code> or <code>-pw {"{admin_password}"}</code>; so can profiles and scripts. They're
           yours only, kept beside your settings. A secret is kept in {SECRET_STORE}, never in a file, and isn't shown
           again: leave it empty to keep it, type to replace it.</p>
-        <p>{OP_REFERENCE_HINT} A reference isn't a secret itself, so it needn't be marked Secret.</p>
+        {#if settings.onePassword}<p>{OP_REFERENCE_HINT} A reference isn't a secret itself, so it needn't be marked Secret.</p>{/if}
       </div>
     {/if}
 
@@ -271,7 +272,7 @@
               <span class="badge">Secret</span>
               <input data-value type="password" bind:value={row.value} placeholder={secretHint(row)} aria-label="Secret value" />
             </span>
-          {:else if isReference(row.value) && editing !== i}
+          {:else if settings.onePassword && isReference(row.value) && editing !== i}
             <!-- a 1Password reference as the item it names; a click edits its text -->
             <button class="value reference" onclick={() => void editReference(i)} title={`${row.value.trim()}: read from 1Password as a session uses it. Click to edit`}>
               <span class="item">{referencedItem(row.value)}</span><span class="badge op">1Password</span>
@@ -279,7 +280,7 @@
           {:else}
             <span class="value">
               <input data-value bind:value={row.value} aria-label="Value" placeholder="value" onblur={() => editing === i && (editing = null)} />
-              {#if isReference(row.value)}<span class="badge op">1Password</span>{/if}
+              {#if settings.onePassword && isReference(row.value)}<span class="badge op">1Password</span>{/if}
             </span>
           {/if}
           <span class="used" title={usedBy(row.key).join("\n")}>{row.key.trim() ? usedText(usedBy(row.key)) : ""}</span>

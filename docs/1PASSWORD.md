@@ -4,6 +4,11 @@ How SuperXTerminal uses 1Password for passwords and SSH keys, so they don't have
 and covered by tests (`src-tauri/src/onepassword.rs`, `launch.rs`), and tried against 1Password on Windows and the
 Mac (November 2026).
 
+It's off until you turn it on: Settings > General > 1Password > **Use 1Password references**. Off, nothing is read
+from 1Password, its CLI never runs, and Settings and Edit Session don't offer references. A reference already
+typed somewhere isn't read: the tab says "1Password is turned off" and the session goes on without it. 1Password's SSH
+agent works either way, as ssh reaches it by itself.
+
 There are two parts, and you can use either on its own:
 
 - **SSH keys** come from 1Password's SSH agent. ssh asks the agent, and 1Password asks you to approve each use. The
@@ -28,7 +33,8 @@ For references, install 1Password's CLI:
 | Windows | `winget install 1password-cli` |
 | Mac | `brew install 1password-cli` |
 
-Then start SuperXTerminal again. Settings > General > 1Password > **Check 1Password** should list the vaults it can
+Then start SuperXTerminal again, and turn on Settings > General > 1Password > **Use 1Password references**.
+**Check 1Password** there should list the vaults it can
 read; if it can't, it says why, with the same install command and a link to
 [1Password's CLI guide](https://www.1password.dev/cli/get-started).
 
@@ -96,6 +102,7 @@ op://Lab/Cisco Switch/password wasn't read: the request was turned down in 1Pass
 
 Without the password, ssh asks for it in the tab. Without the key, ssh connects without it. The usual causes:
 
+- **1Password is turned off:** turn on Settings > General > 1Password > Use 1Password references.
 - **op isn't installed:** the message gives the install command.
 - **op isn't signed in:** turn on Integrate with 1Password CLI, and keep 1Password running.
 - **The approval was turned down,** or not given within two minutes.

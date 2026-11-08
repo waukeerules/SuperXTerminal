@@ -73,6 +73,12 @@ export interface AppSettings {
   rdpDefaults: string;
   /** FileZilla (external) gets the session's password on its address (off: it shows in the process list) */
   filezillaPasswords: boolean;
+  /**
+   * 1Password references (op://...) in passwords, Environment Variables and key files are read from 1Password, and
+   * Settings and Edit Session offer them (Settings > General > 1Password). Off by default, as most people don't use
+   * 1Password: off, none is read and its hints and examples aren't shown
+   */
+  onePassword: boolean;
   /** Tabs' close button: on each tab, or one beside the tab list's ▾ that closes the active tab */
   tabClose: "tab" | "right";
   /** The tab list's ▾ opens Switch Session (its tabs, with a filter) rather than a plain list */
@@ -150,6 +156,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   rdpBuiltIn: true,
   rdpDefaults: "",
   filezillaPasswords: false,
+  onePassword: false,
   tabClose: "tab",
   tabListSwitchSession: false,
   tabNameMax: 30,

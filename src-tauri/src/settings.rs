@@ -97,6 +97,10 @@ pub struct AppSettings {
     /// FileZilla (external) gets the session's password on its sftp:// address, as SuperXPuTTY's "Allow plain-text
     /// password arguments": off, since any process can read a program's arguments
     pub filezilla_passwords: bool,
+    /// 1Password references (op://...) in passwords, Environment Variables and key files are read from 1Password
+    /// (onepassword.rs), and Settings and Edit Session offer them. Off by default, as most people don't use 1Password:
+    /// off, no reference is read and 1Password's CLI never runs
+    pub one_password: bool,
     /// Where tabs' close button is: "tab" (on each tab) or "right" (one beside the tab list's ▾, closing the active tab)
     pub tab_close: String,
     /// The tab list's ▾ opens Switch Session (its tabs, with a filter to type into) rather than a plain list, for a
@@ -166,6 +170,7 @@ impl Default for AppSettings {
             rdp_built_in: true,
             rdp_defaults: String::new(),
             filezilla_passwords: false,
+            one_password: false,
             tab_close: "tab".into(),
             tab_list_switch_session: false,
             tab_name_max: 30,

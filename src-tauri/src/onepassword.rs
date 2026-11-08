@@ -9,8 +9,13 @@
 //!
 //! Its SSH agent is separate: ssh reaches it by itself (Windows' OpenSSH agent pipe, which 1Password takes over), and
 //! needs nothing here.
+//!
+//! All of it is off until turned on (Settings > General > 1Password, `AppSettings::one_password`), as most people
+//! don't use 1Password: off, no reference is read and `op` never runs; a reference used says so in the tab
+//! ([`TURNED_OFF`]) and the session goes on without it, as when one can't be read.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -28,6 +33,18 @@ struct Kept {
 }
 
 static KEPT: Mutex<Option<Kept>> = Mutex::new(None);
+
+/// Whether 1Password is turned on (Settings > General > 1Password): set as the settings are read and saved. On in the
+/// tests, whose references are other modules' to read; [`read_with`] is given it, so the off case is tested too
+static ENABLED: AtomicBool = AtomicBool::new(cfg!(test));
+
+/// What a reference used while 1Password is off says, in the tab and Check 1Password
+pub const TURNED_OFF: &str = "1Password is turned off (Settings > General > 1Password)";
+
+/// Turn 1Password on or off, as Settings > General has it
+pub fn set_enabled(on: bool) {
+    ENABLED.store(on, Ordering::Relaxed);
+}
 
 /// A value without the spaces and the quotes round it: 1Password's Copy Secret Reference puts a reference with a space
 /// in it ("op://Private/Cisco Switch/password") in double quotes, for a shell
@@ -136,13 +153,13 @@ pub fn take_problems() -> Vec<String> {
 /// A secret reference's value: kept from a read in the last [`KEPT_FOR`], else read by `op read`
 #[cfg(not(test))]
 pub fn read(reference: &str) -> Result<String, String> {
-    read_with(reference, run_op)
+    read_with(reference, ENABLED.load(Ordering::Relaxed), run_op)
 }
 
 /// In the tests, without 1Password: what [`keep`] put there, else as if op weren't installed
 #[cfg(test)]
 pub fn read(reference: &str) -> Result<String, String> {
-    read_with(reference, |r| Err(format!("{r} wasn't read: no op in the tests.")))
+    read_with(reference, ENABLED.load(Ordering::Relaxed), |r| Err(format!("{r} wasn't read: no op in the tests.")))
 }
 
 /// A value as if read from 1Password, for other modules' tests
@@ -151,8 +168,12 @@ pub fn keep(reference: &str, value: &str) {
     with_kept(|kept| kept.values.insert(reference.to_string(), (value.to_string(), Instant::now())));
 }
 
-/// [`read`], with how `op read` is run given (the tests' stand-in)
-fn read_with(reference: &str, run: impl Fn(&str) -> Result<String, String>) -> Result<String, String> {
+/// [`read`], with whether 1Password is on and how `op read` is run given (the tests' stand-ins). Off, nothing is read,
+/// not even a value kept from before it was turned off, and op isn't run
+fn read_with(reference: &str, enabled: bool, run: impl Fn(&str) -> Result<String, String>) -> Result<String, String> {
+    if !enabled {
+        return Err(format!("{reference} wasn't read: {TURNED_OFF}."));
+    }
     if let Some(value) = with_kept(|kept| kept.values.get(reference).filter(|(_, at)| at.elapsed() < KEPT_FOR).map(|(v, _)| v.clone())) {
         return Ok(value);
     }
@@ -223,6 +244,9 @@ fn op_command() -> Result<std::process::Command, String> {
 /// Whether 1Password's CLI works here, for Settings > General's Check 1Password: its version, and its vaults, which
 /// asks 1Password to approve it as a session's reference would. What's wrong, in the user's words, otherwise
 pub fn check() -> Result<String, String> {
+    if !ENABLED.load(Ordering::Relaxed) {
+        return Err(format!("{TURNED_OFF}."));
+    }
     let mut version = op_command()?;
     let version = version.arg("--version").output().map_err(|e| format!("op didn't start ({e})."))?;
     let version = String::from_utf8_lossy(&version.stdout).trim().to_string();
@@ -307,14 +331,31 @@ mod tests {
             Ok("s3cret".to_string())
         };
         let reference = "op://Lab/kept-test/password";
-        assert_eq!(read_with(reference, run), Ok("s3cret".into()));
-        assert_eq!(read_with(reference, run), Ok("s3cret".into()));
+        assert_eq!(read_with(reference, true, run), Ok("s3cret".into()));
+        assert_eq!(read_with(reference, true, run), Ok("s3cret".into()));
         assert_eq!(runs.get(), 1);
         // (forget(), which clears them all, isn't tried here: the tests run together, and others keep values too)
         // one that fails isn't kept: it's tried again next time
         let failing = "op://Lab/failing-test/password";
-        assert!(read_with(failing, |_| Err("nope".into())).is_err());
-        assert_eq!(read_with(failing, |_| Ok("now".into())), Ok("now".into()));
+        assert!(read_with(failing, true, |_| Err("nope".into())).is_err());
+        assert_eq!(read_with(failing, true, |_| Ok("now".into())), Ok("now".into()));
+    }
+
+    #[test]
+    fn turned_off_nothing_is_read_and_op_never_runs_and_the_tab_is_told_why() {
+        let runs = Cell::new(0);
+        let run = |_: &str| {
+            runs.set(runs.get() + 1);
+            Ok("s3cret".to_string())
+        };
+        let reference = "op://Lab/off-test/password";
+        // a value kept from while it was on isn't used either
+        assert_eq!(read_with(reference, true, run), Ok("s3cret".into()));
+        let off = read_with(reference, false, run);
+        assert_eq!(off, Err("op://Lab/off-test/password wasn't read: 1Password is turned off (Settings > General > 1Password).".into()));
+        assert_eq!(runs.get(), 1, "op ran while 1Password was off");
+        // and the settings' default is off
+        assert!(!crate::settings::AppSettings::default().one_password);
     }
 
     #[test]

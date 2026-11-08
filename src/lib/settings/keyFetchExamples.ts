@@ -15,9 +15,12 @@ export interface KeyFetchExample {
   note: string;
 }
 
-/** The examples for this system: `mac` for the Mac's shell commands, else PowerShell's */
-export function keyFetchExamples(mac: boolean): KeyFetchExample[] {
-  return [
+/**
+ * The examples for this system: `mac` for the Mac's shell commands, else PowerShell's
+ * @param onePassword Whether 1Password is turned on (Settings > General); off, its example isn't offered
+ */
+export function keyFetchExamples(mac: boolean, onePassword = true): KeyFetchExample[] {
+  const all: KeyFetchExample[] = [
     {
       name: "CyberArk (MFA caching)",
       command: `sftp "{ad_username}@{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`,
@@ -65,4 +68,5 @@ export function keyFetchExamples(mac: boolean): KeyFetchExample[] {
       note: "Makes a new key every minute, to try the fetch without a real issuer. Devices won't accept it.",
     },
   ];
+  return onePassword ? all : all.filter((e) => !e.name.startsWith("1Password"));
 }

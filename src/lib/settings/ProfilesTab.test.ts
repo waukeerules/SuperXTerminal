@@ -28,6 +28,7 @@ let pickedFile: string;
 let templates: Profile[];
 
 beforeEach(() => {
+  settings.onePassword = false;
   stored = [
     { ...emptyProfile(DEFAULT_PROFILE), olderAlgorithms: true },
     { ...emptyProfile("root"), username: "root", port: 2222 },
@@ -294,6 +295,7 @@ describe("Settings > Profiles", () => {
   });
 
   it("offers a 1Password reference in place of a stored password", async () => {
+    settings.onePassword = true;
     await open("root");
     const password = screen.getByLabelText("Password") as HTMLInputElement;
     expect(password.placeholder).toBe("none; or a 1Password reference, op://Vault/Item/password");
@@ -301,10 +303,21 @@ describe("Settings > Profiles", () => {
   });
 
   it("offers a key in 1Password as the Key file", async () => {
+    settings.onePassword = true;
     await open("root");
     const keyFile = screen.getByLabelText("Key file") as HTMLInputElement;
     expect(keyFile.placeholder).toBe("ssh's own keys and the agent; or a key in 1Password, op://Vault/SSH key/private key");
     expect(keyFile.title).toMatch(/ssh asks 1Password's SSH agent for that key alone/);
+  });
+
+  it("offers nothing of 1Password while it's turned off: not for the password, the key file or a Fetch command", async () => {
+    await open("root");
+    expect((screen.getByLabelText("Password") as HTMLInputElement).placeholder).toBe("none");
+    expect((screen.getByLabelText("Password") as HTMLInputElement).title).toBe("");
+    expect((screen.getByLabelText("Key file") as HTMLInputElement).placeholder).toBe("ssh's own keys and the agent");
+    const examples = [...(screen.getByLabelText("Fetch command examples") as HTMLSelectElement).options].map((o) => o.textContent);
+    expect(examples.some((e) => e?.includes("1Password"))).toBe(false);
+    expect(examples).toContain("Teleport");
   });
 
   it("fills Jump host with a saved session chosen from the ▾", async () => {

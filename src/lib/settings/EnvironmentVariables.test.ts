@@ -4,6 +4,7 @@
 // away) fills a template with secrets hidden, and Export… and Import… pass the variables on in SuperXPuTTY's file,
 // secrets by name only. The Rust side, and the dialogs choosing the file, are stood in for by mockIPC.
 import { beforeEach, describe, expect, it } from "vitest";
+import { settings } from "./store.svelte";
 import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -17,6 +18,7 @@ let written: { path: string; text: string } | null = null;
 let importing = "";
 
 beforeEach(() => {
+  settings.onePassword = false;
   saved = null;
   written = null;
   importing = "";
@@ -87,11 +89,19 @@ describe("Environment Variables", () => {
   });
 
   it("shows a 1Password reference as the item it names, and its text to edit on a click", async () => {
+    settings.onePassword = true;
     await open();
     const reference = screen.getByRole("button", { name: /Private\/Cisco Switch/ });
     expect(reference.textContent).toBe("Private/Cisco Switch1Password");
     await userEvent.click(reference);
     expect(screen.getByDisplayValue('"op://Private/Cisco Switch/password"')).toBe(document.activeElement);
+  });
+
+  it("shows a 1Password reference as plain text, no 1Password badge, while 1Password is turned off", async () => {
+    await open();
+    expect(screen.queryByRole("button", { name: /Private\/Cisco Switch/ })).toBeNull();
+    expect(screen.getByDisplayValue('"op://Private/Cisco Switch/password"')).toBeTruthy();
+    expect(screen.queryByText("1Password")).toBeNull();
   });
 
   it("marks a variable Secret, and removes one, from its ⋯ menu", async () => {
@@ -130,6 +140,7 @@ describe("Environment Variables", () => {
   });
 
   it("keeps the longer help behind ?, and says a reference needn't be secret", async () => {
+    settings.onePassword = true;
     await open();
     expect(screen.queryByRole("note", { name: "How Environment Variables work" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "How these work" }));

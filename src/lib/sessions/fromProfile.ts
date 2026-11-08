@@ -10,6 +10,7 @@
 import { DEFAULT_PROFILE, resolvedProfile, type Profile } from "../settings/profiles";
 import { completeTunnels, describeTunnel } from "../terminal/tunnels";
 import { isReference, referencedItem } from "../settings/onepassword";
+import { settings } from "../settings/store.svelte";
 
 /** One setting the profile gives the session */
 export interface ProfileRow {
@@ -89,7 +90,10 @@ export function profileRows(tab: ProfileTab, profiles: Profile[], name: string, 
     add("SSH config host", "sshConfigHost", text);
     if (!own.jumpHost) add("Jump host", "jumpHost", text);
   } else if (tab === "ssh") {
-    add("Key file", "keyFile", (v) => (isReference(text(v)) ? `${referencedItem(text(v))} in 1Password, through its SSH agent` : text(v)));
+    add("Key file", "keyFile", (v) =>
+      !isReference(text(v)) ? text(v)
+      : settings.onePassword ? `${referencedItem(text(v))} in 1Password, through its SSH agent`
+      : `${referencedItem(text(v))} in 1Password, not used: 1Password is turned off (Settings > General)`);
     add("Offer SSH keys", "offerKeys", (v) => (v === false ? "off: only the key file and password" : ""));
     add("Ask for a username", "askUsername", (v) => (v === true ? 'on: "login as:" in the tab' : ""));
     add("Allow older algorithms", "olderAlgorithms", (v) => (v === true ? "on" : ""));

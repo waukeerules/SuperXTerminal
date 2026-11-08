@@ -1270,6 +1270,7 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
     current.shortcuts = keys::cleaned(&current.shortcuts);
     current.command_history_days = current.command_history_days.min(command_history::MOST_DAYS);
     current.save(&state.user_folder)?;
+    onepassword::set_enabled(current.one_password);
     // Settings > General > Command bar's days shortened (or 0): what they no longer allow goes now, not at next start
     if current.command_history_days < before.command_history_days {
         let _ = command_history::prune(&state.user_folder, current.command_history_days, command_history::now());
@@ -2886,6 +2887,7 @@ pub fn run() {
     }
     let user_folder = sessions::user_folder();
     let settings = AppSettings::load(&user_folder);
+    onepassword::set_enabled(settings.one_password);
     let profiles = Profiles::load(&user_folder);
     applog::info(format!("SuperXTerminal {} started (user folder {})", env!("CARGO_PKG_VERSION"), user_folder.display()));
     // started with something to open (SuperXPuTTY's command line)

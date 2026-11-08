@@ -178,18 +178,26 @@
 
   <fieldset>
     <legend>1Password</legend>
-    <p class="hint">A password, or an Environment Variable's value, can be a 1Password reference
-      ({OP_REFERENCE_EXAMPLE}): it's read from 1Password, with its approval, as a session uses it. That needs
-      1Password's CLI, linked to the 1Password app (Integrate with 1Password CLI in 1Password's Settings > Developer).
-      SSH keys in 1Password need none of this: its SSH agent hands them to ssh by itself.
-      <a href={OP_DOC} onclick={openLink}>How SuperXTerminal uses 1Password</a></p>
-    <div class="row">
-      <button onclick={() => void checkOnePassword()} disabled={opChecking}>{opChecking ? "Waiting for 1Password…" : "Check 1Password"}</button>
-      <span class="hint" class:problem={opProblem}>{opMessage}</span>
-    </div>
-    {#if opProblem}
-      <p class="hint">To install it: <code>{OP_INSTALL}</code>, then start SuperXTerminal again.
-        <a href={OP_GET_STARTED} onclick={openLink}>1Password CLI: get started</a></p>
+    <label class="check"><input type="checkbox" checked={settings.onePassword}
+      onchange={(e) => { opMessage = ""; opProblem = false; void saveSettings({ onePassword: e.currentTarget.checked }); }} /> Use 1Password references</label>
+    {#if settings.onePassword}
+      <p class="hint">A password, an Environment Variable's value, or a profile's key file can be a 1Password reference
+        ({OP_REFERENCE_EXAMPLE}): it's read from 1Password, with its approval, as a session uses it. That needs
+        1Password's CLI, linked to the 1Password app (Integrate with 1Password CLI in 1Password's Settings > Developer).
+        SSH keys in 1Password need none of this: its SSH agent hands them to ssh by itself.
+        <a href={OP_DOC} onclick={openLink}>How SuperXTerminal uses 1Password</a></p>
+      <div class="row">
+        <button onclick={() => void checkOnePassword()} disabled={opChecking}>{opChecking ? "Waiting for 1Password…" : "Check 1Password"}</button>
+        <span class="hint" class:problem={opProblem}>{opMessage}</span>
+      </div>
+      {#if opProblem}
+        <p class="hint">To install it: <code>{OP_INSTALL}</code>, then start SuperXTerminal again.
+          <a href={OP_GET_STARTED} onclick={openLink}>1Password CLI: get started</a></p>
+      {/if}
+    {:else}
+      <p class="hint">Turn it on to keep passwords and keys in 1Password and have them read, with its approval, as a
+        session uses them. Off, nothing is read from 1Password and its CLI never runs. 1Password's SSH agent works
+        either way, as ssh reaches it by itself.</p>
     {/if}
   </fieldset>
 

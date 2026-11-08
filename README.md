@@ -44,9 +44,10 @@ A shared session only says which profile it uses.
   password store: the Keychain on the Mac, Windows Credential Manager on Windows. It stays on that computer, never in
   Sessions.xml or the shared database. A `-pw` password already in a session moves there with Edit Session's
   **Move -pw here**.
-- **Optionally, passwords and keys can stay in 1Password,** if you use it. A password can be a 1Password reference
-  (`op://vault/item/field`), read with 1Password's approval as the session opens, and a profile's key can be one in
-  1Password, which ssh gets from 1Password's SSH agent ([docs/1PASSWORD.md](docs/1PASSWORD.md)).
+- **Optionally, passwords and keys can stay in 1Password,** if you use it: turn it on in Settings > General >
+  1Password (it's off until then). A password can be a 1Password reference (`op://vault/item/field`), read with
+  1Password's approval as the session opens, and a profile's key can be one in 1Password, which ssh gets from
+  1Password's SSH agent ([docs/1PASSWORD.md](docs/1PASSWORD.md)).
 - **Default Settings** is the profile every other one falls back to, as in PuTTY.
 
 When a session opens, each setting comes from the first place that has it:

@@ -428,7 +428,7 @@
   }
 
   /** Examples for the Fetch command, for this system; the one last picked, for its note */
-  const examples = keyFetchExamples(isMac);
+  const examples = $derived(keyFetchExamples(isMac, settings.onePassword));
   let example = $state<(typeof examples)[number] | null>(null);
 
   /** Fill the fetch from an example: its command and lifetime, and a key file when there's none */
@@ -582,11 +582,11 @@
       <label>{@render caption("Username", "username")}<input bind:value={draft.username} placeholder="e.g. admin" /></label>
       <label>{@render caption("Password", "password")}
         <input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
-          placeholder={draft.hasPassword ? `Stored in ${SECRET_STORE}` : `none; or a 1Password reference, ${OP_REFERENCE_EXAMPLE}`}
-          title={OP_REFERENCE_HINT} />
+          placeholder={draft.hasPassword ? `Stored in ${SECRET_STORE}` : settings.onePassword ? `none; or a 1Password reference, ${OP_REFERENCE_EXAMPLE}` : "none"}
+          title={settings.onePassword ? OP_REFERENCE_HINT : ""} />
         {#if draft.hasPassword}<button onclick={() => (password = "")} title="Forget the stored password">Forget</button>{/if}
       </label>
-      <label>{@render caption("Key file", "keyFile")}<input bind:value={draft.keyFile} placeholder={`ssh's own keys and the agent; or a key in 1Password, ${OP_KEY_EXAMPLE}`} title={OP_KEY_HINT} />
+      <label>{@render caption("Key file", "keyFile")}<input bind:value={draft.keyFile} placeholder={settings.onePassword ? `ssh's own keys and the agent; or a key in 1Password, ${OP_KEY_EXAMPLE}` : "ssh's own keys and the agent"} title={settings.onePassword ? OP_KEY_HINT : ""} />
         <button onclick={chooseKey}>Choose…</button></label>
       <label>{@render caption("Fetch command", "keyFetch")}<input bind:value={draft.keyFetch}
         placeholder="none; for keys issued for a short time (CyberArk, Teleport…): pick from Examples" />

@@ -1,6 +1,7 @@
 // What fromProfile.ts lists under Edit Session's tabs as a session's profile's: what it sets in words, else Default
 // Settings', nothing the app does anyway, and nothing the session sets itself. Plain functions over stand-in profiles.
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { settings } from "../settings/store.svelte";
 import { profileRows, type SessionOwn } from "./fromProfile";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "../settings/profiles";
 
@@ -56,8 +57,17 @@ describe("what a profile gives a session", () => {
   });
 
   it("says a key file in 1Password is its item, through 1Password's SSH agent", () => {
+    settings.onePassword = true;
     const all = profiles({}, { keyFile: '"op://Private/SSH Key - Lab Server/private key"' });
     expect(said(profileRows("ssh", all, "Cisco", NONE))).toEqual(["Key file: Private/SSH Key - Lab Server in 1Password, through its SSH agent -> keyFile"]);
+  });
+
+  it("says a key file in 1Password isn't used while 1Password is turned off", () => {
+    settings.onePassword = false;
+    const all = profiles({}, { keyFile: "op://Private/SSH Key - Lab Server/private key" });
+    expect(said(profileRows("ssh", all, "Cisco", NONE))).toEqual([
+      "Key file: Private/SSH Key - Lab Server in 1Password, not used: 1Password is turned off (Settings > General) -> keyFile",
+    ]);
   });
 
   it("follows Based on, naming the session's profile", () => {

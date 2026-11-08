@@ -225,7 +225,8 @@ Progress through the milestones in [PLAN.md §5](PLAN.md#5-milestones). Each lin
 - ✅ `.dmg` (designed): a 660 × 400 window, the app and Applications on an arrow over a light background with the name and what to do (`src-tauri/dmg/background.tiff`, 1x and 2x, drawn by `scripts/dmg-background.swift`; layout in tauri.conf.json's bundle.macOS.dmg), kept in the top 300 points so Finder's tab and path bars don't hide it. Checked in Finder. Build steps: [BUILD-macOS.md](BUILD-macOS.md), with a Windows placeholder in [BUILD-Windows.md](BUILD-Windows.md)
 - ✅ `THIRD-PARTY-NOTICES.txt` generated per release (`npm run notices`, `scripts/notices.mjs`, run before every release build): the Rust crates built into the program (cargo metadata, normal dependencies), the npm packages and the bundled web libraries, each distinct licence text once (490 components, 317 texts, about 960 KB); a package with no licence file gets its authors' copyright and the standard text (`scripts/licences/`), and the script fails if any component has none. Bundled in the app's Resources; SuperXTerminal > Third-Party Notices opens it. Checked in the release build
 - ⏸ Auto update: deferred, waiting on where releases live (the repository is private, so the app can't see its releases) and on notarisation (PLAN.md §6, question 8)
-- ⬜ Signed Windows MSI; Linux `.deb`, `.rpm`, AppImage
+- ⬜ Signed Windows MSI
+- ✅ Linux `.deb`, `.rpm` and AppImage, built from the Mac in Docker (`npm run build:linux`, [BUILD-Linux.md](BUILD-Linux.md)): an Ubuntu 22.04 image with the libraries Linux needs (`scripts/linux-build.Dockerfile`), the packages in `releases/linux/<version>/`. Not yet released. Checked by the user: the `.deb` installed on an Ubuntu VM and SSH sessions worked; the rest not yet tried on Linux
 
 ## Later
 

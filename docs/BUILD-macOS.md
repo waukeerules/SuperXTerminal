@@ -3,7 +3,8 @@
 How to run SuperXTerminal from source, check it, and make a release: the `.app` and the `.dmg` that installs it. Builds
 are made on a Mac, locally; nothing builds on GitHub automatically (see [PLAN.md](PLAN.md), "Developing on a Mac").
 
-The Windows build is in [BUILD-Windows.md](BUILD-Windows.md).
+The Windows build is in [BUILD-Windows.md](BUILD-Windows.md); the Linux packages, made from the Mac in Docker, in
+[BUILD-Linux.md](BUILD-Linux.md).
 
 ## Release, step by step
 

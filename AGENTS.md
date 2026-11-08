@@ -1,7 +1,7 @@
 # Working on SuperXTerminal
 
 Rules for anyone changing this code, people and AI assistants alike. `CLAUDE.md` points here, so Claude Code reads it
-too. How to build is in `docs/BUILD-macOS.md` and `docs/BUILD-Windows.md`; how to test, in `docs/TESTING.md`.
+too. How to build is in `docs/BUILD-macOS.md`, `docs/BUILD-Windows.md` and `docs/BUILD-Linux.md`; how to test, in `docs/TESTING.md`.
 
 ## Tests
 

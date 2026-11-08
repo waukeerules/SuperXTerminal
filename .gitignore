@@ -12,3 +12,6 @@ node_modules/
 # Playwright's results and report (npm run test:browser)
 /test-results/
 /playwright-report/
+
+# Tabs' raw output from SUPERXTERMINAL_CAPTURE (docs/TESTING.md): a session's own output, never committed
+/captures/

@@ -1,6 +1,6 @@
 // The script box's page (public/web/script) on its own, as Edit Button and the Script Editor show it in an iframe:
 // SPSL's and Rhai's colours (Monaco's own tokenizer, run on a script), going to a line, Wrap, inserting at the cursor, and each edit sent back
-// to the window. The main window is stood in for by the page itself: host/webview.js posts to window.parent, which
+// to the window, and a theme of the user's own's colours. The main window is stood in for by the page itself: host/webview.js posts to window.parent, which
 // for a page on its own is the page, so the test listens there; the window's messages go in through scriptDev.
 import { expect, test, type Page } from "@playwright/test";
 
@@ -226,4 +226,20 @@ test("colours env as session is, and hovering it says it's Environment Variables
   ]);
   const help = (line: string, column: number) => page.evaluate(({ line, column }) => (window as any).scriptDev.rhaiHelpAt(line, column), { line, column });
   expect(await help("send_line(env.ad_user);", 12)).toMatch(/^\*\*env\*\*: Environment Variables/);
+});
+
+test("is drawn in a theme of your own's colours, and in Monaco's own again for Light", async ({ page }) => {
+  await openScript(page, "SEND show version\nSEND show clock");
+  /** The editor's background and text, and the colour of a line number other than the cursor's, as drawn */
+  const drawn = () => page.evaluate(() => {
+    const look = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+    return { background: look(".monaco-editor-background").backgroundColor, text: look(".monaco-editor").color,
+      lineNumbers: look(".line-numbers:not(.active-line-number)").color };
+  });
+  const colors = { bgInput: "#882b2b", bgPane: "#bb3e3e", border: "#000000", text: "#ffffff", textMuted: "#cdb1b1", accent: "#6b0778" };
+  await page.evaluate((colors) => (window as any).scriptDev.message({ type: "dark", dark: false, colors }), colors);
+  await expect.poll(drawn).toEqual({ background: "rgb(136, 43, 43)", text: "rgb(255, 255, 255)", lineNumbers: "rgb(205, 177, 177)" });
+
+  await page.evaluate(() => (window as any).scriptDev.message({ type: "dark", dark: false, colors: null }));
+  await expect.poll(async () => (await drawn()).background).toBe("rgb(255, 255, 254)");
 });

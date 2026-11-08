@@ -8,7 +8,7 @@ import { fireEvent, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import UiThemesEditor from "./UiThemesEditor.svelte";
-import { applyTheme, isDark, settings } from "./store.svelte";
+import { applyTheme, isDark, ownThemeColours, settings } from "./store.svelte";
 import { uiThemes, type UiTheme } from "./uiThemes.svelte";
 
 /** The themes as UiThemes.json has them, saved by ui_themes_save */
@@ -122,6 +122,8 @@ describe("a theme of your own in use", () => {
     // marked as a theme of your own, for app.css to draw the system's buttons and scroll bars in its colours
     expect(document.documentElement.dataset.ownTheme).toBe("");
     expect(isDark()).toBe(false);
+    // and its colours, its base's where it leaves one alone, for the script box's Monaco, which app.css can't reach
+    expect(ownThemeColours()).toMatchObject({ bgPane: "#fffbe8", bgInput: "#ffffff", text: "#1e1e1e" });
 
     settings.theme = "dark";
     applyTheme();
@@ -129,5 +131,6 @@ describe("a theme of your own in use", () => {
     expect(token("--bg-pane")).toBe("");
     expect(document.documentElement.dataset.ownTheme).toBeUndefined();
     expect(isDark()).toBe(true);
+    expect(ownThemeColours()).toBeNull();
   });
 });

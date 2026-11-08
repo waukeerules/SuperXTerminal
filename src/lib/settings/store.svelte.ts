@@ -4,7 +4,7 @@
  * at once.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { applyUiTheme, loadUiThemes, uiThemeNamed } from "./uiThemes.svelte";
+import { applyUiTheme, BASE_COLOURS, loadUiThemes, uiThemeNamed } from "./uiThemes.svelte";
 import { open } from "@tauri-apps/plugin-dialog";
 
 /** The settings, as the Rust core keeps them */
@@ -173,6 +173,16 @@ export function isDark(): boolean {
   const custom = uiThemeNamed(settings.theme);
   if (custom) return custom.base === "dark";
   return settings.theme === "dark" || (settings.theme !== "light" && systemDark.value);
+}
+
+/**
+ * The colours of the theme in use when it's one of the user's own, each one it leaves alone its base's (bgWindow,
+ * accent... as uiThemes.svelte.ts names them), for the pages in frames of their own that app.css can't reach (the
+ * script box's Monaco); null for Follow the system, Light and Dark, which those pages have themes of their own for
+ */
+export function ownThemeColours(): Record<string, string> | null {
+  const custom = uiThemeNamed(settings.theme);
+  return custom ? { ...BASE_COLOURS[custom.base], ...custom.colors } : null;
 }
 
 /** Read the settings from the core */

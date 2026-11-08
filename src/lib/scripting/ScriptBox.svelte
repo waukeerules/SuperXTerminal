@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { isDark } from "../settings/store.svelte";
+  import { isDark, ownThemeColours } from "../settings/store.svelte";
   import { pref } from "../terminal/prefs";
   import WrapLines from "./WrapLines.svelte";
 
@@ -53,7 +53,7 @@
     if (message.type === "ready") {
       ready = true;
       shown = value;
-      post({ type: "set", text: value, language, wrap, dark: isDark() });
+      post({ type: "set", text: value, language, wrap, dark: isDark(), colors: ownThemeColours() });
     } else if (message.type === "change") {
       shown = message.text ?? "";
       value = shown;
@@ -76,8 +76,9 @@
   $effect(() => {
     if (ready) post({ type: "wrap", wrap });
   });
+  // light or dark, and a theme of the user's own's colours (null for none), as the app is drawn
   $effect(() => {
-    if (ready) post({ type: "dark", dark: isDark() });
+    if (ready) post({ type: "dark", dark: isDark(), colors: ownThemeColours() });
   });
 
   /** Put text at the cursor, in place of what's selected (the SPSL panel's double-click) */

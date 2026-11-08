@@ -1,5 +1,6 @@
 // The script box (ScriptBox.svelte) as Edit Button and the Script Editor use it: a plain box until its page is
-// ready, then the page (Monaco) given the text, language, Wrap and light or dark, its changes taken back, the Wrap
+// ready, then the page (Monaco) given the text, language, Wrap and light or dark (with a theme of the user's own's
+// colours, and the page told again when the theme changes), its changes taken back, the Wrap
 // lines switch above the box and kept in the preferences, and no Pop out (the dialogs are big instead). The page is stood in for by the iframe's postMessage, which records
 // what the box sends it, and by messages "from" its window; the Rust side by mockIPC, which saves the settings.
 import { beforeEach, describe, expect, it } from "vitest";
@@ -8,6 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import Harness from "./ScriptBoxHarness.svelte";
 import { settings } from "../settings/store.svelte";
+import { uiThemes } from "../settings/uiThemes.svelte";
 
 /** What the box sent its page, in order */
 let sent: { type: string; [key: string]: unknown }[];
@@ -17,7 +19,8 @@ let saved: { terminalPrefs?: Record<string, string> }[];
 beforeEach(() => {
   sent = [];
   saved = [];
-  Object.assign(settings, { terminalPrefs: {} });
+  Object.assign(settings, { terminalPrefs: {}, theme: "system" });
+  uiThemes.list = [];
   mockIPC((cmd, args) => {
     if (cmd === "settings_save") {
       const next = (args as { settings: { terminalPrefs?: Record<string, string> } }).settings;
@@ -54,10 +57,20 @@ describe("the script box", () => {
     expect(harness.current()).toBe("WAITFOR #\nSLEEP 500\nSENDLINE show clock");
   });
 
+  it("draws its page in a theme of your own's colours, and tells it again when the theme changes", async () => {
+    uiThemes.list = [{ name: "Harbour", base: "light", colors: { bgInput: "#882b2b", text: "#ffffff" } }];
+    settings.theme = "Harbour";
+    const { page } = open("WAITFOR #");
+    page({ type: "ready" });
+    await expect.poll(() => sent[0]).toMatchObject({ type: "set", dark: false, colors: { bgInput: "#882b2b", text: "#ffffff", accent: "#007acc" } });
+    settings.theme = "dark";
+    await expect.poll(() => sent.at(-1)).toEqual({ type: "dark", dark: true, colors: null });
+  });
+
   it("gives its page the text, language and Wrap once it's ready, and takes the page's changes", async () => {
     const { harness, page } = open("WAITFOR #");
     page({ type: "ready" });
-    await expect.poll(() => sent[0]).toEqual({ type: "set", text: "WAITFOR #", language: "spsl", wrap: true, dark: expect.any(Boolean) });
+    await expect.poll(() => sent[0]).toEqual({ type: "set", text: "WAITFOR #", language: "spsl", wrap: true, dark: expect.any(Boolean), colors: null });
     // the plain box goes once the page is up
     expect(screen.queryByRole("textbox", { name: "Script" })).toBeNull();
     page({ type: "change", text: "WAITFOR /i #" });

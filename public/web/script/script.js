@@ -1,10 +1,11 @@
 /*
  * The script box's page (index.html): Monaco editing a script, with SPSL's own colours (the "spsl" language below),
  * Rhai's ("rhai", for a Rhai script: src-tauri/src/rhai_scripts.rs), or as plain lines ("plaintext", for Send lines). The main window (src/lib/scripting/ScriptBox.svelte) sends:
- *   { type: "set", text, language, wrap, dark }  the whole state, as the box opens
+ *   { type: "set", text, language, wrap, dark, colors }  the whole state, as the box opens
  *   { type: "text", text }                       new text from outside (Revert, a saved script opened)
  *   { type: "insert", text }                     text at the cursor, in place of the selection (the SPSL panel)
- *   { type: "language", language } / { type: "wrap", wrap } / { type: "dark", dark }
+ *   { type: "language", language } / { type: "wrap", wrap } / { type: "dark", dark, colors }
+ * (colors: a theme of the user's own's, Settings > General > Look > Edit Themes…, or null for Monaco's own)
  *   { type: "focus" }
  *   { type: "reveal", line }                     the cursor to a line's start, shown (a problem clicked under the box)
  * and the page sends back { type: "ready" } once Monaco is up, and { type: "change", text } at every edit.
@@ -310,9 +311,41 @@
         return found;
     }
 
-    /** The page's light or dark Monaco theme, as the app is */
-    function theme(dark) {
-        return dark ? 'vs-dark' : 'vs';
+    /**
+     * The page's Monaco theme, as the app is: light or dark, or, for a theme of the user's own, one made from its
+     * colours (the app's names for them: bgInput, text, textMuted, accent...) on its base, as the app's fields are
+     * drawn: the box the fields' colour, the text and cursor the theme's, line numbers muted, and the selection and
+     * current line in its accent. The words' own colours (SPSL's commands, Rhai's strings...) stay the base's
+     */
+    function theme(dark, colors) {
+        var base = dark ? 'vs-dark' : 'vs';
+        if (!colors) { return base; }
+        monaco.editor.defineTheme('sxt-own', {
+            base: base,
+            inherit: true,
+            rules: [],
+            colors: {
+                'editor.background': colors.bgInput,
+                'editor.foreground': colors.text,
+                'editorGutter.background': colors.bgInput,
+                'editorLineNumber.foreground': colors.textMuted,
+                'editorLineNumber.activeForeground': colors.text,
+                'editorCursor.foreground': colors.text,
+                'editor.selectionBackground': colors.accent + '80',
+                'editor.inactiveSelectionBackground': colors.accent + '40',
+                'editor.lineHighlightBackground': colors.accent + '1a',
+                'editor.lineHighlightBorder': colors.accent + '33',
+                'editorWidget.background': colors.bgPane,
+                'editorWidget.foreground': colors.text,
+                'editorWidget.border': colors.border,
+                'editorHoverWidget.background': colors.bgPane,
+                'editorHoverWidget.border': colors.border,
+                'scrollbarSlider.background': colors.textMuted + '66',
+                'scrollbarSlider.hoverBackground': colors.textMuted + '99',
+                'scrollbarSlider.activeBackground': colors.textMuted + 'cc'
+            }
+        });
+        return 'sxt-own';
     }
 
     /** One message from the main window */
@@ -323,7 +356,7 @@
             case 'set':
                 monaco.editor.setModelLanguage(model, languageOf(message.language));
                 editor.updateOptions({ wordWrap: message.wrap ? 'on' : 'off' });
-                monaco.editor.setTheme(theme(message.dark));
+                monaco.editor.setTheme(theme(message.dark, message.colors));
                 if (model.getValue() !== message.text) { model.setValue(message.text || ''); }
                 break;
             case 'text':
@@ -343,7 +376,7 @@
                 editor.updateOptions({ wordWrap: message.wrap ? 'on' : 'off' });
                 break;
             case 'dark':
-                monaco.editor.setTheme(theme(message.dark));
+                monaco.editor.setTheme(theme(message.dark, message.colors));
                 break;
             case 'focus':
                 editor.focus();

@@ -40,6 +40,10 @@ A shared session only says which profile it uses.
   sessions for those devices just name that profile.
 - **A profile can name the host itself,** for a gateway such as CyberArk's SSH gateway: the session keeps naming the
   real device, and the profile says where ssh connects ([docs/CYBERARK.md](docs/CYBERARK.md)).
+- **Passwords stay out of shared files.** A profile's password, or a session's own, is kept in the system's
+  password store: the Keychain on the Mac, Windows Credential Manager on Windows. It stays on that computer, never in
+  Sessions.xml or the shared database. A `-pw` password already in a session moves there with Edit Session's
+  **Move -pw here**.
 - **Passwords and keys can stay in 1Password.** A password can be a 1Password reference (`op://vault/item/field`),
   read with 1Password's approval as the session opens, and a profile's key can be one in 1Password, which ssh gets from
   1Password's SSH agent ([docs/1PASSWORD.md](docs/1PASSWORD.md)).

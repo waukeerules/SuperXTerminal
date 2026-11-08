@@ -44,14 +44,14 @@ Profiles > Login). ssh asks the agent, which offers each key it has.
 **Copy Secret Reference** on the key's private key; the quotes it adds are fine:
 
 ```text
-"op://Private/SSH Key - Openmediavault/private key"
+"op://Private/SSH Key - Lab Server/private key"
 ```
 
 The app reads that item's public key (the public key isn't secret, and the private key is never read) and passes ssh
 `-i <public key> -o IdentitiesOnly=yes`, so ssh asks the agent for that key alone. The tab says so:
 
 ```text
-Logging in with the key Private/SSH Key - Openmediavault from 1Password, through its SSH agent.
+Logging in with the key Private/SSH Key - Lab Server from 1Password, through its SSH agent.
 ```
 
 Pin the key for a Cisco device. It closes the connection after three failed attempts, and an agent holding several

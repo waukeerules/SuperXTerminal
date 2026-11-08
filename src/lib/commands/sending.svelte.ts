@@ -33,6 +33,11 @@ export const context: {
   sessionBar: (key: string) => string;
   /** A session by its "store:id", as the Sessions tree has it; undefined for none (a Local Shell, Quick connect) */
   sessionOf: (key: string) => SessionView | undefined;
+  /**
+   * Choose a session in the Quick Selector, over whatever dialog is open (a Jump host field's ▾): `except`, a
+   * "store:id", is left out (a session can't be its own jump host)
+   */
+  pickSession: (title: string, onChoose: (session: SessionView) => void, except?: string) => void;
 } = $state({
   tabs: null,
   sessionBar: () => "",
@@ -40,7 +45,17 @@ export const context: {
   status: () => {},
   openSession: () => false,
   editVariables: () => {},
+  pickSession: () => {},
 });
+
+/**
+ * A session as a Jump host field names it: its path in the tree ("Bastions/bastion1"), a Database session's without
+ * the "@db/" its id has, as launch.rs's jump_address looks it up
+ * @param session The session chosen
+ */
+export function jumpHostOf(session: SessionView): string {
+  return session.id.replace(/^@db\//, "");
+}
 
 /** Send Commands' icon group: only tabs with this session icon; "" for every tab */
 export const selection = $state({ iconGroup: "" });

@@ -424,3 +424,21 @@ describe("Edit Session's Connection tab", () => {
     expect(openedProfiles).toEqual([["root", "forwards"]]);
   });
 });
+
+describe("Edit Session's Jump host ▾", () => {
+  it("fills the jump host with a saved session chosen by its name or folder, leaving this session out", async () => {
+    const asked: [string, string | undefined][] = [];
+    context.pickSession = (title, onChoose, except) => {
+      asked.push([title, except]);
+      // a Database session: its path without the "@db/" its id has
+      onChoose({ store: "database", id: "@db/Bastions/bastion1", name: "bastion1" } as never);
+    };
+    const user = userEvent.setup();
+    open();
+    await user.click(screen.getByRole("tab", { name: "Connection" }));
+    await user.click(screen.getByRole("button", { name: "Choose a session as the jump host" }));
+    expect(asked).toEqual([["Jump Host", "saved:Lab/sw1"]]);
+    expect((within(screen.getByRole("tabpanel", { name: "Connection" })).getByLabelText(/Jump host/) as HTMLInputElement).value).toBe("Bastions/bastion1");
+    context.pickSession = () => {};
+  });
+});

@@ -12,6 +12,7 @@ import ProfilesTab from "./ProfilesTab.svelte";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "./profiles";
 import { isMac } from "../shortcuts";
 import { settings } from "./store.svelte";
+import { context } from "../commands/sending.svelte";
 
 /** The profiles stored, which the stand-ins for profiles_save and profiles_delete change */
 let stored: Profile[];
@@ -304,6 +305,14 @@ describe("Settings > Profiles", () => {
     const keyFile = screen.getByLabelText("Key file") as HTMLInputElement;
     expect(keyFile.placeholder).toBe("ssh's own keys and the agent; or a key in 1Password, op://Vault/SSH key/private key");
     expect(keyFile.title).toMatch(/ssh asks 1Password's SSH agent for that key alone/);
+  });
+
+  it("fills Jump host with a saved session chosen from the ▾", async () => {
+    context.pickSession = (_title, onChoose) => onChoose({ store: "saved", id: "Lab/OMV", name: "OMV" } as never);
+    await open("root");
+    await userEvent.click(screen.getByRole("button", { name: "Choose a session as the jump host" }));
+    expect((screen.getByLabelText("Jump host") as HTMLInputElement).value).toBe("Lab/OMV");
+    context.pickSession = () => {};
   });
 
   it("says under Jump host what a jump server needs", async () => {

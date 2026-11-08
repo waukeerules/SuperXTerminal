@@ -21,7 +21,7 @@
   import { profileRows, type ProfileRow } from "./fromProfile";
   import { settingsShown } from "../settings/Settings.svelte";
   import { variablesShown, VARIABLES_CHANGED } from "../settings/EnvironmentVariables.svelte";
-  import { context } from "../commands/sending.svelte";
+  import { context, jumpHostOf } from "../commands/sending.svelte";
   import SerialLineFields from "./SerialLineFields.svelte";
   import Overrides from "./Overrides.svelte";
   import AlgorithmsDialog from "./AlgorithmsDialog.svelte";
@@ -556,7 +556,10 @@
       {#if sharedPassword}<p class="note warn">The table is shared: don't put a password here. Use a {"{key}"} placeholder, e.g. -pw {"{admin_password}"}, which each user sets in Tools &gt; Environment Variables.</p>{/if}
       <div class="row">
         <label class="grow">{@render caption("Jump host:", "jumpHost")}<input bind:value={draft.jumpHost} disabled={locked("jump_host")} title={locked("jump_host") ? lockTip : ""}
-          placeholder={inherited("jumpHost") || (jumpVia ? `${jumpVia.host} (from ${jumpVia.from})` : "none; or a session, e.g. Bastions/bastion1, or admin@10.0.0.1:22")} /></label>
+          placeholder={inherited("jumpHost") || (jumpVia ? `${jumpVia.host} (from ${jumpVia.from})` : "none; or a saved session (▾), e.g. Bastions/bastion1, or admin@10.0.0.1:22")} /></label>
+        <!-- a saved session to go through, found by its name or folder (this session left out) -->
+        <button class="pick" disabled={locked("jump_host")} aria-label="Choose a session as the jump host" title="Choose a saved session to go through"
+          onclick={() => context.pickSession("Jump Host", (s) => (draft.jumpHost = jumpHostOf(s)), id === null ? undefined : `${store}:${id}`)}>▾</button>
       </div>
       {@render missing(missingVariables.jumpHost)}
       <p class="note" role="note" aria-label="What a jump server needs">{JUMP_HOST_NEEDS}</p>

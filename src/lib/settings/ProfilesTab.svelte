@@ -11,7 +11,7 @@
   import { ask, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { isMac } from "../shortcuts";
-  import { context } from "../commands/sending.svelte";
+  import { context, jumpHostOf } from "../commands/sending.svelte";
   import { keyFetchExamples } from "./keyFetchExamples";
   import { chosenScript, isFullPath } from "../scripting/scriptPath";
   import { JUMP_HOST_NEEDS } from "../sessions/api";
@@ -629,7 +629,10 @@
     <fieldset>
       <legend>Connection</legend>
       <label>{@render caption("Port", "port")}<input class="short" type="number" min="0" max="65535" bind:value={draft.port} /> <span class="note">0: not set</span></label>
-      <label>{@render caption("Jump host", "jumpHost")}<input bind:value={draft.jumpHost} placeholder="a session, or admin@10.0.0.1:22" /></label>
+      <label>{@render caption("Jump host", "jumpHost")}<input bind:value={draft.jumpHost} placeholder="a saved session (▾), or admin@10.0.0.1:22" />
+        <!-- a saved session to go through, found by its name or folder -->
+        <button aria-label="Choose a session as the jump host" title="Choose a saved session to go through"
+          onclick={() => context.pickSession("Jump Host", (s) => (draft.jumpHost = jumpHostOf(s)))}>▾</button></label>
       <p class="note under" role="note" aria-label="What a jump server needs">{JUMP_HOST_NEEDS}</p>
       <label>{@render caption("Host", "host")}<input bind:value={draft.host} placeholder="none; e.g. example.cyberark.cloud" /></label>
       <p class="note under">Used, at the Port above, by sessions with no host of their own, as a PuTTY saved session's

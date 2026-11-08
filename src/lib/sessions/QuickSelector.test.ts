@@ -29,3 +29,20 @@ describe("Switch Session", () => {
     expect(chosen).toEqual(["Local Shell"]);
   });
 });
+
+describe("the Quick Selector over a dialog", () => {
+  it("keeps its Escape from the window, so the dialog it was opened over (Edit Session) stays open", async () => {
+    let windowEscapes = 0;
+    const count = (e: KeyboardEvent) => e.key === "Escape" && windowEscapes++;
+    window.addEventListener("keydown", count);
+    let closed = 0;
+    try {
+      render(QuickSelector, { title: "Jump Host", items: [], customs: new Map(), onChoose: () => {}, onClose: () => closed++ });
+      await userEvent.keyboard("{Escape}");
+      expect(closed).toBe(1);
+      expect(windowEscapes).toBe(0);
+    } finally {
+      window.removeEventListener("keydown", count);
+    }
+  });
+});

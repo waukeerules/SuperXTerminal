@@ -72,7 +72,11 @@
 
   /** The search box's keys: Escape closes, Enter chooses, the arrows and Page keys move the highlight, Ctrl+Backspace goes back to the last "/" */
   function key(event: KeyboardEvent): void {
-    if (event.key === "Escape") onClose();
+    // kept from the window, so a dialog it was opened over (Edit Session, for a Jump host) doesn't close too
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      onClose();
+    }
     else if (event.key === "Enter") choose(shown[index]);
     else if (event.key === "ArrowDown") void move(1);
     else if (event.key === "ArrowUp") void move(-1);

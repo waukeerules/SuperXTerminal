@@ -95,7 +95,11 @@
   let coloursOpen = $state(false);
   /** The Quick Selector open: its title and entries, and what choosing one does */
   /** The Quick Selector showing (Switch Session, Open Session…); `tabList` when a ▾ opened it */
-  let quick = $state<{ title: string; items: QuickItem[]; choose: (item: QuickItem) => void; tabList?: boolean } | null>(null);
+  /**
+   * The Quick Selector showing (Switch Session, Open Session…); `tabList` when a ▾ opened it; `keepFocus` when a dialog
+   * opened it (a Jump host's ▾), whose field the focus stays with rather than going to the terminal
+   */
+  let quick = $state<{ title: string; items: QuickItem[]; choose: (item: QuickItem) => void; tabList?: boolean; keepFocus?: boolean } | null>(null);
   let databaseOpen = $state(false);
   let editorOpen = $state(false);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
@@ -205,6 +209,20 @@
     context.editVariables = () => (variablesOpen = true);
     context.sessionBar = (key) => tree?.sessionByKey(key)?.buttonBar ?? "";
     context.sessionOf = (key) => tree?.sessionByKey(key);
+    context.pickSession = (title, onChoose, except) => {
+      const t = tree;
+      if (!t) return;
+      const sessions = t.allSessions().filter((s) => `${s.store}:${s.id}` !== except);
+      quick = {
+        title,
+        keepFocus: true,
+        items: sessions.map((s) => ({ key: `${s.store}:${s.id}`, name: s.name, detail: pathOf(s), icon: s.icon, environment: t.environmentOf(s) })),
+        choose: (item) => {
+          const session = sessions.find((s) => `${s.store}:${s.id}` === item.key);
+          if (session) onChoose(session);
+        },
+      };
+    };
     tabs.onAlert = (text, background) => {
       status = text;
       // in the background, the Dock icon bounces once, as Windows flashes the taskbar button
@@ -889,8 +907,8 @@
 
 {#if quick}
   <QuickSelector title={quick.title} items={quick.items} {customs}
-    onChoose={(item) => { const q = quick; quick = null; q?.choose(item); setTimeout(() => tabs?.focusActive(), 50); }}
-    onClose={() => { quick = null; tabs?.focusActive(); }} />
+    onChoose={(item) => { const q = quick; quick = null; q?.choose(item); if (!q?.keepFocus) setTimeout(() => tabs?.focusActive(), 50); }}
+    onClose={() => { const q = quick; quick = null; if (!q?.keepFocus) tabs?.focusActive(); }} />
 {/if}
 
 {#if serialTab}

@@ -207,6 +207,19 @@ describe("a session's tab size", () => {
     await expect.poll(() => resized.at(-1)).toEqual({ cols: 132, rows: 45 });
   });
 
+  it("is the page's settled one when the pseudo terminal opens on Windows, so it isn't resized while ssh connects", async () => {
+    // the page gets its settings first, measures itself (Wrap Lines off's 300 columns), and the terminal opens at that
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "size", cols: 182, rows: 39 });
+    page({ type: "ready" });
+    await expect.poll(() => posted.some((m) => m.type === "config")).toBe(true);
+    expect(openedAt).toBeNull();
+    page({ type: "size", cols: 300, rows: 44 });
+    await expect.poll(() => openedAt).toEqual({ cols: 300, rows: 44 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(resized).toEqual([]);
+  });
+
   it("waits on Windows for the session's first text, then goes once, at the latest size", async () => {
     // ConPTY printed ssh's first line twice ("Last login" on two lines) about a third of the time when it was resized
     // before ssh had printed anything, as a tab is while Wrap Lines off's width and its height settle

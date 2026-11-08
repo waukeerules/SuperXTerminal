@@ -194,6 +194,11 @@ export function hasText(output: string): boolean {
   return text.length > 0;
 }
 
+/** How long a new tab waits for the page to give its size once it has its settings, before opening at the one it has */
+const SETTLE_SIZE_MS = 200;
+/** And a moment more after that, for a second change the first brings (the height after the width) */
+const SETTLE_SIZE_AFTER_MS = 30;
+
 /** A session that stayed up this long starts its reconnect attempts again (TerminalControl.StableAfter) */
 const STABLE_AFTER_MS = 60_000;
 
@@ -421,6 +426,7 @@ export class PageHost implements ScriptTarget {
         break;
       case "size":
         this.size = { cols: Number(message.cols), rows: Number(message.rows) };
+        this.sizeChanged?.();
         if (this.ptyId !== null) await this.resizePty();
         break;
       case "input":
@@ -847,7 +853,7 @@ export class PageHost implements ScriptTarget {
   title = "";
 
   /** The page's settings: the highlighting rules and themes, and the profile's cursor and bell */
-  private async sendConfig(look: Look): Promise<void> {
+  private async sendConfig(look: Look, early = false): Promise<void> {
     if (look.profile !== undefined) this.profile = look.profile;
     this.tabColor = look.tabColor || null;
     this.onState();
@@ -856,7 +862,8 @@ export class PageHost implements ScriptTarget {
     const files = await highlighting();
     this.post({
       type: "config",
-      ruleSets: files.ruleSets,
+      // none yet when it's only for the page to measure itself (settledSize): its skipped rules are said once, after
+      ruleSets: early ? [] : files.ruleSets,
       themes: files.themes.length ? files.themes : STAND_IN_THEMES,
       dark,
       bell: look.bell,
@@ -1088,7 +1095,33 @@ export class PageHost implements ScriptTarget {
     return invoke<{ id: number; path: string; temporary: boolean }>("log_open", { name: this.title, keep: look?.keepLog ?? null }).catch(() => null);
   }
 
+  /** Told when the page gives a new size, while settledSize waits for it */
+  private sizeChanged: (() => void) | null = null;
+
+  /**
+   * On Windows, before the pseudo terminal first opens: the page's settings (Wrap Lines off's width, the theme's font,
+   * the window's height), so it measures itself and ConPTY opens at the size it keeps. It used to open at the page's
+   * first guess and be resized as the page settled, while ssh was still connecting, and ConPTY then printed ssh's first
+   * line twice ("Last login" on two lines), about a third of the time: seen in captures of the app's tabs and in ssh
+   * logins through ConPTY, never with no resize. The profile's own look comes with the "started" event as before;
+   * only a profile's own font can change the size again, and that resize waits for the session's text (resizePty).
+   * Not on the Mac, whose pseudo terminal takes a resize at any time, nor for a tab already configured (a reconnect)
+   */
+  private async settledSize(): Promise<void> {
+    if (isMac || this.configured) return;
+    const changed = new Promise<void>((resolve) => {
+      this.sizeChanged = resolve;
+      setTimeout(resolve, SETTLE_SIZE_MS);
+    });
+    await this.sendConfig({ cursor: "block", blink: true, bell: "visual", rules: "" }, true);
+    await changed;
+    // the height can follow the width a moment later (the bar along the bottom for Wrap Lines off)
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_SIZE_AFTER_MS));
+    this.sizeChanged = null;
+  }
+
   private async openPty(args: { target: Target; onEvent: ReturnType<PageHost["outputChannel"]>; loginAs: string | null }): Promise<void> {
+    await this.settledSize();
     const opening = { ...this.size };
     this.ptyId = await invoke<number>("pty_open", { ...args, ...opening });
     if (this.size.cols !== opening.cols || this.size.rows !== opening.rows) await this.resizePty();

@@ -6,7 +6,7 @@ login, settings and exceptions kept on their own computer, where they don't get 
 sessions, tabs and splits, SSH, Telnet, serial and Remote Desktop in the same window, a button bar of commands, and
 highlighting for Cisco and Junos output, built to look and work the same on both systems.
 
-![The main window: Favorites, Recent, Saved, Private and Database sessions, and the button bar](docs/screenshots/main-window.png)
+![The main window: Favorites, Recent, Saved, Private and 3,247 Database sessions, a switch and a server side by side with line numbers, and the button bar](docs/screenshots/main-window.png)
 
 ## Built for teams
 
@@ -143,11 +143,15 @@ and works the same on the Mac and on Windows. It's built with [Tauri 2](https://
 | | |
 |---|---|
 | ![A Cisco switch and a Linux server side by side, the switch's output highlighted](docs/screenshots/split-panels.png) | ![The terminal's right-click menu](docs/screenshots/right-click-menu.png) |
-| **Splits and highlighting.** Sessions side by side, each framed in its environment colour, with Cisco output coloured live (interfaces up in green, down in red). The buttons send to the split you're typing in. | **The terminal's menu.** Copy and paste, Find, clearing, Open as Document, highlighting, theme, font and cursor, Wrap Lines, and Send Key. |
+| **Splits and highlighting.** Sessions side by side, each framed in its environment colour, with Cisco output coloured live (interfaces up in green, down in red), long lines left unwrapped and every line numbered. The buttons send to the split you're typing in. | **The terminal's menu.** Copy and paste, Find, clearing, Open as Document, highlighting, theme, font and cursor, Wrap Lines, and Send Key. |
 | ![Edit Session for a Database session](docs/screenshots/edit-session.png) | ![File transfer from a Cisco switch over SCP](docs/screenshots/file-transfer.png) |
 | **Edit Session.** Connection, profile, highlighting, jump host, script and file transfer paths. A Database session is shared with the team, so it warns against passwords and takes `{key}` placeholders that each user fills in. | **File transfer.** This computer's files beside the session's: here a switch's flash over SCP, with an IOS image downloading. |
-| ![Settings > Terminal](docs/screenshots/settings-terminal.png) | |
-| **Settings.** The terminal's theme, font, cursor, highlighting, wrapping, scrollback and paste check, for every tab. | |
+| ![Settings > Terminal](docs/screenshots/settings-terminal.png) | ![Settings > Profiles](docs/screenshots/settings-profiles.png) |
+| **Settings.** The terminal's theme, font, cursor, highlighting, wrapping, line numbers, scrollback and paste check, for every tab. | **Profiles.** PuTTY-style profiles that sessions name: login, keys (fetched short-lived ones too), jump hosts, CyberArk, tunnels, older algorithms, colours and the button bar, each based on another if you like. |
+| ![The Script Editor with a Rhai script](docs/screenshots/script-editor.png) | ![A Rhai script's result in the status bar](docs/screenshots/rhai-script.png) |
+| **Scripts.** Rhai or SPSL, checked as you type, with the commands beside them and the team's saved scripts. Run one in the tabs you pick, or put it on a button. | **Rhai at work.** cisco-tour.rhai logs into enable mode, reads `show version` and `show ip interface brief`, and puts what it found in the status bar. |
+| ![Environment Variables](docs/screenshots/environment-variables.png) | |
+| **Environment Variables.** Your own values for the `{placeholders}` in shared sessions, folders and profiles, with where each is used, 1Password references, and a warning for any used but not set. | |
 
 ## Features
 

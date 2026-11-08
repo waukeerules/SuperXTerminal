@@ -351,6 +351,7 @@ pub fn pty_open(
         notices.push(format!("The profile's character set ({}) isn't used for SSH on Windows: Windows' console turns the device's characters into UTF-8 first.", chosen.label()));
     }
     let outlet = Outlet::new(on_event, charset);
+    outlet.0.lock().unwrap().captured(&format!("OPEN {cols}x{rows}"));
     outlet.send(PtyEvent::Started { local, look, link: link.into() });
     for text in notices {
         outlet.send(PtyEvent::Notice { text, kind: "info".into() });

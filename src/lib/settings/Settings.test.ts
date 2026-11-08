@@ -1,9 +1,9 @@
 // Settings' search: it finds a setting in any tab, not only the open one, and a result opens its tab with the
 // setting flashed. And General's Use PrivateSessions.xml, which can be turned off only while Saved sessions are in use,
-// and the Show in Finder / File Explorer beside each sessions file.
+// and the Show in Finder / File Explorer beside each sessions file; Look's themes of your own, and Tabs' Longest tab name.
 // The Rust side is stood in for by mockIPC, which saves the settings and notes the files asked to be shown.
-import { beforeEach, describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/svelte";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import Settings from "./Settings.svelte";
@@ -225,5 +225,20 @@ describe("Look's Theme", () => {
     expect(screen.queryByRole("dialog", { name: "Edit Themes" })).toBeNull();
     expect(closed).toBe(0);
     uiThemes.list = [];
+  });
+});
+
+describe("Tabs' Longest tab name", () => {
+  it("saves the characters a tab's name may take, 0 for the whole name", async () => {
+    render(Settings, { onClose: () => {} });
+    const field = screen.getByLabelText("Longest tab name") as HTMLInputElement;
+    expect(field.value).toBe("30");
+    await fireEvent.change(field, { target: { value: "18" } });
+    await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ tabNameMax: 18 }));
+    await fireEvent.change(field, { target: { value: "0" } });
+    await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ tabNameMax: 0 }));
+    // more than a strip could show is kept to 200
+    await fireEvent.change(field, { target: { value: "5000" } });
+    await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ tabNameMax: 200 }));
   });
 });

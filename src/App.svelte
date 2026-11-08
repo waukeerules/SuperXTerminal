@@ -6,7 +6,7 @@
 <script lang="ts">
   import Icon from "./lib/icons/Icon.svelte";
   import { onMount, tick } from "svelte";
-  import { TabArea } from "./lib/layout/TabArea";
+  import { TabArea, tabNameWidth } from "./lib/layout/TabArea";
   import SessionTree from "./lib/sessions/SessionTree.svelte";
   import Settings from "./lib/settings/Settings.svelte";
   import EnvironmentVariables from "./lib/settings/EnvironmentVariables.svelte";
@@ -866,7 +866,8 @@
       <div class="splitter" title="Drag to resize; double-click for the usual width" onpointerdown={startResize}
         ondblclick={() => void saveSettings({ sessionsPaneWidth: PANE_DEFAULT })}></div>
     </div>
-    <div class="tabs" class:close-on-right={settings.tabClose === "right"} bind:this={tabElement}></div>
+    <div class="tabs" class:close-on-right={settings.tabClose === "right"} style:--tab-name-max={tabNameWidth(settings.tabNameMax)}
+      bind:this={tabElement}></div>
   </div>
 
   {#if settings.showLogViewer}

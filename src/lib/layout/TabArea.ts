@@ -32,6 +32,15 @@ import FileTransfer from "../transfer/FileTransfer.svelte";
 import { isDark } from "../settings/store.svelte";
 import { tabStates } from "./tabStates.svelte";
 
+/**
+ * How wide a tab's name may be, for the tabs' --tab-name-max (SessionTab.svelte): Settings > General > Tabs' Longest
+ * tab name in characters, as CSS's ch; "none" for 0, the whole name however long
+ * @param max The setting: characters, or 0
+ */
+export function tabNameWidth(max: number): string {
+  return max > 0 ? `${Math.floor(max)}ch` : "none";
+}
+
 /** What a terminal tab is given when it's added: what to run, whether it's a local shell, and how its tab looks */
 /**
  * An open session's state, as the Sessions tree shows it: connecting (a yellow dot, as its tab shows, until the far end

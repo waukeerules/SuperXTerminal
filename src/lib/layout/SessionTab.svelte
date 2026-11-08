@@ -69,7 +69,8 @@
       {:else if connected}<span class="badge connected" title="Connected" aria-label="Connected"></span>{/if}
     </span>
   {/if}
-  <span class="title">{title}</span>
+  <!-- the whole name on hover, for one cut short (Settings > General > Tabs > Longest tab name) -->
+  <span class="title" title={title}>{title}</span>
   {#if tunnels > 0 && !disconnected}
     <!-- a tunnel's arch: what the tunnels make reachable, with links and tests -->
     <button class="tunnels" class:changed={tunnelsChanged}
@@ -94,10 +95,11 @@
     gap: 4px;
     height: 100%;
     padding: 0 6px 0 4px;
-    max-width: 30ch;
   }
 
+  /* the name as long as Settings > General > Tabs allows (App.svelte's --tab-name-max), then cut short with … */
   .title {
+    max-width: var(--tab-name-max, 30ch);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

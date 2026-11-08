@@ -102,6 +102,8 @@ pub struct AppSettings {
     /// The tab list's ▾ opens Switch Session (its tabs, with a filter to type into) rather than a plain list, for a
     /// window with many tabs open
     pub tab_list_switch_session: bool,
+    /// The longest a tab's name is shown, in characters, before it's cut short with …; 0 shows the whole name
+    pub tab_name_max: u32,
     /// The Sessions tree's dotted lines, as SuperXPuTTY's (its TreeView's ShowLines)
     pub tree_lines: bool,
     /// While searching, the Sessions pane widens (up to a limit) so the matches' names fit
@@ -166,6 +168,7 @@ impl Default for AppSettings {
             filezilla_passwords: false,
             tab_close: "tab".into(),
             tab_list_switch_session: false,
+            tab_name_max: 30,
             tree_lines: true,
             search_widens_pane: true,
             tree_search_case: false,

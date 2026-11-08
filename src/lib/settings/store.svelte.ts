@@ -77,6 +77,8 @@ export interface AppSettings {
   tabClose: "tab" | "right";
   /** The tab list's ▾ opens Switch Session (its tabs, with a filter) rather than a plain list */
   tabListSwitchSession: boolean;
+  /** The longest a tab's name is shown, in characters, before it's cut short with …; 0 shows the whole name */
+  tabNameMax: number;
   /** The Sessions tree's dotted lines, as SuperXPuTTY's */
   treeLines: boolean;
   /** While searching, the Sessions pane widens (up to a limit) so the matches' names fit */
@@ -150,6 +152,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   filezillaPasswords: false,
   tabClose: "tab",
   tabListSwitchSession: false,
+  tabNameMax: 30,
   treeLines: true,
   searchWidensPane: true,
   treeSearchCase: false,

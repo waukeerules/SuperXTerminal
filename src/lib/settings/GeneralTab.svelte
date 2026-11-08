@@ -219,6 +219,14 @@
       The tab list (▾) opens Switch Session</label>
     <p class="hint">Its tabs with a box to type in, to find one among many by its name or its folder, as
       {shortcutLabel("switchSession") || "Switch Session"} shows every tab in the window. Off, ▾ lists them plainly.</p>
+    <div class="row">
+      <label for="tab-name-max">Longest tab name</label>
+      <input id="tab-name-max" class="days" type="number" min="0" max="200" value={settings.tabNameMax}
+        onchange={(e) => void saveSettings({ tabNameMax: Math.min(200, Math.max(0, Math.floor(Number(e.currentTarget.value) || 0))) })} />
+      <span>characters (0: the whole name)</span>
+    </div>
+    <p class="hint">A longer name is cut short with …, the whole of it shown when the pointer is on the tab. Shorter
+      fits more tabs in the strip; 0 never cuts a name, however wide that makes its tab.</p>
   </fieldset>
 
   <fieldset>

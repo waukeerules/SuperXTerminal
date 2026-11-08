@@ -4,7 +4,7 @@
  * at once.
  */
 import { invoke } from "@tauri-apps/api/core";
-import { applyUiTheme, BASE_COLOURS, loadUiThemes, uiThemeNamed } from "./uiThemes.svelte";
+import { applyUiTheme, BASE_COLOURS, COLOUR_TOKENS, loadUiThemes, uiThemeNamed } from "./uiThemes.svelte";
 import { open } from "@tauri-apps/plugin-dialog";
 
 /** The settings, as the Rust core keeps them */
@@ -176,13 +176,16 @@ export function isDark(): boolean {
 }
 
 /**
- * The colours of the theme in use when it's one of the user's own, each one it leaves alone its base's (bgWindow,
- * accent... as uiThemes.svelte.ts names them), for the pages in frames of their own that app.css can't reach (the
- * script box's Monaco); null for Follow the system, Light and Dark, which those pages have themes of their own for
+ * The colours of the theme in use when it's one of the user's own, for the pages in frames of their own that app.css
+ * can't reach (the script box's Monaco): the window's, each one it leaves alone its base's (bgWindow, accent... as
+ * uiThemes.svelte.ts names them), and the script colours it sets (scriptComment...), the rest left to Monaco's own.
+ * Null for Follow the system, Light and Dark, which those pages have themes of their own for
  */
 export function ownThemeColours(): Record<string, string> | null {
   const custom = uiThemeNamed(settings.theme);
-  return custom ? { ...BASE_COLOURS[custom.base], ...custom.colors } : null;
+  if (!custom) return null;
+  const base = BASE_COLOURS[custom.base];
+  return { ...Object.fromEntries(COLOUR_TOKENS.map((t) => [t.key, base[t.key]])), ...custom.colors };
 }
 
 /** Read the settings from the core */

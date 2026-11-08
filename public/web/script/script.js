@@ -312,18 +312,41 @@
     }
 
     /**
+     * A theme of the user's own's script colours (uiThemes.svelte.ts's SCRIPT_COLOURS), each the Monaco words it
+     * colours: SPSL's commands are keywords and its labels type.identifiers, Rhai's declarations keywords and the
+     * tab's functions type.identifiers, both languages' {placeholders}, session and env variables...
+     */
+    var SCRIPT_TOKENS = {
+        scriptCommand: ['keyword'],
+        scriptFlow: ['keyword.flow'],
+        scriptFunction: ['type.identifier'],
+        scriptText: ['string'],
+        scriptVariable: ['variable', 'variable.predefined'],
+        scriptOption: ['attribute.name'],
+        scriptRegex: ['regexp'],
+        scriptComment: ['comment'],
+        scriptNumber: ['number', 'constant']
+    };
+
+    /**
      * The page's Monaco theme, as the app is: light or dark, or, for a theme of the user's own, one made from its
      * colours (the app's names for them: bgInput, text, textMuted, accent...) on its base, as the app's fields are
      * drawn: the box the fields' colour, the text and cursor the theme's, line numbers muted, and the selection and
-     * current line in its accent. The words' own colours (SPSL's commands, Rhai's strings...) stay the base's
+     * current line in its accent. The words take the script colours the theme sets (SCRIPT_TOKENS), and the base's
+     * for the rest
      */
     function theme(dark, colors) {
         var base = dark ? 'vs-dark' : 'vs';
         if (!colors) { return base; }
+        var rules = [];
+        Object.keys(SCRIPT_TOKENS).forEach(function (key) {
+            if (!colors[key]) { return; }
+            SCRIPT_TOKENS[key].forEach(function (token) { rules.push({ token: token, foreground: colors[key].slice(1) }); });
+        });
         monaco.editor.defineTheme('sxt-own', {
             base: base,
             inherit: true,
-            rules: [],
+            rules: rules,
             colors: {
                 'editor.background': colors.bgInput,
                 'editor.foreground': colors.text,

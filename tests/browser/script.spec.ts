@@ -243,3 +243,20 @@ test("is drawn in a theme of your own's colours, and in Monaco's own again for L
   await page.evaluate(() => (window as any).scriptDev.message({ type: "dark", dark: false, colors: null }));
   await expect.poll(async () => (await drawn()).background).toBe("rgb(255, 255, 254)");
 });
+
+test("colours a script's words in a theme of your own's script colours, and Monaco's own for those it leaves alone", async ({ page }) => {
+  await openScript(page, "# where to go\nSENDLINE show clock\nSLEEP 500");
+  /** The colour a word is drawn in */
+  const colourOf = (word: string) => page.evaluate((word) => {
+    // (Monaco draws spaces as non-breaking ones)
+    const span = [...document.querySelectorAll(".view-line span span")].find((s) => s.textContent!.replace(/ /g, " ").trim().startsWith(word));
+    return span ? getComputedStyle(span).color : "";
+  }, word);
+  const colors = { bgInput: "#882b2b", bgPane: "#bb3e3e", border: "#000000", text: "#ffffff", textMuted: "#cdb1b1", accent: "#6b0778",
+    scriptComment: "#00ff00", scriptCommand: "#ffff00" };
+  await page.evaluate((colors) => (window as any).scriptDev.message({ type: "dark", dark: true, colors }), colors);
+  await expect.poll(() => colourOf("# where")).toBe("rgb(0, 255, 0)");
+  expect(await colourOf("SENDLINE")).toBe("rgb(255, 255, 0)");
+  // a number, which the theme leaves alone: Monaco's own Dark's
+  expect(await colourOf("500")).toBe("rgb(181, 206, 168)");
+});

@@ -1,7 +1,7 @@
 // Settings > General > Look's themes of your own: Edit Themes… makes one, its colours drawn on the whole app as
-// they're picked (the window's background, selected rows, checkboxes...), Save keeps them and Use This Theme makes
-// it the app's; Cancel and Escape put the app back; a theme in use that's renamed stays in use, and one deleted goes
-// back to Follow the system. The Rust side (UiThemes.json in the user's folder, and the settings) is stood in for by
+// they're picked (the window's background, selected rows, checkboxes..., and a script's words), Save keeps them and
+// Use This Theme makes it the app's; Cancel and Escape put the app back; a theme in use that's renamed stays in use,
+// and one deleted goes back to Follow the system. The Rust side (UiThemes.json in the user's folder, and the settings) is stood in for by
 // mockIPC, which keeps what's saved as the app would.
 import { beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/svelte";
@@ -61,6 +61,15 @@ describe("Edit Themes", () => {
     expect(settings.theme).toBe("Harbour");
     expect(token("--check")).toBe("#22aa44");
     expect(closed).toBe(1);
+  });
+
+  it("gives a script's words colours of its own, under Script colours, for the script box", async () => {
+    open();
+    await userEvent.click(screen.getByRole("button", { name: "New" }));
+    await fireEvent.input(screen.getByLabelText("Comments"), { target: { value: "#00ff00" } });
+    await userEvent.click(screen.getByRole("button", { name: "Use This Theme" }));
+    expect(file[0].colors).toEqual({ scriptComment: "#00ff00" });
+    expect(ownThemeColours()).toMatchObject({ scriptComment: "#00ff00" });
   });
 
   it("puts the app back as it was on Cancel, and on Escape", async () => {
@@ -124,6 +133,8 @@ describe("a theme of your own in use", () => {
     expect(isDark()).toBe(false);
     // and its colours, its base's where it leaves one alone, for the script box's Monaco, which app.css can't reach
     expect(ownThemeColours()).toMatchObject({ bgPane: "#fffbe8", bgInput: "#ffffff", text: "#1e1e1e" });
+    // a script colour it leaves alone is left to Monaco's own
+    expect(ownThemeColours()).not.toHaveProperty("scriptComment");
 
     settings.theme = "dark";
     applyTheme();

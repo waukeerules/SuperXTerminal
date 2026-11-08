@@ -1,8 +1,8 @@
 <!--
   Settings > General > Look's Edit Themes…: the window's own themes (uiThemes.svelte.ts), each a name, the built-in
   theme it starts from (Light or Dark) and its colours: the window's background, bars, panes, fields, borders, text,
-  muted text, selected rows and highlights, and checkboxes. A colour left alone is its base's, and Reset gives one
-  back to it. The theme chosen in the list is drawn on the whole app while the window is open, so a change shows as
+  muted text, selected rows and highlights, and checkboxes; and, under Script colours, the script box's words (SPSL's
+  and Rhai's commands, strings, comments...). A colour left alone is its base's, and Reset gives one back to it. The theme chosen in the list is drawn on the whole app while the window is open, so a change shows as
   it's made; Cancel puts the app back as it was. Save writes UiThemes.json in the user's folder; Use This Theme saves
   and makes it Settings' theme. A theme in use that's renamed stays in use, and one deleted goes back to Follow the
   system.
@@ -20,7 +20,7 @@
   import { onMount, untrack } from "svelte";
   import { SYSTEM } from "../platform";
   import { applyTheme, saveSettings, settings } from "./store.svelte";
-  import { applyUiTheme, BASE_COLOURS, COLOUR_TOKENS, saveUiThemes, uiThemes, type UiTheme } from "./uiThemes.svelte";
+  import { applyUiTheme, BASE_COLOURS, COLOUR_TOKENS, SCRIPT_COLOURS, saveUiThemes, uiThemes, type UiTheme } from "./uiThemes.svelte";
 
   interface Props {
     /** Saved, Cancel or Escape: the window closes */
@@ -142,17 +142,22 @@
               <option value="light">Light</option>
               <option value="dark">Dark</option>
             </select></label>
-          {#each COLOUR_TOKENS as token (token.key)}
+          <!-- one colour: its picker, its code, and Reset when it isn't the base's -->
+          {#snippet colour(token: { key: string; label: string })}
             <div class="colour">
               <span>{token.label}</span>
               <input type="color" value={colourOf(token.key)} aria-label={token.label}
-                oninput={(e) => (current.colors[token.key] = e.currentTarget.value)} />
+                oninput={(e) => current && (current.colors[token.key] = e.currentTarget.value)} />
               <code>{colourOf(token.key)}</code>
-              {#if current.colors[token.key] && current.colors[token.key] !== BASE_COLOURS[current.base][token.key]}
-                <button class="link" onclick={() => delete current.colors[token.key]} title="Back to {current.base === 'dark' ? 'Dark' : 'Light'}'s">Reset</button>
+              {#if current?.colors[token.key] && current.colors[token.key] !== BASE_COLOURS[current.base][token.key]}
+                <button class="link" onclick={() => current && delete current.colors[token.key]} title="Back to {current.base === 'dark' ? 'Dark' : 'Light'}'s">Reset</button>
               {/if}
             </div>
-          {/each}
+          {/snippet}
+          {#each COLOUR_TOKENS as token (token.key)}{@render colour(token)}{/each}
+          <h3>Script colours</h3>
+          <p class="hint">The words of a script in the Script Editor and Edit Button, SPSL's and Rhai's.</p>
+          {#each SCRIPT_COLOURS as token (token.key)}{@render colour(token)}{/each}
         </div>
       {/if}
     </div>
@@ -272,6 +277,11 @@
     width: 44px;
     height: 24px;
     padding: 0;
+  }
+
+  h3 {
+    margin: 10px 0 0;
+    font-size: 13px;
   }
 
   code {

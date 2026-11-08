@@ -1012,6 +1012,147 @@ function paintLock(c: Canvas, body: string): void {
   c.fillRect(GLYPH, 0.47, 0.64, 0.06, 0.16);
 }
 
+/** Building: an office block with rows of windows and a door, for a site */
+function paintBuilding(c: Canvas, body: string): void {
+  fillBody(c, roundRect(0.18, 0.08, 0.64, 0.86, 0.04), body);
+  const window: Translucent = { color: GLYPH, alpha: 225 };
+  for (const y of [0.18, 0.34, 0.5]) {
+    for (const x of [0.28, 0.44, 0.6]) c.fillRect(window, x, y, 0.12, 0.1);
+  }
+  c.fillRect(shade(body, -0.4), 0.42, 0.7, 0.16, 0.24);
+}
+
+/** Person: a head and shoulders, for a user's own session */
+function paintPerson(c: Canvas, body: string): void {
+  fillBody(c, new Path().ellipse(0.32, 0.06, 0.36, 0.36), body);
+  fillBody(c, new Path().arc(0.12, 0.48, 0.76, 0.6, 180, 180).line(0.88, 0.78, 0.88, 0.94).line(0.88, 0.94, 0.12, 0.94).close(), body);
+}
+
+/** Key: a key on the slant, its bow a ring the background shows through */
+function paintKey(c: Canvas, body: string): void {
+  c.transformed("rotate(-40 0.5 0.5)", () => {
+    fillBody(c, new Path().polygon([[0.4, 0.45], [0.96, 0.45], [0.96, 0.66], [0.88, 0.66], [0.88, 0.56], [0.8, 0.56],
+      [0.8, 0.66], [0.72, 0.66], [0.72, 0.56], [0.4, 0.56]]), body);
+    // GDI+'s Alternate fill: the inner circle is the bow's hole
+    fillBody(c, new Path().ellipse(0.04, 0.3, 0.42, 0.42).ellipse(0.15, 0.41, 0.2, 0.2), body);
+  });
+}
+
+/** Shield: a shield with a tick, for something secured */
+function paintShield(c: Canvas, body: string): void {
+  fillBody(c, new Path().line(0.5, 0.05, 0.88, 0.17).bezier(0.88, 0.17, 0.9, 0.6, 0.72, 0.82, 0.5, 0.95)
+    .bezier(0.5, 0.95, 0.28, 0.82, 0.1, 0.6, 0.12, 0.17).close(), body);
+  c.lines({ color: GLYPH, width: 0.09, cap: "round", join: "round" }, [[0.31, 0.5], [0.45, 0.64], [0.7, 0.36]]);
+}
+
+/** Settings: a gear of eight teeth, its middle a hole the background shows through */
+function paintGear(c: Canvas, body: string): void {
+  const points: Pt[] = [];
+  const step = (Math.PI * 2) / 8;
+  const at = (angle: number, r: number): Pt => [0.5 + Math.cos(angle) * r, 0.5 + Math.sin(angle) * r];
+  for (let i = 0; i < 8; i++) {
+    const a = i * step;
+    points.push(at(a - step * 0.32, 0.34), at(a - step * 0.17, 0.46), at(a + step * 0.17, 0.46), at(a + step * 0.32, 0.34));
+  }
+  // GDI+'s Alternate fill: the circle is the hole
+  fillBody(c, new Path().polygon(points).ellipse(0.36, 0.36, 0.28, 0.28), body);
+}
+
+/** Wrench: an open-ended spanner on the slant, for maintenance */
+function paintWrench(c: Canvas, body: string): void {
+  // the head: a disc with a square notch out of its end
+  const [cx, cy, r] = [0.5, 0.25, 0.2];
+  const edge = Math.asin(0.07 / r);
+  const head: Pt[] = [];
+  for (let i = 0; i <= 24; i++) {
+    const a = -Math.PI / 2 + edge + ((Math.PI * 2 - edge * 2) * i) / 24;
+    head.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+  }
+  head.push([0.43, 0.22], [0.57, 0.22]);
+  c.transformed("rotate(45 0.5 0.5)", () => {
+    fillBody(c, roundRect(0.43, 0.36, 0.14, 0.58, 0.07), body);
+    fillBody(c, new Path().polygon(head), body);
+  });
+}
+
+/** Warning: a triangle with an exclamation mark, dark on the body so it reads on yellow */
+function paintWarning(c: Canvas, body: string): void {
+  fillBody(c, new Path().polygon([[0.5, 0.07], [0.96, 0.9], [0.04, 0.9]]), body);
+  const mark = shade(body, -0.65);
+  c.fill(roundRect(0.455, 0.33, 0.09, 0.33, 0.04), mark);
+  c.fillEllipse(mark, 0.45, 0.71, 0.1, 0.1);
+}
+
+/** Bell: a bell with its clapper, for alerts */
+function paintBell(c: Canvas, body: string): void {
+  c.fillEllipse(shade(body, -0.35), 0.4, 0.78, 0.2, 0.17);
+  fillBody(c, new Path().bezier(0.2, 0.74, 0.27, 0.6, 0.18, 0.15, 0.5, 0.15).bezier(0.5, 0.15, 0.82, 0.15, 0.73, 0.6, 0.8, 0.74)
+    .line(0.8, 0.74, 0.88, 0.82).line(0.88, 0.82, 0.12, 0.82).close(), body);
+  c.fillEllipse(shade(body, -0.35), 0.45, 0.06, 0.1, 0.1);
+}
+
+/** Calendar: a page with a coloured top, its rings and its days, for something on a schedule */
+function paintCalendar(c: Canvas, body: string): void {
+  fillBody(c, roundRect(0.08, 0.12, 0.84, 0.82, 0.08), body);
+  c.fillRect("#FAFAFA", 0.14, 0.34, 0.72, 0.54);
+  for (const y of [0.42, 0.57, 0.72]) {
+    for (const x of [0.21, 0.37, 0.53, 0.69]) c.fillRect(shade(body, -0.1), x, y, 0.1, 0.09);
+  }
+  const ring = shade(body, -0.4);
+  c.fill(roundRect(0.26, 0.05, 0.08, 0.16, 0.04), ring);
+  c.fill(roundRect(0.66, 0.05, 0.08, 0.16, 0.04), ring);
+}
+
+/** Lab: a flask of the body's colour, for a lab or test system */
+function paintFlask(c: Canvas, body: string): void {
+  const flask: Pt[] = [[0.38, 0.06], [0.62, 0.06], [0.62, 0.36], [0.9, 0.88], [0.1, 0.88], [0.38, 0.36]];
+  c.fillPolygon({ color: "#ECEFF1", alpha: 200 }, flask);
+  // the liquid: the flask below 0.58, where its sides are at x 0.268 and 0.732
+  c.fill(new Path().polygon([[0.262, 0.58], [0.738, 0.58], [0.9, 0.88], [0.1, 0.88]]),
+    { from: [0, 0.58], to: [0, 0.89], start: shade(body, 0.18), end: shade(body, -0.12) });
+  c.strokePolygon({ color: shade(body, -0.35), width: 0.045, join: "round" }, flask);
+  c.fillEllipse({ color: GLYPH, alpha: 200 }, 0.4, 0.66, 0.08, 0.08);
+  c.fillEllipse({ color: GLYPH, alpha: 200 }, 0.54, 0.74, 0.06, 0.06);
+}
+
+/** Bug: a beetle with its legs and feelers, for testing or a known problem */
+function paintBug(c: Canvas, body: string): void {
+  const leg: Pen = { color: shade(body, -0.35), width: 0.06, cap: "round" };
+  for (const [y, dy] of [[0.48, -0.08], [0.62, 0], [0.76, 0.08]]) {
+    c.line(leg, 0.3, y, 0.1, y + dy);
+    c.line(leg, 0.7, y, 0.9, y + dy);
+  }
+  c.line(leg, 0.43, 0.2, 0.33, 0.06);
+  c.line(leg, 0.57, 0.2, 0.67, 0.06);
+  fillBody(c, new Path().ellipse(0.37, 0.14, 0.26, 0.22), shade(body, -0.2));
+  fillBody(c, new Path().ellipse(0.26, 0.3, 0.48, 0.64), body);
+  c.line({ color: { color: GLYPH, alpha: 200 }, width: 0.04 }, 0.5, 0.34, 0.5, 0.9);
+}
+
+/** Code: </> on a rounded square, for development */
+function paintCode(c: Canvas, body: string): void {
+  fillBody(c, roundRect(0.06, 0.06, 0.88, 0.88, 0.16), body);
+  const pen: Pen = { color: GLYPH, width: 0.08, cap: "round", join: "round" };
+  c.lines(pen, [[0.34, 0.32], [0.18, 0.5], [0.34, 0.68]]);
+  c.lines(pen, [[0.66, 0.32], [0.82, 0.5], [0.66, 0.68]]);
+  c.line(pen, 0.56, 0.27, 0.44, 0.73);
+}
+
+/** Heart: for a favourite */
+function paintHeart(c: Canvas, body: string): void {
+  fillBody(c, new Path().bezier(0.5, 0.9, 0.2, 0.68, 0.04, 0.52, 0.06, 0.32).bezier(0.06, 0.32, 0.08, 0.1, 0.4, 0.04, 0.5, 0.26)
+    .bezier(0.5, 0.26, 0.6, 0.04, 0.92, 0.1, 0.94, 0.32).bezier(0.94, 0.32, 0.96, 0.52, 0.8, 0.68, 0.5, 0.9).close(), body);
+}
+
+/** Tag: a price tag on the slant, its hole one the background shows through, for a label */
+function paintTag(c: Canvas, body: string): void {
+  c.transformed("rotate(-45 0.5 0.5)", () => {
+    // GDI+'s Alternate fill: the circle is the hole
+    fillBody(c, new Path().polygon([[0.1, 0.5], [0.28, 0.31], [0.86, 0.31], [0.86, 0.69], [0.28, 0.69]])
+      .ellipse(0.23, 0.445, 0.11, 0.11), body);
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Toolbar glyphs
 
@@ -1204,6 +1345,21 @@ addGeneral("tv", "Television", "#607D8B", paintTv);
 addGeneral("mobile", "Mobile device", "#607D8B", paintMobile);
 addGeneral("star", "Star", "#F9A825", paintStar);
 addGeneral("lock", "Padlock", "#607D8B", paintLock);
+// general icons of SuperXTerminal's own, for what sessions are often sorted by
+addGeneral("building", "Building", "#607D8B", paintBuilding);
+addGeneral("person", "Person", "#1E63B4", paintPerson);
+addGeneral("key", "Key", "#F9A825", paintKey);
+addGeneral("shield", "Shield", "#2E7D32", paintShield);
+addGeneral("gear", "Settings", "#607D8B", paintGear);
+addGeneral("wrench", "Wrench", "#78909C", paintWrench);
+addGeneral("warning", "Warning", "#F9A825", paintWarning);
+addGeneral("bell", "Bell", "#F9A825", paintBell);
+addGeneral("calendar", "Calendar", "#C62828", paintCalendar);
+addGeneral("flask", "Lab", "#8E24AA", paintFlask);
+addGeneral("bug", "Bug", "#43A047", paintBug);
+addGeneral("code", "Code", "#455A64", paintCode);
+addGeneral("heart", "Heart", "#D81B60", paintHeart);
+addGeneral("tag", "Tag", "#00838F", paintTag);
 
 // toolbar glyphs: drawn the same way so they match and scale with the icons, but not offered for sessions
 addGlyph("check", "#2E9E44", paintCheck);

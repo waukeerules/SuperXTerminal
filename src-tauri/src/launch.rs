@@ -982,7 +982,8 @@ pub fn openssh(program: &str) -> std::ffi::OsString {
 }
 
 /// A jump host as `ssh -J` takes it, as SuperXPuTTY's JumpHosts.Resolve: a saved session (by its id, in the same
-/// store, Saved sessions, or Database sessions' path), with its username and port as opening it would take them (its
+/// store, Saved sessions, or Database sessions' path; or named with its list first, "Private/Live Test/Media Server",
+/// as the ▾ writes it, which is that list's session even where the same path is in another), with its username and port as opening it would take them (its
 /// own, else its folders', else its profile's, else Default Settings') and its placeholders, or "user@host:port" as
 /// it is. Chains aren't followed, and a session can't jump through itself.
 fn jump_address(
@@ -995,9 +996,22 @@ fn jump_address(
 ) -> Result<String, String> {
     let jump = jump.trim();
     let database_id = format!("@db/{}", jump.trim_start_matches('/'));
-    let found = [(store, jump), (Store::Saved, jump), (Store::Private, jump), (Store::Database, database_id.as_str())]
+    // its list named first: that list's session at the rest of it, before a path in any list
+    let named = [("saved/", Store::Saved), ("private/", Store::Private), ("database/", Store::Database)]
         .into_iter()
-        .find_map(|(s, id)| sessions.find(s, id).map(|session| (s, session)));
+        .find(|(prefix, _)| jump.get(..prefix.len()).is_some_and(|head| head.eq_ignore_ascii_case(prefix)))
+        .map(|(prefix, named_store)| {
+            let rest = &jump[prefix.len()..];
+            (named_store, if named_store == Store::Database { format!("@db/{rest}") } else { rest.to_string() })
+        });
+    let found = named
+        .as_ref()
+        .and_then(|(s, id)| sessions.find(*s, id).map(|session| (*s, session)))
+        .or_else(|| {
+            [(store, jump), (Store::Saved, jump), (Store::Private, jump), (Store::Database, database_id.as_str())]
+                .into_iter()
+                .find_map(|(s, id)| sessions.find(s, id).map(|session| (s, session)))
+        });
     let Some((jump_store, session)) = found else {
         let valid = jump.split_once('@').map(|(user, rest)| !user.is_empty() && !rest.is_empty()).unwrap_or(true)
             && !jump.chars().any(char::is_whitespace);
@@ -1815,6 +1829,22 @@ mod tests {
         assert_eq!(jump_address(&sessions, &none, &values, Store::Saved, &from, "me@jump:22").unwrap(), "me@jump:22");
         assert!(jump_address(&sessions, &none, &values, Store::Saved, &from, "not a host").is_err());
         assert!(jump_address(&sessions, &none, &values, Store::Saved, &bastion, "Bastions/b1").is_err(), "not through itself");
+    }
+
+    #[test]
+    fn a_jump_host_named_with_its_list_is_that_lists_session_where_the_path_is_in_another_too() {
+        // the user's Private Media Server and a Database one at the same path, each with its own host
+        let private = StoredSession { attributes: vec![("SessionId".into(), "Live Test/Media Server".into()), ("Host".into(), "openmediavault.localdomain".into())] };
+        let database = StoredSession { attributes: vec![("SessionId".into(), "@db/Live Test/Media Server".into()), ("Host".into(), "192.168.3.2".into())] };
+        let saved = StoredSession { attributes: vec![("SessionId".into(), "Live Test/Media Server".into()), ("Host".into(), "10.0.0.9".into())] };
+        let sessions = Sessions { saved: vec![saved], private: vec![private], database: vec![database], ..Sessions::default() };
+        let from = session(&[]);
+        let at = |jump: &str| jump_address(&sessions, &profiles(), &HashMap::new(), Store::Saved, &from, jump).unwrap();
+        assert_eq!(at("Private/Live Test/Media Server"), "openmediavault.localdomain");
+        assert_eq!(at("Database/Live Test/Media Server"), "192.168.3.2");
+        assert_eq!(at("saved/Live Test/Media Server"), "10.0.0.9");
+        // a plain path as before: the same list first, then Saved
+        assert_eq!(at("Live Test/Media Server"), "10.0.0.9");
     }
 
     #[test]

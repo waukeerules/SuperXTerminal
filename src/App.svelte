@@ -24,7 +24,7 @@
   import ScriptStatus from "./lib/commands/ScriptStatus.svelte";
   import Ask from "./lib/scripting/Ask.svelte";
   import PasteCheck from "./lib/terminal/PasteCheck.svelte";
-  import { context, openingLanguage, openingScriptWarning, rhaiEnvReady, runRhaiIn, runScriptIn } from "./lib/commands/sending.svelte";
+  import { context, openingLanguage, openingScriptWarning, rhaiEnvReady, storeLabel, runRhaiIn, runScriptIn } from "./lib/commands/sending.svelte";
   import { saveSettings } from "./lib/settings/store.svelte";
   import type { CustomIcon } from "./lib/icons/custom";
   import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
@@ -216,7 +216,10 @@
       quick = {
         title,
         keepFocus: true,
-        items: sessions.map((s) => ({ key: `${s.store}:${s.id}`, name: s.name, detail: pathOf(s), icon: s.icon, environment: t.environmentOf(s) })),
+        // the list each is in, a column of its own: the same path can be in more than one
+        items: sessions.map((s) => ({
+          key: `${s.store}:${s.id}`, name: s.name, detail: s.id.replace(/^@db\//, ""), group: storeLabel(s.store), icon: s.icon, environment: t.environmentOf(s),
+        })),
         choose: (item) => {
           const session = sessions.find((s) => `${s.store}:${s.id}` === item.key);
           if (session) onChoose(session);

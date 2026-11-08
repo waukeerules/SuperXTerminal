@@ -1,7 +1,8 @@
 <!--
   The Quick Selector, as SuperXPuTTY's QuickSelector: File > Open Session… (every session) and Window > Switch
-  Session… (the open tabs). Type to filter: every word (split at spaces, dots and *) must be in the name or the
-  detail, ignoring case. Enter takes the highlighted one (the first, until the arrows move it), Esc closes, a
+  Session… (the open tabs), and a Jump host's ▾ (every session, with the list each is in as a column of its own).
+  Type to filter: every word (split at spaces, dots and *) must be in the name, the detail or that list, ignoring
+  case. Enter takes the highlighted one (the first, until the arrows move it), Esc or its ✕ closes, a
   click takes one (SuperXPuTTY's needs a double-click; one click only highlighted it, which looked broken, and pickers
   such as VS Code's take a click), and Option+Delete removes the last "/" part of what's typed.
 -->
@@ -15,6 +16,11 @@
     environment: string | null;
     /** Ticked: the active tab, for Switch */
     current?: boolean;
+    /**
+     * Which list it's in, a column of its own (Saved, Private, Database), for a picker where the same path can be in
+     * more than one (a Jump host's ▾); matched by the filter too
+     */
+    group?: string;
   }
 </script>
 
@@ -47,7 +53,7 @@
   /** The items with every word in their name or detail, in detail order, as SuperXPuTTY's list */
   const shown = $derived(
     items
-      .filter((item) => words.every((w) => item.name.toLowerCase().includes(w) || item.detail.toLowerCase().includes(w)))
+      .filter((item) => words.every((w) => [item.name, item.detail, item.group ?? ""].some((t) => t.toLowerCase().includes(w))))
       .sort((a, b) => a.detail.localeCompare(b.detail, undefined, { sensitivity: "base", numeric: true })),
   );
 
@@ -98,7 +104,9 @@
 
 <div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && onClose()}>
   <div class="dialog" role="dialog" aria-modal="true" aria-label={title}>
-    <header>{title} [{shown.length}]</header>
+    <header><span>{title} [{shown.length}]</span>
+      <!-- closes it without choosing, as Escape and a click outside do -->
+      <button class="close" onclick={onClose} aria-label="Close" title="Close without choosing">✕</button></header>
     <input use:focus bind:value={text} onkeydown={key} placeholder="Type to filter: words in the name or the folder path"
       aria-label="Filter" spellcheck="false" autocomplete="off" />
     <div class="list" role="listbox" bind:this={list}>
@@ -109,6 +117,7 @@
           <Icon key={item.icon} size={18} environment={item.environment} {customs} />
           <span class="name">{item.name}</span>
           <span class="detail">{item.detail}</span>
+          {#if item.group}<span class="group">{item.group}</span>{/if}
         </div>
       {:else}
         <p class="empty">Nothing matches.</p>
@@ -142,9 +151,24 @@
   }
 
   header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     font-weight: 600;
     color: var(--text-muted);
     font-size: 12px;
+  }
+
+  .close {
+    border: 0;
+    background: none;
+    padding: 0 2px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .close:hover {
+    color: var(--text);
   }
 
   input {
@@ -186,6 +210,18 @@
 
   .name {
     flex: none;
+  }
+
+  /* the list it's in, after its path, in a column of the same width on every row */
+  .group {
+    flex: none;
+    width: 64px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .row.current .group {
+    color: rgb(255 255 255 / 0.8);
   }
 
   .detail {

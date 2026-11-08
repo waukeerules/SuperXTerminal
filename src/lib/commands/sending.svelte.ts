@@ -48,13 +48,19 @@ export const context: {
   pickSession: () => {},
 });
 
+/** The list a session is in, as the Jump host picker's column and a Jump host's prefix name it */
+export function storeLabel(store: SessionView["store"]): string {
+  return store === "saved" ? "Saved" : store === "private" ? "Private" : "Database";
+}
+
 /**
- * A session as a Jump host field names it: its path in the tree ("Bastions/bastion1"), a Database session's without
- * the "@db/" its id has, as launch.rs's jump_address looks it up
+ * A session as a Jump host field names it: its list, then its path in the tree ("Private/Live Test/Media Server"),
+ * a Database session's without the "@db/" its id has, as launch.rs's jump_address looks it up. The list makes it
+ * that session, where the same path is in more than one (a Private copy of a Database session)
  * @param session The session chosen
  */
 export function jumpHostOf(session: SessionView): string {
-  return session.id.replace(/^@db\//, "");
+  return `${storeLabel(session.store)}/${session.id.replace(/^@db\//, "")}`;
 }
 
 /** Send Commands' icon group: only tabs with this session icon; "" for every tab */

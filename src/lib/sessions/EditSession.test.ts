@@ -438,7 +438,8 @@ describe("Edit Session's Jump host ▾", () => {
     await user.click(screen.getByRole("tab", { name: "Connection" }));
     await user.click(screen.getByRole("button", { name: "Choose a session as the jump host" }));
     expect(asked).toEqual([["Jump Host", "saved:Lab/sw1"]]);
-    expect((within(screen.getByRole("tabpanel", { name: "Connection" })).getByLabelText(/Jump host/) as HTMLInputElement).value).toBe("Bastions/bastion1");
+    // its list first, so it's that session where the same path is in another list
+    expect((within(screen.getByRole("tabpanel", { name: "Connection" })).getByLabelText(/Jump host/) as HTMLInputElement).value).toBe("Database/Bastions/bastion1");
     context.pickSession = () => {};
   });
 });

@@ -311,7 +311,7 @@ describe("Settings > Profiles", () => {
     context.pickSession = (_title, onChoose) => onChoose({ store: "saved", id: "Lab/OMV", name: "OMV" } as never);
     await open("root");
     await userEvent.click(screen.getByRole("button", { name: "Choose a session as the jump host" }));
-    expect((screen.getByLabelText("Jump host") as HTMLInputElement).value).toBe("Lab/OMV");
+    expect((screen.getByLabelText("Jump host") as HTMLInputElement).value).toBe("Saved/Lab/OMV");
     context.pickSession = () => {};
   });
 

@@ -46,3 +46,16 @@ describe("the Quick Selector over a dialog", () => {
     }
   });
 });
+
+describe("the Quick Selector's ✕", () => {
+  it("closes it without choosing", async () => {
+    let closed = 0;
+    let chosen = 0;
+    const items: QuickItem[] = [{ key: "a", name: "Media Server", detail: "Live Test/Media Server", group: "Private", icon: "server", environment: null }];
+    render(QuickSelector, { title: "Jump Host", items, customs: new Map(), onChoose: () => chosen++, onClose: () => closed++ });
+    // the list each session is in, a column of its own
+    expect(screen.getByText("Private")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect([closed, chosen]).toEqual([1, 0]);
+  });
+});

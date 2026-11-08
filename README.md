@@ -159,6 +159,11 @@ and works the same on the Mac and on Windows. It's built with [Tauri 2](https://
 
 - A sessions tree with folders, Saved and Private sessions, Favorites and Recent, search as you type, drag to move,
   multi-select, and bulk editing.
+- Search that finds a session in thousands as you type. It looks in the session's name, host, username, folder and
+  notes, and with Search in… also its port, connection type, profile, extra arguments, login script and icon (by
+  name, so "firewall" or "ubuntu" finds every session drawn with one). Match case and regular expressions are a click
+  away, matching folders open, and the pane widens so long names fit. It's fast: over 10,000 sessions each search
+  takes a few milliseconds.
 - Sessions in SuperPuTTY's `Sessions.xml` format, with folders, button bars, highlighting rules and scripts beside it.
   Keep them in a shared folder and a team on Mac and Windows works from one set; changes made elsewhere show up within
   seconds.

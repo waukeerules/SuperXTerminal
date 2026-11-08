@@ -288,6 +288,13 @@ describe("Settings > Profiles", () => {
     expect(saves().at(-1)).toMatchObject({ tunnelsOff: null, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }] });
   });
 
+  it("offers a 1Password reference in place of a stored password", async () => {
+    await open("root");
+    const password = screen.getByLabelText("Password") as HTMLInputElement;
+    expect(password.placeholder).toBe("none; or a 1Password reference, op://Vault/Item/password");
+    expect(password.title).toMatch(/read from 1Password, with its approval, as a session uses it/);
+  });
+
   it("says under Jump host what a jump server needs", async () => {
     await open("root");
     expect(screen.getByRole("note", { name: "What a jump server needs" }).textContent).toMatch(/^The jump server must allow TCP forwarding/);

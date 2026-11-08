@@ -35,6 +35,13 @@ export function keyFetchExamples(mac: boolean): KeyFetchExample[] {
         : "A function in your PowerShell profile that writes the key to the path it's given.",
     },
     {
+      name: "1Password (an SSH Key item)",
+      command: `op read "op://Private/SSH key/private key?ssh-format=openssh" --out-file "{key_file}" --force`,
+      lifetime: 480,
+      keyFile: "~/.ssh/onepassword_key",
+      note: "Writes an SSH Key item's private key to the key file: change Private/SSH key to your vault and item. 1Password's own SSH agent is usually better, as the key never leaves 1Password: leave Key file empty with Offer SSH keys on.",
+    },
+    {
       name: "Teleport",
       command: `tsh login --proxy={teleport_proxy} --user={ad_username} --out="{key_file}" --format=openssh`,
       lifetime: 720,

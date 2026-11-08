@@ -25,6 +25,7 @@
 <script lang="ts">
   import { isMac } from "../shortcuts";
   import { SECRET_STORE } from "../platform";
+  import { OP_REFERENCE_HINT } from "./onepassword";
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -160,6 +161,7 @@
       Sessions can use these as <code>{"{key}"}</code> in the host, username, extra arguments and jump host, e.g.
       <code>{"{user}@{domain}"}</code> or <code>-pw {"{admin_password}"}</code>. They're yours only, kept beside your settings.
     </p>
+    <p class="hint">{OP_REFERENCE_HINT} A reference isn't a secret itself, so it can be a plain value.</p>
 
     <div class="body">
       <div class="table">

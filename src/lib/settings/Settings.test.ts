@@ -18,13 +18,21 @@ let revealed: string[] = [];
 /** The links opened in the browser (the opener plugin's open_url) */
 let opened: string[] = [];
 
+/** What Check 1Password says when op works; null for it to fail with opProblem */
+let opCheck: string | null = null;
+let opProblem = "";
+
 beforeEach(() => {
   Element.prototype.scrollIntoView = () => {};
+  opCheck = null;
+  opProblem = "";
   saved = [];
   revealed = [];
   opened = [];
   mockIPC((cmd, args) => {
     if (cmd === "plugin:opener|open_url") return void opened.push((args as { url: string }).url);
+    // 1Password's CLI as Check 1Password finds it: working, or what's wrong
+    if (cmd === "onepassword_check") return opCheck ? Promise.resolve(opCheck) : Promise.reject(opProblem);
     if (cmd === "sessions_reveal") {
       const store = (args as { store: string }).store;
       revealed.push(store);
@@ -176,5 +184,26 @@ describe("Show in the file manager beside the sessions files", () => {
     const [savedButton, privateButton] = showButtons();
     expect(savedButton.disabled).toBe(true);
     expect(privateButton.disabled).toBe(false);
+  });
+});
+
+describe("Settings > General > 1Password", () => {
+  it("says what 1Password's CLI can read when it works", async () => {
+    opCheck = "1Password's CLI 2.42.0 works, through the 1Password app: 3 vaults it can read.";
+    render(Settings, { onClose: () => {} });
+    await userEvent.click(screen.getByRole("button", { name: "Check 1Password" }));
+    expect(await screen.findByText(opCheck)).toBeTruthy();
+    expect(screen.queryByText(/winget install 1password-cli/)).toBeNull();
+  });
+
+  it("says what's wrong, and how to install the CLI, with its getting-started page", async () => {
+    opProblem = "1Password's CLI (op) isn't installed: winget install 1password-cli, then turn on Integrate with 1Password CLI in 1Password's Settings > Developer (https://www.1password.dev/cli/get-started).";
+    render(Settings, { onClose: () => {} });
+    await userEvent.click(screen.getByRole("button", { name: "Check 1Password" }));
+    expect(await screen.findByText(opProblem)).toBeTruthy();
+    // this test's jsdom isn't a Mac: winget's command
+    expect(screen.getByText("winget install 1password-cli").tagName).toBe("CODE");
+    await userEvent.click(screen.getByRole("link", { name: "1Password CLI: get started" }));
+    expect(opened).toEqual(["https://www.1password.dev/cli/get-started"]);
   });
 });

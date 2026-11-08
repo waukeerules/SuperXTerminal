@@ -16,6 +16,7 @@
   import { chosenScript, isFullPath } from "../scripting/scriptPath";
   import { JUMP_HOST_NEEDS } from "../sessions/api";
   import { sampleFor, TUNNEL_SAMPLES } from "../terminal/tunnels";
+  import { OP_REFERENCE_EXAMPLE, OP_REFERENCE_HINT } from "./onepassword";
   import ScriptPathNote from "../scripting/ScriptPathNote.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { baseChain, coloursChoice, DEFAULT_PROFILE, deleteProfile, emptyProfile, listProfiles, MAX_FONT_POINTS, mergedProfile, ownColoursChoice, resolvedProfile, saveProfile, type Forward, type Profile } from "./profiles";
@@ -581,7 +582,8 @@
       <label>{@render caption("Username", "username")}<input bind:value={draft.username} placeholder="e.g. admin" /></label>
       <label>{@render caption("Password", "password")}
         <input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
-          placeholder={draft.hasPassword ? `Stored in ${SECRET_STORE}` : "none"} />
+          placeholder={draft.hasPassword ? `Stored in ${SECRET_STORE}` : `none; or a 1Password reference, ${OP_REFERENCE_EXAMPLE}`}
+          title={OP_REFERENCE_HINT} />
         {#if draft.hasPassword}<button onclick={() => (password = "")} title="Forget the stored password">Forget</button>{/if}
       </label>
       <label>{@render caption("Key file", "keyFile")}<input bind:value={draft.keyFile} placeholder="ssh's own keys and the agent" />

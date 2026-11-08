@@ -10,7 +10,8 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { checkForUpdates } from "./updates";
-  import { shortcutLabel } from "../shortcuts";
+  import { isMac, shortcutLabel } from "../shortcuts";
+  import { OP_REFERENCE_EXAMPLE } from "./onepassword";
 
   /** Choose where kept session logs go */
   async function chooseLogFolder(): Promise<void> {
@@ -57,6 +58,32 @@
   const SPSL_DOC = "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/SPSL.md";
 
   /** A link in Settings opens in the default browser: in the app's own window it would replace the app */
+  /** Check 1Password's state: waiting for it, what it said, and whether that's a problem (which shows how to install) */
+  let opChecking = $state(false);
+  let opMessage = $state("");
+  let opProblem = $state(false);
+  /** 1Password's CLI install command here, and its getting-started page (onepassword.rs's INSTALL, GET_STARTED) */
+  const OP_INSTALL = isMac ? "brew install 1password-cli" : "winget install 1password-cli";
+  const OP_GET_STARTED = "https://www.1password.dev/cli/get-started";
+
+  /**
+   * Check 1Password: whether its CLI works here, through the 1Password app, listing the vaults it can read, which
+   * asks 1Password to approve it as a session's reference would
+   */
+  async function checkOnePassword(): Promise<void> {
+    opChecking = true;
+    opMessage = "";
+    try {
+      opMessage = await invoke<string>("onepassword_check");
+      opProblem = false;
+    } catch (e) {
+      opMessage = String(e);
+      opProblem = true;
+    } finally {
+      opChecking = false;
+    }
+  }
+
   function openLink(event: MouseEvent): void {
     event.preventDefault();
     const url = (event.currentTarget as HTMLAnchorElement).href;
@@ -140,6 +167,22 @@
     <p class="hint">As SuperXPuTTY's "Allow plain-text password arguments". FileZilla (external) can only be given a
       password on its sftp:// address, which any program on {THIS_COMPUTER} can read while FileZilla runs; off, FileZilla asks
       for it. Connect external's Terminal window logs in by itself either way, without showing the password.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>1Password</legend>
+    <p class="hint">A password, or an Environment Variable's value, can be a 1Password reference
+      ({OP_REFERENCE_EXAMPLE}): it's read from 1Password, with its approval, as a session uses it. That needs
+      1Password's CLI, linked to the 1Password app (Integrate with 1Password CLI in 1Password's Settings > Developer).
+      SSH keys in 1Password need none of this: its SSH agent hands them to ssh by itself.</p>
+    <div class="row">
+      <button onclick={() => void checkOnePassword()} disabled={opChecking}>{opChecking ? "Waiting for 1Password…" : "Check 1Password"}</button>
+      <span class="hint" class:problem={opProblem}>{opMessage}</span>
+    </div>
+    {#if opProblem}
+      <p class="hint">To install it: <code>{OP_INSTALL}</code>, then start SuperXTerminal again.
+        <a href={OP_GET_STARTED} onclick={openLink}>1Password CLI: get started</a></p>
+    {/if}
   </fieldset>
 
   <fieldset>
@@ -380,6 +423,11 @@
   .hint {
     margin: 0;
     color: var(--text-muted);
+  }
+
+  /* what Check 1Password found wrong */
+  .hint.problem {
+    color: #e5534b;
   }
 
   .row {

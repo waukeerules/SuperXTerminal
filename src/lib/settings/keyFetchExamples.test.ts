@@ -29,3 +29,13 @@ describe("Fetch command examples", () => {
     expect(keyFetchExamples(true).find((e) => e.name.startsWith("Test"))!.command).toContain("rm -f");
   });
 });
+
+describe("the 1Password example", () => {
+  it("writes an SSH Key item's private key in OpenSSH's format, and points to the agent as the better way", () => {
+    for (const mac of [true, false]) {
+      const example = keyFetchExamples(mac).find((e) => e.name === "1Password (an SSH Key item)")!;
+      expect(example.command).toBe('op read "op://Private/SSH key/private key?ssh-format=openssh" --out-file "{key_file}" --force');
+      expect(example.note).toMatch(/SSH agent is usually better/);
+    }
+  });
+});

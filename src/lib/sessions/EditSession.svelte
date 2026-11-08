@@ -32,6 +32,7 @@
   import { isMac } from "../shortcuts";
   import { SECRET_STORE, THIS_COMPUTER } from "../platform";
   import { lineOf, withLine } from "./serial";
+  import { OP_REFERENCE_HINT } from "../settings/onepassword";
   import { chosenScript } from "../scripting/scriptPath";
   import ScriptPathNote from "../scripting/ScriptPathNote.svelte";
   import { JUMP_HOST_NEEDS, PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
@@ -536,7 +537,7 @@
       <div class="row">
         <label class="grow">{@render ownCaption()}<input type="password" value={password ?? ""} oninput={(e) => (password = e.currentTarget.value)}
           placeholder={hasOwnPassword && password !== "" ? `Stored in ${SECRET_STORE}` : jumpServer ? `not used: the tab logs in as profile "${jumpServer.name}"` : /(^|\s)-pw\s/.test(draft.extraArgs) ? "none: the -pw on the Connection tab" : loginKey && !profilePassword ? `none: the key ${loginKey.file} logs in` : "none: the profile's"}
-          title={`Kept in ${SECRET_STORE} on ${THIS_COMPUTER} only, never in the session's file; used before its -pw and its profile's`} /></label>
+          title={`Kept in ${SECRET_STORE} on ${THIS_COMPUTER} only, never in the session's file; used before its -pw and its profile's. ${OP_REFERENCE_HINT}`} /></label>
         {#if hasOwnPassword && password !== ""}<button onclick={() => (password = "")} title="Forget the stored password">Forget</button>{/if}
         {#if storedPw}<button onclick={movePassword} title={`Keep the -pw password in ${SECRET_STORE} instead, on ${THIS_COMPUTER} only`}>Move -pw here</button>{/if}
       </div>

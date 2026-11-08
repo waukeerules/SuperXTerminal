@@ -62,3 +62,11 @@ as it came from the pseudo terminal, its resizes, and its answer to the cursor p
 milliseconds since it opened (`pty.rs`, `capture_file`). Nothing typed is written, but what a device echoes back is,
 so use it on lab devices and delete the folder after. It found that Windows' ConPTY repeats a program's first line
 when resized before the program has printed anything (`PageHost.resizePty`).
+
+## Demo mode
+
+`SUPERXTERMINAL_DEMO=1 npm run tauri dev` starts the app on made-up sessions, each a stand-in device with canned
+output (`src-tauri/src/demo.rs`, `demo_device.rs`), without touching your own sessions or settings. It's for
+screenshots ([docs/screenshots/README.md](screenshots/README.md)), and for trying the tree, tabs, button bars and
+highlighting without a lab. Its tests check the demo's files read as the app reads its own, and that every canned
+answer is found by its command.

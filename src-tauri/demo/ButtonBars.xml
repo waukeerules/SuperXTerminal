@@ -1,0 +1,102 @@
+<?xml version="1.0"?>
+<!-- Demo mode's button bars (ButtonBars.xml in its settings folder): everyday commands for the stand-in devices
+     (demo.rs), each bar shown for its kind of session, and one of each kind of button: text, SPSL and Rhai. -->
+<ButtonBars xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <ButtonBar Name="Cisco">
+    <Buttons>
+      <Button Label="Interfaces" Tooltip="show ip interface brief" Color="#2E7D32" Action="SendString" SkipConfirm="true">
+        <Text>show ip interface brief\n</Text>
+      </Button>
+      <Button Label="Status" Tooltip="show interfaces status" Color="#2E7D32" Action="SendString" SkipConfirm="true">
+        <Text>show interfaces status\n</Text>
+      </Button>
+      <Button Label="VLANs" Color="#1E63B4" Action="SendString" SkipConfirm="true">
+        <Text>show vlan brief\n</Text>
+      </Button>
+      <Button Label="Neighbours" Color="#1E63B4" Action="SendString" SkipConfirm="true">
+        <Text>show cdp neighbors\n</Text>
+      </Button>
+      <Button Label="Log" Color="#EF6C00" Action="SendString" SkipConfirm="true">
+        <Text>show logging | include %\n</Text>
+      </Button>
+      <Button Label="Running config" ImageKey="flag#6A3D9A" Action="SendString" SkipConfirm="true">
+        <Text>show running-config\n</Text>
+      </Button>
+      <Button Label="Save" Tooltip="write memory, then show what changed" Color="#C62828" Action="SpslScript">
+        <Text>#!/bin/spsl
+SENDLINE write memory
+WAITFOR /t:10 [OK]
+SENDLINE show archive config differences</Text>
+      </Button>
+      <Button Label="Health check" Tooltip="Rhai: interfaces down and recent errors" ImageKey="flag#2E7D32" Action="RhaiScript">
+        <Text>// A quick health check: what's down, and the log's errors
+send_line("terminal length 0");
+wait_prompt();
+send_line("show ip interface brief | exclude up");
+wait_prompt();
+send_line("show logging | include -3-");
+wait_prompt();</Text>
+      </Button>
+    </Buttons>
+    <TabIcons>
+      <Icon>switch</Icon>
+      <Icon>stackswitch</Icon>
+      <Icon>coreswitch</Icon>
+      <Icon>distswitch</Icon>
+      <Icon>router</Icon>
+      <Icon>voicerouter</Icon>
+      <Icon>nexus</Icon>
+      <Icon>wlc</Icon>
+      <Icon>vpn</Icon>
+    </TabIcons>
+  </ButtonBar>
+  <ButtonBar Name="Junos">
+    <Buttons>
+      <Button Label="Interfaces" Color="#2E7D32" Action="SendString" SkipConfirm="true">
+        <Text>show interfaces terse\n</Text>
+      </Button>
+      <Button Label="Routes" Color="#1E63B4" Action="SendString" SkipConfirm="true">
+        <Text>show route summary\n</Text>
+      </Button>
+      <Button Label="BGP" Color="#1E63B4" Action="SendString" SkipConfirm="true">
+        <Text>show bgp summary\n</Text>
+      </Button>
+      <Button Label="Alarms" Color="#C62828" Action="SendString" SkipConfirm="true">
+        <Text>show system alarms\n</Text>
+      </Button>
+    </Buttons>
+    <TabIcons>
+      <Icon>firewall</Icon>
+    </TabIcons>
+  </ButtonBar>
+  <ButtonBar Name="Linux">
+    <Buttons>
+      <Button Label="Uptime" Color="#2E7D32" Action="SendString" SkipConfirm="true">
+        <Text>uptime\n</Text>
+      </Button>
+      <Button Label="Disk" Color="#1E63B4" Action="SendString" SkipConfirm="true">
+        <Text>df -h\n</Text>
+      </Button>
+      <Button Label="Memory" Color="#1E63B4" Action="SendString" SkipConfirm="true">
+        <Text>free -h\n</Text>
+      </Button>
+      <Button Label="Services" Color="#6A3D9A" Action="SendString" SkipConfirm="true">
+        <Text>systemctl --failed\n</Text>
+      </Button>
+      <Button Label="Containers" ImageKey="docker" Action="SendString" SkipConfirm="true">
+        <Text>docker ps\n</Text>
+      </Button>
+      <Button Label="Restart nginx" Color="#C62828" Action="SendString">
+        <Text>sudo systemctl restart nginx\n</Text>
+      </Button>
+    </Buttons>
+    <TabIcons>
+      <Icon>ubuntu</Icon>
+      <Icon>database</Icon>
+      <Icon>server</Icon>
+      <Icon>docker</Icon>
+      <Icon>raspberrypi</Icon>
+      <Icon>kubernetes</Icon>
+    </TabIcons>
+  </ButtonBar>
+</ButtonBars>

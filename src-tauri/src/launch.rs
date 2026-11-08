@@ -213,7 +213,8 @@ impl QuickConnect {
 /// The computer the app runs on, as messages name it: "this Mac", or "this PC" on Windows
 pub const THIS_COMPUTER: &str = if cfg!(target_os = "macos") { "this Mac" } else { "this PC" };
 
-/// Build the start of a stored session, or say why it can't start on this computer yet
+/// Build the start of a stored session, or say why it can't start on this computer yet; in demo mode, its stand-in
+/// device (demo.rs)
 pub fn launch(
     sessions: &Sessions,
     profiles: &Profiles,
@@ -222,12 +223,17 @@ pub fn launch(
     store: Store,
     session: &StoredSession,
 ) -> Result<Launch, String> {
-    match session.get("Proto").to_ascii_uppercase().as_str() {
+    let launch = match session.get("Proto").to_ascii_uppercase().as_str() {
         "SSH" | "" => ssh(sessions, profiles, values, store, session),
         proto @ ("TELNET" | "RAW" | "SERIAL") => stream(sessions, profiles, values, serial_devices, store, session, proto),
         proto @ ("PS" | "WINCMD" | "WSL") => windows_shell(profiles, proto, session.get("Proto")),
         other => Err(format!("{other} sessions can't be opened yet.")),
+    };
+    // demo mode: worked out as for the real thing, then a stand-in device runs in its place (demo.rs)
+    if crate::demo::on() {
+        return launch.map(|launch| crate::demo::stand_in(launch, session));
     }
+    launch
 }
 
 /// cmd, PowerShell and WSL sessions, as SuperXPuTTY starts them: on Windows the system's own cmd.exe, Windows
@@ -469,11 +475,11 @@ fn stream(
     })
 }
 
-/// The user's login shell, as for the New Local Shell button (and cmd, PowerShell and WSL sessions); it takes
-/// "Default Settings"' cursor and bell, but not its anti-idle string (see [`shell_look`])
+/// The user's login shell (a made-up one in demo mode), as for the New Local Shell button (and cmd, PowerShell and
+/// WSL sessions); it takes "Default Settings"' cursor and bell, but not its anti-idle string (see [`shell_look`])
 pub fn local_shell(profiles: &Profiles) -> Launch {
     let default = profiles.default_profile();
-    Launch {
+    let launch = Launch {
         command: CommandBuilder::new_default_prog(),
         password: None,
         local: true,
@@ -482,7 +488,12 @@ pub fn local_shell(profiles: &Profiles) -> Launch {
         stream: None,
         login: None,
         server_load: None,
+    };
+    // demo mode: a made-up shell in place of the user's own (demo.rs)
+    if crate::demo::on() {
+        return crate::demo::local_shell(launch);
     }
+    launch
 }
 
 /// The cursor and bell from a profile, else "Default Settings", else the page's own defaults

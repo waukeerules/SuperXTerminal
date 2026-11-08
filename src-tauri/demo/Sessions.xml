@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Demo mode's Saved sessions (Sessions.xml in its settings folder): a made-up company's network, every name and
+     address invented (example.net, and private or documentation ranges). The app runs each as a stand-in device
+     (demo.rs), never ssh. Copied to a fresh folder on each demo start, so changes made while demoing go nowhere. -->
+<ArrayOfSessionData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SessionData SessionId="Production/Network/Core/core-sw-01" SessionName="core-sw-01" ImageKey="coreswitch" Host="core-sw-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" Note="Catalyst 9500, core A. Change window: Sundays 02:00-04:00." ButtonBar="Cisco" />
+  <SessionData SessionId="Production/Network/Core/core-sw-02" SessionName="core-sw-02" ImageKey="coreswitch" Host="core-sw-02.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" Note="Catalyst 9500, core B." ButtonBar="Cisco" />
+  <SessionData SessionId="Production/Network/Distribution/dist-sw-01" SessionName="dist-sw-01" ImageKey="distswitch" Host="dist-sw-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Production/Network/Distribution/dist-sw-02" SessionName="dist-sw-02" ImageKey="distswitch" Host="dist-sw-02.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Production/Network/Edge/edge-rtr-01" SessionName="edge-rtr-01" ImageKey="router" Host="edge-rtr-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" Note="ISR 4451, upstream A (203.0.113.1)." ButtonBar="Cisco" />
+  <SessionData SessionId="Production/Network/Edge/edge-srx-01" SessionName="edge-srx-01" ImageKey="firewall" Host="edge-srx-01.example.net" Port="22" Proto="SSH" PuttySession="Juniper" Username="netops" Note="SRX345 cluster, node 0." ButtonBar="Junos" />
+  <SessionData SessionId="Production/Network/Edge/vpn-01" SessionName="vpn-01" ImageKey="vpn" Host="vpn-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Production/Network/Wireless/wlc-01" SessionName="wlc-01" ImageKey="wlc" Host="wlc-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Production/Servers/web-01" SessionName="web-01" ImageKey="ubuntu" Host="web-01.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="deploy" Note="nginx + app, behind lb-01." ButtonBar="Linux" />
+  <SessionData SessionId="Production/Servers/web-02" SessionName="web-02" ImageKey="ubuntu" Host="web-02.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="deploy" ButtonBar="Linux" />
+  <SessionData SessionId="Production/Servers/db-01" SessionName="db-01" ImageKey="database" Host="db-01.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="dba" Note="PostgreSQL 16 primary." ButtonBar="Linux" />
+  <SessionData SessionId="Production/Servers/k8s-ctl-01" SessionName="k8s-ctl-01" ImageKey="kubernetes" Host="k8s-ctl-01.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="deploy" ButtonBar="Linux" />
+  <SessionData SessionId="Production/Servers/vm-host-01" SessionName="vm-host-01" ImageKey="vmware" Host="vm-host-01.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="root" />
+  <SessionData SessionId="Production/Servers/lb-01" SessionName="lb-01" ImageKey="loadbalancer" Host="lb-01.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="deploy" ButtonBar="Linux" />
+  <SessionData SessionId="Staging/stg-web-01" SessionName="stg-web-01" ImageKey="ubuntu" Host="stg-web-01.example.net" Port="22" Proto="SSH" PuttySession="Via bastion" Username="deploy" ButtonBar="Linux" />
+  <SessionData SessionId="Staging/stg-db-01" SessionName="stg-db-01" ImageKey="database" Host="stg-db-01.example.net" Port="22" Proto="SSH" PuttySession="Via bastion" Username="dba" ButtonBar="Linux" />
+  <SessionData SessionId="Staging/stg-sw-01" SessionName="stg-sw-01" ImageKey="switch" Host="stg-sw-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Branches/London/lon-sw-01" SessionName="lon-sw-01" ImageKey="stackswitch" Host="10.44.0.2" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Branches/London/lon-rtr-01" SessionName="lon-rtr-01" ImageKey="voicerouter" Host="10.44.0.1" Port="22" Proto="SSH" PuttySession="Legacy IOS" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Branches/London/lon-ap-01" SessionName="lon-ap-01" ImageKey="accesspoint" Host="10.44.0.20" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" />
+  <SessionData SessionId="Branches/London/lon-ups-01" SessionName="lon-ups-01" ImageKey="ups" Host="10.44.0.30" Port="23" Proto="Telnet" PuttySession="Default Settings" Username="" />
+  <SessionData SessionId="Branches/Denver/den-sw-01" SessionName="den-sw-01" ImageKey="switch" Host="10.45.0.2" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Branches/Denver/den-rtr-01" SessionName="den-rtr-01" ImageKey="router" Host="10.45.0.1" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Branches/Denver/den-con-01" SessionName="den-con-01" ImageKey="consoleserver" Host="10.45.0.40" Port="22" Proto="SSH" PuttySession="Console servers" Username="admin" />
+  <SessionData SessionId="Branches/Denver/den-cam-01" SessionName="den-cam-01" ImageKey="camera" Host="10.45.0.60" Port="22" Proto="SSH" PuttySession="Linux servers" Username="admin" />
+  <SessionData SessionId="Lab/lab-sw-01" SessionName="lab-sw-01" ImageKey="stackswitch#6A3D9A" Host="lab-sw-01.lab.example.net" Port="22" Proto="SSH" PuttySession="Lab (light)" Username="lab" ButtonBar="Cisco" />
+  <SessionData SessionId="Lab/lab-mx-01" SessionName="lab-mx-01" ImageKey="router#F9A825" Host="lab-mx-01.lab.example.net" Port="22" Proto="SSH" PuttySession="Juniper" Username="lab" ButtonBar="Junos" />
+  <SessionData SessionId="Lab/lab-pi" SessionName="lab-pi" ImageKey="raspberrypi" Host="lab-pi.lab.example.net" Port="22" Proto="SSH" PuttySession="Lab (light)" Username="pi" ButtonBar="Linux" />
+  <SessionData SessionId="Lab/lab-docker" SessionName="lab-docker" ImageKey="docker" Host="lab-docker.lab.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="lab" ButtonBar="Linux" />
+  <SessionData SessionId="Lab/lab-proxmox" SessionName="lab-proxmox" ImageKey="proxmox" Host="lab-proxmox.lab.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="root" ButtonBar="Linux" />
+  <SessionData SessionId="Lab/win-jump" SessionName="win-jump" ImageKey="windows#2E7D32" Host="win-jump.lab.example.net" Port="3389" Proto="RDP" PuttySession="Default Settings" Username="lab" />
+</ArrayOfSessionData>

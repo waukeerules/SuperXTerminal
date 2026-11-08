@@ -13,6 +13,8 @@ mod command_history;
 mod command_tap;
 mod console;
 mod db;
+mod demo;
+mod demo_device;
 mod editing;
 mod external;
 mod folders;
@@ -1257,6 +1259,16 @@ async fn refresh_database(state: &AppState) -> Result<DbState, String> {
         *db_state = DbState::default();
         return Ok(db_state.clone());
     }
+    // a demo has no database: its sessions are the cache's, shown as if just read
+    if demo::on() {
+        let mut db_state = state.database.lock().unwrap();
+        db_state.source = format!("{}.{}", settings.schema, settings.table);
+        show_cache(state, &settings, &mut db_state);
+        db_state.enabled = true;
+        db_state.error.clear();
+        show_database(state, &settings, &mut db_state);
+        return Ok(db_state.clone());
+    }
     // as SuperXPuTTY's BeginSync: send what's queued first, then read
     let result = match if settings.read_only { Ok(()) } else { flush(state, &settings).await } {
         Ok(()) => db::fetch_all(&settings, &user_folder).await,
@@ -2013,6 +2025,10 @@ async fn db_create_schema(state: State<'_, AppState>, database: db::DbSettings, 
 async fn db_check(state: State<'_, AppState>) -> Result<bool, String> {
     let settings = state.settings.lock().unwrap().database.clone();
     let token = state.database.lock().unwrap().token.clone();
+    // a demo's Database sessions never change (demo.rs)
+    if demo::on() {
+        return Ok(false);
+    }
     if !settings.enabled || token.is_empty() {
         return Ok(token.is_empty() && settings.enabled);
     }
@@ -2631,7 +2647,7 @@ fn loading_colour(theme: &str) -> tauri::window::Color {
 /// Whether a window opens where it was last left: the main window only, as the one SuperXTerminal starts with; New
 /// Window's windows each start down and to the right of the one in front, as a Mac app cascades them
 fn remembers_place(label: &str) -> bool {
-    label == "main"
+    label == "main" && !demo::on()
 }
 
 /// What's remembered of the main window (tauri-plugin-window-state, in the app's config folder as .window-state.json):
@@ -2719,8 +2735,19 @@ pub fn askpass_helper() -> bool {
     askpass::helper()
 }
 
+/// Run as one of demo mode's stand-in devices (`demo_device.rs`) instead of as the app; true when it did
+pub fn demo_device() -> bool {
+    demo_device::run()
+}
+
 /// Start the app: load the settings, open the main window, and handle the command line SuperXPuTTY takes
 pub fn run() {
+    // demo mode: a fresh folder of made-up sessions in place of the user's own (demo.rs)
+    if demo::on() {
+        if let Err(e) = demo::prepare() {
+            applog::warn(format!("The demo's folder couldn't be made: {e}"));
+        }
+    }
     let user_folder = sessions::user_folder();
     let settings = AppSettings::load(&user_folder);
     let profiles = Profiles::load(&user_folder);
@@ -2730,9 +2757,15 @@ pub fn run() {
     if let Some(request) = cli::from_args(&args) {
         PENDING.lock().unwrap().push(request);
     }
-    tauri::Builder::default()
-        // one SuperXTerminal: started again (from a script, a terminal), the first one opens what it was given
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| deliver(app, cli::from_args(argv.get(1..).unwrap_or(&[])))))
+    let builder = tauri::Builder::default();
+    // one SuperXTerminal: started again (from a script, a terminal), the first one opens what it was given. Not for a
+    // demo, which would otherwise only bring a SuperXTerminal already running to the front
+    let builder = if demo::on() {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| deliver(app, cli::from_args(argv.get(1..).unwrap_or(&[])))))
+    };
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         // the main window opens where it was last, its size, maximized or full screen as it was left

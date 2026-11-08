@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Demo mode's folder settings beside its Sessions.xml: folder colours and defaults. Production and Staging take
+     their colours from the environment colour rules instead (demo.rs sets them), so both ways show. Branches' username
+     is a placeholder with no value, which Environment Variables lists as missing. -->
+<Folders xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <FolderSetting Path="Branches" Color="#1E63B4" Username="{branch_user}" />
+  <FolderSetting Path="Lab" Color="#2E7D32" Username="{lab_user}" />
+</Folders>

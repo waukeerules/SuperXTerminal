@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Demo mode's Private sessions (PrivateSessions.xml in its own user folder): a made-up home lab. Every name and
+     address is invented; the app runs each as a stand-in device (demo.rs), never ssh. -->
+<ArrayOfSessionData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SessionData SessionId="Home/nas" SessionName="nas" ImageKey="storage" Host="192.168.50.10" Port="22" Proto="SSH" PuttySession="Default Settings" Username="admin" />
+  <SessionData SessionId="Home/pihole" SessionName="pihole" ImageKey="raspberrypi" Host="192.168.50.2" Port="22" Proto="SSH" PuttySession="Default Settings" Username="pi" />
+  <SessionData SessionId="Home/home-rtr" SessionName="home-rtr" ImageKey="router#00897B" Host="192.168.50.1" Port="22" Proto="SSH" PuttySession="Default Settings" Username="admin" />
+  <SessionData SessionId="Cloud/vps-fra" SessionName="vps-fra" ImageKey="debian" Host="vps-fra.example.org" Port="22" Proto="SSH" PuttySession="Cloud VMs" Username="demo" />
+  <SessionData SessionId="Cloud/vps-nyc" SessionName="vps-nyc" ImageKey="cloud" Host="vps-nyc.example.org" Port="2222" Proto="SSH" PuttySession="Cloud VMs" Username="demo" />
+</ArrayOfSessionData>

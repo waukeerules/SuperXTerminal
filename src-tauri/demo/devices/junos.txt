@@ -1,0 +1,87 @@
+# What demo mode's stand-in Juniper (Junos) device answers (demo_device.rs), in ios.txt's form: "## command" lines
+# start an answer, with {host}, {ip}, {iso_date}, {time} and {uptime} filled in. Commands may be shortened
+# word by word ("sh int te"). Everything here is invented.
+## @banner
+--- JUNOS 22.4R3.25 Kernel 64-bit  JNPR-12.1-20231013.3a4d6e1_buil
+## show version
+Hostname: {host}
+Model: srx345
+Junos: 22.4R3.25
+JUNOS Software Release [22.4R3.25]
+## show interfaces terse
+Interface               Admin Link Proto    Local                 Remote
+ge-0/0/0                up    up
+ge-0/0/0.0              up    up   inet     203.0.113.2/30
+ge-0/0/1                up    up
+ge-0/0/1.0              up    up   inet     {ip}/24
+ge-0/0/2                up    down
+ge-0/0/2.0              up    down inet     198.51.100.2/30
+ge-0/0/3                down  down
+ge-0/0/4                up    up
+ge-0/0/4.0              up    up   inet     10.20.40.1/24
+fab0                    up    up
+fab0.0                  up    up   inet     30.17.0.200/24
+fxp0                    up    up
+fxp0.0                  up    up   inet     192.168.255.20/24
+lo0                     up    up
+lo0.0                   up    up   inet     10.255.0.1          --> 0/0
+st0                     up    up
+st0.1                   up    up   inet     169.254.10.1/30
+## show route summary
+Autonomous system number: 64512
+Router ID: 10.255.0.1
+
+inet.0: 912,384 destinations, 1,824,701 routes (912,384 active, 0 holddown, 0 hidden)
+              Direct:      9 routes,      9 active
+               Local:      9 routes,      9 active
+                 BGP: 1,824,672 routes, 912,355 active
+              Static:      2 routes,      2 active
+## show bgp summary
+Threading mode: BGP I/O
+Groups: 2 Peers: 3 Down peers: 1
+Table          Tot Paths  Act Paths Suppressed    History Damp State    Pending
+inet.0
+                 1824672     912355          0          0          0          0
+Peer                     AS      InPkt     OutPkt    OutQ   Flaps Last Up/Dwn State|#Active/Received/Accepted/Damped...
+203.0.113.1           64496     884512      12044       0       0 6w2d 4:11:09 Establ
+  inet.0: 912340/912340/912340/0
+198.51.100.1          64497          0          0       0       3     2:14:51 Active
+10.255.0.2            64512      40112      40108       0       0 6w2d 4:10:52 Establ
+  inet.0: 15/15/15/0
+## show system alarms
+2 alarms currently active
+Alarm time               Class  Description
+2026-11-07 07:58:12 MST  Major  ge-0/0/2: Link down
+2026-11-05 14:02:41 MST  Minor  Rescue configuration is not set
+## show system uptime
+Current time: {iso_date} {time} MST
+Time Source:  NTP CLOCK
+System booted: 2026-09-20 03:14:07 MST (6w6d 06:27 ago)
+Protocols started: 2026-09-20 03:16:51 MST (6w6d 06:24 ago)
+Last configured: 2026-11-07 08:12:40 MST (01:28:27 ago) by netops
+## show security policies hit-count
+Logical system: root-logical-system
+ Index   From zone        To zone           Name           Policy count  Action
+ 1       trust            untrust           allow-web      18274113      Permit
+ 2       trust            untrust           allow-dns      4410922       Permit
+ 3       untrust          dmz               web-in         9921034       Permit
+ 4       untrust          trust             default-deny   120933        Deny
+Number of policy: 4
+## show configuration security zones
+security-zone trust {
+    host-inbound-traffic {
+        system-services {
+            ssh;
+            ping;
+        }
+    }
+    interfaces {
+        ge-0/0/1.0;
+    }
+}
+security-zone untrust {
+    screen untrust-screen;
+    interfaces {
+        ge-0/0/0.0;
+    }
+}

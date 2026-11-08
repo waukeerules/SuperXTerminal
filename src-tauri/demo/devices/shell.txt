@@ -1,0 +1,23 @@
+# What demo mode's stand-in for this computer's own shell answers (demo_device.rs), for New Local Shell, in
+# ios.txt's form: "## command" lines start an answer, with {date}, {year}, {time} and {weekday} filled in. Commands must be
+# typed in full. Everything here is invented.
+## @banner
+Last login: {weekday} {date} 08:01:55 on ttys002
+## ls
+Desktop     Documents   Downloads   Projects    configs     notes.md
+## ls configs
+core-sw-01.cfg      edge-srx-01.conf    lon-rtr-01.cfg      templates
+## pwd
+/Users/demo
+## whoami
+demo
+## date
+{weekday} {date} {time} MST {year}
+## uptime
+{time}  up 6 days,  2:14, 3 users, load averages: 1.82 1.64 1.59
+## ssh -V
+OpenSSH_9.9p2, LibreSSL 3.3.6
+## sw_vers
+ProductName:		macOS
+ProductVersion:		26.1
+BuildVersion:		25B78

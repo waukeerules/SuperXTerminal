@@ -166,6 +166,11 @@ pub async fn sftp_open(
     store: Store,
     id: String,
 ) -> Result<Opened, String> {
+    if crate::demo::on() {
+        let sessions = state.sessions.lock().unwrap();
+        let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
+        return demo_open(session);
+    }
     let (launch, title, local, remote) = {
         let profiles = state.profiles.lock().unwrap().clone();
         let values = crate::variables::values(&state.user_folder);
@@ -282,6 +287,9 @@ pub async fn sftp_open(
 /// The tab closed: disconnect
 #[tauri::command]
 pub async fn sftp_close(sftps: State<'_, Sftps>, id: u32) -> Result<(), String> {
+    if let Some(demo) = DEMO.lock().unwrap().as_mut() {
+        demo.remove(&id);
+    }
     let conn = sftps.conns.lock().unwrap().remove(&id);
     if let Some(conn) = conn {
         crate::askpass::forget(&conn.token);
@@ -357,6 +365,9 @@ async fn read_dir(raw: &RawSftpSession, path: &str) -> Result<Vec<russh_sftp::pr
 /// A remote folder's files, its path made absolute (`..` and `~` resolved)
 #[tauri::command]
 pub async fn sftp_list(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<Listing, String> {
+    if let Some(device) = demo_device(id) {
+        return Ok(demo_list(&device, path.trim()));
+    }
     let conn = conn(&sftps, id)?;
     if let Some(base) = &conn.scp {
         return scp_list(base, &conn.token, path.trim()).await;
@@ -395,18 +406,27 @@ pub async fn sftp_list(sftps: State<'_, Sftps>, id: u32, path: String) -> Result
 /// A new remote folder
 #[tauri::command]
 pub async fn sftp_mkdir(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<(), String> {
+    if demo_device(id).is_some() {
+        return Err(DEMO_UNCHANGED.into());
+    }
     conn(&sftps, id)?.raw()?.mkdir(path, FileAttributes::empty()).await.map(|_| ()).map_err(plain)
 }
 
 /// Rename or move a remote file or folder
 #[tauri::command]
 pub async fn sftp_rename(sftps: State<'_, Sftps>, id: u32, from: String, to: String) -> Result<(), String> {
+    if demo_device(id).is_some() {
+        return Err(DEMO_UNCHANGED.into());
+    }
     conn(&sftps, id)?.raw()?.rename(from, to).await.map(|_| ()).map_err(plain)
 }
 
 /// Delete a remote file, or a folder and everything in it
 #[tauri::command]
 pub async fn sftp_delete(sftps: State<'_, Sftps>, id: u32, path: String) -> Result<(), String> {
+    if demo_device(id).is_some() {
+        return Err(DEMO_UNCHANGED.into());
+    }
     let conn = conn(&sftps, id)?;
     match &conn.scp {
         Some(base) => scp_delete(base, &conn.token, &path).await,
@@ -457,6 +477,13 @@ pub async fn sftp_transfer(
     target: String,
     on_progress: Channel<Progress>,
 ) -> Result<(), String> {
+    if demo_device(id).is_some() {
+        let cancel = Arc::new(AtomicBool::new(false));
+        sftps.cancels.lock().unwrap().insert(transfer, cancel.clone());
+        let result = demo_transfer(upload, &sources, &sizes.unwrap_or_default(), &target, &cancel, &on_progress).await;
+        sftps.cancels.lock().unwrap().remove(&transfer);
+        return result;
+    }
     let conn = conn(&sftps, id)?;
     let cancel = Arc::new(AtomicBool::new(false));
     sftps.cancels.lock().unwrap().insert(transfer, cancel.clone());
@@ -1048,6 +1075,87 @@ pub fn plain_path(path: &std::path::Path) -> std::path::PathBuf {
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Demo mode (demo.rs): a session's files are a made-up switch's flash, over SCP as a real Cisco's are. The listing is
+// the stand-in device's own `dir` (demo_device.rs), so the tab's terminal and its file transfer agree; copies take
+// a while and show their progress, then leave an empty file of the right size, so nothing real is read or sent.
+
+/// The demo's open file transfers: each tab's id, and the session's name and host
+static DEMO: Mutex<Option<HashMap<u32, (String, String)>>> = Mutex::new(None);
+
+/// What a demo device says to a change it doesn't make
+const DEMO_UNCHANGED: &str = "Demo mode: nothing on the device is changed.";
+
+/// How fast a demo copy goes, in bytes a second: an IOS image takes about a minute, long enough to be seen
+const DEMO_SPEED: u64 = 20_000_000;
+
+/// A demo tab's session name and host, when the tab is a demo's
+fn demo_device(id: u32) -> Option<(String, String)> {
+    DEMO.lock().unwrap().as_ref().and_then(|d| d.get(&id).cloned())
+}
+
+/// Open a demo session's files: SCP, at flash:, beside the demo's own Downloads folder
+fn demo_open(session: &crate::sessions::StoredSession) -> Result<Opened, String> {
+    let name = session.get("SessionName").to_string();
+    let host = session.get("Host").to_string();
+    let user = session.get("Username");
+    let address = if user.is_empty() { host.clone() } else { format!("{user}@{host}") };
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    DEMO.lock().unwrap().get_or_insert_with(HashMap::new).insert(id, (name, host));
+    let local = crate::demo::downloads().to_string_lossy().to_string();
+    Ok(Opened { id, home: "flash:/".into(), remote: "flash:/".into(), local, address, scp: true })
+}
+
+/// A demo device's folder, from its `dir`: flash:/ has files, any other folder is empty
+fn demo_list(device: &(String, String), path: &str) -> Listing {
+    let path = if path.is_empty() { "flash:/" } else { path };
+    let empty = || Listing { path: path.to_string(), entries: Vec::new() };
+    if !path.trim_end_matches('/').eq_ignore_ascii_case("flash:") {
+        return empty();
+    }
+    crate::demo_device::canned_answer("ios", &device.0, &device.1, "dir flash:/").and_then(|text| parse_dir(&text)).unwrap_or_else(empty)
+}
+
+/// A demo copy: its progress at [`DEMO_SPEED`], then, for a download, an empty file of the right size in `target`
+async fn demo_transfer(
+    upload: bool,
+    sources: &[String],
+    sizes: &[u64],
+    target: &str,
+    cancel: &AtomicBool,
+    on_progress: &Channel<Progress>,
+) -> Result<(), String> {
+    let size_of = |i: usize, source: &str| -> u64 {
+        if upload {
+            std::fs::metadata(source).map(|m| m.len()).unwrap_or(0)
+        } else {
+            sizes.get(i).copied().unwrap_or(0)
+        }
+    };
+    let total: u64 = sources.iter().enumerate().map(|(i, s)| size_of(i, s)).sum();
+    let _ = on_progress.send(Progress::Total { bytes: total, files: sources.len() as u64 });
+    let mut done = 0;
+    for (i, source) in sources.iter().enumerate() {
+        let name = source.rsplit(['/', ':', '\\']).next().unwrap_or(source).to_string();
+        let size = size_of(i, source);
+        let mut sent = 0;
+        while sent < size {
+            if cancel.load(Ordering::Relaxed) {
+                return Err("Cancelled".into());
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            sent = (sent + DEMO_SPEED / 4).min(size);
+            let _ = on_progress.send(Progress::Done { bytes: done + sent, file: name.clone() });
+        }
+        done += size;
+        if !upload {
+            let file = std::fs::File::create(std::path::Path::new(target).join(&name)).map_err(|e| e.to_string())?;
+            file.set_len(size).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 /// A folder on this computer (`~` is home), its path made absolute
 #[tauri::command]
 pub fn local_list(path: String) -> Result<Listing, String> {
@@ -1069,7 +1177,12 @@ pub fn local_list(path: String) -> Result<Listing, String> {
         #[cfg(unix)]
         let (permissions, owner, group) = {
             use std::os::unix::fs::MetadataExt;
-            (mode_text(lmeta.mode()), id_name(lmeta.uid(), false), id_name(lmeta.gid(), true))
+            // demo mode: never the user's own name, in a screenshot
+            if crate::demo::on() {
+                (mode_text(lmeta.mode()), "demo".to_string(), "staff".to_string())
+            } else {
+                (mode_text(lmeta.mode()), id_name(lmeta.uid(), false), id_name(lmeta.gid(), true))
+            }
         };
         #[cfg(not(unix))]
         let (permissions, owner, group) = (String::new(), String::new(), String::new());
@@ -1163,5 +1276,18 @@ mod tests {
         assert_eq!(mode_text(0o120777), "lrwxrwxrwx");
         assert_eq!(join("/", "etc"), "/etc");
         assert_eq!(join("/home/me", "a b"), "/home/me/a b");
+    }
+
+    /// Demo mode's file transfer lists a switch's flash from the stand-in device's own `dir`, as a real Cisco's is
+    /// read over SCP: the files with their sizes, and an empty folder anywhere else
+    #[test]
+    fn a_demo_switch_lists_its_flash_as_its_dir_says() {
+        let device = ("core-sw-01".to_string(), "core-sw-01.example.net".to_string());
+        let flash = demo_list(&device, "flash:");
+        assert_eq!(flash.path, "flash:/");
+        let image = flash.entries.iter().find(|e| e.name == "cat9k_iosxe.17.12.03.SPA.bin").expect("the image is listed");
+        assert_eq!((image.size, image.dir), (1_301_418_244, false));
+        assert!(flash.entries.iter().any(|e| e.name == "tracelogs" && e.dir));
+        assert!(demo_list(&device, "flash:/tracelogs").entries.is_empty());
     }
 }

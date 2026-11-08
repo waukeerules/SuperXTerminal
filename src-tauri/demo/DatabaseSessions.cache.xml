@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Demo mode's Database sessions: the cache SuperXPuTTY and the app keep of the shared table, shown in place of a
+     database. demo.rs fills in {source}, so it matches the demo's connection, and {generated}: a few thousand more
+     sessions, a made-up company's sites, to show a table that size. Every name and address is invented. -->
+<CacheFile xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Source>{source}</Source>
+  <SyncedAt>2026-11-07T09:41:07.0000000-07:00</SyncedAt>
+  <Sessions>
+    <SessionData SessionId="@db/NOC/Campus/bldg-a-sw-01" DatabaseId="0b6c6a8e-1d1f-4c55-9c1e-5a0f6d2c7a01" DatabaseVersion="639291000000000001" DatabaseLockedFields="" DatabaseUpdatedBy="Alex" SessionName="bldg-a-sw-01" ImageKey="switch" Host="10.60.1.11" Port="22" Proto="SSH" PuttySession="Network devices" Username="{noc_user}" Note="Building A, IDF 1." CollectionID="" CollectionLocation="" />
+    <SessionData SessionId="@db/NOC/Campus/bldg-a-sw-02" DatabaseId="0b6c6a8e-1d1f-4c55-9c1e-5a0f6d2c7a02" DatabaseVersion="639291000000000002" DatabaseLockedFields="" DatabaseUpdatedBy="Alex" SessionName="bldg-a-sw-02" ImageKey="switch" Host="10.60.1.12" Port="22" Proto="SSH" PuttySession="Network devices" Username="{noc_user}" CollectionID="" CollectionLocation="" />
+    <SessionData SessionId="@db/NOC/Campus/bldg-b-sw-01" DatabaseId="0b6c6a8e-1d1f-4c55-9c1e-5a0f6d2c7a03" DatabaseVersion="639291000000000003" DatabaseLockedFields="Host" DatabaseUpdatedBy="Sam" SessionName="bldg-b-sw-01" ImageKey="switch" Host="10.60.2.11" Port="22" Proto="SSH" PuttySession="Network devices" Username="{noc_user}" CollectionID="" CollectionLocation="" />
+    <SessionData SessionId="@db/NOC/Datacentre/dc2-core-01" DatabaseId="0b6c6a8e-1d1f-4c55-9c1e-5a0f6d2c7a04" DatabaseVersion="639291000000000004" DatabaseLockedFields="Host;Port" DatabaseUpdatedBy="Sam" Color="#C62828" SessionName="dc2-core-01" ImageKey="nexus" Host="10.70.0.1" Port="22" Proto="SSH" PuttySession="Network devices" Username="{noc_user}" Note="Nexus 9300, DC2." CollectionID="" CollectionLocation="" />
+    <SessionData SessionId="@db/NOC/Datacentre/dc2-fw-01" DatabaseId="0b6c6a8e-1d1f-4c55-9c1e-5a0f6d2c7a05" DatabaseVersion="639291000000000005" DatabaseLockedFields="" DatabaseUpdatedBy="Priya" Color="#C62828" SessionName="dc2-fw-01" ImageKey="firewall" Host="10.70.0.5" Port="22" Proto="SSH" PuttySession="CyberArk PSM" Username="{noc_user}" CollectionID="" CollectionLocation="" />
+    <SessionData SessionId="@db/NOC/Monitoring/nms-01" DatabaseId="0b6c6a8e-1d1f-4c55-9c1e-5a0f6d2c7a06" DatabaseVersion="639291000000000006" DatabaseLockedFields="" DatabaseUpdatedBy="Priya" SessionName="nms-01" ImageKey="rockylinux" Host="10.70.10.20" Port="22" Proto="SSH" PuttySession="Linux servers" Username="{noc_user}" Note="LibreNMS and syslog." CollectionID="" CollectionLocation="" />
+    <SessionData SessionId="@db/NOC/Monitoring/grafana-01" DatabaseId="0b6c6a8e-1d1f-4c55-9c1e-5a0f6d2c7a07" DatabaseVersion="639291000000000007" DatabaseLockedFields="" DatabaseUpdatedBy="Alex" SessionName="grafana-01" ImageKey="server" Host="10.70.10.21" Port="22" Proto="SSH" PuttySession="Linux servers" Username="{noc_user}" CollectionID="" CollectionLocation="" />
+{generated}  </Sessions>
+  <Writable>true</Writable>
+  <Folders>
+    <FolderSetting Path="NOC/Datacentre" Color="#C62828" JumpHost="{dc2_jump}" />
+  </Folders>
+  <OptionalColumns />
+</CacheFile>

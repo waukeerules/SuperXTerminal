@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "tabs": {
+    "grid": {
+      "root": {
+        "type": "branch",
+        "data": [
+          { "type": "leaf", "data": { "views": ["demo-core", "demo-dist", "demo-srx"], "activeView": "demo-core", "id": "1" }, "size": 860 },
+          { "type": "leaf", "data": { "views": ["demo-web", "demo-k8s", "demo-db"], "activeView": "demo-web", "id": "2" }, "size": 720 }
+        ],
+        "size": 1000
+      },
+      "width": 1580,
+      "height": 1000,
+      "orientation": "HORIZONTAL"
+    },
+    "panels": {
+      "demo-core": { "id": "demo-core", "contentComponent": "terminal", "title": "core-sw-01", "renderer": "always",
+        "params": { "target": { "kind": "session", "store": "saved", "id": "Production/Network/Core/core-sw-01" }, "local": false, "icon": "coreswitch", "environment": "#C62828" } },
+      "demo-dist": { "id": "demo-dist", "contentComponent": "terminal", "title": "dist-sw-01", "renderer": "always",
+        "params": { "target": { "kind": "session", "store": "saved", "id": "Production/Network/Distribution/dist-sw-01" }, "local": false, "icon": "distswitch", "environment": "#C62828" } },
+      "demo-srx": { "id": "demo-srx", "contentComponent": "terminal", "title": "edge-srx-01", "renderer": "always",
+        "params": { "target": { "kind": "session", "store": "saved", "id": "Production/Network/Edge/edge-srx-01" }, "local": false, "icon": "firewall", "environment": "#C62828" } },
+      "demo-web": { "id": "demo-web", "contentComponent": "terminal", "title": "web-01", "renderer": "always",
+        "params": { "target": { "kind": "session", "store": "saved", "id": "Production/Servers/web-01" }, "local": false, "icon": "ubuntu", "environment": "#C62828" } },
+      "demo-k8s": { "id": "demo-k8s", "contentComponent": "terminal", "title": "k8s-ctl-01", "renderer": "always",
+        "params": { "target": { "kind": "session", "store": "saved", "id": "Production/Servers/k8s-ctl-01" }, "local": false, "icon": "kubernetes", "environment": "#C62828" } },
+      "demo-db": { "id": "demo-db", "contentComponent": "terminal", "title": "stg-db-01", "renderer": "always",
+        "params": { "target": { "kind": "session", "store": "saved", "id": "Staging/stg-db-01" }, "local": false, "icon": "database", "environment": "#EF6C00" } }
+    },
+    "activeGroup": "1"
+  },
+  "panes": { "sessionsPaneWidth": 290, "sessionsAutoHide": false, "showLayouts": false, "showSessionDetail": false }
+}

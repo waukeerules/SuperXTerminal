@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 /// How many recently opened sessions are kept, as SuperXPuTTY's RecentCount
-const RECENT_COUNT: usize = 10;
+pub const RECENT_COUNT: usize = 10;
 
 /// The file, in SuperXPuTTY's format
 #[derive(Clone, Default, Serialize, Deserialize)]

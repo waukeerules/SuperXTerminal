@@ -1,0 +1,119 @@
+# What demo mode's stand-in Linux server answers (demo_device.rs), in ios.txt's form: "## command" lines start an
+# answer, with {host}, {ip}, {date}, {year}, {time}, {weekday}, {uptime}, {os}, {os_name}, {os_version} and
+# {kernel} (the release, from the session's icon) filled in. Commands must be typed in full; "sudo" in front is ignored. Everything here is
+# invented.
+## @banner
+Welcome to {os} (GNU/Linux {kernel} x86_64)
+
+  System information as of {weekday} {date} {time} MST {year}
+
+  System load:  0.42               Processes:             187
+  Usage of /:   61.3% of 48.96GB   Users logged in:       1
+  Memory usage: 38%                IPv4 address for eth0: {ip}
+  Swap usage:   0%
+
+3 updates can be applied immediately.
+
+Last login: {weekday} {date} 08:02:17 {year} from 10.20.10.50
+## uptime
+ {time} up {uptime},  1 user,  load average: 0.42, 0.37, 0.31
+## df -h
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs           1.6G  1.4M  1.6G   1% /run
+/dev/sda2        49G   30G   17G  65% /
+tmpfs           7.8G     0  7.8G   0% /dev/shm
+/dev/sda1       1.1G  6.1M  1.1G   1% /boot/efi
+/dev/sdb1       492G  463G  4.2G  99% /var/lib/postgresql
+tmpfs           1.6G  4.0K  1.6G   1% /run/user/1000
+## free -h
+               total        used        free      shared  buff/cache   available
+Mem:            15Gi       5.8Gi       2.1Gi       312Mi       7.9Gi       9.6Gi
+Swap:          4.0Gi          0B       4.0Gi
+## systemctl --failed
+  UNIT                  LOAD   ACTIVE SUB    DESCRIPTION
+● certbot-renew.service loaded failed failed Certbot certificate renewal
+
+LOAD   = Reflects whether the unit definition was properly loaded.
+ACTIVE = The high-level unit activation state, i.e. generalization of SUB.
+SUB    = The low-level unit activation state, values specific to unit type.
+1 loaded units listed.
+## systemctl status nginx
+● nginx.service - A high performance web server and a reverse proxy server
+     Loaded: loaded (/lib/systemd/system/nginx.service; enabled; preset: enabled)
+     Active: active (running) since {weekday} {date} 06:12:40 MST; 3h 28min ago
+       Docs: man:nginx(8)
+   Main PID: 1184 (nginx)
+      Tasks: 5 (limit: 18921)
+     Memory: 12.4M
+        CPU: 2.811s
+     CGroup: /system.slice/nginx.service
+             ├─1184 "nginx: master process /usr/sbin/nginx -g daemon on; master_process on;"
+             ├─1185 "nginx: worker process"
+             └─1186 "nginx: worker process"
+## systemctl restart nginx
+## docker ps
+CONTAINER ID   IMAGE                 COMMAND                  CREATED        STATUS                  PORTS                    NAMES
+3f2a91c0d7e4   nginx:1.27-alpine     "/docker-entrypoint.…"   2 days ago     Up 2 days               0.0.0.0:443->443/tcp     edge-proxy
+a81b2e3c4d5f   example/api:4.12.0    "/app/server"            2 days ago     Up 2 days (healthy)     127.0.0.1:8080->8080/tcp api
+9c8d7e6f5a4b   example/worker:4.12.0 "/app/worker"            2 days ago     Restarting (1) 4s ago                            worker
+1b2c3d4e5f6a   redis:7.4             "docker-entrypoint.s…"   3 weeks ago    Up 3 weeks              6379/tcp                 cache
+## ip -br addr
+## ip -br a
+lo               UNKNOWN        127.0.0.1/8 ::1/128
+eth0             UP             {ip}/24 fe80::250:56ff:fea1:2b3c/64
+docker0          UP             172.17.0.1/16 fe80::42:3aff:fe11:9b2c/64
+## ls
+## ls -la
+total 48
+drwxr-x--- 6 demo demo 4096 Nov  7 08:02 .
+drwxr-xr-x 4 root root 4096 Sep 20 03:20 ..
+-rw------- 1 demo demo 8812 Nov  7 09:40 .bash_history
+-rw-r--r-- 1 demo demo  220 Sep 20 03:20 .bash_logout
+-rw-r--r-- 1 demo demo 3771 Sep 20 03:20 .bashrc
+drwx------ 3 demo demo 4096 Sep 20 03:31 .cache
+drwx------ 2 demo demo 4096 Sep 20 03:20 .ssh
+drwxrwxr-x 4 demo demo 4096 Oct 30 16:05 deploy
+-rwxrwxr-x 1 demo demo 1534 Oct 30 16:05 healthcheck.sh
+-rw-rw-r-- 1 demo demo 2210 Nov  6 17:44 release-notes.md
+## tail /var/log/syslog
+## tail -n 10 /var/log/syslog
+Nov  7 09:31:02 {host} systemd[1]: Starting certbot-renew.service - Certbot certificate renewal...
+Nov  7 09:31:07 {host} certbot[22410]: Failed to renew certificate www.example.net: Connection refused
+Nov  7 09:31:07 {host} systemd[1]: certbot-renew.service: Main process exited, code=exited, status=1/FAILURE
+Nov  7 09:31:07 {host} systemd[1]: certbot-renew.service: Failed with result 'exit-code'.
+Nov  7 09:35:44 {host} kernel: [ 4.211] EXT4-fs warning (device sdb1): ext4_dx_add_entry: Directory index full!
+Nov  7 09:38:41 {host} sshd[22511]: Accepted publickey for demo from 10.20.10.50 port 51522 ssh2: ED25519 SHA256:Zm9vYmFyYmF6
+Nov  7 09:38:41 {host} systemd-logind[811]: New session 412 of user demo.
+Nov  7 09:40:01 {host} CRON[22540]: (root) CMD (/usr/local/bin/backup.sh >/dev/null 2>&1)
+Nov  7 09:40:12 {host} nginx[1185]: upstream timed out (110: Connection timed out) while reading response header from upstream
+Nov  7 09:41:00 {host} systemd[1]: Started session-412.scope - Session 412 of User demo.
+## cat /etc/os-release
+PRETTY_NAME="{os}"
+NAME="{os_name}"
+VERSION_ID="{os_version}"
+HOME_URL="https://www.example.net/"
+## uname -a
+Linux {host} {kernel} #1 SMP PREEMPT_DYNAMIC x86_64 GNU/Linux
+## whoami
+demo
+## hostname
+{host}
+## date
+{weekday} {date} {time} MST {year}
+## kubectl get nodes
+NAME          STATUS     ROLES           AGE    VERSION
+k8s-ctl-01    Ready      control-plane   48d    v1.31.2
+k8s-wrk-01    Ready      <none>          48d    v1.31.2
+k8s-wrk-02    Ready      <none>          48d    v1.31.2
+k8s-wrk-03    NotReady   <none>          48d    v1.31.2
+## kubectl get pods
+NAME                        READY   STATUS             RESTARTS        AGE
+api-6d8f7c9b5-2xkqp         1/1     Running            0               2d
+api-6d8f7c9b5-9wz4t         1/1     Running            0               2d
+worker-7b9c4d5f6-lm3np      0/1     CrashLoopBackOff   37 (4s ago)     2d
+redis-0                     1/1     Running            0               21d
+## psql -c 'select now()'
+              now
+-------------------------------
+ 2026-11-07 09:41:07.12345-07
+(1 row)

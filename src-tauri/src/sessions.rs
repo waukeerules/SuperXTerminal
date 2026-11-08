@@ -299,9 +299,12 @@ pub(crate) fn read_elements(path: &Path, element: &str) -> Result<Vec<Vec<(Strin
     Ok(found)
 }
 
-/// The user's own folder: per-user files (PrivateSessions.xml, settings) as in docs/PLAN.md §3
+/// The user's own folder: per-user files (PrivateSessions.xml, settings) as in docs/PLAN.md §3; in demo mode, the
+/// demo's folder instead (demo.rs)
 pub fn user_folder() -> PathBuf {
-    if cfg!(target_os = "macos") {
+    if crate::demo::on() {
+        crate::demo::user_folder()
+    } else if cfg!(target_os = "macos") {
         dirs::home_dir().unwrap_or_default().join("Library/Application Support/SuperXTerminal")
     } else {
         dirs::config_dir().unwrap_or_default().join("SuperXTerminal")

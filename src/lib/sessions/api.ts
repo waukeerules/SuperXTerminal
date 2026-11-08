@@ -475,3 +475,28 @@ export async function exportCsv(items: [Store, string][] | null, fileName: strin
   const file = fileNameOf(path);
   return `Exported ${count} session${count === 1 ? "" : "s"} to ${file}${masked ? ` (${masked} -pw password${masked === 1 ? "" : "s"} written as ********)` : ""}`;
 }
+
+/** One session for File > Edit Sessions as Table…: where it is, all its fields, and what the Database table locks */
+export interface TableRow {
+  store: Store;
+  id: string;
+  fields: SessionFields;
+  /** Database sessions: the whole row locked in the table */
+  locked: boolean;
+  /** Database sessions: the columns locked in the table, comma-separated ("host,port") */
+  lockedFields: string;
+}
+
+/** Every session, Saved, Private and Database, with all its fields, for Edit Sessions as Table… */
+export function loadTable(): Promise<TableRow[]> {
+  return invoke<TableRow[]>("sessions_table_load");
+}
+
+/**
+ * Save the rows changed in Edit Sessions as Table… that are in one file, Saved or Private, in one write: all or none.
+ * Returns each session's id now, in the order given
+ * @param edits each session's id before the change, and its fields now
+ */
+export function saveTable(store: Exclude<Store, "database">, edits: [string, SessionFields][]): Promise<string[]> {
+  return invoke<string[]>("sessions_table_save", { store, edits });
+}

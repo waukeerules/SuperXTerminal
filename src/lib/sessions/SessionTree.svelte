@@ -47,6 +47,7 @@
   } from "./api";
   import EditSession from "./EditSession.svelte";
   import BulkEdit from "./BulkEdit.svelte";
+  import SessionsTable from "./SessionsTable.svelte";
   import Overrides from "./Overrides.svelte";
   import ImportSessions from "./ImportSessions.svelte";
   import ConnectSome from "./ConnectSome.svelte";
@@ -142,6 +143,8 @@
   /** The session being edited: its store, its id (null for new) and its fields */
   /** Edit Session open; `copyOf` is the session a new one was filled in from, whose password it keeps */
   let editing = $state<{ store: Store; id: string | null; fields: SessionFields; lockedFields?: string; copyOf?: [Store, string] } | null>(null);
+  /** Whether File > Edit Sessions as Table… is open */
+  let tableOpen = $state(false);
   /** A folder whose settings are being edited */
   /** Whether Pending changes is open */
   let showPending = $state(false);
@@ -362,7 +365,7 @@
   /** Read the table again if it changed; not while a window is open, so a session being edited isn't replaced, and
    * not while offline (the retry takes over) */
   async function checkDatabase(): Promise<void> {
-    if (editing || bulk || overriding || folderSettings || prompt || menu || showPending || dbLoading || db?.error) return;
+    if (editing || tableOpen || bulk || overriding || folderSettings || prompt || menu || showPending || dbLoading || db?.error) return;
     try {
       if (await databaseChanged()) await readDatabase();
     } catch {
@@ -1385,6 +1388,11 @@
     }
   }
 
+  /** File > Edit Sessions as Table…: every session in one table, to change many at once (SessionsTable.svelte) */
+  export function editAsTable(): void {
+    if (loaded) tableOpen = true;
+  }
+
   /** File > Reload Sessions File: read the sessions files again now, as SuperXPuTTY's */
   export async function reloadSessions(): Promise<void> {
     await reload();
@@ -1616,6 +1624,11 @@
     freeName={(store, folder, name, except) => freeName(store, folder, name, except)} copyOf={editing.copyOf ?? null}
     {iconSize} {customs} {onOpenProfiles} lockedFields={editing.lockedFields ?? ""} onCancel={() => (editing = null)}
     onSaved={async (id) => { const store = editing?.store; editing = null; await reload(); selected = `${store}:${id}`; }} />
+{/if}
+
+{#if tableOpen && loaded}
+  <SessionsTable {loaded} {db} {colors} {customs} onClose={() => (tableOpen = false)}
+    onSaved={async (report) => { tableOpen = false; await reload(); context.status(report); }} />
 {/if}
 
 {#if bulk}

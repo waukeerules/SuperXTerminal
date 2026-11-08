@@ -128,6 +128,32 @@ pub fn to_row(fields: &SessionFields, stored: Option<&StoredSession>) -> crate::
 
 /// Save a session: `original_id` is the one it's stored under, None for a new session. Returns its id.
 pub fn save(path: &std::path::Path, original_id: Option<&str>, fields: &SessionFields, ids_elsewhere: &[String]) -> Result<String, String> {
+    let mut id = String::new();
+    sessions::update_file(path, |list| {
+        id = put(list, original_id, fields, ids_elsewhere)?;
+        Ok(())
+    })?;
+    Ok(id)
+}
+
+/// Save many sessions of one file at once (File > Edit Sessions as Table…), each `(original id, fields)`, in one write
+/// and so one backup, where saving them one by one made a backup each and pushed the older ones out. All or nothing:
+/// the first that can't be saved (a name taken, none at all) stops it, naming the session, and the file is left as it
+/// was. Returns each session's id now, in the order given.
+pub fn save_many(path: &std::path::Path, edits: &[(String, SessionFields)], ids_elsewhere: &[String]) -> Result<Vec<String>, String> {
+    let mut ids = Vec::with_capacity(edits.len());
+    sessions::update_file(path, |list| {
+        for (original, fields) in edits {
+            ids.push(put(list, Some(original), fields, ids_elsewhere).map_err(|e| format!("{original}: {e}"))?);
+        }
+        Ok(())
+    })?;
+    Ok(ids)
+}
+
+/// One session's change in a file's list, as [`save`] and [`save_many`] make it: the name checked, the id unique
+/// (ignoring case) in the file and among `ids_elsewhere`, a renamed or moved session re-sorted. Returns its id.
+fn put(list: &mut Vec<StoredSession>, original_id: Option<&str>, fields: &SessionFields, ids_elsewhere: &[String]) -> Result<String, String> {
     let name = fields.name.trim();
     if name.is_empty() {
         return Err("A session needs a name.".into());
@@ -136,32 +162,29 @@ pub fn save(path: &std::path::Path, original_id: Option<&str>, fields: &SessionF
         return Err("A session's name can't contain \"/\": that separates folders.".into());
     }
     let id = fields.id();
-    sessions::update_file(path, |list| {
-        let taken = |other: &str| other.eq_ignore_ascii_case(&id) && original_id.is_none_or(|o| !o.eq_ignore_ascii_case(other));
-        if list.iter().any(|s| taken(s.id())) || ids_elsewhere.iter().any(|o| taken(o)) {
-            return Err(format!("There's already a session called {id}."));
-        }
-        match original_id {
-            Some(original) => {
-                let index = list.iter().position(|s| s.id() == original).ok_or("The session is no longer in its file.")?;
-                let mut session = list.remove(index);
-                let stored = session.get("ExtraArgs").to_string();
-                fields.apply(&mut session, &stored);
-                // a renamed session moves to its new place in the sort; an unchanged id stays where it was
-                if session.id() == original {
-                    list.insert(index, session);
-                } else {
-                    sessions::insert_sorted(list, session);
-                }
-            }
-            None => {
-                let mut session = StoredSession::new(&id);
-                fields.apply(&mut session, "");
+    let taken = |other: &str| other.eq_ignore_ascii_case(&id) && original_id.is_none_or(|o| !o.eq_ignore_ascii_case(other));
+    if list.iter().any(|s| taken(s.id())) || ids_elsewhere.iter().any(|o| taken(o)) {
+        return Err(format!("There's already a session called {id}."));
+    }
+    match original_id {
+        Some(original) => {
+            let index = list.iter().position(|s| s.id() == original).ok_or("The session is no longer in its file.")?;
+            let mut session = list.remove(index);
+            let stored = session.get("ExtraArgs").to_string();
+            fields.apply(&mut session, &stored);
+            // a renamed session moves to its new place in the sort; an unchanged id stays where it was
+            if session.id() == original {
+                list.insert(index, session);
+            } else {
                 sessions::insert_sorted(list, session);
             }
         }
-        Ok(())
-    })?;
+        None => {
+            let mut session = StoredSession::new(&id);
+            fields.apply(&mut session, "");
+            sessions::insert_sorted(list, session);
+        }
+    }
     Ok(id)
 }
 
@@ -291,6 +314,37 @@ mod tests {
         assert_eq!(fields.button_bar, "Cisco");
         // and the Database row's column
         assert_eq!(to_row(&fields, None).button_bar, "Cisco");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_table_of_edits_is_saved_together_or_not_at_all() {
+        let dir = std::env::temp_dir().join(format!("sxt-edit-many-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Sessions.xml");
+        let sw1 = SessionFields { name: "sw1".into(), folder: "Lab".into(), host: "10.0.0.1".into(), extra_args: "-pw cisco".into(), ..Default::default() };
+        let sw2 = SessionFields { name: "sw2".into(), folder: "Lab".into(), host: "10.0.0.2".into(), ..Default::default() };
+        save(&path, None, &sw1, &[]).unwrap();
+        save(&path, None, &sw2, &[]).unwrap();
+
+        // a new host, and a move to another folder with the password still masked, in one write
+        let edits = vec![
+            ("Lab/sw1".to_string(), SessionFields { host: "10.9.9.1".into(), extra_args: mask_password("-pw cisco"), ..sw1.clone() }),
+            ("Lab/sw2".to_string(), SessionFields { folder: "Core".into(), ..sw2.clone() }),
+        ];
+        assert_eq!(save_many(&path, &edits, &[]).unwrap(), ["Lab/sw1", "Core/sw2"]);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains(r#"Host="10.9.9.1""#) && text.contains(r#"SessionId="Core/sw2""#), "{text}");
+        assert!(text.contains(r#"ExtraArgs="-pw cisco""#), "the stored password is kept: {text}");
+
+        // a name taken stops the lot, naming the session, and the file stays as it was
+        let clash = vec![
+            ("Lab/sw1".to_string(), SessionFields { host: "10.1.1.1".into(), ..sw1.clone() }),
+            ("Core/sw2".to_string(), SessionFields { folder: "Lab".into(), name: "sw1".into(), ..sw2.clone() }),
+        ];
+        let error = save_many(&path, &clash, &[]).unwrap_err();
+        assert!(error.starts_with("Core/sw2: ") && error.contains("already"), "{error}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -120,8 +120,9 @@ firewall, an Ubuntu server, without reading a name.
   Rocky, Alma and other Linux and BSD systems.
 - **Your own:** a PNG in the settings folder's `icons` folder shows up under Custom, drawn in its own colour or any
   other.
-- **Set once, everywhere:** pick one with Choose Icon in Edit Session, or give a whole folder or a selection its icon
-  at once with Edit sessions….
+- **Set once, everywhere:** pick one with Choose Icon in Edit Session, give a whole folder or a selection its icon
+  at once with Edit sessions…, or go down a list of every session in File > Edit Sessions as Table…, which edits
+  their names, folders, hosts, colours and the rest in place too, filtered column by column.
 
 The icon follows the session wherever it appears: the Sessions tree, its tab, and the open tabs list. A button bar can
 be set to show by itself for tabs with a given icon (Show for Tab Icons), so switching to a switch's tab brings up the

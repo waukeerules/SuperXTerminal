@@ -351,6 +351,58 @@ fn session_save(
     Ok(id)
 }
 
+/// One session for File > Edit Sessions as Table…: where it is, every field Edit Session has (a `-pw` masked), and,
+/// for a Database session, what the table locks against changes
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TableRow {
+    store: sessions::Store,
+    id: String,
+    fields: editing::SessionFields,
+    /// Database sessions: the whole row locked in the table
+    locked: bool,
+    /// Database sessions: the columns locked in the table, comma-separated ("host,port")
+    locked_fields: String,
+}
+
+/// Every session, Saved, Private and Database, with all its fields, for File > Edit Sessions as Table…. The tree's
+/// view (sessions_load) has only the fields it shows, and asking for each session's fields one by one would be one
+/// call per session
+#[tauri::command]
+fn sessions_table_load(state: State<'_, AppState>) -> Vec<TableRow> {
+    use sessions::Store;
+    let sessions = state.sessions.lock().unwrap();
+    let rows = |store: Store, list: &[sessions::StoredSession]| -> Vec<TableRow> {
+        list.iter()
+            .map(|s| TableRow {
+                store,
+                id: s.id().to_string(),
+                fields: editing::SessionFields::of(s),
+                locked: s.get("DatabaseLocked") == "true",
+                locked_fields: s.get("DatabaseLockedFields").to_string(),
+            })
+            .collect()
+    };
+    let mut all = rows(Store::Saved, &sessions.saved);
+    all.extend(rows(Store::Private, &sessions.private));
+    all.extend(rows(Store::Database, &sessions.database));
+    all
+}
+
+/// Save the rows changed in File > Edit Sessions as Table… that are in one file (Saved or Private): each
+/// `(original id, fields)`, in one write and one backup ([`editing::save_many`]), all or none. Favorites, Recent,
+/// overrides and the Keychain password follow each renamed or moved session. Returns each session's id now. Database
+/// rows go one by one through db_session_save, which checks each against the table's version and locks.
+#[tauri::command]
+fn sessions_table_save(state: State<'_, AppState>, store: sessions::Store, edits: Vec<(String, editing::SessionFields)>) -> Result<Vec<String>, String> {
+    let path = store_file(&state, store)?;
+    let ids = editing::save_many(&path, &edits, &other_ids(&state, store))?;
+    for ((old, _), new) in edits.iter().zip(&ids) {
+        follow_id(&state, old, new);
+    }
+    Ok(ids)
+}
+
 /// A new session's fields with the masked -pw of the session it was copied from put back, as SuperXPuTTY's
 /// Duplicate copies the session whole; the window only ever shows the mask
 fn with_copied_password(state: &AppState, mut fields: editing::SessionFields, copy_of: Option<&(sessions::Store, String)>) -> editing::SessionFields {
@@ -2214,6 +2266,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>, ov
             &plain("exportXml", "Export Sessions…")?,
             &plain("exportCsv", "Export Sessions to CSV…")?,
             &PredefinedMenuItem::separator(app)?,
+            // SuperXTerminal's own: every session in one table, its columns filtered, to change many at once
+            &plain("editSessionsTable", "Edit Sessions as Table…")?,
             // SuperXPuTTY's File > Edit sessions externally and Reload sessions file
             &plain("editSessionsExternally", "Edit Sessions Externally…")?,
             &plain("reloadSessions", "Reload Sessions File")?,
@@ -2921,6 +2975,8 @@ pub fn run() {
             pty::pty_special,
             overrides_get,
             sessions_bulk_edit,
+            sessions_table_load,
+            sessions_table_save,
             sessions_export_csv,
             sessions_csv_template,
             onepassword_check,

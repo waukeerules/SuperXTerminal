@@ -18,7 +18,7 @@
   import { highlighting } from "../terminal/highlighting";
   import { loadBars } from "../commands/bars";
   import { listProfiles, DEFAULT_PROFILE, PROFILES_CHANGED, resolvedProfile, type Profile } from "../settings/profiles";
-  import { completeTunnels, describeTunnel } from "../terminal/tunnels";
+  import { profileRows, type ProfileRow } from "./fromProfile";
   import { settingsShown } from "../settings/Settings.svelte";
   import { variablesShown, VARIABLES_CHANGED } from "../settings/EnvironmentVariables.svelte";
   import { context } from "../commands/sending.svelte";
@@ -250,44 +250,23 @@
     if (!owner?.keyFile?.trim()) return undefined;
     return { file: owner.keyFile.trim(), owner: owner.name, fetched: !!owner.keyFetch?.trim(), lifetime: Number(owner.keyLifetime) || 0 };
   });
-  /**
-   * What the session's profile (or the profile it's based on, else Default Settings) adds to its SSH connection, as a
-   * launch takes it (launch.rs): tunnels, forwarding, compression, keep-alive, ssh options, an ~/.ssh/config Host,
-   * and a jump host when the session and its folders have none. None of it shows among the session's own fields, so
-   * the Connection tab lists it, each with a link to the profile's field (Settings > Profiles, scrolled to it).
-   * Each: its label, its value in words, the profile it's set in, and the field's name in Profile
-   */
-  const profileSets = $derived.by(() => {
-    if (!isSsh || jumpServer || profileNames === null) return [];
-    const name = openingProfile?.name ?? DEFAULT_PROFILE;
-    const own = resolvedProfile(profiles, name) ?? openingProfile;
-    const fallback = defaultProfile;
-    const rows: { label: string; value: string; whose: string; field: string }[] = [];
-    /** A value the profile sets, else Default Settings' */
-    const add = (label: string, field: string, mine: string, theirs: string) => {
-      if (mine) rows.push({ label, value: mine, whose: name, field });
-      else if (theirs) rows.push({ label, value: theirs, whose: DEFAULT_PROFILE, field });
-    };
-    const onOff = (v: boolean | null | undefined) => (v === true ? "on" : "");
-    // a profile's own tunnels only (or Default Settings' for its own sessions): every session would clash on them
-    const tunnels = completeTunnels(own?.forwards ?? []).map((t) => {
-      const info = describeTunnel(t);
-      return t.kind === "dynamic" ? `SOCKS ${t.listen}` : `${info.kind} ${t.listen} → ${t.to}`;
-    });
-    if (tunnels.length) rows.push({ label: "Tunnels", value: tunnels.join("; "), whose: name, field: "forwards" });
-    add("Agent forwarding", "agentForwarding", onOff(own?.agentForwarding), own?.agentForwarding == null ? onOff(fallback?.agentForwarding) : "");
-    add("X11 forwarding", "x11Forwarding", onOff(own?.x11Forwarding), own?.x11Forwarding == null ? onOff(fallback?.x11Forwarding) : "");
-    add("Compression", "compression", onOff(own?.compression), own?.compression == null ? onOff(fallback?.compression) : "");
-    add("Keep-alive", "keepalive", own?.keepalive ? `every ${own.keepalive} s` : "", fallback?.keepalive ? `every ${fallback.keepalive} s` : "");
-    add("More ssh options", "sshOptions", own?.sshOptions?.trim() ?? "", fallback?.sshOptions?.trim() ?? "");
-    add("SSH config host", "sshConfigHost", own?.sshConfigHost?.trim() ?? "", fallback?.sshConfigHost?.trim() ?? "");
-    if (!draft.jumpHost.trim() && !folders.some((f) => f.jumpHost?.trim())) {
-      add("Jump host", "jumpHost", own?.jumpHost?.trim() ?? "", fallback?.jumpHost?.trim() ?? "");
-    }
-    return rows;
-  });
-  /** The profile the Connection tab's list is of, as its heading names it */
+  /** The profile the tabs' "From profile" lists are of, as their headings name it */
   const profileShown = $derived(openingProfile?.name ?? DEFAULT_PROFILE);
+  /** What the session sets itself, which wins over its profile's, so its profile's isn't listed (fromProfile.ts) */
+  const sessionOwn = $derived({
+    jumpHost: !!draft.jumpHost.trim() || folders.some((f) => f.jumpHost?.trim()),
+    algorithms: !!draft.sshAlgorithms?.trim(),
+    buttonBar: !!draft.buttonBar.trim(),
+    script: !!draft.script.trim(),
+  });
+  /**
+   * What the session's profile adds when it opens, under the Connection, SSH and Terminal tabs (fromProfile.ts): none
+   * of it shows among the session's own fields. Not before the profiles are read, and the connection's not through a
+   * Log in here profile, whose own note says how that goes
+   */
+  const fromConnection = $derived(isSsh && !jumpServer && profileNames !== null ? profileRows("connection", profiles, profileShown, sessionOwn) : null);
+  const fromSsh = $derived(isSsh && profileNames !== null ? profileRows("ssh", profiles, profileShown, sessionOwn) : null);
+  const fromTerminal = $derived(profileNames !== null ? profileRows("terminal", profiles, profileShown, sessionOwn) : null);
 
   /** Whether the profile, or Default Settings, has a password stored, which is tried before a key */
   const profilePassword = $derived(!!openingProfile?.hasPassword || !!defaultProfile?.hasPassword);
@@ -580,22 +559,8 @@
       </div>
       {@render missing(missingVariables.jumpHost)}
       <p class="note" role="note" aria-label="What a jump server needs">{JUMP_HOST_NEEDS}</p>
-      {#if isSsh && !jumpServer && profileNames !== null}
-        <!-- what the profile adds to the connection, which the session's own fields don't show -->
-        <section class="from-profile" aria-label="From the profile">
-          <h4>From profile "{profileShown}", when the session opens</h4>
-          {#if profileSets.length}
-            <ul>
-              {#each profileSets as row (row.field)}
-                <li><span class="what">{row.label}:</span> <span>{row.value}{row.whose !== profileShown ? ` (${row.whose})` : ""}</span>
-                  <button class="link" onclick={() => onOpenProfiles(row.whose, row.field)} title="Settings > Profiles > {row.whose}, at {row.label}">Edit…</button></li>
-              {/each}
-            </ul>
-          {:else}
-            <p class="note">No tunnels, forwarding or other connection settings.
-              <button class="link" onclick={() => onOpenProfiles(profileShown, "forwards")} title="Settings > Profiles > {profileShown}, at Tunnels">Add tunnels…</button></p>
-          {/if}
-        </section>
+      {#if fromConnection}
+        {@render fromProfile(fromConnection, "No tunnels, forwarding or other connection settings.", "forwards", "Add tunnels…")}
       {/if}
 
     </div>
@@ -609,6 +574,9 @@
               onChange={(text, problem) => { draft.sshAlgorithms = text; algorithmsProblem = problem; }} />
           {/key}
         </fieldset>
+        {#if fromSsh}
+          {@render fromProfile(fromSsh, "Nothing for logging in or the algorithms beyond the app's own.", "keyFile", "Open the profile…")}
+        {/if}
       </div>
     {/if}
 
@@ -659,6 +627,9 @@
           </select>
         </label>
       </div>
+      {#if fromTerminal}
+        {@render fromProfile(fromTerminal, "Nothing for the terminal beyond Settings > Terminal's.", "fontFamily", "Open the profile…")}
+      {/if}
 
     </div>
 
@@ -705,6 +676,27 @@
       <button class="define" onclick={() => context.editVariables()}>Environment Variables…</button>
     </p>
   {/if}
+{/snippet}
+
+<!--
+  What the profile adds, under a tab: each row with Edit…, to Settings > Profiles scrolled to it; with nothing, a line
+  and a link to the profile's first field for the tab
+-->
+{#snippet fromProfile(rows: ProfileRow[], none: string, field: string, open: string)}
+  <section class="from-profile" aria-label="From the profile">
+    <h4>From profile "{profileShown}", when the session opens</h4>
+    {#if rows.length}
+      <ul>
+        {#each rows as row (row.field)}
+          <li><span class="what">{row.label}:</span> <span>{row.value}{row.whose !== profileShown ? ` (${row.whose})` : ""}</span>
+            <button class="link" onclick={() => onOpenProfiles(row.whose, row.field)} title="Settings > Profiles > {row.whose}, at {row.label}">Edit…</button></li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="note">{none}
+        <button class="link" onclick={() => onOpenProfiles(profileShown, field)} title="Settings > Profiles > {profileShown}">{open}</button></p>
+    {/if}
+  </section>
 {/snippet}
 
 {#snippet caption(text: string, field: keyof SessionFields)}

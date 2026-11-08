@@ -399,6 +399,21 @@ describe("Edit Session's Connection tab", () => {
     expect(openedProfiles).toEqual([["OMV Tunnels", "forwards"], ["Default Settings", "keepalive"]]);
   });
 
+  it("lists what the profile gives the terminal under the Terminal tab, with links", async () => {
+    profileList = [
+      { name: "Default Settings", script: "" },
+      { name: "Old Cisco", script: "", charset: "cp437", keyBackspace: "bs" },
+    ];
+    const user = userEvent.setup();
+    open({ ...SESSION, extraArgs: "", profile: "Old Cisco" });
+    await user.click(screen.getByRole("tab", { name: "Terminal" }));
+    const list = await screen.findByRole("region", { name: "From the profile" });
+    const rows = within(list).getAllByRole("listitem").map((li) => li.textContent?.replace(/\s+/g, " ").replace(" Edit…", "").trim());
+    expect(rows).toEqual(["Backspace sends: Control-H", "Character set: CP437 (DOS, line drawing)"]);
+    await user.click(within(within(list).getAllByRole("listitem")[1]).getByRole("button", { name: "Edit…" }));
+    expect(openedProfiles).toEqual([["Old Cisco", "charset"]]);
+  });
+
   it("offers to add tunnels to a profile that adds nothing", async () => {
     const user = userEvent.setup();
     open({ ...SESSION, extraArgs: "", profile: "root" });

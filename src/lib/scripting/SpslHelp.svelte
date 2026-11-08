@@ -20,8 +20,8 @@
     language?: "spsl" | "rhai";
     /** The script being written, for Save this script as… */
     script?: string;
-    /** Put text in the script at the cursor */
-    onInsert: (text: string) => void;
+    /** Put text in the script at the cursor; for a saved script, with its kind ("spsl", "rhai" or "lines") */
+    onInsert: (text: string, kind?: string) => void;
     /** The saved scripts changed here (saved, edited or deleted), for a list of them elsewhere (the Script Editor's) */
     onSaved?: (scripts: SavedScript[]) => void;
   }
@@ -142,7 +142,7 @@
 
   /** Insert a saved script's text into the script being edited */
   async function insertSaved(entry: SavedScript | null): Promise<void> {
-    if (entry) onInsert(await loadScript(entry));
+    if (entry) onInsert(await loadScript(entry), entry.kind);
   }
 
   /** Delete the saved script chosen, after asking: it's the team's, in the settings folder */

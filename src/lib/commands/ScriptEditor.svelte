@@ -1,6 +1,7 @@
 <!--
   The Script Editor, as SuperXPuTTY's dlgScriptEditor: the saved scripts on the left (the settings folder's scripts
-  folder: Insert, Save as, Delete; double-click inserts), the script in the middle (the script box: Monaco, with SPSL's
+  folder: Insert, Save as, Delete; double-click inserts, and into an empty box, Run as takes the script's own
+  language), the script in the middle (the script box: Monaco, with SPSL's
   colours when it runs as an SPSL script, and Wrap lines; under it the script's problems, checked as it's written), the
   script panel on the right (SPSL's commands, or Rhai's
   functions for a Rhai script), and
@@ -46,15 +47,22 @@
     saved = await invoke<Entry[]>("scripts_list");
   }
 
-  /** Put text in the script at the cursor, in place of what's selected */
-  function insert(more: string): void {
+  /**
+   * Put text in the script at the cursor, in place of what's selected. A saved script put in an empty box is the
+   * script now, so Run as takes its kind, and its colours, problems and panel are its language's; put in a script
+   * already there, it's part of that script, which keeps its own
+   * @param more The text
+   * @param from A saved script's kind ("spsl", "rhai" or "lines"), or none for a command from the panel
+   */
+  function insert(more: string, from?: string): void {
+    if (!text.trim() && (from === "spsl" || from === "rhai" || from === "lines")) kind = from;
     box?.insert(more);
   }
 
-  /** Insert a saved script's text at the cursor */
+  /** Insert a saved script's text at the cursor (double-click, Enter, Insert) */
   async function insertSaved(entry: Entry | null): Promise<void> {
     if (!entry) return;
-    insert(await invoke<string>("script_load", { name: entry.name, kind: entry.kind }));
+    insert(await invoke<string>("script_load", { name: entry.name, kind: entry.kind }), entry.kind);
   }
 
   /** Delete the saved script chosen, after asking */

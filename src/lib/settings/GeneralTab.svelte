@@ -65,6 +65,8 @@
   /** 1Password's CLI install command here, and its getting-started page (onepassword.rs's INSTALL, GET_STARTED) */
   const OP_INSTALL = isMac ? "brew install 1password-cli" : "winget install 1password-cli";
   const OP_GET_STARTED = "https://www.1password.dev/cli/get-started";
+  /** How SuperXTerminal uses 1Password: docs/ONEPASSWORD.md on GitHub */
+  const OP_DOC = "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/ONEPASSWORD.md";
 
   /**
    * Check 1Password: whether its CLI works here, through the 1Password app, listing the vaults it can read, which
@@ -174,7 +176,8 @@
     <p class="hint">A password, or an Environment Variable's value, can be a 1Password reference
       ({OP_REFERENCE_EXAMPLE}): it's read from 1Password, with its approval, as a session uses it. That needs
       1Password's CLI, linked to the 1Password app (Integrate with 1Password CLI in 1Password's Settings > Developer).
-      SSH keys in 1Password need none of this: its SSH agent hands them to ssh by itself.</p>
+      SSH keys in 1Password need none of this: its SSH agent hands them to ssh by itself.
+      <a href={OP_DOC} onclick={openLink}>How SuperXTerminal uses 1Password</a></p>
     <div class="row">
       <button onclick={() => void checkOnePassword()} disabled={opChecking}>{opChecking ? "Waiting for 1Password…" : "Check 1Password"}</button>
       <span class="hint" class:problem={opProblem}>{opMessage}</span>

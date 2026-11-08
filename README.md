@@ -40,6 +40,9 @@ A shared session only says which profile it uses.
   sessions for those devices just name that profile.
 - **A profile can name the host itself,** for a gateway such as CyberArk's SSH gateway: the session keeps naming the
   real device, and the profile says where ssh connects ([docs/CYBERARK.md](docs/CYBERARK.md)).
+- **Passwords and keys can stay in 1Password.** A password can be a 1Password reference (`op://vault/item/field`),
+  read with 1Password's approval as the session opens, and a profile's key can be one in 1Password, which ssh gets from
+  1Password's SSH agent ([docs/ONEPASSWORD.md](docs/ONEPASSWORD.md)).
 - **Default Settings** is the profile every other one falls back to, as in PuTTY.
 
 When a session opens, each setting comes from the first place that has it:
@@ -54,7 +57,8 @@ When a session opens, each setting comes from the first place that has it:
 
 A shared session, profile or script can use `{placeholders}`, such as `{ad_user}@{host_address}` or a CyberArk login
 built from `{email}`, `{cyberark_region}` and `{cyberark_connector}`. Each person sets their own values in
-Tools > Environment Variables, and secrets go in the system's keychain, never in a file.
+Tools > Environment Variables, and secrets go in the system's keychain, never in a file, or stay in 1Password as a
+reference read when a session uses it.
 
 - The window shows where each variable is used, and lists the placeholders used but not yet defined, each with Add.
   A session that needs one you haven't set says which, rather than connecting with the wrong login.

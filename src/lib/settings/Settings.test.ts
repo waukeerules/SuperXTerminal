@@ -194,6 +194,9 @@ describe("Settings > General > 1Password", () => {
     await userEvent.click(screen.getByRole("button", { name: "Check 1Password" }));
     expect(await screen.findByText(opCheck)).toBeTruthy();
     expect(screen.queryByText(/winget install 1password-cli/)).toBeNull();
+    // the app's own guide, on GitHub
+    await userEvent.click(screen.getByRole("link", { name: "How SuperXTerminal uses 1Password" }));
+    expect(opened).toEqual(["https://github.com/waukeerules/SuperXTerminal/blob/main/docs/ONEPASSWORD.md"]);
   });
 
   it("says what's wrong, and how to install the CLI, with its getting-started page", async () => {

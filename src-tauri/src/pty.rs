@@ -69,12 +69,37 @@ struct OutletState {
     recent: VecDeque<u8>,
     exit: Option<Option<u32>>,
     charset: Charset,
+    /// The tab's raw output, as it came, and its resizes, written to a file when SUPERXTERMINAL_CAPTURE names a
+    /// folder ([`capture_file`]); None otherwise, which is always but while chasing a display problem
+    capture: Option<(std::fs::File, std::time::Instant)>,
+}
+
+/// A file for a tab's raw output, in the folder SUPERXTERMINAL_CAPTURE names, for diagnosing what a terminal draws
+/// (ConPTY's redraws, a device's escape codes): None when it isn't set, or the file can't be made. Only for a
+/// developer's own sessions: what's typed back (a password echoed by a device) can be in it
+fn capture_file() -> Option<(std::fs::File, std::time::Instant)> {
+    let folder = std::env::var_os("SUPERXTERMINAL_CAPTURE")?;
+    static COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let path = std::path::Path::new(&folder).join(format!("tab-{stamp}-{n}.txt"));
+    std::fs::create_dir_all(&folder).ok()?;
+    std::fs::File::create(path).ok().map(|f| (f, std::time::Instant::now()))
+}
+
+impl OutletState {
+    /// A line in the tab's capture, with the milliseconds since the tab opened
+    fn captured(&mut self, line: &str) {
+        if let Some((file, opened)) = self.capture.as_mut() {
+            let _ = writeln!(file, "[{}ms] {line}", opened.elapsed().as_millis());
+        }
+    }
 }
 
 impl Outlet {
     /// An outlet sending to a tab's channel, with nothing passed on yet; the output is in `charset`
     fn new(channel: Channel<PtyEvent>, charset: Charset) -> Outlet {
-        Outlet(Arc::new(Mutex::new(OutletState { channel, started: None, recent: VecDeque::new(), exit: None, charset })))
+        Outlet(Arc::new(Mutex::new(OutletState { channel, started: None, recent: VecDeque::new(), exit: None, charset, capture: capture_file() })))
     }
 
     /// Pass an event on to the tab (a tab that's gone, or moving, misses it; the output is kept all the same)
@@ -91,6 +116,7 @@ impl Outlet {
     /// Pass output on as UTF-8, keeping the last [`KEPT_OUTPUT`] bytes of it (already turned, for a moved tab's replay)
     fn data(&self, bytes: &[u8]) {
         let mut state = self.0.lock().unwrap();
+        state.captured(&format!("DATA {:?}", String::from_utf8_lossy(bytes)));
         let turned = state.charset.decode(bytes);
         let bytes = turned.as_slice();
         state.recent.extend(bytes);
@@ -98,6 +124,11 @@ impl Outlet {
         state.recent.drain(..over);
         let data = base64::engine::general_purpose::STANDARD.encode(bytes);
         let _ = state.channel.send(PtyEvent::Data { data });
+    }
+
+    /// Note a resize in the tab's capture, if it's being captured
+    fn resized(&self, cols: u16, rows: u16) {
+        self.0.lock().unwrap().captured(&format!("RESIZE {cols}x{rows}"));
     }
 
     /// Send the output to another tab from now on, after how it started, what it has shown and how it ended
@@ -563,6 +594,10 @@ fn without_escapes(text: &str) -> String {
 pub fn pty_write(ptys: State<'_, Ptys>, id: u32, data: String) -> Result<(), String> {
     let mut sessions = ptys.sessions.lock().unwrap();
     let session = sessions.get_mut(&id).ok_or("no such terminal")?;
+    // the page's answer to where the cursor is (ESC[row;colR), for a capture; nothing typed is noted
+    if data.starts_with("[") && data.ends_with('R') && data[2..data.len() - 1].chars().all(|c| c.is_ascii_digit() || c == ';') {
+        session.outlet.0.lock().unwrap().captured(&format!("ANSWER {:?}", data));
+    }
     let mut writer = session.writer.lock().unwrap();
     writer.write_all(&session.charset.encode(&data)).map_err(|e| e.to_string())?;
     writer.flush().map_err(|e| e.to_string())
@@ -573,7 +608,10 @@ pub fn pty_write(ptys: State<'_, Ptys>, id: u32, data: String) -> Result<(), Str
 pub fn pty_resize(ptys: State<'_, Ptys>, id: u32, cols: u16, rows: u16) -> Result<(), String> {
     let sessions = ptys.sessions.lock().unwrap();
     match &sessions.get(&id).ok_or("no such terminal")?.kind {
-        SessionKind::Pty { master, .. } => master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }).map_err(|e| e.to_string()),
+        SessionKind::Pty { master, .. } => {
+            sessions[&id].outlet.resized(cols, rows);
+            master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }).map_err(|e| e.to_string())
+        }
         SessionKind::Stream(stream) => {
             stream.resize(cols, rows);
             Ok(())

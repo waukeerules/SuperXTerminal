@@ -47,3 +47,18 @@ is an example: it checks every icon in Choose Icon is drawn in the colour picked
 The whole app, windows and all. Tauri's driver for that (`tauri-driver`, WebDriver) works on Windows and Linux only:
 macOS's WKWebView has no WebDriver. So the app is tested in its parts (the Rust side, the front end with the Rust side
 stood in for, the terminal page on its own), and checked by hand in the app for what joins them.
+
+## Seeing what a tab is sent
+
+When a tab draws something wrong (a line twice, a redraw in the wrong place), capture what it was actually sent
+before guessing. Start the app with `SUPERXTERMINAL_CAPTURE` naming a folder:
+
+```
+$env:SUPERXTERMINAL_CAPTURE="C:\Dev\SuperXTerminal\captures"; npm run tauri dev
+```
+
+(`SUPERXTERMINAL_CAPTURE=~/captures npm run tauri dev` on the Mac.) Each tab writes a file there: its raw output
+as it came from the pseudo terminal, its resizes, and its answer to the cursor position query, each with the
+milliseconds since it opened (`pty.rs`, `capture_file`). Nothing typed is written, but what a device echoes back is,
+so use it on lab devices and delete the folder after. It found that Windows' ConPTY repeats a program's first line
+when resized before the program has printed anything (`PageHost.resizePty`).

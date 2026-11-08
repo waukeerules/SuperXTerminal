@@ -41,7 +41,7 @@ beforeEach(() => {
     return null;
   });
   const tabs = {
-    api: { get activePanel() { return { id: front, title: front === "a" ? "omv" : "pi" }; } },
+    api: { get activePanel() { return { id: front, title: front === "a" ? "web" : "pi" }; } },
     hosts,
     onChange: (listener: () => void) => {
       listeners.push(listener);
@@ -113,7 +113,7 @@ describe("the readings kept for the graph", () => {
     await expect.poll(() => calls).toEqual(["watch 7"]);
     send(7, { kind: "load", cpu: null, mem: 16, disk: 50, down: null, up: null });
     send(7, { kind: "load", cpu: 4, mem: 17, disk: 50, down: 100, up: 50 });
-    expect(serverLoad.tab).toBe("omv");
+    expect(serverLoad.tab).toBe("web");
     expect(serverLoad.samples.map((s) => s.mem)).toEqual([16, 17]);
     front = "b";
     changed();

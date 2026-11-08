@@ -213,7 +213,7 @@
       const t = tree;
       if (!t) return;
       const sessions = t.allSessions().filter((s) => `${s.store}:${s.id}` !== except);
-      // the session the field names now: as the ▾ writes it ("Private/Live Test/Media Server"), else a path alone,
+      // the session the field names now: as the ▾ writes it ("Private/Lab/File Server"), else a path alone,
       // in Saved, Private, then Database sessions
       const wanted = (current ?? "").trim().toLowerCase();
       const path = (s: SessionView) => s.id.replace(/^@db\//, "").toLowerCase();

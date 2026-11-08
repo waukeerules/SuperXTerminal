@@ -8,14 +8,14 @@ import type { TabArea } from "./TabArea";
 function menuWith(tunnels: { kind: string; listen: string; to: string }[]) {
   const tab = {
     id: "t1",
-    title: "OMV",
+    title: "Web",
     acceptCommands: true,
-    host: { tunnels, logPath: "/tmp/omv.log", isEnded: false, isReconnecting: false, canReceiveCommands: true },
+    host: { tunnels, logPath: "/tmp/web.log", isEnded: false, isReconnecting: false, canReceiveCommands: true },
   };
   const tabs = {
     rdpHosts: new Map(),
     tabList: () => [tab],
-    paramsOf: () => ({ target: { kind: "session", store: "saved", id: "OMV" }, local: false }),
+    paramsOf: () => ({ target: { kind: "session", store: "saved", id: "Web" }, local: false }),
     api: { getPanel: () => ({ group: { panels: [{ id: "t1" }] } }) },
     watchOf: () => ({ activity: false, silence: 0 }),
     groupCount: () => 1,

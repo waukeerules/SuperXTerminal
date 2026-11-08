@@ -1382,7 +1382,7 @@ mod tests {
         let path = dir.join("PrivateSessions.xml");
         std::fs::write(&path, sessions::write_sessions(&[])).unwrap();
         // a name that's more than its id's last part, dashes and all
-        let others = || vec![session("test", &[("SessionName", "test - model example - 10.10.10.10"), ("Host", "192.168.3.2")])];
+        let others = || vec![session("test", &[("SessionName", "test - model example - 10.10.10.10"), ("Host", "192.168.0.20")])];
         let file = |_: Store| Ok(path.clone());
         apply(&plan_stored(others(), "Imported", Store::Private), file, |_| Vec::new()).unwrap();
         apply(&plan_stored(others(), "Imported", Store::Private), file, |_| Vec::new()).unwrap();

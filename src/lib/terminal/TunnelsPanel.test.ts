@@ -15,14 +15,14 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-/** The panel for the OMV tab's tunnels, with its callbacks as mocks */
+/** The panel for the Web tab's tunnels, with its callbacks as mocks */
 function open(changed = false) {
   const calls = { close: vi.fn(), link: vi.fn(), edit: vi.fn(), restart: vi.fn() };
   render(TunnelsPanel, {
-    title: "OMV",
+    title: "Web",
     tunnels: [{ kind: "local", listen: "8443", to: "localhost:443" }, { kind: "dynamic", listen: "1080", to: "" }],
     changed,
-    profile: "OMV Tunnels",
+    profile: "Web Tunnels",
     x: 10,
     y: 10,
     onClose: calls.close,
@@ -61,10 +61,10 @@ describe("a tab's Tunnels panel", () => {
 
   it("says a tunnel whose port another tab has isn't open here, and whose it is", () => {
     render(TunnelsPanel, {
-      title: "OMV (2)", tunnels: [{ kind: "local", listen: "8443", to: "localhost:443" }], changed: false, taken: new Map([["8443", "OMV"]]),
-      profile: "OMV Tunnels", x: 10, y: 10, onClose: () => {}, onOpenLink: () => {}, onEdit: () => {}, onRestart: () => {},
+      title: "Web (2)", tunnels: [{ kind: "local", listen: "8443", to: "localhost:443" }], changed: false, taken: new Map([["8443", "Web"]]),
+      profile: "Web Tunnels", x: 10, y: 10, onClose: () => {}, onOpenLink: () => {}, onEdit: () => {}, onRestart: () => {},
     });
-    expect(screen.getByRole("note", { name: "Port in use" }).textContent).toBe(`Port 8443 on this PC is already the tunnel of the tab "OMV", so this tab's isn't open: use that tab's, or close it and restart this session.`);
+    expect(screen.getByRole("note", { name: "Port in use" }).textContent).toBe(`Port 8443 on this PC is already the tunnel of the tab "Web", so this tab's isn't open: use that tab's, or close it and restart this session.`);
   });
 
   it("closes on Escape", async () => {

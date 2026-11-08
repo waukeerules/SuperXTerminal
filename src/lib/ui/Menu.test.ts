@@ -20,10 +20,10 @@ describe("a menu", () => {
     Element.prototype.scrollIntoView = function (this: Element) { shown.push(this.textContent?.trim() ?? ""); };
     try {
       // thirty tabs, the one in front far down the list
-      const items = Array.from({ length: 30 }, (_, i) => ({ label: `Media Server ${i + 1}`, checked: i === 25 }));
+      const items = Array.from({ length: 30 }, (_, i) => ({ label: `File Server ${i + 1}`, checked: i === 25 }));
       const { unmount } = render(Menu, { items, x: 10, y: 10, onClose: () => {} });
       expect(screen.getByRole("menu").classList.contains("scrolls")).toBe(true);
-      await expect.poll(() => shown.map((s) => s.replace(/\s+/g, " "))).toContain("✓ Media Server 26");
+      await expect.poll(() => shown.map((s) => s.replace(/\s+/g, " "))).toContain("✓ File Server 26");
       unmount();
       render(Menu, { items: [{ label: "New session", items: [{ label: "sw1" }] }], x: 10, y: 10, onClose: () => {} });
       expect(screen.getByRole("menu").classList.contains("scrolls")).toBe(false);

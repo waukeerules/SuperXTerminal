@@ -68,22 +68,22 @@ describe("a tab's tunnels", () => {
   });
 
   it("warn of one whose port another tab already holds, naming that tab", () => {
-    const lines = tunnelNotices([tunnel("local", "8080", "localhost:80")], new Map([["8080", "OMV"]]));
+    const lines = tunnelNotices([tunnel("local", "8080", "localhost:80")], new Map([["8080", "Web"]]));
     expect(lines[0]).toEqual({
-      text: `Tunnel (Local): Port 8080 on this PC is already the tunnel of the tab "OMV", so this tab's isn't open: use that tab's, or close it and restart this session.`,
+      text: `Tunnel (Local): Port 8080 on this PC is already the tunnel of the tab "Web", so this tab's isn't open: use that tab's, or close it and restart this session.`,
       kind: "warn",
     });
   });
 
   it("hold their ports on this computer for the first tab only, until its session ends", () => {
-    const omv = [tunnel("local", "8080", "localhost:80"), tunnel("dynamic", "1080"), tunnel("remote", "9090", "localhost:8000")];
-    expect(holdTunnels("t1", "OMV", omv)).toEqual(new Map());
+    const web = [tunnel("local", "8080", "localhost:80"), tunnel("dynamic", "1080"), tunnel("remote", "9090", "localhost:8000")];
+    expect(holdTunnels("t1", "Web", web)).toEqual(new Map());
     // the second tab of the same profile: its Local and SOCKS ports are the first's; a Remote one's port is on the server
-    expect(holdTunnels("t2", "OMV (2)", omv)).toEqual(new Map([["8080", "OMV"], ["1080", "OMV"]]));
+    expect(holdTunnels("t2", "Web (2)", web)).toEqual(new Map([["8080", "Web"], ["1080", "Web"]]));
     // the first reconnecting holds them still
-    expect(holdTunnels("t1", "OMV", omv)).toEqual(new Map());
+    expect(holdTunnels("t1", "Web", web)).toEqual(new Map());
     releaseTunnels("t1");
-    expect(holdTunnels("t3", "OMV (3)", omv)).toEqual(new Map());
+    expect(holdTunnels("t3", "Web (3)", web)).toEqual(new Map());
     releaseTunnels("t3");
     releaseTunnels("t2");
   });

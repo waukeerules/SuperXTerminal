@@ -25,7 +25,7 @@ export function isReference(value: string): boolean {
 }
 
 /**
- * A key file reference as the item it names, "Private/OMV key", for saying where a key comes from
+ * A key file reference as the item it names, "Private/Lab Server key", for saying where a key comes from
  * @param value The reference, quoted or not
  */
 export function referencedItem(value: string): string {

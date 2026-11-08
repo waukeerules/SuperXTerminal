@@ -222,8 +222,8 @@ END
   EXPECT's `/i` makes every case ignore case.
 - **Which case wins.** At each look, every case is tried against the output since the mark. The one that **starts
   earliest in the output** wins; on a tie, the case written first. So the order of events on screen decides, not the
-  order of the cases. Example: `NOOMV-5` contains `OMV-5`, but `CASE OMV-5` can't win against `CASE NOOMV-5` when the
-  output says `NOOMV-5`, because `NOOMV-5` starts two characters earlier.
+  order of the cases. Example: `NOSYSD-5` contains `SYSD-5`, but `CASE SYSD-5` can't win against `CASE NOSYSD-5` when
+  the output says `NOSYSD-5`, because `NOSYSD-5` starts two characters earlier.
 - The mark moves past the winning match, then the lines under that CASE run.
 - **`AGAIN`** (under a CASE) waits again, with the same cases and a fresh timeout, from the new mark. It's how one
   EXPECT answers a sequence of prompts in whatever order they come.
@@ -651,10 +651,11 @@ STOP {host}: configuration saved, no err-disabled interfaces
 STOP No prompt: is this tab logged in to a switch?
 ```
 
-Two longer ones, read-only tours of a Linux server (an OpenMediaVault NAS), each run there to its end:
-[spsl-examples/omv-tour.spsl](spsl-examples/omv-tour.spsl) (who you are, the system, folders, disks, Docker, and
-timeouts used as decisions) and [spsl-examples/omv-tour-2.spsl](spsl-examples/omv-tour-2.spsl) (LIMIT, the session's
-values, CHECK and REQUIRE, PROMPT /var:, IF, COLLECT and FOREACH, PAGER through less, /idle:, REPEAT and SAVE).
+Two longer ones, read-only tours of a Linux server, each run there to its end:
+[spsl-examples/linux-tour.spsl](spsl-examples/linux-tour.spsl) (who you are, the system, systemd, folders, disks,
+Docker, and timeouts used as decisions) and [spsl-examples/linux-tour-2.spsl](spsl-examples/linux-tour-2.spsl)
+(LIMIT, the session's values, CHECK and REQUIRE, PROMPT /var:, IF, COLLECT and FOREACH, PAGER through less, /idle:,
+REPEAT and SAVE).
 
 ## SuperXTerminal's additions to SuperXPuTTY's SPSL
 

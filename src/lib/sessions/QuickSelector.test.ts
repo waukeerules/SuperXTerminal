@@ -51,7 +51,7 @@ describe("the Quick Selector's ✕", () => {
   it("closes it without choosing", async () => {
     let closed = 0;
     let chosen = 0;
-    const items: QuickItem[] = [{ key: "a", name: "Media Server", detail: "Live Test/Media Server", group: "Private", icon: "server", environment: null }];
+    const items: QuickItem[] = [{ key: "a", name: "File Server", detail: "Lab/File Server", group: "Private", icon: "server", environment: null }];
     render(QuickSelector, { title: "Jump Host", items, customs: new Map(), onChoose: () => chosen++, onClose: () => closed++ });
     // the list each session is in, a column of its own
     expect(screen.getByText("Private")).toBeTruthy();
@@ -62,7 +62,7 @@ describe("the Quick Selector's ✕", () => {
 
 describe("the Quick Selector for what's chosen now", () => {
   it("starts on the ticked item, so the current choice is plain, rather than the first that isn't", () => {
-    const item = (key: string, current = false): QuickItem => ({ key, name: key, detail: `Live Test/${key}`, group: "Private", icon: "server", environment: null, current });
+    const item = (key: string, current = false): QuickItem => ({ key, name: key, detail: `Lab/${key}`, group: "Private", icon: "server", environment: null, current });
     const items = [item("a"), item("b"), item("c", true), item("d")];
     render(QuickSelector, { title: "Jump Host", items, customs: new Map(), onChoose: () => {}, onClose: () => {}, startOnCurrent: true });
     const highlighted = screen.getAllByRole("option").find((o) => o.getAttribute("aria-selected") === "true");

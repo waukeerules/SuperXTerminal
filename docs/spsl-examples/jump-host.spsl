@@ -1,7 +1,7 @@
 #!/bin/spsl
 # jump-host.spsl: from a Linux jump server's tab, SSH on to another host with the session's own values, run a
-# command there, and come back. Written to try on an OpenMediaVault (Debian) server: with no other host to go to, it
-# hops from the server to itself ({host_address}), which is a real second SSH login, so it shows every step.
+# command there, and come back. Written to try on any Linux server: with no other host to go to, it hops from the
+# server to itself ({host_address}), which is a real second SSH login, so it shows every step.
 #
 # To go somewhere else, change the two SETs below, or replace them with
 #   PROMPT /var:target Which host, from {session_name}?

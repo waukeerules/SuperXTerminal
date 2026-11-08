@@ -501,8 +501,8 @@ describe("PAGER", () => {
   });
 
   it("pages through less: Space at its : between pages, q at its (END), where it waits rather than ending", async () => {
-    const device = new Device(["\r\n1\r\n2\r\n:", "\r\n3\r\n4\r\n(END)", "\r\nuser@omv:~$ "]);
-    device.print("user@omv:~$ ");
+    const device = new Device(["\r\n1\r\n2\r\n:", "\r\n3\r\n4\r\n(END)", "\r\nuser@lab:~$ "]);
+    device.print("user@lab:~$ ");
     const script = "PAGER --More--\nPAGER /re ^:\\s*$\nPAGER /key:q (END)\nSENDLINE seq 1 4 | more\nWAITPROMPT /t:5";
     expect(await run(script, device)).toEqual(['Script "Login" in sw1 finished']);
     expect(device.typed).toEqual(["seq 1 4 | more\r", " ", "q"]);

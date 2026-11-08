@@ -1,5 +1,5 @@
 #!/bin/spsl
-# omv-tour-2.spsl: a second read-only tour of an OpenMediaVault (Debian) server, for SPSL's newer commands:
+# linux-tour-2.spsl: a second read-only tour of a Linux server (Debian, or any other), for SPSL's newer commands:
 # LIMIT, FAILON, the session's own variables, CHECK and REQUIRE, PROMPT /var:, IF and ELSE, EXPECT, WAITQUIET,
 # COLLECT and FOREACH, PAGER, /idle:, REPEAT and SAVE.
 #
@@ -31,7 +31,7 @@ REQUIRE linux kernel
 SENDLINE echo "Prerequisite met: Linux, kernel {kernel}"
 WAITPROMPT
 REQUIRE /else:notdebian debian
-SENDLINE echo "Debian underneath, as OpenMediaVault is"
+SENDLINE echo "Debian"
 WAITPROMPT
 GOTO who
 :notdebian
@@ -130,7 +130,7 @@ REPEAT 3
 END
 SENDLINE uname -a; uptime; free -h
 WAITPROMPT
-SAVE omv-tour-{session_name}-summary.txt
+SAVE linux-tour-{session_name}-summary.txt
 ECHO saved a summary in Documents/SuperXTerminal/output
 
 # ---- 9. Docker, if it's there: a look at the containers --------------------------------------------------------------

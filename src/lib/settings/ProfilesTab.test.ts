@@ -61,7 +61,7 @@ beforeEach(() => {
       return typeof buttons === "object" && buttons ? Object.values(buttons as Record<string, string[]>)[0][0] : "Yes";
     }
     if (cmd === "plugin:dialog|save") return "/tmp/root profile.json";
-    if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("login script") ? "/Users/me/SuperXTerminal/scripts/omv-login.spsl" : pickedFile;
+    if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("login script") ? "/Users/me/SuperXTerminal/scripts/linux-login.spsl" : pickedFile;
     // as scripts::as_spec, for a settings folder of /Users/me/SuperXTerminal: a script in there is kept relative
     if (cmd === "script_chosen") return String(payload.path).replace(/^\/Users\/me\/SuperXTerminal\//, "");
     if (cmd === "profiles_read_file") return inFile;
@@ -308,10 +308,10 @@ describe("Settings > Profiles", () => {
   });
 
   it("fills Jump host with a saved session chosen from the ▾", async () => {
-    context.pickSession = (_title, onChoose) => onChoose({ store: "saved", id: "Lab/OMV", name: "OMV" } as never);
+    context.pickSession = (_title, onChoose) => onChoose({ store: "saved", id: "Lab/Web", name: "Web" } as never);
     await open("root");
     await userEvent.click(screen.getByRole("button", { name: "Choose a session as the jump host" }));
-    expect((screen.getByLabelText("Jump host") as HTMLInputElement).value).toBe("Saved/Lab/OMV");
+    expect((screen.getByLabelText("Jump host") as HTMLInputElement).value).toBe("Saved/Lab/Web");
     context.pickSession = () => {};
   });
 
@@ -558,10 +558,10 @@ describe("Settings > Profiles", () => {
     // both find it; a full path typed is found on one only, and the field says so
     const choose = within(script().closest("label")!).getByRole("button", { name: "Choose…" });
     await userEvent.click(choose);
-    await expect.poll(() => script().value).toBe("scripts/omv-login.spsl");
+    await expect.poll(() => script().value).toBe("scripts/linux-login.spsl");
     expect(screen.queryByRole("note", { name: "Login script path" })).toBeNull();
     await userEvent.clear(script());
-    await userEvent.type(script(), "/Users/me/omv.spsl");
+    await userEvent.type(script(), "/Users/me/linux.spsl");
     expect(screen.getByRole("note", { name: "Login script path" }).textContent).toMatch(/^A full path, found on this (Mac|PC) only\./);
   });
 

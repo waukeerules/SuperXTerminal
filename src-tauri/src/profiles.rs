@@ -471,24 +471,24 @@ mod tests {
     #[test]
     fn a_session_with_no_script_runs_its_profiles_else_default_settings() {
         let mut profiles: Profiles = serde_json::from_str(
-            r#"{"profiles":[{"name":"Linux","script":" omv.spsl "},{"name":"Cisco"},{"name":"Default Settings"}]}"#,
+            r#"{"profiles":[{"name":"Linux","script":" linux.spsl "},{"name":"Cisco"},{"name":"Default Settings"}]}"#,
         )
         .unwrap();
         profiles.ensure_default();
-        assert_eq!(script_of(&profiles, "linux"), Some(("omv.spsl", "Linux")));
+        assert_eq!(script_of(&profiles, "linux"), Some(("linux.spsl", "Linux")));
         assert_eq!(script_of(&profiles, "Cisco"), None);
         assert_eq!(script_of(&profiles, ""), None);
         profiles.profiles[0].script = "https://example.com/all.spsl".into();
         assert_eq!(script_of(&profiles, "Cisco"), Some(("https://example.com/all.spsl", "Default Settings")));
         assert_eq!(script_of(&profiles, "Gone"), Some(("https://example.com/all.spsl", "Default Settings")));
-        assert_eq!(script_of(&profiles, "Linux"), Some(("omv.spsl", "Linux")));
+        assert_eq!(script_of(&profiles, "Linux"), Some(("linux.spsl", "Linux")));
     }
 
     #[test]
     fn a_profiles_script_is_kept_and_goes_with_an_export() {
-        let profile: Profile = serde_json::from_str(r#"{"name":"Linux","script":"scripts/omv.spsl"}"#).unwrap();
+        let profile: Profile = serde_json::from_str(r#"{"name":"Linux","script":"scripts/linux.spsl"}"#).unwrap();
         let imported = import_text(&export_text(&profile).unwrap()).unwrap();
-        assert_eq!(imported[0].script, "scripts/omv.spsl");
+        assert_eq!(imported[0].script, "scripts/linux.spsl");
         let older: Profile = serde_json::from_str(r#"{"name":"Old"}"#).unwrap();
         assert_eq!(older.script, "");
     }

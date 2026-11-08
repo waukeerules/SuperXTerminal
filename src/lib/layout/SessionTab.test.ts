@@ -14,9 +14,9 @@ afterEach(() => {
   delete tabStates.t1;
 });
 
-/** The OMV tab's label, its icon clicks going to `onTunnels` */
+/** The Web tab's label, its icon clicks going to `onTunnels` */
 function label(onTunnels = vi.fn()) {
-  render(SessionTab, { title: "OMV", icon: "server", environment: null, iconSize: 24, customs: new Map(), tabId: "t1", onClose: () => {}, onTunnels });
+  render(SessionTab, { title: "Web", icon: "server", environment: null, iconSize: 24, customs: new Map(), tabId: "t1", onClose: () => {}, onTunnels });
   return onTunnels;
 }
 
@@ -24,7 +24,7 @@ describe("a tab's tunnel icon", () => {
   it("shows when the session opened tunnels, and a click shows them", async () => {
     tabStates.t1 = { connecting: false, tunnels: 2 };
     const onTunnels = label();
-    const icon = screen.getByRole("button", { name: "Tunnels of OMV" });
+    const icon = screen.getByRole("button", { name: "Tunnels of Web" });
     expect(icon.title).toBe("Tunnels (2): what they open, and how to test them");
     await userEvent.click(icon);
     expect(onTunnels).toHaveBeenCalledOnce();
@@ -33,17 +33,17 @@ describe("a tab's tunnel icon", () => {
   it("isn't there without tunnels, nor once the session is down", () => {
     tabStates.t1 = { connecting: false, tunnels: 0 };
     label();
-    expect(screen.queryByRole("button", { name: "Tunnels of OMV" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Tunnels of Web" })).toBeNull();
     cleanup();
     tabStates.t1 = { ended: true, tunnels: 1 };
     label();
-    expect(screen.queryByRole("button", { name: "Tunnels of OMV" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Tunnels of Web" })).toBeNull();
   });
 
   it("is marked when the profile's tunnels have changed, saying a restart uses them", () => {
     tabStates.t1 = { connecting: false, tunnels: 1, tunnelsChanged: true };
     label();
-    const icon = screen.getByRole("button", { name: "Tunnels of OMV" });
+    const icon = screen.getByRole("button", { name: "Tunnels of Web" });
     expect(icon.classList.contains("changed")).toBe(true);
     expect(icon.title).toMatch(/restart the session to use them/);
   });

@@ -477,12 +477,12 @@ describe("a session's tunnels", () => {
 
   it("warn of one another tab already has, and free the tab's own ports when its session ends", async () => {
     // another tab of the same profile, opened first
-    holdTunnels("t0", "OMV", [{ kind: "local", listen: "8080", to: "localhost:80" }]);
+    holdTunnels("t0", "Web", [{ kind: "local", listen: "8080", to: "localhost:80" }]);
     await startedWith([{ kind: "local", listen: "8080", to: "localhost:80" }, { kind: "local", listen: "8443", to: "localhost:443" }]);
     await expect.poll(() => posted.filter((m) => m.type === "notice").length).toBe(3);
     const warned = posted.filter((m) => m.type === "notice" && (m as { kind?: string }).kind === "warn").map((m) => m.text);
-    expect(warned).toEqual([`Tunnel (Local): Port 8080 on this PC is already the tunnel of the tab "OMV", so this tab's isn't open: use that tab's, or close it and restart this session.`]);
-    expect(host!.tunnelsTaken).toEqual(new Map([["8080", "OMV"]]));
+    expect(warned).toEqual([`Tunnel (Local): Port 8080 on this PC is already the tunnel of the tab "Web", so this tab's isn't open: use that tab's, or close it and restart this session.`]);
+    expect(host!.tunnelsTaken).toEqual(new Map([["8080", "Web"]]));
     // this tab has 8443: another tab can't, until this session ends
     expect(holdTunnels("t9", "x", [{ kind: "local", listen: "8443", to: "localhost:443" }])).toEqual(new Map([["8443", ""]]));
     (channel!.onmessage as (e: unknown) => void)({ type: "exit", code: 0 });

@@ -40,8 +40,8 @@ beforeEach(() => {
         cyberark_region: ["profile CyberArk", "session Region 4/Switch - CyberArk"],
         admin_username: [
           "session Customers/North America/Region 4/Building 12/Floor 3/Core Switch - with a very long name indeed",
-          "session Live Test/Lab Switch",
-          "session Live Test/Lab Switchsdfsdf",
+          "session Lab/Lab Switch",
+          "session Lab/Lab Switch 2",
           "session Region 4/Switch - with admin password",
           "profile Lab",
         ],

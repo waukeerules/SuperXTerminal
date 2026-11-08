@@ -23,14 +23,14 @@ function minute(): Sample[] {
 /** Show the graph; how many times it asked to close */
 function open(samples = minute()) {
   let closed = 0;
-  render(ServerLoadChart, { samples, tab: "omv", onClose: () => closed++ });
+  render(ServerLoadChart, { samples, tab: "web", onClose: () => closed++ });
   return () => closed;
 }
 
 describe("the server load graph", () => {
   it("draws CPU, memory and disk in one chart and traffic in another, each line labelled with its latest value", () => {
     open();
-    expect(screen.getByRole("dialog", { name: "Server load of omv" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Server load of web" })).toBeTruthy();
     const [use, network] = screen.getAllByRole("slider");
     expect(use.getAttribute("aria-label")).toMatch(/^Use/);
     expect(network.getAttribute("aria-label")).toMatch(/^Network/);

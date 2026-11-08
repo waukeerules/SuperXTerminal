@@ -1,6 +1,6 @@
 #!/bin/spsl
-# omv-tour.spsl: a read-only walk around an OpenMediaVault server, to try SPSL's EXPECT, WAITFOR /re, /i and
-# /else:, labels, GOTO and STOP. It only looks (echo, id, grep, cd, ls, df, uname, sleep); nothing is changed.
+# linux-tour.spsl: a read-only walk around a Linux server, to try SPSL's EXPECT, WAITFOR /re, /i and /else:,
+# labels, GOTO and STOP. It only looks (echo, id, grep, systemctl, cd, ls, df, uname, sleep); nothing is changed.
 #
 # Markers: a command ends by printing, say, MARK-$((6*7)), and the script waits for MARK-42. The shell works the sum
 # out, so the command line itself (which the terminal echoes as it's typed) never matches; only the shell's answer.
@@ -27,53 +27,55 @@ SENDLINE grep -i '^ID=' /etc/os-release; echo "OS-$((1+1))"
 EXPECT /t:5 /i
   CASE /^ID=debian$/
     WAITFOR /re [#$]\s*$
-    SENDLINE echo "Debian underneath, as OpenMediaVault is."
+    SENDLINE echo "Debian."
   CASE /^ID=/
     WAITFOR /re [#$]\s*$
-    SENDLINE echo "Not Debian, but carrying on."
+    SENDLINE echo "Not Debian, but carrying on: the tour only reads."
   CASE OS-2
     WAITFOR /re [#$]\s*$
     SENDLINE echo "No /etc/os-release here."
 END
 WAITFOR /re [#$]\s*$
 
-# ---- 4. Is OpenMediaVault installed? NOOMV-5 also contains OMV-5, but it starts earlier in the output, so it wins
-SENDLINE command -v omv-confdbadm >/dev/null && echo "OMV-$((2+3))" || echo "NOOMV-$((2+3))"
+# ---- 4. Is systemd running things? NOSYSD-5 also contains SYSD-5, but it starts earlier in the output, so it wins
+SENDLINE command -v systemctl >/dev/null && echo "SYSD-$((2+3))" || echo "NOSYSD-$((2+3))"
 EXPECT /t:5 /else:noprompt
-  CASE NOOMV-5
+  CASE NOSYSD-5
     WAITFOR /re [#$]\s*$
-    SENDLINE echo "No OpenMediaVault tools: skipping its settings folder."
+    SENDLINE echo "No systemd: skipping its failed services."
     WAITFOR /re [#$]\s*$
-    GOTO disks
-  CASE OMV-5
+    GOTO home
+  CASE SYSD-5
+    WAITFOR /re [#$]\s*$
+    SENDLINE systemctl --failed --no-pager | head -10
     WAITFOR /re [#$]\s*$
 END
 
-# ---- 5. Its settings folder: in, or not allowed ------------------------------------------------------------------
-SENDLINE cd /etc/openmediavault 2>/dev/null && echo "IN-$((7*6))" || echo "OUT-$((7*6))"
+# ---- 5. root's home folder: in, or not allowed --------------------------------------------------------------------
+:home
+SENDLINE cd /root 2>/dev/null && echo "IN-$((7*6))" || echo "OUT-$((7*6))"
 EXPECT /t:5
   CASE IN-42
     WAITFOR /re [#$]\s*$
     SENDLINE pwd; ls -la | head -15
   CASE OUT-42
     WAITFOR /re [#$]\s*$
-    SENDLINE echo "Can't go into /etc/openmediavault (not root?)."
+    SENDLINE echo "Can't go into /root (not root?)."
 END
 WAITFOR /re [#$]\s*$
 
-# ---- 6. The data disks, which OpenMediaVault mounts as /srv/dev-disk-by-... ------------------------------------
-:disks
-SENDLINE ls -d /srv/dev-disk-by-* 2>/dev/null; echo "DISKS-$((3*3))"
+# ---- 6. Disks mounted under /mnt or /media ---------------------------------------------------------------------------
+SENDLINE ls -d /mnt/* /media/* 2>/dev/null; echo "DISKS-$((3*3))"
 EXPECT /t:5
-  # ^ keeps the typed command (it starts with the prompt) from matching: only ls's own lines start with /srv
-  CASE /^\/srv\/dev-disk-by-/
+  # ^ keeps the typed command (it starts with the prompt) from matching: only ls's own lines start with /mnt or /media
+  CASE /^\/(mnt|media)\//
     WAITFOR DISKS-9
     WAITFOR /re [#$]\s*$
-    SENDLINE cd "$(ls -d /srv/dev-disk-by-* | head -1)" && pwd && ls -la | head -20
+    SENDLINE cd "$(ls -d /mnt/* /media/* 2>/dev/null | head -1)" && pwd && ls -la | head -20
     WAITFOR /re [#$]\s*$
   CASE DISKS-9
     WAITFOR /re [#$]\s*$
-    SENDLINE echo "No /srv/dev-disk-by-* disks mounted."
+    SENDLINE echo "Nothing mounted under /mnt or /media."
     WAITFOR /re [#$]\s*$
 END
 

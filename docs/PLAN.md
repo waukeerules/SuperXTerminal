@@ -219,7 +219,7 @@ All supported, against **the same table** (see [Sharing data](#3-sharing-data-wi
 
 ### Profiles
 
-**The idea:** shared data (Sessions.xml, the Database table) says *what* a session is and how it looks in the tree: name, folder, host, protocol, icon, colour, and which profile it uses. *How each person logs in* is their own business. On Windows that's their PuTTY profile of that name in the registry; on the Mac it's their SuperXTerminal profile of that name. So "Media Server" with `PuttySession="root"` logs in as `root` for one person, with a key, and with a different account and a password for another, with no change to the shared row.
+**The idea:** shared data (Sessions.xml, the Database table) says *what* a session is and how it looks in the tree: name, folder, host, protocol, icon, colour, and which profile it uses. *How each person logs in* is their own business. On Windows that's their PuTTY profile of that name in the registry; on the Mac it's their SuperXTerminal profile of that name. So "File Server" with `PuttySession="root"` logs in as `root` for one person, with a key, and with a different account and a password for another, with no change to the shared row.
 
 - **What a profile holds:**
   - **Login:** username, password, and an SSH key file or the agent.

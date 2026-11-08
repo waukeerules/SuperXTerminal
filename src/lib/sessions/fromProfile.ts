@@ -1,6 +1,6 @@
 /**
  * What a session's profile adds to it when it opens, for Edit Session's lists under its Connection, SSH and Terminal
- * tabs ("From profile "OMV Tunnels", when the session opens"). None of it shows among the session's own fields, so a
+ * tabs ("From profile "Web Tunnels", when the session opens"). None of it shows among the session's own fields, so a
  * session could look plain when its profile gives it tunnels, a font, a character set or a login script. Each row is
  * a setting the profile (or the profile it's based on) sets, else Default Settings', in words, with the field's name
  * in Profile, for the row's Edit… link to Settings > Profiles scrolled to it. Only what differs from the app's own

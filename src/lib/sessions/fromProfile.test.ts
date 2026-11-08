@@ -56,8 +56,8 @@ describe("what a profile gives a session", () => {
   });
 
   it("says a key file in 1Password is its item, through 1Password's SSH agent", () => {
-    const all = profiles({}, { keyFile: '"op://Private/SSH Key - Openmediavault/private key"' });
-    expect(said(profileRows("ssh", all, "Cisco", NONE))).toEqual(["Key file: Private/SSH Key - Openmediavault in 1Password, through its SSH agent -> keyFile"]);
+    const all = profiles({}, { keyFile: '"op://Private/SSH Key - Lab Server/private key"' });
+    expect(said(profileRows("ssh", all, "Cisco", NONE))).toEqual(["Key file: Private/SSH Key - Lab Server in 1Password, through its SSH agent -> keyFile"]);
   });
 
   it("follows Based on, naming the session's profile", () => {

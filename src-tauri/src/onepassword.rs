@@ -61,8 +61,8 @@ pub fn resolved(value: &str) -> String {
     }
 }
 
-/// The reference to an SSH Key item's public key, from one to any of its fields ("op://Private/OMV key/private key",
-/// with or without quotes or ?ssh-format=...), or to the item itself ("op://Private/OMV key")
+/// The reference to an SSH Key item's public key, from one to any of its fields ("op://Private/Lab Server key/private key",
+/// with or without quotes or ?ssh-format=...), or to the item itself ("op://Private/Lab Server key")
 fn public_key_reference(reference: &str) -> Option<String> {
     let reference = unquoted(reference);
     let path = reference.get(5..)?.split('?').next()?.trim_end_matches('/');
@@ -320,14 +320,14 @@ mod tests {
     #[test]
     fn a_key_file_reference_becomes_its_items_public_key_for_the_agent() {
         // any of the item's fields, quoted as 1Password copies it, or the item itself
-        for given in ["\"op://Private/OMV key/private key\"", "op://Private/OMV key/private key?ssh-format=openssh", "op://Private/OMV key"] {
-            assert_eq!(public_key_reference(given).as_deref(), Some("op://Private/OMV key/public key"), "{given}");
+        for given in ["\"op://Private/Lab Server key/private key\"", "op://Private/Lab Server key/private key?ssh-format=openssh", "op://Private/Lab Server key"] {
+            assert_eq!(public_key_reference(given).as_deref(), Some("op://Private/Lab Server key/public key"), "{given}");
         }
         assert_eq!(public_key_reference("op://Private"), None);
-        keep("op://Private/OMV key/public key", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample omv\n");
-        let (file, item) = public_key_file("\"op://Private/OMV key/private key\"").unwrap();
-        assert_eq!(item, "Private/OMV key");
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample omv");
+        keep("op://Private/Lab Server key/public key", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample lab\n");
+        let (file, item) = public_key_file("\"op://Private/Lab Server key/private key\"").unwrap();
+        assert_eq!(item, "Private/Lab Server key");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample lab");
         // a field that isn't an SSH key's
         keep("op://Private/Not a key/public key", "hello");
         assert!(public_key_file("op://Private/Not a key/password").unwrap_err().contains("isn't an SSH public key"));

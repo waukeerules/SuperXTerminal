@@ -982,7 +982,7 @@ pub fn openssh(program: &str) -> std::ffi::OsString {
 }
 
 /// A jump host as `ssh -J` takes it, as SuperXPuTTY's JumpHosts.Resolve: a saved session (by its id, in the same
-/// store, Saved sessions, or Database sessions' path; or named with its list first, "Private/Live Test/Media Server",
+/// store, Saved sessions, or Database sessions' path; or named with its list first, "Private/Lab/File Server",
 /// as the ▾ writes it, which is that list's session even where the same path is in another), with its username and port as opening it would take them (its
 /// own, else its folders', else its profile's, else Default Settings') and its placeholders, or "user@host:port" as
 /// it is. Chains aren't followed, and a session can't jump through itself.
@@ -1313,16 +1313,16 @@ mod tests {
             "192.168.0.50",
             &[("PuttySession", "Jump Server"), ("Username", "admin"), ("Port", "2200"), ("ExtraArgs", "-A"), ("SshAlgorithms", "kex=diffie-hellman-group14-sha1")],
         );
-        let launch = launch(&Sessions::default(), &jump_server("192.168.3.2"), &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).unwrap();
+        let launch = launch(&Sessions::default(), &jump_server("192.168.0.20"), &HashMap::new(), &BTreeMap::new(), Store::Saved, &sw).unwrap();
         let args: Vec<String> = launch.command.get_argv().iter().skip(1).map(|a| a.to_string_lossy().to_string()).collect();
         // ssh logs in to the jump server as the profile, on ssh's usual port
-        assert_eq!(args.last().unwrap(), "192.168.3.2");
+        assert_eq!(args.last().unwrap(), "192.168.0.20");
         assert!(args.windows(2).any(|w| w == ["-l", "tj"]), "{args:?}");
         // nothing of the target's goes to the jump server's login
         for target in ["192.168.0.50", "admin", "-p", "-A", "diffie-hellman-group14-sha1"] {
             assert!(!args.iter().any(|a| a.contains(target)), "{target} in {args:?}");
         }
-        assert!(launch.notices.iter().any(|n| n.contains("192.168.3.2") && n.contains("192.168.0.50")), "{:?}", launch.notices);
+        assert!(launch.notices.iter().any(|n| n.contains("192.168.0.20") && n.contains("192.168.0.50")), "{:?}", launch.notices);
     }
 
     #[test]
@@ -1331,7 +1331,7 @@ mod tests {
         let error = launched(&jump_server(""), &[], &sw).unwrap_err();
         assert!(error.contains("Log in here") && error.contains("Jump Server"), "{error}");
         // without Log in here, the session's own host wins over the profile's, as before
-        let mut profiles = jump_server("192.168.3.2");
+        let mut profiles = jump_server("192.168.0.20");
         profiles.profiles[2].log_in_here = false;
         assert_eq!(launched(&profiles, &[], &sw).unwrap().last().unwrap(), "192.168.0.50");
     }
@@ -1833,28 +1833,28 @@ mod tests {
 
     #[test]
     fn a_jump_host_named_with_its_list_is_that_lists_session_where_the_path_is_in_another_too() {
-        // the user's Private Media Server and a Database one at the same path, each with its own host
-        let private = StoredSession { attributes: vec![("SessionId".into(), "Live Test/Media Server".into()), ("Host".into(), "openmediavault.localdomain".into())] };
-        let database = StoredSession { attributes: vec![("SessionId".into(), "@db/Live Test/Media Server".into()), ("Host".into(), "192.168.3.2".into())] };
-        let saved = StoredSession { attributes: vec![("SessionId".into(), "Live Test/Media Server".into()), ("Host".into(), "10.0.0.9".into())] };
+        // a Private File Server and a Database one at the same path, each with its own host
+        let private = StoredSession { attributes: vec![("SessionId".into(), "Lab/File Server".into()), ("Host".into(), "fileserver.lab.example".into())] };
+        let database = StoredSession { attributes: vec![("SessionId".into(), "@db/Lab/File Server".into()), ("Host".into(), "192.168.0.20".into())] };
+        let saved = StoredSession { attributes: vec![("SessionId".into(), "Lab/File Server".into()), ("Host".into(), "10.0.0.9".into())] };
         let sessions = Sessions { saved: vec![saved], private: vec![private], database: vec![database], ..Sessions::default() };
         let from = session(&[]);
         let at = |jump: &str| jump_address(&sessions, &profiles(), &HashMap::new(), Store::Saved, &from, jump).unwrap();
-        assert_eq!(at("Private/Live Test/Media Server"), "openmediavault.localdomain");
-        assert_eq!(at("Database/Live Test/Media Server"), "192.168.3.2");
-        assert_eq!(at("saved/Live Test/Media Server"), "10.0.0.9");
+        assert_eq!(at("Private/Lab/File Server"), "fileserver.lab.example");
+        assert_eq!(at("Database/Lab/File Server"), "192.168.0.20");
+        assert_eq!(at("saved/Lab/File Server"), "10.0.0.9");
         // a plain path as before: the same list first, then Saved
-        assert_eq!(at("Live Test/Media Server"), "10.0.0.9");
+        assert_eq!(at("Lab/File Server"), "10.0.0.9");
     }
 
     #[test]
     fn a_jump_host_session_with_no_username_of_its_own_takes_its_profiles() {
-        // the user's OMV session: its username and port are its profile's ("root"); the jump went as the user this
+        // a Linux server's session: its username and port are its profile's ("root"); the jump went as the user this
         // computer's ssh guessed (the Windows account), and the server said Permission denied
-        let omv = StoredSession {
-            attributes: vec![("SessionId".into(), "Live Test/Media Server".into()), ("Host".into(), "192.168.3.2".into()), ("PuttySession".into(), "root".into())],
+        let server = StoredSession {
+            attributes: vec![("SessionId".into(), "Lab/File Server".into()), ("Host".into(), "192.168.0.20".into()), ("PuttySession".into(), "root".into())],
         };
-        let sessions = Sessions { private: vec![omv], ..Sessions::default() };
+        let sessions = Sessions { private: vec![server], ..Sessions::default() };
         let profiles = Profiles {
             profiles: vec![
                 Profile { name: profiles::DEFAULT_PROFILE.into(), username: "everyone".into(), ..Profile::default() },
@@ -1863,14 +1863,14 @@ mod tests {
             ],
         };
         let from = session(&[]);
-        assert_eq!(jump_address(&sessions, &profiles, &HashMap::new(), Store::Private, &from, "Live Test/Media Server").unwrap(), "root@192.168.3.2:2222");
+        assert_eq!(jump_address(&sessions, &profiles, &HashMap::new(), Store::Private, &from, "Lab/File Server").unwrap(), "root@192.168.0.20:2222");
         // a profile with none: Default Settings'
         let mut plain = Sessions { private: sessions.private.clone(), ..Sessions::default() };
         plain.private[0].set("PuttySession", "plain");
-        assert_eq!(jump_address(&plain, &profiles, &HashMap::new(), Store::Private, &from, "Live Test/Media Server").unwrap(), "everyone@192.168.3.2");
+        assert_eq!(jump_address(&plain, &profiles, &HashMap::new(), Store::Private, &from, "Lab/File Server").unwrap(), "everyone@192.168.0.20");
         // the session's own still wins
         plain.private[0].set("Username", "admin");
-        assert_eq!(jump_address(&plain, &profiles, &HashMap::new(), Store::Private, &from, "Live Test/Media Server").unwrap(), "admin@192.168.3.2");
+        assert_eq!(jump_address(&plain, &profiles, &HashMap::new(), Store::Private, &from, "Lab/File Server").unwrap(), "admin@192.168.0.20");
     }
 
     #[test]
@@ -1878,7 +1878,7 @@ mod tests {
         let profiles = Profiles {
             profiles: vec![
                 Profile { name: profiles::DEFAULT_PROFILE.into(), ..Profile::default() },
-                Profile { name: "Jump Test".into(), jump_host: "root@omv.example".into(), ..Profile::default() },
+                Profile { name: "Jump Test".into(), jump_host: "root@bastion.example".into(), ..Profile::default() },
             ],
         };
         let said = |attributes: &[(&str, &str)]| {
@@ -1887,8 +1887,8 @@ mod tests {
         };
         // the profile's
         let (args, notices) = said(&[("PuttySession", "Jump Test")]);
-        assert!(args.contains("-J root@omv.example"), "{args}");
-        assert_eq!(notices, ["Connecting to 10.0.0.1 through the jump host root@omv.example, from profile \"Jump Test\"."]);
+        assert!(args.contains("-J root@bastion.example"), "{args}");
+        assert_eq!(notices, ["Connecting to 10.0.0.1 through the jump host root@bastion.example, from profile \"Jump Test\"."]);
         // the session's own wins, and says so
         let (_, notices) = said(&[("PuttySession", "Jump Test"), ("JumpHost", "me@bastion:22")]);
         assert_eq!(notices, ["Connecting to 10.0.0.1 through the jump host me@bastion:22, from the session's Jump host."]);
@@ -1925,27 +1925,27 @@ mod tests {
 
     #[test]
     fn a_key_file_in_1password_has_ssh_ask_its_agent_for_that_key_alone() {
-        crate::onepassword::keep("op://Private/launch-key/public key", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILaunch omv");
+        crate::onepassword::keep("op://Private/launch-key/public key", "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILaunch lab");
         let profiles = Profiles {
             profiles: vec![
                 Profile { name: profiles::DEFAULT_PROFILE.into(), ..Profile::default() },
-                Profile { name: "omv".into(), key_file: "\"op://Private/launch-key/private key\"".into(), ..Profile::default() },
+                Profile { name: "lab".into(), key_file: "\"op://Private/launch-key/private key\"".into(), ..Profile::default() },
             ],
         };
-        let (args, notices) = args_of(&Sessions::default(), &profiles, &session(&[("PuttySession", "omv")]));
+        let (args, notices) = args_of(&Sessions::default(), &profiles, &session(&[("PuttySession", "lab")]));
         let at = args.iter().position(|a| a == "-i").unwrap_or_else(|| panic!("no -i: {args:?} {notices:?}"));
         assert!(args[at + 1].ends_with("Private_launch-key.pub"), "{args:?}");
-        assert_eq!(std::fs::read_to_string(&args[at + 1]).unwrap(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILaunch omv");
+        assert_eq!(std::fs::read_to_string(&args[at + 1]).unwrap(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILaunch lab");
         assert_eq!(args[at + 2..at + 4], ["-o", "IdentitiesOnly=yes"]);
         assert!(notices.contains(&"Logging in with the key Private/launch-key from 1Password, through its SSH agent.".to_string()), "{notices:?}");
         // one that can't be read: connecting without it, and why
         let missing = Profiles {
             profiles: vec![
                 Profile { name: profiles::DEFAULT_PROFILE.into(), ..Profile::default() },
-                Profile { name: "omv".into(), key_file: "op://Private/launch-key-gone/private key".into(), ..Profile::default() },
+                Profile { name: "lab".into(), key_file: "op://Private/launch-key-gone/private key".into(), ..Profile::default() },
             ],
         };
-        let (args, notices) = args_of(&Sessions::default(), &missing, &session(&[("PuttySession", "omv")]));
+        let (args, notices) = args_of(&Sessions::default(), &missing, &session(&[("PuttySession", "lab")]));
         assert!(!args.iter().any(|a| a == "-i"), "{args:?}");
         assert!(notices.iter().any(|n| n == "op://Private/launch-key-gone/public key wasn't read: no op in the tests; connecting without it."), "{notices:?}");
     }

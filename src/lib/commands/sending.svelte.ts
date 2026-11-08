@@ -55,7 +55,7 @@ export function storeLabel(store: SessionView["store"]): string {
 }
 
 /**
- * A session as a Jump host field names it: its list, then its path in the tree ("Private/Live Test/Media Server"),
+ * A session as a Jump host field names it: its list, then its path in the tree ("Private/Lab/File Server"),
  * a Database session's without the "@db/" its id has, as launch.rs's jump_address looks it up. The list makes it
  * that session, where the same path is in more than one (a Private copy of a Database session)
  * @param session The session chosen

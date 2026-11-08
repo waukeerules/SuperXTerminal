@@ -479,14 +479,14 @@ pub fn server_load_stop(loads: tauri::State<'_, ServerLoads>) {
 
 #[cfg(test)]
 mod tests {
-    //! The counters are read from a real reading of a Linux server (an OpenMediaVault host running Docker and
-    //! Kubernetes, in tests/fixtures, shortened: fewer CPUs, memory lines and interfaces, and its long intr line cut,
+    //! The counters are read from a real reading of a Linux server (a host running Docker and Kubernetes, in
+    //! tests/fixtures, shortened: fewer CPUs, memory lines and interfaces, and its long intr line cut,
     //! none of which the numbers use), and a second reading made from it with known changes.
 
     use super::*;
 
     /// The server's reading, as the tab gets it
-    const READING: &str = include_str!("../tests/fixtures/openmediavault-load.txt");
+    const READING: &str = include_str!("../tests/fixtures/linux-load.txt");
 
     #[test]
     fn reads_memory_and_disk_from_a_real_servers_reading() {

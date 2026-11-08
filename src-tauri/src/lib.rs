@@ -3068,7 +3068,7 @@ mod tests {
         let folder = FolderSetting { path: "Lab".into(), putty_profile: "Cisco".into(), ..FolderSetting::default() };
         sessions.folders.entry(Store::Saved).or_default().insert("lab".into(), folder);
         let at = |attributes: &[(&str, &str)]| {
-            let mut all = vec![("SessionId".to_string(), "Lab/omv".to_string()), ("Host".to_string(), "192.168.0.10".to_string())];
+            let mut all = vec![("SessionId".to_string(), "Lab/web".to_string()), ("Host".to_string(), "192.168.0.10".to_string())];
             all.extend(attributes.iter().map(|(n, v)| (n.to_string(), v.to_string())));
             StoredSession { attributes: all }
         };

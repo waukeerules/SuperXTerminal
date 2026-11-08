@@ -257,8 +257,8 @@ describe("Edit Session with a jump server profile", () => {
   beforeEach(() => {
     profileList = [
       { name: "Default Settings", script: "" },
-      { name: "Jump Server", host: "192.168.3.2", username: "root", logInHere: true, script: "cisco-jump.spsl" },
-      { name: "Linux", host: "192.168.3.2", script: "omv.spsl" },
+      { name: "Jump Server", host: "192.168.0.20", username: "root", logInHere: true, script: "cisco-jump.spsl" },
+      { name: "Linux", host: "192.168.0.20", script: "linux.spsl" },
     ];
   });
 
@@ -266,7 +266,7 @@ describe("Edit Session with a jump server profile", () => {
     open({ ...SESSION, extraArgs: "", profile: "Jump Server" });
     const note = await screen.findByRole("note", { name: "Jump server" });
     expect(note.textContent?.replace(/\s+/g, " ")).toBe(
-      'Through the jump server: the tab logs in to 192.168.3.2 as root (profile "Jump Server", Log in here). This session\'s host, username and port are where its login script goes on to: cisco-jump.spsl (Jump Server\'s).',
+      'Through the jump server: the tab logs in to 192.168.0.20 as root (profile "Jump Server", Log in here). This session\'s host, username and port are where its login script goes on to: cisco-jump.spsl (Jump Server\'s).',
     );
     // the session's own password isn't the one that logs in
     expect((screen.getByLabelText(/Password/) as HTMLInputElement).placeholder).toBe('not used: the tab logs in as profile "Jump Server"');
@@ -276,7 +276,7 @@ describe("Edit Session with a jump server profile", () => {
     const user = userEvent.setup();
     open({ ...SESSION, extraArgs: "", profile: "Linux" });
     await user.click(screen.getByRole("tab", { name: "Terminal" }));
-    await expect.poll(() => (screen.getByLabelText(/Login script/) as HTMLInputElement).placeholder).toBe("none: the profile's, omv.spsl (Linux's)");
+    await expect.poll(() => (screen.getByLabelText(/Login script/) as HTMLInputElement).placeholder).toBe("none: the profile's, linux.spsl (Linux's)");
     expect(screen.queryByRole("note")).toBeNull();
   });
 });
@@ -285,7 +285,7 @@ describe("Edit Session with a profile that has a jump host", () => {
   beforeEach(() => {
     profileList = [
       { name: "Default Settings", script: "" },
-      { name: "Jump Test", jumpHost: "root@omv.example", script: "" },
+      { name: "Jump Test", jumpHost: "root@bastion.example", script: "" },
       { name: "Jump Child", basedOn: "Jump Test", script: "" },
     ];
   });
@@ -295,12 +295,12 @@ describe("Edit Session with a profile that has a jump host", () => {
 
   it("says on the General tab that the session goes through the profile's jump host", async () => {
     open({ ...SESSION, extraArgs: "", profile: "Jump Test" });
-    expect(await said()).toBe('Through the jump host root@omv.example (profile "Jump Test"): ssh connects to it first, then on to 192.168.0.50 from there.');
+    expect(await said()).toBe('Through the jump host root@bastion.example (profile "Jump Test"): ssh connects to it first, then on to 192.168.0.50 from there.');
   });
 
   it("says the same for a profile based on one with a jump host", async () => {
     open({ ...SESSION, extraArgs: "", profile: "Jump Child" });
-    expect(await said()).toBe('Through the jump host root@omv.example (profile "Jump Child"): ssh connects to it first, then on to 192.168.0.50 from there.');
+    expect(await said()).toBe('Through the jump host root@bastion.example (profile "Jump Child"): ssh connects to it first, then on to 192.168.0.50 from there.');
   });
 
   it("names the session's own jump host when it has one, and says nothing with none", async () => {
@@ -381,13 +381,13 @@ describe("Edit Session's Connection tab", () => {
   it("lists what the profile adds to the connection, each with a link to it in Settings > Profiles", async () => {
     profileList = [
       { name: "Default Settings", script: "", keepalive: 30, forwards: [] },
-      { name: "OMV Tunnels", script: "", compression: true, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }, { kind: "dynamic", listen: "1080", to: "" }] },
+      { name: "Web Tunnels", script: "", compression: true, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }, { kind: "dynamic", listen: "1080", to: "" }] },
     ];
     const user = userEvent.setup();
-    open({ ...SESSION, extraArgs: "", profile: "OMV Tunnels" });
+    open({ ...SESSION, extraArgs: "", profile: "Web Tunnels" });
     await user.click(screen.getByRole("tab", { name: "Connection" }));
     const list = await screen.findByRole("region", { name: "From the profile" });
-    expect(within(list).getByRole("heading").textContent).toBe('From profile "OMV Tunnels", when the session opens');
+    expect(within(list).getByRole("heading").textContent).toBe('From profile "Web Tunnels", when the session opens');
     const rows = within(list).getAllByRole("listitem").map((li) => li.textContent?.replace(/\s+/g, " ").replace(" Edit…", "").trim());
     expect(rows).toEqual([
       "Tunnels: Local 8080 → localhost:80; SOCKS 1080",
@@ -396,7 +396,7 @@ describe("Edit Session's Connection tab", () => {
     ]);
     await user.click(within(within(list).getAllByRole("listitem")[0]).getByRole("button", { name: "Edit…" }));
     await user.click(within(within(list).getAllByRole("listitem")[2]).getByRole("button", { name: "Edit…" }));
-    expect(openedProfiles).toEqual([["OMV Tunnels", "forwards"], ["Default Settings", "keepalive"]]);
+    expect(openedProfiles).toEqual([["Web Tunnels", "forwards"], ["Default Settings", "keepalive"]]);
   });
 
   it("lists what the profile gives the terminal under the Terminal tab, with links", async () => {

@@ -39,8 +39,7 @@ older versions can't find a draft release by its tag, so step 6 on the second co
    ```
 
 4. Build it. The first build takes 15 to 20 minutes, later ones a few ([Release build](#release-build)). It leaves
-   the MSI and the setup `.exe` in `releases\<version>\`, and puts the repository's `THIRD-PARTY-NOTICES.txt` back
-   afterwards.
+   the MSI and the setup `.exe` in `releases\<version>\`.
 
    ```bash
    npm run release
@@ -133,8 +132,7 @@ Both install `superxterminal.exe` (the pages are built into it) and `THIRD-PARTY
 - **Tools:** the first build downloads WiX 3 and NSIS (about 30 MB, from Tauri's GitHub releases) into the user's
   Tauri cache.
 - **Notices:** `npm run notices` runs first and writes `THIRD-PARTY-NOTICES.txt` for the system building, so the
-  installer has Windows' crates. The copy in the repository is the Mac's: don't commit the Windows one over it
-  (`npm run release` puts it back; by hand, `git checkout -- THIRD-PARTY-NOTICES.txt` after a build).
+  installer has Windows' crates. It isn't kept in git, as each system's differs.
 - **Signing:** none yet, so SmartScreen warns on the first run. Signing is set with
   `bundle.windows.certificateThumbprint` (or a signing command) in `src-tauri/tauri.conf.json`.
 - **Releasing:** `npm run release` copies both into `releases\<version>\`; `npm run release:publish` puts them in

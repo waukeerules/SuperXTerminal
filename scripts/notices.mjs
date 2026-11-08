@@ -1,8 +1,9 @@
 // Writes THIRD-PARTY-NOTICES.txt: every third-party component the app ships, with its licence text. The Rust crates
-// built into the release program (cargo metadata: normal dependencies of superxterminal, on this Mac's target), the npm
+// built into the release program (cargo metadata: normal dependencies of superxterminal, on the building system's target), the npm
 // packages the window uses (production dependencies), and the libraries bundled as files (public/web/licenses).
 // Packages with the same licence text share one copy of it. Run with `npm run notices`; the release build runs it
-// first (tauri.conf.json's beforeBuildCommand), and the file goes into the app (Help > Third-Party Notices).
+// first (tauri.conf.json's beforeBuildCommand), and the file goes into the app (Help > Third-Party Notices). Each
+// system's list differs (Windows and Linux link crates the Mac doesn't), so the file isn't kept in git.
 import { execFileSync, execSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -27,7 +28,7 @@ function licenceTexts(folder) {
 /** @type {{ name: string, version: string, license: string, source: string, texts: string[], authors?: string[] }[]} */
 const components = [];
 
-// ---- Rust: what the release program links, for this Mac ----
+// ---- Rust: what the release program links, on this system ----
 /** The Rust target this computer builds for (rustc's host), whose crates the program links */
 const target = execFileSync("rustc", ["-vV"], { encoding: "utf8" }).match(/host: (\S+)/)[1];
 /** What cargo knows of the crates, for that target */

@@ -1,7 +1,6 @@
 // Builds this computer's release and collects its installers into releases/<version>/: `npm run release`. On the
 // Mac the .dmg, signed with the Keychain's signing certificate (a Developer ID Application one if there is one, else
-// Apple Development; APPLE_SIGNING_IDENTITY, when set, wins); on Windows the MSI and the setup .exe, after which the
-// repository's copy of THIRD-PARTY-NOTICES.txt (the Mac's) is put back, as the build rewrites it for Windows. The
+// Apple Development; APPLE_SIGNING_IDENTITY, when set, wins); on Windows the MSI and the setup .exe. The
 // version is src-tauri/tauri.conf.json's (npm run release:version sets it). Anything after `--` goes to `tauri build`,
 // e.g. `npm run release -- --target universal-apple-darwin`. docs/BUILD-macOS.md and docs/BUILD-Windows.md have the
 // steps around it.
@@ -71,10 +70,6 @@ function main() {
 
   // npm through the shell: on Windows it's npm.cmd
   const build = spawnSync(`npm run tauri build${args.length ? ` -- ${args.join(" ")}` : ""}`, { cwd: root, env, stdio: "inherit", shell: true });
-  if (windows) {
-    // the build wrote Windows' notices into the repository's copy, which is the Mac's
-    spawnSync("git checkout -- THIRD-PARTY-NOTICES.txt", { cwd: root, stdio: "inherit", shell: true });
-  }
   if (build.status !== 0) {
     console.error(`\nThe build failed (exit code ${build.status}): nothing was collected.`);
     process.exit(build.status ?? 1);
@@ -89,11 +84,6 @@ function main() {
   mkdirSync(into, { recursive: true });
   for (const file of found) copyFileSync(file, join(into, basename(file)));
   console.log(`\nSuperXTerminal ${v}'s installers, in ${join("releases", v)}:\n  ${found.map((f) => basename(f)).join("\n  ")}`);
-  if (mac) {
-    const changed = spawnSync("git diff --quiet -- THIRD-PARTY-NOTICES.txt", { cwd: root, shell: true }).status !== 0;
-    // before publishing, which tags the commit and refuses while it's uncommitted
-    if (changed) console.log("\nTHIRD-PARTY-NOTICES.txt changed (a dependency did): commit and push it before npm run release:publish.");
-  }
   console.log(`\nNext: npm run release:publish, to put them in the GitHub release. Release notes go in ${join("releases", v, "NOTES.md")} (docs/RELEASE.md).`);
 }
 

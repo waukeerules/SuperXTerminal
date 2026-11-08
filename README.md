@@ -313,13 +313,13 @@ A pull request goes in faster when:
 ## Licence
 
 MIT, as SuperPuTTY is: you're free to use, copy, change and share it, as long as the copyright notice comes with it.
-See [LICENSE](LICENSE). The components it uses keep their own licences, listed in
-[THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+See [LICENSE](LICENSE). The components it uses keep their own licences, listed in the app under Help > Third-Party
+Notices (each build makes the list for its system: `npm run notices`).
 
 ## Thanks
 
 - [Jim Radford](https://github.com/jimradford) and SuperPuTTY's contributors, for the original.
 - [SilverGreen93](https://github.com/SilverGreen93/superputty), for carrying SuperPuTTY on.
 - [xterm.js](https://xtermjs.org), [Monaco](https://microsoft.github.io/monaco-editor/), [Tauri](https://tauri.app),
-  [IronRDP](https://github.com/Devolutions/IronRDP) and the other components listed in
-  [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+  [IronRDP](https://github.com/Devolutions/IronRDP) and the other components listed in the app's Third-Party
+  Notices.

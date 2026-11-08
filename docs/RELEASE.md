@@ -58,8 +58,6 @@ What the scripts do, for when one of them can't:
 - **The build:** `npm run tauri build` (on the Mac with `APPLE_SIGNING_IDENTITY` set to the certificate's name, from
   `security find-identity -v -p codesigning`). The installers are in `src-tauri/target/release/bundle/` (`dmg/`, or
   `msi/` and `nsis/`).
-- **Windows' notices:** the build writes Windows' `THIRD-PARTY-NOTICES.txt` over the repository's, which is the Mac's:
-  put it back with `git checkout -- THIRD-PARTY-NOTICES.txt`.
 - **Publishing:** `git tag v0.3.0 && git push origin v0.3.0`, then
   `gh release create v0.3.0 releases/0.3.0/*.dmg --draft --title "SuperXTerminal 0.3.0" --notes-file releases/0.3.0/NOTES.md`,
   from the other computer `gh release upload v0.3.0 releases/0.3.0/*.msi releases/0.3.0/*-setup.exe`, and once all

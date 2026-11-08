@@ -145,6 +145,3 @@ Things that differ from the Mac and Windows, worth checking first:
 | Volume | `sxt-linux-target-<arch>` | `src-tauri/target`: the compiled crates, so the next build is quick |
 | Volume | `sxt-linux-cargo-registry-<arch>` | Cargo's downloaded crates |
 | Folder | `releases/linux/<version>/` | The packages, on the Mac (not in git) |
-
-The build rewrites `THIRD-PARTY-NOTICES.txt` with Linux's crates, as the Windows build does with Windows'. The script
-puts the Mac's copy back when it finishes, so git sees no change.

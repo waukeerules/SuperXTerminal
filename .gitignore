@@ -17,3 +17,6 @@ node_modules/
 /captures/
 
 .claude
+# Written by every build for its own system (npm run notices, before tauri build) and bundled in the app; a stand-in
+# when there is none (src-tauri/build.rs). Not kept in git, as each system's differs.
+/THIRD-PARTY-NOTICES.txt

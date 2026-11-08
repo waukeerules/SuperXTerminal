@@ -7,9 +7,8 @@
 # repository is mounted at /src; node_modules, src-tauri/target and Cargo's downloads live on Docker volumes, one set
 # per CPU type, so the Mac's own node_modules and target are left alone and a second build only compiles what changed.
 # The packages are copied to releases/linux/<version>/ (not releases/<version>/, which release:publish uploads whole).
-#
-# The build rewrites THIRD-PARTY-NOTICES.txt for Linux's crates, as the Windows one does for Windows'; the Mac's copy
-# is put back afterwards, so git sees no change.
+# The build writes Linux's THIRD-PARTY-NOTICES.txt into the repository's folder, as every build writes its own; it's
+# not in git.
 #
 #   scripts/build-linux.sh                 packages for x86_64 PCs (amd64), the usual Ubuntu machine
 #   scripts/build-linux.sh --arm64         packages for ARM machines; runs at full speed on Apple silicon
@@ -49,12 +48,6 @@ if $new_image || ! docker image inspect "$image" >/dev/null 2>&1; then
   echo "Making the Linux build image $image (a few minutes, once)..."
   docker build --pull --platform "linux/$arch" -t "$image" - < "$root/scripts/linux-build.Dockerfile"
 fi
-
-# Keep the Mac's THIRD-PARTY-NOTICES.txt, which the build overwrites with Linux's, and put it back however this ends
-notices="$root/THIRD-PARTY-NOTICES.txt"
-saved="$(mktemp)"
-cp "$notices" "$saved"
-trap 'cp "$saved" "$notices"; rm -f "$saved"' EXIT
 
 run=(docker run --rm -i --platform "linux/$arch"
   -v "$root":/src

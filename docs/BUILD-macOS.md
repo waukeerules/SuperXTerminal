@@ -38,8 +38,7 @@ in (`brew install gh`, then `gh auth login`).
    ```
 
 4. Build it. Quit any running SuperXTerminal first. It takes a few minutes, signs with the Keychain's certificate by
-   itself, and leaves the `.dmg` in `releases/<version>/`. If it says `THIRD-PARTY-NOTICES.txt` changed, commit and
-   push that before step 6.
+   itself, and leaves the `.dmg` in `releases/<version>/`.
 
    ```bash
    npm run release
@@ -182,7 +181,8 @@ APPLE_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" npm run tauri bui
 Development); `APPLE_SIGNING_IDENTITY`, when set, wins. It takes a few minutes. What happens:
 
 1. **`npm run notices`** writes `THIRD-PARTY-NOTICES.txt`: every component the app ships and its licence text
-   (`scripts/notices.mjs`). It stops the build if a component has no licence text.
+   (`scripts/notices.mjs`). It stops the build if a component has no licence text. The file isn't kept in git, as
+   each system's differs; before it's made, `cargo build` writes a short stand-in (`src-tauri/build.rs`).
 2. **`npm run build`** builds the web part into `dist/`.
 3. **Cargo** builds the release program.
 4. **The bundler** makes the `.app` and signs it with the hardened runtime and `src-tauri/Entitlements.plist`, then

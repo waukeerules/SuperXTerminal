@@ -5,7 +5,11 @@
   Folder shows its path until clicked, then takes a new one (moving it within its store), Icon opens Choose Icon,
   Colour the palette, Protocol and Highlight rules are lists, Profile suggests the profiles, the rest are text.
 
-  Changed cells are marked, and nothing is saved until Save, which saves them all (sessionsTable.ts says how, store by
+  Each column can be resized by dragging its heading's right edge (a double click puts it back), the widths kept for
+  next time. New Session adds a row at the top, in the store the Store filter shows (else the first in use), which
+  shows whatever the filters are and saves as a new session; × takes a new row away before it's saved.
+
+  Changed cells are marked, new rows as a whole, and nothing is saved until Save, which saves them all (sessionsTable.ts says how, store by
   store); Cancel or Escape drops them, asking first when there are some. A Database row the user can't change (Read
   only, no rights, or locked in the table) or a column locked there can't be edited, as in Edit Session.
 
@@ -22,7 +26,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { ask } from "@tauri-apps/plugin-dialog";
   import Icon from "../icons/Icon.svelte";
   import IconPicker from "../icons/IconPicker.svelte";
@@ -31,9 +35,10 @@
   import { PALETTE } from "../icons/palette";
   import { listProfiles } from "../settings/profiles";
   import { highlighting } from "../terminal/highlighting";
+  import { ResizableColumns } from "../ui/columns.svelte";
   import { loadTable, PROTOCOLS, type DbState, type SessionsLoaded, type Store } from "./api";
   import {
-    cellText, changed, COLUMNS, draftOf, locked, matches, problems, rowChanged, saveDrafts, STORE_LABELS,
+    cellText, changed, COLUMNS, draftOf, isNew, locked, matches, newDraft, problems, rowChanged, saveDrafts, STORE_LABELS,
     type Column, type ColumnKey, type Draft,
   } from "./sessionsTable";
 
@@ -113,7 +118,8 @@
     Object.fromEntries((["saved", "private", "database"] as Store[]).map((s) =>
       [s, [...new Set(drafts.filter((d) => d.store === s).map((d) => d.fields.folder).filter(Boolean))].sort()])),
   );
-  const width = COLUMNS.reduce((sum, c) => sum + c.width, 0);
+  /** The columns' widths, dragged at their headings' edges and kept for next time */
+  const columns = new ResizableColumns("columns", COLUMNS.map((c) => c.width), 40, "sxt.sessionsTable.");
 
   onMount(() => {
     shown = true;
@@ -133,6 +139,23 @@
     return () => (shown = false);
   });
 
+  /** New Session: a row at the top, in the store the Store filter shows, else the first in use; its Name to type in */
+  async function addRow(): Promise<void> {
+    const store = stores.includes(filters.store as Store) ? (filters.store as Store) : stores[0];
+    if (!store) return;
+    const draft = newDraft(store);
+    drafts = [draft, ...drafts];
+    if (grid) grid.scrollTop = 0;
+    measure();
+    await tick();
+    grid?.querySelector<HTMLInputElement>(`tr[data-key="${draft.key}"] input[aria-label="Name"]`)?.focus();
+  }
+
+  /** Take a new row away before it's saved */
+  function removeRow(draft: Draft): void {
+    drafts = drafts.filter((d) => d !== draft);
+  }
+
   /** A Database row that can't move at all: Read only, no rights, or locked in the table */
   const fixed = (d: Draft) => d.row.store === "database" && (!writable || d.row.locked);
 
@@ -145,7 +168,9 @@
 
   /** A text cell's new value; Port kept as typed until the save, which turns it into a number */
   function set(d: Draft, key: ColumnKey, value: string): void {
-    if (key === "store") d.store = value as Store;
+    // a new row's store is where it's made, not a move
+    if (key === "store" && isNew(d)) d.store = d.row.store = value as Store;
+    else if (key === "store") d.store = value as Store;
     else if (key === "port") (d.fields as unknown as Record<string, string>).port = value;
     else (d.fields as unknown as Record<string, string>)[key] = value;
   }
@@ -209,10 +234,18 @@
     </header>
 
     <div class="grid" bind:this={grid} onscroll={measure}>
-      <table style:width="{width}px">
-        <colgroup>{#each COLUMNS as c (c.key)}<col style:width="{c.width}px" />{/each}</colgroup>
+      <table style:width="{columns.total}px">
+        <colgroup>{#each COLUMNS as c, i (c.key)}<col style:width="{columns.widths[i]}px" />{/each}</colgroup>
         <thead>
-          <tr>{#each COLUMNS as c (c.key)}<th>{c.label}</th>{/each}</tr>
+          <tr>
+            {#each COLUMNS as c, i (c.key)}
+              <th>{c.label}
+                <span class="grip" role="separator" aria-orientation="vertical" aria-label="Resize {c.label}"
+                  title="Drag to resize; double-click for the default width"
+                  ondblclick={() => columns.reset(i)} onpointerdown={(e) => columns.startResize(e, i)}></span>
+              </th>
+            {/each}
+          </tr>
           <tr class="filters">
             {#each COLUMNS as c (c.key)}
               <th>
@@ -231,18 +264,24 @@
         </thead>
         <tbody>
           <tr class="spacer" style:height="{first * ROW}px"></tr>
-          {#each inView as d (d.row.store + ":" + d.row.id)}
+          {#each inView as d (d.key)}
             {@const problem = wrong.get(d)}
-            <tr class:changed-row={rowChanged(d)} class:wrong={!!problem} title={problem ?? ""} aria-label={d.row.id}>
+            <tr class:changed-row={rowChanged(d)} class:new-row={isNew(d)} class:wrong={!!problem} title={problem ?? ""}
+              aria-label={isNew(d) ? "New session" : d.row.id} data-key={d.key}>
               {#each COLUMNS as c (c.key)}
                 {@const off = locked(d, c, writable)}
                 <td class:changed={changed(d, c.key)} title={lockTip(d, c)}>
                   {#if c.key === "store"}
-                    <select aria-label="Store" value={d.store} disabled={fixed(d)} onchange={(e) => set(d, "store", e.currentTarget.value)}>
-                      {#each ["saved", "private", "database"] as Store[] as s (s)}
-                        {#if stores.includes(s) || d.row.store === s}<option value={s}>{STORE_LABELS[s]}</option>{/if}
-                      {/each}
-                    </select>
+                    <div class="store">
+                      {#if isNew(d)}
+                        <button class="remove" aria-label="Remove new session" title="Take this new session away" onclick={() => removeRow(d)}>×</button>
+                      {/if}
+                      <select aria-label="Store" value={d.store} disabled={fixed(d)} onchange={(e) => set(d, "store", e.currentTarget.value)}>
+                        {#each ["saved", "private", "database"] as Store[] as s (s)}
+                          {#if stores.includes(s) || d.row.store === s}<option value={s}>{STORE_LABELS[s]}</option>{/if}
+                        {/each}
+                      </select>
+                    </div>
                   {:else if c.key === "folder"}
                     {#if typingFolder === d}
                       <!-- svelte-ignore a11y_autofocus -->
@@ -304,6 +343,8 @@
     {/each}
 
     <footer>
+      <button onclick={() => void addRow()} disabled={!stores.length || loading}
+        title="A new session, at the top of the table, saved with the rest">New Session</button>
       <span class="count">
         {shownRows.length === drafts.length ? `${drafts.length} sessions` : `${shownRows.length} of ${drafts.length} sessions`}{changedRows.length ? `, ${changedRows.length} changed` : ""}
       </span>
@@ -408,6 +449,20 @@
   }
 
   /* the headings' row a fixed height, so the filters' row sticks right under it */
+  /* the drag handle at a heading's right edge, as the file transfer tabs' */
+  .grip {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+  }
+
+  .grip:hover {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+
   thead tr:first-child th {
     top: 0;
     height: 25px;
@@ -439,6 +494,37 @@
   td.changed {
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  /* a new row, marked as a whole: the accent down its left and a tint */
+  tr.new-row td {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+
+  tr.new-row td:first-child {
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .store {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  button.remove {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  button.remove:hover {
+    color: #e5534b;
   }
 
   tr.wrong td {

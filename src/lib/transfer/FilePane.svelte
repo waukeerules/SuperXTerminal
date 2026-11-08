@@ -8,7 +8,7 @@
   import { FILE_MANAGER } from "../platform";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { formatSize, formatTime, joinPath, parentPath, type Entry, type Listing } from "./api";
-  import { ResizableColumns } from "./columns.svelte";
+  import { ResizableColumns } from "../ui/columns.svelte";
   import { commandKey, commandLabel, isMac } from "../shortcuts";
 
   interface Props {

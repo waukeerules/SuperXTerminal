@@ -10,7 +10,7 @@
   import { ask as confirm } from "@tauri-apps/plugin-dialog";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
   import FilePane from "./FilePane.svelte";
-  import { ResizableColumns } from "./columns.svelte";
+  import { ResizableColumns } from "../ui/columns.svelte";
   import { askName } from "../scripting/asking.svelte";
   import type { Store } from "../sessions/api";
   import { isMac } from "../shortcuts";

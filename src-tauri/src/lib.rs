@@ -390,15 +390,18 @@ fn sessions_table_load(state: State<'_, AppState>) -> Vec<TableRow> {
 }
 
 /// Save the rows changed in File > Edit Sessions as Table… that are in one file (Saved or Private): each
-/// `(original id, fields)`, in one write and one backup ([`editing::save_many`]), all or none. Favorites, Recent,
+/// `(original id, fields)`, the id None for a new session, in one write and one backup ([`editing::save_many`]), all or
+/// none. Favorites, Recent,
 /// overrides and the Keychain password follow each renamed or moved session. Returns each session's id now. Database
 /// rows go one by one through db_session_save, which checks each against the table's version and locks.
 #[tauri::command]
-fn sessions_table_save(state: State<'_, AppState>, store: sessions::Store, edits: Vec<(String, editing::SessionFields)>) -> Result<Vec<String>, String> {
+fn sessions_table_save(state: State<'_, AppState>, store: sessions::Store, edits: Vec<(Option<String>, editing::SessionFields)>) -> Result<Vec<String>, String> {
     let path = store_file(&state, store)?;
     let ids = editing::save_many(&path, &edits, &other_ids(&state, store))?;
     for ((old, _), new) in edits.iter().zip(&ids) {
-        follow_id(&state, old, new);
+        if let Some(old) = old {
+            follow_id(&state, old, new);
+        }
     }
     Ok(ids)
 }

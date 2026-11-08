@@ -1,14 +1,23 @@
 /**
- * Columns a user can resize by dragging a heading's right edge (a double click puts it back), their widths kept
- * under `key` for every file transfer tab: the transfer list, and each side's files.
+ * Columns a user can resize by dragging a heading's right edge (a double click puts it back), their widths kept in
+ * the window's storage under a prefix and `key`: the file transfer tabs' (the transfer list, and each side's files),
+ * and File > Edit Sessions as Table…'s. Begun for the file transfer tabs, whose prefix is the default so their widths
+ * already kept stay.
  */
 export class ResizableColumns {
   widths = $state<number[]>([]);
 
+  /**
+   * @param key Which columns, under the prefix
+   * @param defaults Each column's width to start with, and after a double click
+   * @param minimum How narrow a column can be dragged
+   * @param prefix Whose columns: the file transfer tabs' by default
+   */
   constructor(
     private readonly key: string,
     private readonly defaults: number[],
     private readonly minimum = 30,
+    private readonly prefix = "sxt.transfer.",
   ) {
     this.widths = this.saved();
   }
@@ -21,7 +30,7 @@ export class ResizableColumns {
   /** The widths kept for `key`, or the defaults when none are kept (or they don't fit these columns) */
   private saved(): number[] {
     try {
-      const saved = JSON.parse(localStorage.getItem(`sxt.transfer.${this.key}`) ?? "null");
+      const saved = JSON.parse(localStorage.getItem(this.prefix + this.key) ?? "null");
       if (Array.isArray(saved) && saved.length === this.defaults.length && saved.every((w) => typeof w === "number")) return saved;
     } catch {
       // nothing saved: the defaults
@@ -29,12 +38,12 @@ export class ResizableColumns {
     return [...this.defaults];
   }
 
-  /** Keep the widths for every file transfer tab */
+  /** Keep the widths, for the next time the columns are shown */
   private save(): void {
     try {
-      localStorage.setItem(`sxt.transfer.${this.key}`, JSON.stringify(this.widths));
+      localStorage.setItem(this.prefix + this.key, JSON.stringify(this.widths));
     } catch {
-      // kept for this tab only
+      // kept while they're shown only
     }
   }
 

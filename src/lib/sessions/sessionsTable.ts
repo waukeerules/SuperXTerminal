@@ -1,13 +1,14 @@
 /**
  * File > Edit Sessions as Table…'s workings, apart from its window (SessionsTable.svelte): the columns, each row's
- * draft (its store and fields as edited), the per-column filters, which cells changed, what stops a save, and the
- * save itself.
+ * draft (its store and fields as edited), new sessions added as rows, the per-column filters, which cells changed,
+ * what stops a save, and the save itself.
  *
  * Saving goes in three steps, as each store saves differently:
- *   1. Saved and Private rows whose fields changed: one write per file (sessions_table_save), all of a file's or none.
- *   2. Database rows whose fields changed: one by one (db_session_save), each checked against the table's version and
- *      locks, and queued as pending while the table can't be reached, as Edit Session's are. One refused doesn't stop
- *      the others.
+ *   1. Saved and Private rows whose fields changed, and new ones: one write per file (sessions_table_save), all of a
+ *      file's or none.
+ *   2. Database rows whose fields changed, and new ones: one by one (db_session_save), each checked against the
+ *      table's version and locks, and queued as pending while the table can't be reached, as Edit Session's are. One
+ *      refused doesn't stop the others.
  *   3. Rows whose Store changed: moved there afterwards, as the tree's Move to does (sessions_transfer), once the
  *      sessions have been read again so the move finds them under their new ids.
  */
@@ -50,17 +51,40 @@ export const COLUMNS: Column[] = [
 /** What each store is called in the table */
 export const STORE_LABELS: Record<Store, string> = { saved: "Saved", private: "Private", database: "Database" };
 
-/** One row as it's being edited: the session as read, and its store and fields now */
+/**
+ * One row as it's being edited: the session as read (for a new one, its store and empty fields, with no id), its
+ * store and fields now, and a key that tells rows apart while new ones have no id yet
+ */
 export interface Draft {
   row: TableRow;
   store: Store;
   fields: SessionFields;
+  key: string;
 }
 
 /** A row's draft, its fields copied so editing them leaves the row as read */
 export function draftOf(row: TableRow): Draft {
-  return { row, store: row.store, fields: { ...row.fields } };
+  return { row, store: row.store, fields: { ...row.fields }, key: `${row.store}:${row.id}` };
 }
+
+/** How many new rows have been added, for their keys */
+let added = 0;
+
+/**
+ * A new session's row (New Session), in a store, with a new session's defaults as the core gives them
+ * (StoredSession::new): SSH on port 22, Default Settings, the computer icon. It has no id until it's saved
+ */
+export function newDraft(store: Store): Draft {
+  const fields: SessionFields = {
+    name: "", folder: "", protocol: "SSH", host: "", port: 22, username: "", profile: "Default Settings", color: "",
+    icon: "computer", highlightRules: "", extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "",
+    rdpOptions: "", sshAlgorithms: "", buttonBar: "",
+  };
+  return { row: { store, id: "", fields: { ...fields }, locked: false, lockedFields: "" }, store, fields, key: `new:${++added}` };
+}
+
+/** Whether a row is a new session, not saved yet */
+export const isNew = (draft: Draft): boolean => draft.row.id === "";
 
 /** A cell's text, as the filters match it: the store's name, the port as a number, the rest as written */
 export function cellText(draft: Draft, key: ColumnKey): string {
@@ -70,9 +94,11 @@ export function cellText(draft: Draft, key: ColumnKey): string {
 
 /**
  * Whether a row shows under the filters: each filter's text in its column's cell, ignoring case (Store's is a store,
- * or "" for all of them); empty filters match everything
+ * or "" for all of them); empty filters match everything. A new row always shows, so it can be filled in whatever the
+ * filters are
  */
 export function matches(draft: Draft, filters: Partial<Record<ColumnKey, string>>): boolean {
+  if (isNew(draft)) return true;
   return COLUMNS.every(({ key }) => {
     const filter = (filters[key] ?? "").trim().toLowerCase();
     if (!filter) return true;
@@ -86,13 +112,15 @@ export function matches(draft: Draft, filters: Partial<Record<ColumnKey, string>
  * where the one read is a number
  */
 export function changed(draft: Draft, key: ColumnKey): boolean {
+  // a new row is marked as a whole, not cell by cell
+  if (isNew(draft)) return false;
   if (key === "store") return draft.store !== draft.row.store;
   return String(draft.fields[key] ?? "").trim() !== String(draft.row.fields[key] ?? "").trim();
 }
 
-/** Whether any field changed (not counting the store) */
+/** Whether any field changed (not counting the store); a new row's are all to save */
 export function fieldsChanged(draft: Draft): boolean {
-  return COLUMNS.some(({ key }) => key !== "store" && changed(draft, key));
+  return isNew(draft) || COLUMNS.some(({ key }) => key !== "store" && changed(draft, key));
 }
 
 /** Whether anything in the row changed */
@@ -166,13 +194,15 @@ export async function saveDrafts(drafts: Draft[]): Promise<SaveReport> {
   const now = new Map<Draft, string>();
   const fields = (d: Draft): SessionFields => ({ ...d.fields, port: Number(d.fields.port) || 0 });
 
+  // a new row is saved where it's put; a row read is saved where it was, and moved afterwards
+  const home = (d: Draft): Store => (isNew(d) ? d.store : d.row.store);
   for (const store of ["saved", "private"] as const) {
-    const edits = todo.filter((d) => d.row.store === store);
+    const edits = todo.filter((d) => home(d) === store);
     const changedFields = edits.filter(fieldsChanged);
     for (const d of edits) if (!fieldsChanged(d)) now.set(d, d.row.id);
     if (!changedFields.length) continue;
     try {
-      const ids = await saveTable(store, changedFields.map((d) => [d.row.id, fields(d)]));
+      const ids = await saveTable(store, changedFields.map((d) => [isNew(d) ? null : d.row.id, fields(d)]));
       changedFields.forEach((d, i) => now.set(d, ids[i]));
       report.saved += changedFields.length;
     } catch (e) {
@@ -182,20 +212,20 @@ export async function saveDrafts(drafts: Draft[]): Promise<SaveReport> {
     }
   }
 
-  for (const d of todo.filter((d) => d.row.store === "database")) {
+  for (const d of todo.filter((d) => home(d) === "database")) {
     if (!fieldsChanged(d)) {
       now.set(d, d.row.id);
       continue;
     }
     try {
-      now.set(d, await saveSession("database", d.row.id, fields(d)));
+      now.set(d, await saveSession("database", isNew(d) ? null : d.row.id, fields(d)));
       report.saved++;
     } catch (e) {
-      report.problems.push(`${d.row.id.replace(/^@db\//, "")}: ${e}`);
+      report.problems.push(`${isNew(d) ? `New session ${d.fields.name.trim()}` : d.row.id.replace(/^@db\//, "")}: ${e}`);
     }
   }
 
-  const moves = todo.filter((d) => d.store !== d.row.store && now.has(d));
+  const moves = todo.filter((d) => !isNew(d) && d.store !== d.row.store && now.has(d));
   if (moves.length) {
     // the move finds sessions in what was last read: read them again, with the new ids
     await loadSessions();

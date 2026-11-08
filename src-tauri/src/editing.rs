@@ -136,15 +136,16 @@ pub fn save(path: &std::path::Path, original_id: Option<&str>, fields: &SessionF
     Ok(id)
 }
 
-/// Save many sessions of one file at once (File > Edit Sessions as Table…), each `(original id, fields)`, in one write
-/// and so one backup, where saving them one by one made a backup each and pushed the older ones out. All or nothing:
-/// the first that can't be saved (a name taken, none at all) stops it, naming the session, and the file is left as it
-/// was. Returns each session's id now, in the order given.
-pub fn save_many(path: &std::path::Path, edits: &[(String, SessionFields)], ids_elsewhere: &[String]) -> Result<Vec<String>, String> {
+/// Save many sessions of one file at once (File > Edit Sessions as Table…), each `(original id, fields)`, the id None
+/// for a new session, in one write and so one backup, where saving them one by one made a backup each and pushed the
+/// older ones out. All or nothing: the first that can't be saved (a name taken, none at all) stops it, naming the
+/// session, and the file is left as it was. Returns each session's id now, in the order given.
+pub fn save_many(path: &std::path::Path, edits: &[(Option<String>, SessionFields)], ids_elsewhere: &[String]) -> Result<Vec<String>, String> {
     let mut ids = Vec::with_capacity(edits.len());
     sessions::update_file(path, |list| {
         for (original, fields) in edits {
-            ids.push(put(list, Some(original), fields, ids_elsewhere).map_err(|e| format!("{original}: {e}"))?);
+            let which = original.clone().unwrap_or_else(|| format!("New session {}", fields.id()));
+            ids.push(put(list, original.as_deref(), fields, ids_elsewhere).map_err(|e| format!("{which}: {e}"))?);
         }
         Ok(())
     })?;
@@ -328,22 +329,28 @@ mod tests {
         save(&path, None, &sw2, &[]).unwrap();
 
         // a new host, and a move to another folder with the password still masked, in one write
+        // a new host, a move to another folder, and a new session
         let edits = vec![
-            ("Lab/sw1".to_string(), SessionFields { host: "10.9.9.1".into(), extra_args: mask_password("-pw cisco"), ..sw1.clone() }),
-            ("Lab/sw2".to_string(), SessionFields { folder: "Core".into(), ..sw2.clone() }),
+            (Some("Lab/sw1".to_string()), SessionFields { host: "10.9.9.1".into(), extra_args: mask_password("-pw cisco"), ..sw1.clone() }),
+            (Some("Lab/sw2".to_string()), SessionFields { folder: "Core".into(), ..sw2.clone() }),
+            (None, SessionFields { name: "sw3".into(), folder: "Lab".into(), host: "10.0.0.3".into(), ..Default::default() }),
         ];
-        assert_eq!(save_many(&path, &edits, &[]).unwrap(), ["Lab/sw1", "Core/sw2"]);
+        assert_eq!(save_many(&path, &edits, &[]).unwrap(), ["Lab/sw1", "Core/sw2", "Lab/sw3"]);
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains(r#"Host="10.9.9.1""#) && text.contains(r#"SessionId="Core/sw2""#), "{text}");
         assert!(text.contains(r#"ExtraArgs="-pw cisco""#), "the stored password is kept: {text}");
+        assert!(text.contains(r#"SessionId="Lab/sw3""#) && text.contains(r#"Host="10.0.0.3""#), "the new one is added: {text}");
 
         // a name taken stops the lot, naming the session, and the file stays as it was
         let clash = vec![
-            ("Lab/sw1".to_string(), SessionFields { host: "10.1.1.1".into(), ..sw1.clone() }),
-            ("Core/sw2".to_string(), SessionFields { folder: "Lab".into(), name: "sw1".into(), ..sw2.clone() }),
+            (Some("Lab/sw1".to_string()), SessionFields { host: "10.1.1.1".into(), ..sw1.clone() }),
+            (Some("Core/sw2".to_string()), SessionFields { folder: "Lab".into(), name: "sw1".into(), ..sw2.clone() }),
         ];
         let error = save_many(&path, &clash, &[]).unwrap_err();
         assert!(error.starts_with("Core/sw2: ") && error.contains("already"), "{error}");
+        let new_clash = vec![(None, SessionFields { name: "SW3".into(), folder: "lab".into(), ..Default::default() })];
+        let error = save_many(&path, &new_clash, &[]).unwrap_err();
+        assert!(error.starts_with("New session lab/SW3: ") && error.contains("already"), "{error}");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
         std::fs::remove_dir_all(&dir).unwrap();
     }

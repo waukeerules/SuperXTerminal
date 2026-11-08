@@ -1,8 +1,9 @@
 // File > Edit Sessions as Table…: every session in one table, filtered column by column, its cells edited in place
-// (text, Store, Folder, Icon, Colour), changed cells marked, and Save writing a file's rows in one go, Database's one
-// by one, and moving a row whose Store changed; Database rows the user can't change, or locked, left alone. The Rust
+// (text, Store, Folder, Icon, Colour), new sessions added as rows, columns resized and their widths kept, changed cells
+// marked, and Save writing a file's rows in one go, Database's one by one, and moving a row whose Store changed;
+// Database rows the user can't change, or locked, left alone. The Rust
 // side is stood in for by mockIPC, which records what each save was asked and answers as the core would.
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -42,6 +43,14 @@ beforeEach(() => {
     row("database", "@db/Branch/rtr1", { host: "172.16.0.1" }),
   ];
   calls = [];
+  // the window's storage, for the column widths: Node's own localStorage, which has no setItem without a file to
+  // keep it in, comes before jsdom's, so a Map stands in, empty for each test
+  const kept = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => kept.get(k) ?? null,
+    setItem: (k: string, v: string) => void kept.set(k, v),
+    removeItem: (k: string) => void kept.delete(k),
+  });
   savedReport = null;
   closed = false;
   mockIPC((cmd, args) => {
@@ -49,7 +58,7 @@ beforeEach(() => {
     calls.push({ cmd, args: a });
     if (cmd === "sessions_table_load") return rows;
     if (cmd === "sessions_table_save") {
-      return (a.edits as [string, SessionFields][]).map(([, f]) => (f.folder ? `${f.folder}/${f.name}` : f.name));
+      return (a.edits as [string | null, SessionFields][]).map(([, f]) => (f.folder ? `${f.folder}/${f.name}` : f.name));
     }
     if (cmd === "db_session_save") {
       const f = a.fields as SessionFields;
@@ -219,6 +228,81 @@ describe("Edit Sessions as Table", () => {
     expect(calls.some((c) => c.cmd === "sessions_transfer")).toBe(false);
     expect(savedReport).toBeNull();
     expect(closed).toBe(false);
+  });
+
+  it("adds a new session as a row at the top, in the store filtered on, shown whatever the filters, saved as new", async () => {
+    await open();
+    await userEvent.selectOptions(screen.getByLabelText("Filter Store"), "private");
+    await userEvent.type(screen.getByLabelText("Filter Host"), "nothing like it");
+    await userEvent.click(screen.getByRole("button", { name: "New Session" }));
+    expect(shownIds()).toEqual(["New session"]);
+    const added = () => screen.getByRole("row", { name: "New session" });
+    expect((within(added()).getByLabelText("Store") as HTMLSelectElement).value).toBe("private");
+    // the name to type first, and a row with none can't be saved
+    expect(document.activeElement).toBe(within(added()).getByLabelText("Name"));
+    expect(screen.getByRole("status").textContent).toContain("needs a name");
+    await userEvent.type(within(added()).getByLabelText("Name"), "nas2");
+    await userEvent.type(within(added()).getByLabelText("Host"), "192.168.0.6");
+    await userEvent.click(within(added()).getByRole("button", { name: "Folder" }));
+    await userEvent.type(within(added()).getByLabelText("Folder"), "Home{Enter}");
+
+    // a second one, taken away again before it's saved
+    await userEvent.click(screen.getByRole("button", { name: "New Session" }));
+    expect(screen.getAllByRole("row", { name: "New session" })).toHaveLength(2);
+    await userEvent.click(within(screen.getAllByRole("row", { name: "New session" })[0]).getByRole("button", { name: "Remove new session" }));
+    expect(screen.getAllByRole("row", { name: "New session" })).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await expect.poll(() => savedReport).toBe("Saved 1 session");
+    const save = calls.find((c) => c.cmd === "sessions_table_save")!;
+    expect(save.args.store).toBe("private");
+    const [[id, fields]] = save.args.edits as [string | null, SessionFields][];
+    expect(id).toBeNull();
+    expect(fields).toMatchObject({ name: "nas2", folder: "Home", host: "192.168.0.6", protocol: "SSH", port: 22, icon: "computer" });
+    // made where it was put, not moved there
+    expect(calls.some((c) => c.cmd === "sessions_transfer")).toBe(false);
+  });
+
+  it("saves a new session put in Database as a new row there", async () => {
+    await open();
+    await userEvent.click(screen.getByRole("button", { name: "New Session" }));
+    const added = screen.getByRole("row", { name: "New session" });
+    expect((within(added).getByLabelText("Store") as HTMLSelectElement).value).toBe("saved");
+    await userEvent.selectOptions(within(added).getByLabelText("Store"), "database");
+    await userEvent.type(within(added).getByLabelText("Name"), "rtr9");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await expect.poll(() => savedReport).toBe("Saved 1 session");
+    const db = calls.filter((c) => c.cmd === "db_session_save");
+    expect(db.map((c) => [c.args.originalId, (c.args.fields as SessionFields).name])).toEqual([[null, "rtr9"]]);
+    expect(calls.some((c) => c.cmd === "sessions_table_save" || c.cmd === "sessions_transfer")).toBe(false);
+  });
+
+  it("resizes a column by dragging its heading's edge, keeps the width for next time, and a double click puts it back", async () => {
+    // jsdom has no pointer capture; the drag's moves come to the grip either way
+    HTMLElement.prototype.setPointerCapture ??= () => {};
+    const { unmount } = render(SessionsTable, {
+      loaded, db: dbOn, colors: new EnvironmentColors([], []), customs: new Map(), onSaved: () => {}, onClose: () => {},
+    });
+    await screen.findByRole("row", { name: "Lab/core1" });
+    const hostCol = () => document.querySelectorAll("col")[6] as HTMLElement;
+    expect(hostCol().style.width).toBe("160px");
+    const grip = screen.getByRole("separator", { name: "Resize Host" });
+    const pointer = (type: string, clientX: number) => {
+      const event = new MouseEvent(type, { clientX, bubbles: true, cancelable: true });
+      Object.defineProperty(event, "pointerId", { value: 1 });
+      grip.dispatchEvent(event);
+    };
+    pointer("pointerdown", 500);
+    pointer("pointermove", 580);
+    pointer("pointerup", 580);
+    await expect.poll(() => hostCol().style.width).toBe("240px");
+
+    // kept: the next time the window opens
+    unmount();
+    await open();
+    expect(hostCol().style.width).toBe("240px");
+    await fireEvent.dblClick(screen.getByRole("separator", { name: "Resize Host" }));
+    await expect.poll(() => hostCol().style.width).toBe("160px");
   });
 
   it("asks before dropping changes on Cancel, and keeps them when told to", async () => {

@@ -495,8 +495,8 @@ export function loadTable(): Promise<TableRow[]> {
 /**
  * Save the rows changed in Edit Sessions as Table… that are in one file, Saved or Private, in one write: all or none.
  * Returns each session's id now, in the order given
- * @param edits each session's id before the change, and its fields now
+ * @param edits each session's id before the change (null for a new session), and its fields now
  */
-export function saveTable(store: Exclude<Store, "database">, edits: [string, SessionFields][]): Promise<string[]> {
+export function saveTable(store: Exclude<Store, "database">, edits: [string | null, SessionFields][]): Promise<string[]> {
   return invoke<string[]>("sessions_table_save", { store, edits });
 }

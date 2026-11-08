@@ -35,9 +35,10 @@ export const context: {
   sessionOf: (key: string) => SessionView | undefined;
   /**
    * Choose a session in the Quick Selector, over whatever dialog is open (a Jump host field's ▾): `except`, a
-   * "store:id", is left out (a session can't be its own jump host)
+   * "store:id", is left out (a session can't be its own jump host); `current`, the field's value now, is ticked,
+   * highlighted and in view
    */
-  pickSession: (title: string, onChoose: (session: SessionView) => void, except?: string) => void;
+  pickSession: (title: string, onChoose: (session: SessionView) => void, except?: string, current?: string) => void;
 } = $state({
   tabs: null,
   sessionBar: () => "",

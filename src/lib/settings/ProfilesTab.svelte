@@ -632,7 +632,7 @@
       <label>{@render caption("Jump host", "jumpHost")}<input bind:value={draft.jumpHost} placeholder="a saved session (▾), or admin@10.0.0.1:22" />
         <!-- a saved session to go through, found by its name or folder -->
         <button aria-label="Choose a session as the jump host" title="Choose a saved session to go through"
-          onclick={() => context.pickSession("Jump Host", (s) => (draft.jumpHost = jumpHostOf(s)))}>▾</button></label>
+          onclick={() => context.pickSession("Jump Host", (s) => (draft.jumpHost = jumpHostOf(s)), undefined, draft.jumpHost)}>▾</button></label>
       <p class="note under" role="note" aria-label="What a jump server needs">{JUMP_HOST_NEEDS}</p>
       <label>{@render caption("Host", "host")}<input bind:value={draft.host} placeholder="none; e.g. example.cyberark.cloud" /></label>
       <p class="note under">Used, at the Port above, by sessions with no host of their own, as a PuTTY saved session's

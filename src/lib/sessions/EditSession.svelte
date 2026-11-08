@@ -559,7 +559,7 @@
           placeholder={inherited("jumpHost") || (jumpVia ? `${jumpVia.host} (from ${jumpVia.from})` : "none; or a saved session (▾), e.g. Bastions/bastion1, or admin@10.0.0.1:22")} /></label>
         <!-- a saved session to go through, found by its name or folder (this session left out) -->
         <button class="pick" disabled={locked("jump_host")} aria-label="Choose a session as the jump host" title="Choose a saved session to go through"
-          onclick={() => context.pickSession("Jump Host", (s) => (draft.jumpHost = jumpHostOf(s)), id === null ? undefined : `${store}:${id}`)}>▾</button>
+          onclick={() => context.pickSession("Jump Host", (s) => (draft.jumpHost = jumpHostOf(s)), id === null ? undefined : `${store}:${id}`, draft.jumpHost)}>▾</button>
       </div>
       {@render missing(missingVariables.jumpHost)}
       <p class="note" role="note" aria-label="What a jump server needs">{JUMP_HOST_NEEDS}</p>

@@ -24,7 +24,7 @@
   import ScriptStatus from "./lib/commands/ScriptStatus.svelte";
   import Ask from "./lib/scripting/Ask.svelte";
   import PasteCheck from "./lib/terminal/PasteCheck.svelte";
-  import { context, openingLanguage, openingScriptWarning, rhaiEnvReady, storeLabel, runRhaiIn, runScriptIn } from "./lib/commands/sending.svelte";
+  import { context, jumpHostOf, openingLanguage, openingScriptWarning, rhaiEnvReady, storeLabel, runRhaiIn, runScriptIn } from "./lib/commands/sending.svelte";
   import { saveSettings } from "./lib/settings/store.svelte";
   import type { CustomIcon } from "./lib/icons/custom";
   import Menu, { type MenuItem } from "./lib/ui/Menu.svelte";
@@ -99,7 +99,7 @@
    * The Quick Selector showing (Switch Session, Open Session…); `tabList` when a ▾ opened it; `keepFocus` when a dialog
    * opened it (a Jump host's ▾), whose field the focus stays with rather than going to the terminal
    */
-  let quick = $state<{ title: string; items: QuickItem[]; choose: (item: QuickItem) => void; tabList?: boolean; keepFocus?: boolean } | null>(null);
+  let quick = $state<{ title: string; items: QuickItem[]; choose: (item: QuickItem) => void; tabList?: boolean; keepFocus?: boolean; startOnCurrent?: boolean } | null>(null);
   let databaseOpen = $state(false);
   let editorOpen = $state(false);
   let customs = $state<ReadonlyMap<string, CustomIcon>>(new Map());
@@ -209,16 +209,25 @@
     context.editVariables = () => (variablesOpen = true);
     context.sessionBar = (key) => tree?.sessionByKey(key)?.buttonBar ?? "";
     context.sessionOf = (key) => tree?.sessionByKey(key);
-    context.pickSession = (title, onChoose, except) => {
+    context.pickSession = (title, onChoose, except, current) => {
       const t = tree;
       if (!t) return;
       const sessions = t.allSessions().filter((s) => `${s.store}:${s.id}` !== except);
+      // the session the field names now: as the ▾ writes it ("Private/Live Test/Media Server"), else a path alone,
+      // in Saved, Private, then Database sessions
+      const wanted = (current ?? "").trim().toLowerCase();
+      const path = (s: SessionView) => s.id.replace(/^@db\//, "").toLowerCase();
+      const chosen = !wanted ? undefined
+        : sessions.find((s) => jumpHostOf(s).toLowerCase() === wanted)
+          ?? (["saved", "private", "database"] as const).map((store) => sessions.find((s) => s.store === store && path(s) === wanted)).find(Boolean);
       quick = {
         title,
         keepFocus: true,
+        startOnCurrent: true,
         // the list each is in, a column of its own: the same path can be in more than one
         items: sessions.map((s) => ({
           key: `${s.store}:${s.id}`, name: s.name, detail: s.id.replace(/^@db\//, ""), group: storeLabel(s.store), icon: s.icon, environment: t.environmentOf(s),
+          current: s === chosen,
         })),
         choose: (item) => {
           const session = sessions.find((s) => `${s.store}:${s.id}` === item.key);
@@ -909,7 +918,7 @@
 {/if}
 
 {#if quick}
-  <QuickSelector title={quick.title} items={quick.items} {customs}
+  <QuickSelector title={quick.title} items={quick.items} {customs} startOnCurrent={quick.startOnCurrent}
     onChoose={(item) => { const q = quick; quick = null; q?.choose(item); if (!q?.keepFocus) setTimeout(() => tabs?.focusActive(), 50); }}
     onClose={() => { const q = quick; quick = null; if (!q?.keepFocus) tabs?.focusActive(); }} />
 {/if}

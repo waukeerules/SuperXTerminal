@@ -59,3 +59,14 @@ describe("the Quick Selector's ✕", () => {
     expect([closed, chosen]).toEqual([1, 0]);
   });
 });
+
+describe("the Quick Selector for what's chosen now", () => {
+  it("starts on the ticked item, so the current choice is plain, rather than the first that isn't", () => {
+    const item = (key: string, current = false): QuickItem => ({ key, name: key, detail: `Live Test/${key}`, group: "Private", icon: "server", environment: null, current });
+    const items = [item("a"), item("b"), item("c", true), item("d")];
+    render(QuickSelector, { title: "Jump Host", items, customs: new Map(), onChoose: () => {}, onClose: () => {}, startOnCurrent: true });
+    const highlighted = screen.getAllByRole("option").find((o) => o.getAttribute("aria-selected") === "true");
+    expect(highlighted?.textContent).toContain("c");
+    expect(highlighted?.textContent).toContain("✓");
+  });
+});

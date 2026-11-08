@@ -40,9 +40,14 @@
     onChoose: (item: QuickItem) => void;
     /** Escape, or a click outside the window */
     onClose: () => void;
+    /**
+     * Start on the ticked item (a Jump host's ▾: the session it names now), in view, rather than the first that
+     * isn't (Switch Session: the next tab, so Enter switches)
+     */
+    startOnCurrent?: boolean;
   }
 
-  let { title, items, customs, onChoose, onClose }: Props = $props();
+  let { title, items, customs, onChoose, onClose, startOnCurrent = false }: Props = $props();
 
   let text = $state("");
   let index = $state(0);
@@ -57,10 +62,14 @@
       .sort((a, b) => a.detail.localeCompare(b.detail, undefined, { sensitivity: "base", numeric: true })),
   );
 
-  // a new filter starts again at the top, on the first that isn't the active tab, so Enter switches
+  // a new filter starts again at the top, on the first that isn't the active tab, so Enter switches; or on the ticked
+  // one, in view, for a picker of what's chosen now
   $effect(() => {
     void words;
-    index = Math.max(0, untrack(() => shown).findIndex((item) => !item.current));
+    const rows = untrack(() => shown);
+    index = Math.max(0, startOnCurrent ? rows.findIndex((item) => item.current) : rows.findIndex((item) => !item.current));
+    // (jsdom, in the tests, has no scrolling)
+    if (startOnCurrent) void tick().then(() => list?.querySelector(".row.current")?.scrollIntoView?.({ block: "nearest" }));
   });
 
   /** Move the highlight up or down, keeping it in view */

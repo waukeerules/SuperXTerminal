@@ -427,9 +427,9 @@ describe("Edit Session's Connection tab", () => {
 
 describe("Edit Session's Jump host ▾", () => {
   it("fills the jump host with a saved session chosen by its name or folder, leaving this session out", async () => {
-    const asked: [string, string | undefined][] = [];
-    context.pickSession = (title, onChoose, except) => {
-      asked.push([title, except]);
+    const asked: [string, string | undefined, string | undefined][] = [];
+    context.pickSession = (title, onChoose, except, current) => {
+      asked.push([title, except, current]);
       // a Database session: its path without the "@db/" its id has
       onChoose({ store: "database", id: "@db/Bastions/bastion1", name: "bastion1" } as never);
     };
@@ -437,7 +437,7 @@ describe("Edit Session's Jump host ▾", () => {
     open();
     await user.click(screen.getByRole("tab", { name: "Connection" }));
     await user.click(screen.getByRole("button", { name: "Choose a session as the jump host" }));
-    expect(asked).toEqual([["Jump Host", "saved:Lab/sw1"]]);
+    expect(asked).toEqual([["Jump Host", "saved:Lab/sw1", ""]]);
     // its list first, so it's that session where the same path is in another list
     expect((within(screen.getByRole("tabpanel", { name: "Connection" })).getByLabelText(/Jump host/) as HTMLInputElement).value).toBe("Database/Bastions/bastion1");
     context.pickSession = () => {};

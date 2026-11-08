@@ -421,7 +421,7 @@ export class PageHost implements ScriptTarget {
         break;
       case "size":
         this.size = { cols: Number(message.cols), rows: Number(message.rows) };
-        if (this.ptyId !== null) await invoke("pty_resize", { id: this.ptyId, ...this.size });
+        if (this.ptyId !== null) await this.resizePty();
         break;
       case "input":
         // the tab asking for a username, before ssh starts
@@ -632,6 +632,14 @@ export class PageHost implements ScriptTarget {
    * far end has answered
    */
   private heard(output: string): void {
+    // the session's first text: a size kept from before it goes now
+    if (!this.printed && hasText(output)) {
+      this.printed = true;
+      if (this.sizeHeld) {
+        this.sizeHeld = false;
+        void this.resizePty();
+      }
+    }
     if (this.answered || this.answeredTimer || !hasText(output)) return;
     this.answeredTimer = setTimeout(() => {
       this.answeredTimer = null;
@@ -646,6 +654,8 @@ export class PageHost implements ScriptTarget {
     if (this.answeredTimer) clearTimeout(this.answeredTimer);
     this.answeredTimer = null;
     this.answered = false;
+    this.printed = false;
+    this.sizeHeld = false;
   }
 
   /**
@@ -1081,9 +1091,27 @@ export class PageHost implements ScriptTarget {
   private async openPty(args: { target: Target; onEvent: ReturnType<PageHost["outputChannel"]>; loginAs: string | null }): Promise<void> {
     const opening = { ...this.size };
     this.ptyId = await invoke<number>("pty_open", { ...args, ...opening });
-    if (this.size.cols !== opening.cols || this.size.rows !== opening.rows) {
-      await invoke("pty_resize", { id: this.ptyId, ...this.size }).catch(() => {});
+    if (this.size.cols !== opening.cols || this.size.rows !== opening.rows) await this.resizePty();
+  }
+
+  /**
+   * Whether the session has printed any text since it (re)started, and whether a resize is waiting for that. On
+   * Windows the pseudo console (ConPTY) printed the program's first line twice ("Last login: ..." on two lines) about
+   * a third of the time when it was resized before the program had printed anything, as every tab is in its first
+   * moments (Wrap Lines off's width, the height settling). Seen in captures of ssh logins through ConPTY, 8 of 8 clean
+   * with no resize or one after the first text. So until then the size is kept, and sent once text comes
+   */
+  private printed = false;
+  private sizeHeld = false;
+
+  /** Tell the pseudo terminal the page's size now, or, on Windows before the session's first text, once it comes */
+  private async resizePty(): Promise<void> {
+    if (this.ptyId === null) return;
+    if (!isMac && !this.printed) {
+      this.sizeHeld = true;
+      return;
     }
+    await invoke("pty_resize", { id: this.ptyId, ...this.size }).catch(() => {});
   }
 
   /** Run the profile's key fetch here; whether it ended well (exit code 0) */

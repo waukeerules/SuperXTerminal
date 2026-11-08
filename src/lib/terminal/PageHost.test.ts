@@ -201,7 +201,31 @@ describe("a session's tab size", () => {
     await expect.poll(() => openedAt).toEqual({ cols: 80, rows: 24 });
     page({ type: "size", cols: 132, rows: 45 });
     answer();
+    // on Windows, once the session has printed something (the next test says why)
+    await expect.poll(() => channel).not.toBeNull();
+    (channel!.onmessage as (e: unknown) => void)({ type: "data", data: btoa("(admin@192.168.0.50) Password: ") });
     await expect.poll(() => resized.at(-1)).toEqual({ cols: 132, rows: 45 });
+  });
+
+  it("waits on Windows for the session's first text, then goes once, at the latest size", async () => {
+    // ConPTY printed ssh's first line twice ("Last login" on two lines) about a third of the time when it was resized
+    // before ssh had printed anything, as a tab is while Wrap Lines off's width and its height settle
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    const send = (event: unknown) => (channel!.onmessage as (e: unknown) => void)(event);
+    send({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "root" }, link: "pty" });
+    page({ type: "size", cols: 300, rows: 39 });
+    page({ type: "size", cols: 300, rows: 44 });
+    // ConPTY's own codes and a blank redraw aren't the session's text
+    send({ type: "data", data: btoa("\x1b[6n\x1b[?9001h\x1b[?25l\x1b[K\r\n\x1b[K\x1b[H\x1b[?25h") });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(resized).toEqual([]);
+    send({ type: "data", data: btoa("Last login: Sat Nov  7 19:22:42 2026 from 192.168.0.25\r\n") });
+    await expect.poll(() => resized).toEqual([{ cols: 300, rows: 44 }]);
+    // from then on, as the page gives it
+    page({ type: "size", cols: 250, rows: 44 });
+    await expect.poll(() => resized.at(-1)).toEqual({ cols: 250, rows: 44 });
   });
 
   it("isn't sent again when it hasn't changed since the session started", async () => {

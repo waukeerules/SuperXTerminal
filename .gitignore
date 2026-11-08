@@ -15,3 +15,5 @@ node_modules/
 
 # Tabs' raw output from SUPERXTERMINAL_CAPTURE (docs/TESTING.md): a session's own output, never committed
 /captures/
+
+.claude

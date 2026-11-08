@@ -121,7 +121,10 @@ fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
     let password = password
         .filter(|p| !p.is_empty())
         .or_else(|| crate::profiles::password(if profile.is_empty() { "Default Settings" } else { profile }))
-        .or_else(|| crate::profiles::password("Default Settings"));
+        .or_else(|| crate::profiles::password("Default Settings"))
+        // a 1Password reference (op://...) in its place: read from 1Password now (onepassword.rs)
+        .map(|p| crate::onepassword::resolved(&p))
+        .filter(|p| !p.is_empty());
     let defaults = state.settings.lock().unwrap().rdp_defaults.clone();
     let options = crate::rdp_options::RdpOptions::effective(&defaults, session.get("RdpOptions"));
     Ok(Target { host, port: if port == 0 { 3389 } else { port }, domain, username, password, options })
@@ -144,8 +147,9 @@ pub const LOGIN_NEEDED: &str = "RDP_LOGIN_NEEDED";
 /// Connect a tab to a session's Remote Desktop; returns its id, the desktop's size and how to show it. `width` and
 /// `height` are the tab's in points and `scale` the screen's (200 on Retina): the desktop is that size in points, in
 /// Retina pixels with the Retina option, or the options' fixed size. `username` and `password` are ones typed in the
-/// tab for this connection (never stored).
-#[tauri::command]
+/// tab for this connection (never stored). async: a 1Password reference for its password waits for the user's
+/// approval, which mustn't hold up the window
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn rdp_open(
     window: tauri::WebviewWindow,

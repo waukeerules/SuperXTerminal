@@ -118,6 +118,8 @@ pub fn values(user_folder: &Path) -> HashMap<String, String> {
 /// Save the window's variables. A secret's empty value keeps what's stored; a typed one replaces it. Removed
 /// variables' secrets are forgotten.
 pub fn save(user_folder: &Path, variables: &[Variable]) -> Result<(), String> {
+    // a reference changed, or its secret in 1Password: read afresh next time
+    crate::onepassword::forget();
     let old = read_entries(&file(user_folder));
     let mut entries = Vec::new();
     for variable in variables {
@@ -172,7 +174,8 @@ fn forget(key: &str) {
     let _ = secrets::set(&account(key), "");
 }
 
-/// Replace each `{key}` with its value in one pass; undefined keys stay, as SessionVariables.Substitute
+/// Replace each `{key}` with its value in one pass; undefined keys stay, as SessionVariables.Substitute. A value that's
+/// a 1Password reference (op://vault/item/field) is read from 1Password here, only when it's used (onepassword.rs)
 pub fn substitute(text: &str, values: &HashMap<String, String>) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -182,7 +185,7 @@ pub fn substitute(text: &str, values: &HashMap<String, String>) -> String {
         match after.find('}') {
             Some(close) if close > 0 && after[..close].chars().all(|c| c.is_alphanumeric() || c == '_') => {
                 match values.get(&after[..close].to_lowercase()) {
-                    Some(value) => out.push_str(value),
+                    Some(value) => out.push_str(&crate::onepassword::resolved(value)),
                     None => out.push_str(&rest[open..open + close + 2]),
                 }
                 rest = &after[close + 1..];

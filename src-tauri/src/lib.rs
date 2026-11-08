@@ -6,6 +6,7 @@ mod askpass;
 mod buttonbars;
 mod cli;
 mod charset;
+mod onepassword;
 mod clipboard;
 mod command_history;
 mod command_tap;
@@ -887,7 +888,8 @@ fn sessions_import_source(kind: String) -> Option<String> {
 
 /// Open a session in another app: "open" for RDP (Windows App) and VNC (Screen Sharing), "terminal" for Connect
 /// external (its ssh command in a Terminal window), "filezilla" for FileZilla; returns what to say in the status bar
-#[tauri::command]
+// async: a 1Password reference in its values waits for the user's approval, which mustn't hold up the window
+#[tauri::command(async)]
 fn session_external(state: State<'_, AppState>, store: sessions::Store, id: String, how: String) -> Result<String, String> {
     let profiles = state.profiles.lock().unwrap().clone();
     let values = variables::values(&state.user_folder);
@@ -1880,6 +1882,13 @@ fn sessions_export_csv(state: State<'_, AppState>, items: Option<Vec<(sessions::
     Ok((list.len(), masked))
 }
 
+/// Settings > General's Check 1Password: whether its CLI works here, through the 1Password app (onepassword.rs).
+/// async: it waits for the user to approve it in 1Password
+#[tauri::command(async)]
+fn onepassword_check() -> Result<String, String> {
+    onepassword::check()
+}
+
 /// Save a CSV template for File > Import Sessions: the columns, with example rows to copy (importing::template)
 #[tauri::command]
 fn sessions_csv_template(path: PathBuf) -> Result<(), String> {
@@ -2825,6 +2834,7 @@ pub fn run() {
             sessions_bulk_edit,
             sessions_export_csv,
             sessions_csv_template,
+            onepassword_check,
             window_new,
             layouts_list,
             applog_since,

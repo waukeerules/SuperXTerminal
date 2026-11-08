@@ -328,6 +328,8 @@ pub fn password(profile: &str) -> Option<String> {
 
 /// Store a profile's password, or forget it when `password` is empty
 pub fn set_password(profile: &str, password: &str) -> Result<(), String> {
+    // a 1Password reference changed: read afresh next time
+    crate::onepassword::forget();
     secrets::set(&account(profile), password)
 }
 

@@ -824,7 +824,11 @@ fn ssh(
         .or_else(|| Some(session.id()).filter(|id| !id.is_empty() && !log_in_here).and_then(crate::session_passwords::get))
         .or_else(|| extra.password.clone())
         .or_else(|| profiles.password_along(&profile.name))
-        .or_else(|| if profile.name == default.name { None } else { profiles::password(&default.name) });
+        .or_else(|| if profile.name == default.name { None } else { profiles::password(&default.name) })
+        // a 1Password reference (op://...) in its place: read from 1Password now; one that can't be read leaves ssh
+        // to ask in the tab, and the tab says why (onepassword.rs)
+        .map(|p| crate::onepassword::resolved(&p))
+        .filter(|p| !p.is_empty());
     if port != 0 && port != 22 {
         args.extend(["-p".into(), port.to_string()]);
     }
@@ -1801,6 +1805,29 @@ mod tests {
         assert_eq!(notices, ["Connecting to 10.0.0.1 through the jump host me@bastion:22, from the session's Jump host."]);
         // none: nothing said
         assert_eq!(said(&[]).1, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_password_or_placeholder_that_is_a_1password_reference_is_read_from_1password() {
+        crate::onepassword::keep("op://Lab/launch-test/password", "s3cret");
+        let folder = std::env::temp_dir().join(format!("sxt-op-launch-{}", std::process::id()));
+        // the session's own password, a reference
+        crate::session_passwords::set(&folder, "Lab/op-own", "op://Lab/launch-test/password").unwrap();
+        let own = launch(&Sessions::default(), &profiles(), &HashMap::new(), &BTreeMap::new(), Store::Saved,
+            &StoredSession { attributes: vec![("SessionId".into(), "Lab/op-own".into()), ("Host".into(), "10.0.0.1".into())] }).unwrap();
+        crate::session_passwords::set(&folder, "Lab/op-own", "").unwrap();
+        assert_eq!(own.password.as_deref(), Some("s3cret"));
+        // an Environment Variable that's a reference, in -pw {admin_password}
+        let values: HashMap<String, String> = [("admin_password".to_string(), "op://Lab/launch-test/password".to_string())].into();
+        let placeholder = launch(&Sessions::default(), &profiles(), &values, &BTreeMap::new(), Store::Saved, &session(&[("ExtraArgs", "-pw {admin_password}")])).unwrap();
+        assert_eq!(placeholder.password.as_deref(), Some("s3cret"));
+        // one that can't be read: no password (ssh asks in the tab), and why, for the tab to say
+        crate::onepassword::take_problems();
+        let values: HashMap<String, String> = [("admin_password".to_string(), "op://Lab/launch-test-missing/password".to_string())].into();
+        let unread = launch(&Sessions::default(), &profiles(), &values, &BTreeMap::new(), Store::Saved, &session(&[("ExtraArgs", "-pw {admin_password}")])).unwrap();
+        assert_eq!(unread.password, None);
+        assert_eq!(crate::onepassword::take_problems(), ["op://Lab/launch-test-missing/password wasn't read: no op in the tests."]);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

@@ -269,9 +269,10 @@ impl Ptys {
 ///
 /// Returns the id the tab uses for the other calls; Err when the session can't start on this Mac. `login_as` is the
 /// username typed at the tab's "login as:", when the launch asked for one (launch::USERNAME_NEEDED).
-// each of the page's arguments is a parameter of its own, as Tauri passes them
+// each of the page's arguments is a parameter of its own, as Tauri passes them. async: off the window's own thread,
+// as a 1Password reference in its password or values waits for the user to approve it (onepassword.rs)
 #[allow(clippy::too_many_arguments)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pty_open(
     window: tauri::WebviewWindow,
     ptys: State<'_, Ptys>,
@@ -292,6 +293,8 @@ pub fn pty_open(
         session
     };
     let values = crate::variables::values(&state.user_folder);
+    // what a 1Password reference read for another use left unsaid isn't this tab's to say
+    crate::onepassword::take_problems();
     let (serial_devices, overrides_on) = {
         let settings = state.settings.lock().unwrap();
         (settings.serial_devices.clone(), settings.use_local_overrides)
@@ -324,6 +327,8 @@ pub fn pty_open(
     };
     let launch = launch.inspect_err(|e| crate::applog::warn(format!("Couldn't open {what}: {e}")));
     let Launch { mut command, password, local, mut notices, look, stream, server_load, .. } = launch?;
+    // a 1Password reference that couldn't be read (op missing, not approved...): the tab says why, as it opens
+    let unread = crate::onepassword::take_problems();
     crate::applog::info(format!("Opening {what} in {}", window.label()));
     // an SSH session: its command goes in the app's log, and with Verbose SSH (Settings > General) ssh tells the tab
     // how connecting and logging in went; -v right after the program, as the host and any remote command come last
@@ -353,6 +358,9 @@ pub fn pty_open(
     let outlet = Outlet::new(on_event, charset);
     outlet.0.lock().unwrap().captured(&format!("OPEN {cols}x{rows}"));
     outlet.send(PtyEvent::Started { local, look, link: link.into() });
+    for text in unread {
+        outlet.send(PtyEvent::Notice { text, kind: "warn".into() });
+    }
     for text in notices {
         outlet.send(PtyEvent::Notice { text, kind: "info".into() });
     }

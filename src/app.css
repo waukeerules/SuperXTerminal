@@ -116,3 +116,29 @@ input[type="radio"] {
 :root[data-own-theme] {
   scrollbar-color: var(--text-muted) var(--bg-pane);
 }
+
+/*
+ * A theme of the user's own: the tab strip (dockview, TabArea.ts) in its colours. dockview's Light and Dark themes
+ * have colours of their own, white and #f3f3f3 or #1e1e1e and #252526, which a theme of the user's own doesn't
+ * change: the strip, its tabs and their text are drawn here from the theme's instead. The tab in front is the panes'
+ * colour, as dockview's is its page's; tabs behind are the bars' colour, their text dimmed as dockview dims it.
+ */
+:root[data-own-theme] .dockview-theme-light,
+:root[data-own-theme] .dockview-theme-dark {
+  --dv-group-view-background-color: var(--bg-pane);
+  --dv-tabs-and-actions-container-background-color: var(--bg-bar);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--bg-pane);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--bg-bar);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg-pane);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg-bar);
+  --dv-tab-divider-color: var(--border);
+  --dv-activegroup-visiblepanel-tab-color: var(--text);
+  --dv-activegroup-hiddenpanel-tab-color: color-mix(in srgb, var(--text) 70%, transparent);
+  --dv-inactivegroup-visiblepanel-tab-color: color-mix(in srgb, var(--text) 70%, transparent);
+  --dv-inactivegroup-hiddenpanel-tab-color: color-mix(in srgb, var(--text) 45%, transparent);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-tabs-container-scrollbar-color: var(--text-muted);
+  --dv-context-menu-background-color: var(--bg-pane);
+  --dv-context-menu-color: var(--text);
+}

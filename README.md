@@ -150,8 +150,8 @@ and works the same on the Mac and on Windows. It's built with [Tauri 2](https://
 | **Settings.** The terminal's theme, font, cursor, highlighting, wrapping, line numbers, scrollback and paste check, for every tab. | **Profiles.** PuTTY-style profiles that sessions name: login, keys (fetched short-lived ones too), jump hosts, CyberArk, tunnels, older algorithms, colours and the button bar, each based on another if you like. |
 | ![The Script Editor with a Rhai script](docs/screenshots/script-editor.png) | ![A Rhai script's result in the status bar](docs/screenshots/rhai-script.png) |
 | **Scripts.** Rhai or SPSL, checked as you type, with the commands beside them and the team's saved scripts. Run one in the tabs you pick, or put it on a button. | **Rhai at work.** cisco-tour.rhai logs into enable mode, reads `show version` and `show ip interface brief`, and puts what it found in the status bar. |
-| ![Environment Variables](docs/screenshots/environment-variables.png) | |
-| **Environment Variables.** Your own values for the `{placeholders}` in shared sessions, folders and profiles, with where each is used, 1Password references, and a warning for any used but not set. | |
+| ![Environment Variables](docs/screenshots/environment-variables.png) | ![A Remote Desktop tab](docs/screenshots/remote-desktop.png) |
+| **Environment Variables.** Your own values for the `{placeholders}` in shared sessions, folders and profiles, with where each is used, 1Password references, and a warning for any used but not set. | **Remote Desktop.** Windows machines in a tab of their own, beside the terminals, drawn by the app itself rather than another program's window. |
 
 ## Features
 

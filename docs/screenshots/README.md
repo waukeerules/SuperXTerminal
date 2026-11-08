@@ -38,7 +38,14 @@ position aren't read or changed. What it opens with:
 
 Everything is in `src-tauri/demo/` (sessions, button bars, the layout, and each device's answers in `devices/`) and
 `src-tauri/src/demo.rs`; the folder is made again at every demo start, so changes made while demoing are gone the next
-time. Not in demo mode yet: Remote Desktop, which still needs a real server.
+time.
+
+Remote Desktop needs a real Windows machine. Name a test one and the demo's win-jump session connects to it; its
+address goes only into the demo's own folder, and the tab asks for the password:
+
+```bash
+SUPERXTERMINAL_DEMO=1 SUPERXTERMINAL_DEMO_RDP=admin@<test machine> npm run tauri dev
+```
 
 ## Taking them
 
@@ -57,8 +64,9 @@ screencapture -i -w -o docs/screenshots/<name>.png
 | `file-transfer.png` | core-sw-01's file transfer over SCP, widened, an IOS image downloading |
 | `settings-terminal.png` | Settings > Terminal |
 | `settings-profiles.png` | Settings > Profiles, with Linux servers chosen |
+| `remote-desktop.png` | win-jump's Remote Desktop tab (a test Windows 11 machine), widened |
 | `environment-variables.png` | Tools > Environment Variables: where each is used, a 1Password reference, and one used but not set |
 | `script-editor.png` | The Script Editor with cisco-tour.rhai open, wrapping off, scrolled to its code |
 | `rhai-script.png` | cisco-tour.rhai run in core-sw-01 alone (Select sessions to send to), its result in the status bar |
 
-Wanted later: a Remote Desktop tab, and Highlighted Output beside a terminal.
+Wanted later: Highlighted Output beside a terminal.

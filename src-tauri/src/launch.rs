@@ -645,6 +645,8 @@ fn ssh(
     let mut username = session.get("Username").to_string();
     let mut port = session.port();
     let mut jump_host = session.get("JumpHost").to_string();
+    // where the jump host comes from, for the tab's line saying it goes through it
+    let mut jump_from = String::from("the session's Jump host");
     // a local override of "none" keeps the folders' and profile's jump host off
     let no_jump_host = session.get(crate::overrides::NO_JUMP_HOST);
     let mut profile_name = session.get("PuttySession").to_string();
@@ -658,6 +660,7 @@ fn ssh(
         }
         if jump_host.is_empty() && no_jump_host.is_empty() {
             jump_host = folder.jump_host.clone();
+            jump_from = format!("folder \"{}\"", folder.path);
         }
         if rules.is_empty() {
             rules = folder.highlight_rules.clone();
@@ -697,6 +700,7 @@ fn ssh(
     }
     if jump_host.is_empty() && no_jump_host.is_empty() {
         jump_host = first(&profile.jump_host, &default.jump_host).to_string();
+        jump_from = if profile.jump_host.is_empty() { "Default Settings".into() } else { format!("profile \"{}\"", profile.name) };
     }
 
     // the built-in placeholders: the session's own target, for a username that names it (a CyberArk gateway's,
@@ -891,7 +895,11 @@ fn ssh(
         args.extend(["-o".into(), "PreferredAuthentications=keyboard-interactive,password,publickey".into()]);
     }
     if !jump_host.is_empty() {
-        args.extend(["-J".into(), jump_address(sessions, values, store, session, &jump_host)?]);
+        let via = jump_address(sessions, values, store, session, &jump_host)?;
+        // said at the top of the tab, as the gateway is: the login prompts that follow may be the jump host's
+        let named = if via == jump_host.trim() { via.clone() } else { format!("{} ({via})", jump_host.trim()) };
+        notices.push(format!("Connecting to {host} through the jump host {named}, from {jump_from}."));
+        args.extend(["-J".into(), via]);
     }
     let mut tunnels = Vec::new();
     args.extend(forwarding(profile, default, &mut notices, &mut tunnels));
@@ -1737,6 +1745,29 @@ mod tests {
         assert_eq!(jump_address(&sessions, &values, Store::Saved, &from, "me@jump:22").unwrap(), "me@jump:22");
         assert!(jump_address(&sessions, &values, Store::Saved, &from, "not a host").is_err());
         assert!(jump_address(&sessions, &values, Store::Saved, &bastion, "Bastions/b1").is_err(), "not through itself");
+    }
+
+    #[test]
+    fn the_tab_says_it_connects_through_the_jump_host_and_where_that_comes_from() {
+        let profiles = Profiles {
+            profiles: vec![
+                Profile { name: profiles::DEFAULT_PROFILE.into(), ..Profile::default() },
+                Profile { name: "Jump Test".into(), jump_host: "root@omv.example".into(), ..Profile::default() },
+            ],
+        };
+        let said = |attributes: &[(&str, &str)]| {
+            let (args, notices) = args_of(&Sessions::default(), &profiles, &session(attributes));
+            (args.join(" "), notices.into_iter().filter(|n| n.contains("jump host")).collect::<Vec<_>>())
+        };
+        // the profile's
+        let (args, notices) = said(&[("PuttySession", "Jump Test")]);
+        assert!(args.contains("-J root@omv.example"), "{args}");
+        assert_eq!(notices, ["Connecting to 10.0.0.1 through the jump host root@omv.example, from profile \"Jump Test\"."]);
+        // the session's own wins, and says so
+        let (_, notices) = said(&[("PuttySession", "Jump Test"), ("JumpHost", "me@bastion:22")]);
+        assert_eq!(notices, ["Connecting to 10.0.0.1 through the jump host me@bastion:22, from the session's Jump host."]);
+        // none: nothing said
+        assert_eq!(said(&[]).1, Vec::<String>::new());
     }
 
     #[test]

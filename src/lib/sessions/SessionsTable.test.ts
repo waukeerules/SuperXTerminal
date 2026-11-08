@@ -1,5 +1,6 @@
 // File > Edit Sessions as Table…: every session in one table, filtered column by column, its cells edited in place
-// (text, Store, Folder, Icon, Colour), new sessions added as rows, columns resized and their widths kept, changed cells
+// (text, Store, Folder, Icon, Colour), new sessions added as rows, columns resized and their widths kept, rows exported
+// to CSV unsaved and a CSV brought in as edits, changed cells
 // marked, and Save writing a file's rows in one go, Database's one by one, and moving a row whose Store changed;
 // Database rows the user can't change, or locked, left alone. The Rust
 // side is stood in for by mockIPC, which records what each save was asked and answers as the core would.
@@ -9,7 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import SessionsTable from "./SessionsTable.svelte";
 import { EnvironmentColors } from "../icons/environment";
-import type { DbState, SessionFields, SessionsLoaded, Store, TableRow } from "./api";
+import type { CsvSessions, DbState, SessionFields, SessionsLoaded, Store, TableRow } from "./api";
 
 /** A session as the table reads it */
 function row(store: Store, id: string, more: Partial<SessionFields> = {}, lock: Partial<TableRow> = {}): TableRow {
@@ -303,6 +304,80 @@ describe("Edit Sessions as Table", () => {
     expect(hostCol().style.width).toBe("240px");
     await fireEvent.dblClick(screen.getByRole("separator", { name: "Resize Host" }));
     await expect.poll(() => hostCol().style.width).toBe("160px");
+  });
+
+  it("exports the rows shown to CSV as they are in the table, unsaved changes and moves included, saving nothing", async () => {
+    await open();
+    const host = cell("Lab/core1", "Host");
+    await userEvent.clear(host);
+    await userEvent.type(host, "10.9.9.1");
+    await userEvent.selectOptions(cell("Lab/sw1", "Store"), "private");
+    await userEvent.type(screen.getByLabelText("Filter Folder"), "lab");
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "plugin:dialog|save") return "/Users/me/Desktop/Lab.csv";
+      if (cmd === "sessions_table_export_csv") return [2, 0];
+      return null;
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Export CSV…" }));
+    await expect.poll(() => screen.queryByText(/Exported 2 sessions to Lab\.csv\. Nothing saved\./)).toBeTruthy();
+    const rows = calls.find((c) => c.cmd === "sessions_table_export_csv")!.args.rows as [Store, [Store, string] | null, SessionFields][];
+    // the two Lab rows the filter shows, as edited: core1's new host, sw1 written in Private but found where it was read
+    expect(rows.map(([store, read, f]) => [store, read, f.host])).toEqual([
+      ["saved", ["saved", "Lab/core1"], "10.9.9.1"],
+      ["private", ["saved", "Lab/sw1"], "10.0.0.2"],
+    ]);
+    expect(calls.some((c) => ["sessions_table_save", "db_session_save", "sessions_transfer"].includes(c.cmd))).toBe(false);
+    // still changed, still to save
+    expect(screen.getByText(/2 changed/)).toBeTruthy();
+  });
+
+  it("brings a CSV in as edits: the sessions it names changed, the rest added, a locked column and a bad line said", async () => {
+    rows = [
+      row("saved", "Lab/core1", { host: "10.0.0.1", extraArgs: "-P 2222 -pw ••••••" }),
+      row("saved", "Lab/sw1", { host: "10.0.0.2" }),
+      row("database", "@db/Branch/rtr1", { host: "172.16.0.1" }, { lockedFields: "host" }),
+    ];
+    const csv: CsvSessions = {
+      ignored: ["Shoe size"],
+      error: null,
+      sessions: [
+        // its own, with the export's masked password: the session's is kept
+        { line: 2, source: "Saved", folder: "Lab", name: "core1", problem: null, values: [["Host", "10.5.5.5"], ["ExtraArgs", "-P 2222 -pw ********"]] },
+        // no Source, other capitals: still that session
+        { line: 3, source: "", folder: "lab/", name: "SW1", problem: null, values: [["Color", "#C62828"], ["Port", "2022"]] },
+        // a new one, its masked password dropped as it has none
+        { line: 4, source: "Private", folder: "Home", name: "nas2", problem: null, values: [["Host", "192.168.0.6"], ["ExtraArgs", "-pw ******** -A"]] },
+        // the host is locked in the database; the username isn't
+        { line: 5, source: "Database", folder: "Branch", name: "rtr1", problem: null, values: [["Host", "1.1.1.1"], ["Username", "netops"]] },
+        { line: 6, source: "Saved", folder: "Lab", name: "sw9", problem: "unknown protocol \"Gopher\"", values: [] },
+      ],
+    };
+    await open();
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "plugin:dialog|open") return "/Users/me/Desktop/Lab.csv";
+      if (cmd === "sessions_table_read_csv") return csv;
+      return null;
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Import CSV…" }));
+    await expect.poll(() => screen.queryByText(/From Lab\.csv: 3 changed, 1 new; columns not used: Shoe size\. Not saved yet\./)).toBeTruthy();
+
+    expect(cell("Lab/core1", "Host").value).toBe("10.5.5.5");
+    expect(cell("Lab/core1", "Extra args").value).toBe("-P 2222 -pw ••••••");
+    expect(cell("Lab/sw1", "Port").value).toBe("2022");
+    expect(cell("Lab/sw1", "Colour").closest("td")!.classList.contains("changed")).toBe(true);
+    expect(cell("@db/Branch/rtr1", "Host").value).toBe("172.16.0.1");
+    expect(cell("@db/Branch/rtr1", "Username").value).toBe("netops");
+    const added = screen.getByRole("row", { name: "New session" });
+    expect((within(added).getByLabelText("Store") as HTMLSelectElement).value).toBe("private");
+    expect((within(added).getByLabelText("Name") as HTMLInputElement).value).toBe("nas2");
+    expect((within(added).getByLabelText("Extra args") as HTMLInputElement).value).toBe("-A");
+    const said = screen.getByRole("status").textContent!;
+    expect(said).toContain("Line 5: Host locked in the database, left as it is");
+    expect(said).toContain("Line 6: unknown protocol \"Gopher\"");
+    // nothing saved by the import itself
+    expect(calls.some((c) => ["sessions_table_save", "db_session_save", "sessions_transfer"].includes(c.cmd))).toBe(false);
   });
 
   it("asks before dropping changes on Cancel, and keeps them when told to", async () => {

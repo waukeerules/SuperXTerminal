@@ -500,3 +500,45 @@ export function loadTable(): Promise<TableRow[]> {
 export function saveTable(store: Exclude<Store, "database">, edits: [string | null, SessionFields][]): Promise<string[]> {
   return invoke<string[]>("sessions_table_save", { store, edits });
 }
+
+/**
+ * Edit Sessions as Table…'s Export CSV…: rows as they are in the table, saved or not, to a CSV file the user picks,
+ * in Export Sessions to CSV's form. What to say, or null when no file was picked
+ * @param rows each row's store now, where it was read (its store and id; null for a new row), and its fields now
+ * @param fileName the file name offered
+ */
+export async function exportTableCsv(rows: [Store, [Store, string] | null, SessionFields][], fileName: string): Promise<string | null> {
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const path = await save({ title: "Export sessions to CSV", defaultPath: fileName, filters: [{ name: "CSV files", extensions: ["csv"] }] });
+  if (!path) return null;
+  const [count, masked] = await invoke<[number, number]>("sessions_table_export_csv", { rows, path });
+  return `Exported ${count} session${count === 1 ? "" : "s"} to ${fileNameOf(path)}${masked ? ` (${masked} -pw password${masked === 1 ? "" : "s"} written as ********)` : ""}`;
+}
+
+/** One CSV row for Edit Sessions as Table…'s Import CSV…, as the core reads it (importing.rs's CsvSession) */
+export interface CsvSession {
+  line: number;
+  /** Saved, Private or Database as written; "" for no Source column or an empty cell */
+  source: string;
+  folder: string;
+  name: string;
+  /** The session attributes the file has columns for (Proto, Host, ImageKey...), checked and in the form kept */
+  values: [string, string][];
+  /** Why the row can't be used */
+  problem: string | null;
+}
+
+/** A CSV file read for Import CSV…: its rows, its columns that aren't used, or why none can be */
+export interface CsvSessions {
+  sessions: CsvSession[];
+  ignored: string[];
+  error: string | null;
+}
+
+/** Edit Sessions as Table…'s Import CSV…: a CSV file the user picks, read; null when none was picked */
+export async function readTableCsv(): Promise<{ file: string; csv: CsvSessions } | null> {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const path = await open({ title: "Import sessions from CSV", multiple: false, filters: [{ name: "CSV files", extensions: ["csv"] }] });
+  if (!path || Array.isArray(path)) return null;
+  return { file: fileNameOf(path), csv: await invoke<CsvSessions>("sessions_table_read_csv", { path }) };
+}

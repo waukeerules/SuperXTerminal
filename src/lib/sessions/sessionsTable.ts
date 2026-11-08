@@ -1,7 +1,7 @@
 /**
  * File > Edit Sessions as Table…'s workings, apart from its window (SessionsTable.svelte): the columns, each row's
  * draft (its store and fields as edited), new sessions added as rows, the per-column filters, which cells changed,
- * what stops a save, and the save itself.
+ * what stops a save, the save itself, and a CSV's sessions brought in as edits (Import CSV…).
  *
  * Saving goes in three steps, as each store saves differently:
  *   1. Saved and Private rows whose fields changed, and new ones: one write per file (sessions_table_save), all of a
@@ -13,7 +13,7 @@
  *      sessions have been read again so the move finds them under their new ids.
  */
 import {
-  loadSessions, saveSession, saveTable, transferSessions, type SessionFields, type Store, type TableRow,
+  loadSessions, saveSession, saveTable, transferSessions, type CsvSessions, type SessionFields, type Store, type TableRow,
 } from "./api";
 
 /** A column's field: one of SessionFields', or the session's store */
@@ -247,4 +247,100 @@ export async function saveDrafts(drafts: Draft[]): Promise<SaveReport> {
     }
   }
   return report;
+}
+
+/** Each CSV column's session attribute (importing.rs's COLUMNS), and the field the table has it in */
+const CSV_FIELDS: Record<string, keyof SessionFields> = {
+  Proto: "protocol", Host: "host", Port: "port", Username: "username", PuttySession: "profile", ExtraArgs: "extraArgs",
+  ImageKey: "icon", Note: "note", SPSLFileName: "script", RdpOptions: "rdpOptions", LocalPath: "localPath",
+  RemotePath: "remotePath", JumpHost: "jumpHost", HighlightRules: "highlightRules", Color: "color",
+  SshAlgorithms: "sshAlgorithms", ButtonBar: "buttonBar",
+};
+
+/** The table's stand-in for a stored -pw password (editing.rs's MASK), which the save puts the real one back for */
+const TABLE_MASK = "••••••";
+/** The CSV's stand-in for one (importing.rs's MASKED_PASSWORD), as Export CSV… writes it */
+const CSV_MASK = "********";
+
+/**
+ * Extra arguments from a CSV, for a row: a `-pw ********` (an export's masked password) becomes the table's mask when
+ * the session has a password to put back, and is dropped when it hasn't (a new row, or one with none), so importing
+ * an export never sets a password to asterisks
+ */
+function csvExtraArgs(value: string, had: string): string {
+  const words = value.split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    if (words[i] === "-pw" && words[i + 1] === CSV_MASK) {
+      if (had.includes(TABLE_MASK)) out.push("-pw", TABLE_MASK);
+      i++;
+    } else out.push(words[i]);
+  }
+  return out.join(" ");
+}
+
+/** What Import CSV… did to the table: rows changed, rows added, and the lines it left out or cells it couldn't change */
+export interface CsvReport {
+  changed: number;
+  added: number;
+  problems: string[];
+}
+
+/**
+ * Bring a CSV's sessions into the table, as edits not yet saved: a row with a session's store (its Source; any store
+ * when it has none), folder and name, ignoring case, fills in that session's cells from the columns the file has;
+ * any other becomes a new row, in its Source's store or else `fallback`. A Database row the user can't change, or a
+ * column locked there, keeps its cells, and the report says so. New rows come first, as New Session's do.
+ * @param drafts every row now
+ * @param csv the file as the core read it
+ * @param stores the stores new rows can go in (those in use; Database only when it can be written)
+ * @param writable whether Database sessions can be changed at all
+ * @returns the rows after the import, and what it did
+ */
+export function applyCsv(drafts: Draft[], csv: CsvSessions, stores: Store[], writable: boolean): { drafts: Draft[]; report: CsvReport } {
+  const report: CsvReport = { changed: 0, added: 0, problems: [] };
+  const added: Draft[] = [];
+  const touched = new Set<Draft>();
+  const same = (a: string, b: string) => a.trim().replace(/^\/+|\/+$/g, "").toLowerCase() === b.trim().replace(/^\/+|\/+$/g, "").toLowerCase();
+  for (const row of csv.sessions) {
+    const where = `Line ${row.line}`;
+    if (row.problem) {
+      report.problems.push(`${where}: ${row.problem}`);
+      continue;
+    }
+    const source = (row.source.toLowerCase() || null) as Store | null;
+    const found = [...added, ...drafts].find((d) =>
+      (!source || d.store === source) && same(d.fields.folder, row.folder) && same(d.fields.name, row.name));
+    let draft = found;
+    if (!draft) {
+      const store = source ?? stores[0];
+      if (!store || !stores.includes(store)) {
+        report.problems.push(`${where}: ${STORE_LABELS[store ?? "saved"]} sessions can't be added here`);
+        continue;
+      }
+      draft = newDraft(store);
+      draft.fields.folder = row.folder;
+      draft.fields.name = row.name;
+      added.unshift(draft);
+      report.added++;
+    }
+    const kept: string[] = [];
+    for (const [attribute, value] of row.values) {
+      const key = CSV_FIELDS[attribute];
+      if (!key) continue;
+      const column = COLUMNS.find((c) => c.key === key);
+      if (column && locked(draft, column, writable)) {
+        if (String(draft.fields[key]) !== value) kept.push(column.label);
+        continue;
+      }
+      const fields = draft.fields as unknown as Record<string, string | number>;
+      fields[key] = key === "port" ? Number(value) : key === "extraArgs" ? csvExtraArgs(value, draft.row.fields.extraArgs) : value;
+    }
+    if (kept.length) report.problems.push(`${where}: ${kept.join(", ")} locked in the database, left as it is`);
+    if (found && !isNew(found) && !touched.has(found)) {
+      touched.add(found);
+      report.changed++;
+    }
+  }
+  return { drafts: [...added, ...drafts], report };
 }

@@ -9,6 +9,11 @@
   next time. New Session adds a row at the top, in the store the Store filter shows (else the first in use), which
   shows whatever the filters are and saves as a new session; × takes a new row away before it's saved.
 
+  Export CSV… writes the rows shown, as they are in the table, saved or not, in Export Sessions to CSV's form, so a
+  change can be tried and exported without saving it. Import CSV… brings a CSV's sessions in as edits: a row with a
+  session's Source, Folder and Name fills in its cells, any other becomes a new row (sessionsTable.ts's applyCsv),
+  all to look over before Save.
+
   Changed cells are marked, new rows as a whole, and nothing is saved until Save, which saves them all (sessionsTable.ts says how, store by
   store); Cancel or Escape drops them, asking first when there are some. A Database row the user can't change (Read
   only, no rights, or locked in the table) or a column locked there can't be edited, as in Edit Session.
@@ -36,10 +41,10 @@
   import { listProfiles } from "../settings/profiles";
   import { highlighting } from "../terminal/highlighting";
   import { ResizableColumns } from "../ui/columns.svelte";
-  import { loadTable, PROTOCOLS, type DbState, type SessionsLoaded, type Store } from "./api";
+  import { exportTableCsv, loadTable, PROTOCOLS, readTableCsv, type DbState, type SessionFields, type SessionsLoaded, type Store } from "./api";
   import {
-    cellText, changed, COLUMNS, draftOf, isNew, locked, matches, newDraft, problems, rowChanged, saveDrafts, STORE_LABELS,
-    type Column, type ColumnKey, type Draft,
+    applyCsv, cellText, changed, COLUMNS, draftOf, isNew, locked, matches, newDraft, problems, rowChanged, saveDrafts,
+    STORE_LABELS, type Column, type ColumnKey, type Draft,
   } from "./sessionsTable";
 
   interface Props {
@@ -70,6 +75,8 @@
   let drafts = $state<Draft[]>([]);
   let loading = $state(true);
   let message = $state("");
+  /** What Export CSV… or Import CSV… did, beside the count */
+  let note = $state("");
   let saving = $state(false);
   let filters = $state<Partial<Record<ColumnKey, string>>>({});
   /** The row whose Folder is being typed in, its cell a field until it's left */
@@ -149,6 +156,41 @@
     measure();
     await tick();
     grid?.querySelector<HTMLInputElement>(`tr[data-key="${draft.key}"] input[aria-label="Name"]`)?.focus();
+  }
+
+  /** Export CSV…: the rows shown, as they are now, saved or not */
+  async function exportCsv(): Promise<void> {
+    message = "";
+    try {
+      const rows: [Store, [Store, string] | null, SessionFields][] = shownRows.map((d) =>
+        [d.store, isNew(d) ? null : [d.row.store, d.row.id], { ...d.fields, port: Number(d.fields.port) || 0 }]);
+      const said = await exportTableCsv(rows, "Sessions.csv");
+      if (said) note = `${said}. Nothing saved.`;
+    } catch (e) {
+      message = `Couldn't export: ${e}`;
+    }
+  }
+
+  /** Import CSV…: a CSV's sessions brought in as edits, to look over before Save */
+  async function importCsv(): Promise<void> {
+    message = "";
+    try {
+      const read = await readTableCsv();
+      if (!read) return;
+      if (read.csv.error) {
+        message = `${read.file}: ${read.csv.error}`;
+        return;
+      }
+      const { drafts: next, report } = applyCsv(drafts, read.csv, stores, writable);
+      drafts = next;
+      if (grid) grid.scrollTop = 0;
+      measure();
+      const ignored = read.csv.ignored.length ? `; columns not used: ${read.csv.ignored.join(", ")}` : "";
+      note = `From ${read.file}: ${report.changed} changed, ${report.added} new${ignored}. Not saved yet.`;
+      if (report.problems.length) message = report.problems.join("\n");
+    } catch (e) {
+      message = `Couldn't import: ${e}`;
+    }
   }
 
   /** Take a new row away before it's saved */
@@ -349,6 +391,11 @@
         {shownRows.length === drafts.length ? `${drafts.length} sessions` : `${shownRows.length} of ${drafts.length} sessions`}{changedRows.length ? `, ${changedRows.length} changed` : ""}
       </span>
       <button onclick={() => (filters = {})} disabled={!Object.values(filters).some(Boolean)}>Clear Filters</button>
+      <button onclick={() => void importCsv()} disabled={loading || saving}
+        title="Bring a CSV's sessions in as changes to look over: those it names are changed, the rest added">Import CSV…</button>
+      <button onclick={() => void exportCsv()} disabled={loading || !shownRows.length}
+        title="The rows shown, as they are now, saved or not">Export CSV…</button>
+      {#if note}<span class="note">{note}</span>{/if}
       <span class="message" role="status">{wrong.size ? [...wrong.values()][0] : message}</span>
       <button onclick={() => void cancel()} disabled={saving}>Cancel</button>
       <button class="primary" onclick={() => void save()} disabled={saving || !changedRows.length || wrong.size > 0}>
@@ -630,6 +677,14 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  .note {
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 30%;
   }
 
   .message {

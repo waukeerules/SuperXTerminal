@@ -1991,6 +1991,42 @@ fn sessions_export_csv(state: State<'_, AppState>, items: Option<Vec<(sessions::
     Ok((list.len(), masked))
 }
 
+/// One row for [`sessions_table_export_csv`]: its store now, where it was read (its store and id; None for a new row),
+/// and its fields now
+type TableCsvRow = (sessions::Store, Option<(sessions::Store, String)>, editing::SessionFields);
+
+/// Edit Sessions as Table…'s Export CSV…: the rows shown, as they are in the table, saved or not, in Export Sessions to
+/// CSV's form (so Import Sessions > CSV reads it back). Each `(store now, where it was read: its store and id, fields
+/// now)`, None for a new row; a session read keeps what the table doesn't show (its paths, RDP options...) and its
+/// -pw, which the CSV writes as ********. A row moved to another store but not saved is written in its new one.
+/// Nothing is saved. Returns how many were written and how many had a -pw masked.
+#[tauri::command]
+fn sessions_table_export_csv(state: State<'_, AppState>, rows: Vec<TableCsvRow>, path: PathBuf) -> Result<(usize, usize), String> {
+    let edited: Vec<(sessions::Store, sessions::StoredSession)> = {
+        let all = state.sessions.lock().unwrap();
+        rows.iter()
+            .map(|(store, read, fields)| {
+                let stored = read.as_ref().and_then(|(from, id)| all.find(*from, id));
+                let mut session = stored.cloned().unwrap_or_else(|| sessions::StoredSession::new(&fields.id()));
+                let password = stored.map(|s| s.get("ExtraArgs").to_string()).unwrap_or_default();
+                fields.apply(&mut session, &password);
+                (*store, session)
+            })
+            .collect()
+    };
+    let list: Vec<(sessions::Store, &sessions::StoredSession)> = edited.iter().map(|(store, s)| (*store, s)).collect();
+    importing::export(&list, &path)?;
+    let masked = list.iter().filter(|(_, s)| importing::has_password(s.get("ExtraArgs"))).count();
+    Ok((list.len(), masked))
+}
+
+/// Edit Sessions as Table…'s Import CSV…: a CSV file's sessions, read as Import Sessions > CSV reads them, for the
+/// table to match to its rows; nothing is saved until the table's Save
+#[tauri::command]
+fn sessions_table_read_csv(path: PathBuf) -> Result<importing::CsvSessions, String> {
+    importing::read_csv_file(&path)
+}
+
 /// The window's own themes (Settings > General > Look > Theme), from UiThemes.json in the user's folder
 #[tauri::command]
 fn ui_themes_load(state: State<'_, AppState>) -> Vec<ui_themes::UiTheme> {
@@ -2980,6 +3016,8 @@ pub fn run() {
             sessions_bulk_edit,
             sessions_table_load,
             sessions_table_save,
+            sessions_table_export_csv,
+            sessions_table_read_csv,
             sessions_export_csv,
             sessions_csv_template,
             onepassword_check,

@@ -346,6 +346,111 @@ impl Existing<'_> {
     }
 }
 
+/// A CSV cell as its session attribute keeps it: trimmed where the column is, a protocol in SuperXPuTTY's spelling
+/// (SSH when empty), a port 0 to 65535 (0 when empty), a colour as #RRGGBB; or why it can't be one. Shared by Import
+/// Sessions > CSV and Edit Sessions as Table…'s Import CSV…, so both take a file the same way
+fn cell_value(column: &Column, raw: &str) -> Result<String, String> {
+    let value = if column.trim { raw.trim() } else { raw };
+    match column.attribute {
+        "Proto" if value.is_empty() => Ok("SSH".to_string()),
+        "Proto" => PROTOCOLS.iter().find(|p| p.eq_ignore_ascii_case(value)).map(|p| p.to_string()).ok_or_else(|| format!("unknown protocol \"{raw}\"")),
+        "Port" if value.is_empty() => Ok("0".into()),
+        "Port" => value.parse::<u16>().map(|port| port.to_string()).map_err(|_| format!("port \"{raw}\" isn't 0 to 65535")),
+        "Color" if value.is_empty() => Ok(String::new()),
+        "Color" => normalize_color(value).ok_or_else(|| format!("colour \"{raw}\" isn't #RRGGBB")),
+        _ => Ok(value.to_string()),
+    }
+}
+
+/// One CSV row for Edit Sessions as Table…'s Import CSV…: where it says the session is (Source as written, "" for
+/// none), its folder and name, the attributes the file has columns for, or why it can't be used
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvSession {
+    pub line: usize,
+    pub source: String,
+    pub folder: String,
+    pub name: String,
+    pub values: Vec<(String, String)>,
+    pub problem: Option<String>,
+}
+
+/// A CSV file read for Edit Sessions as Table…: its rows, the columns it has that aren't used, or why none can be
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvSessions {
+    pub sessions: Vec<CsvSession>,
+    pub ignored: Vec<String>,
+    pub error: Option<String>,
+}
+
+/// Read a CSV of sessions for Edit Sessions as Table…'s Import CSV…, as [`plan_csv`] reads one (the same columns,
+/// headers and checks) but without deciding anything: the table matches each row to its sessions, Database ones
+/// included, and nothing is saved until its Save
+pub fn read_csv(text: &str) -> CsvSessions {
+    let mut out = CsvSessions::default();
+    let rows = parse_rows(text);
+    let Some(header) = rows.first() else {
+        out.error = Some("The file is empty.".into());
+        return out;
+    };
+    let headers: Vec<String> = header.iter().map(|h| normalize(h)).collect();
+    let find = |names: &[&str]| headers.iter().position(|h| names.contains(&h.as_str()));
+    let (source, folder, name) = (find(&["source"]), find(&["folder", "path"]), find(&["name", "sessionname"]));
+    let Some(name) = name else {
+        out.error = Some("The file has no Name column. The first line must name the columns, e.g. Folder,Name,Host,Username.".into());
+        return out;
+    };
+    let mut used: Vec<(usize, &Column)> = Vec::new();
+    for (i, h) in headers.iter().enumerate() {
+        match COLUMNS.iter().find(|c| c.names.contains(&h.as_str())) {
+            Some(column) if !used.iter().any(|(_, c)| std::ptr::eq(*c, column)) => used.push((i, column)),
+            _ if Some(i) != source && Some(i) != folder && i != name && !h.is_empty() => out.ignored.push(header[i].clone()),
+            _ => {}
+        }
+    }
+    for (r, row) in rows.iter().enumerate().skip(1) {
+        let cell = |i: Option<usize>| i.and_then(|i| row.get(i)).map(|v| unquote(v)).unwrap_or("");
+        let mut session = CsvSession {
+            line: r + 1,
+            source: cell(source).trim().to_string(),
+            folder: cell(folder).trim().trim_matches('/').to_string(),
+            name: cell(Some(name)).trim().to_string(),
+            values: Vec::new(),
+            problem: None,
+        };
+        // a blank line at the end, as spreadsheets leave
+        if row.iter().all(|c| unquote(c).trim().is_empty()) {
+            continue;
+        }
+        if session.name.is_empty() || session.name.contains('/') {
+            session.problem = Some(if session.name.is_empty() { "no name".into() } else { format!("the name \"{}\" has a /", session.name) });
+        } else if !session.source.is_empty() && !["saved", "private", "database"].contains(&session.source.to_lowercase().as_str()) {
+            session.problem = Some(format!("Source \"{}\" isn't Saved, Private or Database", session.source));
+        } else {
+            for (i, column) in &used {
+                match cell_value(column, cell(Some(*i))) {
+                    Ok(value) => session.values.push((column.attribute.to_string(), value)),
+                    Err(why) => {
+                        session.problem = Some(why);
+                        break;
+                    }
+                }
+            }
+        }
+        out.sessions.push(session);
+    }
+    if out.sessions.is_empty() {
+        out.error = Some("The file has column names but no sessions.".into());
+    }
+    out
+}
+
+/// Read a CSV file of sessions for Edit Sessions as Table…'s Import CSV… ([`read_csv`])
+pub fn read_csv_file(path: &Path) -> Result<CsvSessions, String> {
+    Ok(read_csv(&read_text(path)?))
+}
+
 /// Work out what importing CSV text would do (SessionCsv.Plan). Columns the file doesn't have are left as they are,
 /// or their defaults for new sessions.
 pub fn plan_csv(text: &str, existing: &Existing) -> Plan {
@@ -422,36 +527,13 @@ pub fn plan_csv(text: &str, existing: &Existing) -> Plan {
         }
         let mut problem = None;
         for (i, column) in &used {
-            let raw = cell(Some(*i));
-            let value = if column.trim { raw.trim() } else { raw };
-            let value = match column.attribute {
-                "Proto" if value.is_empty() => "SSH".to_string(),
-                "Proto" => match PROTOCOLS.iter().find(|p| p.eq_ignore_ascii_case(value)) {
-                    Some(p) => p.to_string(),
-                    None => {
-                        problem = Some(format!("unknown protocol \"{raw}\""));
-                        break;
-                    }
-                },
-                "Port" if value.is_empty() => "0".into(),
-                "Port" => match value.parse::<u16>() {
-                    Ok(port) => port.to_string(),
-                    Err(_) => {
-                        problem = Some(format!("port \"{raw}\" isn't 0 to 65535"));
-                        break;
-                    }
-                },
-                "Color" if value.is_empty() => String::new(),
-                "Color" => match normalize_color(value) {
-                    Some(color) => color,
-                    None => {
-                        problem = Some(format!("colour \"{raw}\" isn't #RRGGBB"));
-                        break;
-                    }
-                },
-                _ => value.to_string(),
-            };
-            planned.values.push((column.attribute.to_string(), value));
+            match cell_value(column, cell(Some(*i))) {
+                Ok(value) => planned.values.push((column.attribute.to_string(), value)),
+                Err(why) => {
+                    problem = Some(why);
+                    break;
+                }
+            }
         }
         if let Some(why) = problem {
             plan.rows.push(skip(planned, why));
@@ -1201,6 +1283,37 @@ pub fn apply(plan: &Plan, file_of: impl Fn(Store) -> Result<PathBuf, String>, id
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_csv_for_the_table_keeps_each_rows_place_and_values_and_says_whats_wrong_with_a_row() {
+        let text = "\u{feff}Source,Folder,Name,Protocol,Port,Colour,Extra args,Shoe size\r\n\
+                    Saved,Lab/,sw1,ssh,2222,c62828,-pw ********,44\r\n\
+                    Database,Branch,rtr1,Telnet,,,,\r\n\
+                    ,,nas,SSH,22,,,\r\n\
+                    Saved,Lab,sw2,Gopher,22,,,\r\n\
+                    Elsewhere,Lab,sw3,SSH,22,,,\r\n\
+                    Saved,Lab,,SSH,22,,,\r\n\
+                    ,,,,,,,\r\n";
+        let read = read_csv(text);
+        assert_eq!(read.error, None);
+        assert_eq!(read.ignored, ["Shoe size"]);
+        let by_name: Vec<(&str, &str, &str, Option<&str>)> =
+            read.sessions.iter().map(|s| (s.source.as_str(), s.folder.as_str(), s.name.as_str(), s.problem.as_deref())).collect();
+        assert_eq!(by_name, [
+            ("Saved", "Lab", "sw1", None),
+            ("Database", "Branch", "rtr1", None),
+            ("", "", "nas", None),
+            ("Saved", "Lab", "sw2", Some("unknown protocol \"Gopher\"")),
+            ("Elsewhere", "Lab", "sw3", Some("Source \"Elsewhere\" isn't Saved, Private or Database")),
+            ("Saved", "Lab", "", Some("no name")),
+        ]);
+        // values as the import keeps them: SuperXPuTTY's spelling, the colour in capitals, an empty port 0, the masked
+        // -pw as written (the table puts the session's own back)
+        let sw1: std::collections::HashMap<&str, &str> = read.sessions[0].values.iter().map(|(a, v)| (a.as_str(), v.as_str())).collect();
+        assert_eq!((sw1["Proto"], sw1["Port"], sw1["Color"], sw1["ExtraArgs"]), ("SSH", "2222", "#C62828", "-pw ********"));
+        assert_eq!(read.sessions[1].values.iter().find(|(a, _)| a == "Port").map(|(_, v)| v.as_str()), Some("0"));
+        assert!(read_csv("Folder,Host\r\nLab,10.0.0.1\r\n").error.unwrap().contains("no Name column"));
+    }
 
     /// A session with these attributes set
     fn session(id: &str, attributes: &[(&str, &str)]) -> StoredSession {

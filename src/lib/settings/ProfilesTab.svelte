@@ -645,8 +645,9 @@
 
     <div class="fields">
     <p class="hint">
-      A session's PuTTY profile is looked up here by name. The session's own fields win, then its folder's
-      defaults, then the profile, then Default Settings.
+      A profile takes the place of a PuTTY saved session: the login and connection settings sessions share, kept
+      here, with no PuTTY needed. Each session names its profile, which is looked up here by name. The session's own
+      fields win, then its folder's defaults, then the profile, then Default Settings.
     </p>
 
     {#if fromTemplate}

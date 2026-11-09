@@ -104,6 +104,12 @@ describe("Settings > Profiles", () => {
     expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("root");
   });
 
+  it("says a profile takes the place of a PuTTY saved session, without PuTTY", async () => {
+    await open();
+    expect(screen.getByText(/takes the place of a PuTTY saved session/).textContent).toMatch(/no PuTTY needed/);
+    expect(screen.queryByText(/session's PuTTY profile/)).toBeNull();
+  });
+
   it("has Save and Revert greyed until something changes, then marks the field", async () => {
     await open("root");
     expect(button("Save").disabled).toBe(true);

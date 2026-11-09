@@ -247,9 +247,30 @@
   const loginKey = $derived.by(() => {
     if (!isSsh || !openingProfile) return undefined;
     const owner = openingProfile.keyFile?.trim() ? openingProfile : defaultProfile;
-    if (!owner?.keyFile?.trim()) return undefined;
-    return { file: owner.keyFile.trim(), owner: owner.name, fetched: !!owner.keyFetch?.trim(), lifetime: Number(owner.keyLifetime) || 0 };
+    const file = pastedPath(owner?.keyFile ?? "");
+    if (!owner || !file) return undefined;
+    return {
+      file,
+      owner: owner.name,
+      /** where it's from, as the note says it: the profile, or Default Settings */
+      from: owner.name.toLowerCase() === DEFAULT_PROFILE.toLowerCase() ? DEFAULT_PROFILE : `profile "${owner.name}"`,
+      /** a 1Password secret reference, whose key 1Password's SSH agent gives (onepassword.rs) */
+      onePassword: file.toLowerCase().startsWith("op://"),
+      fetched: !!owner.keyFetch?.trim(),
+      lifetime: Number(owner.keyLifetime) || 0,
+    };
   });
+
+  /**
+   * A key path as launch.rs's pasted_path reads it: without the unseen direction marks File > Properties > Security's
+   * Object name starts with, or the double quotes File Explorer's Copy as path (and 1Password's Copy Secret Reference)
+   * put round it, so the note shows the file that's used
+   */
+  function pastedPath(path: string): string {
+    const unseen = /^[\s​-‏‪-‮⁦-⁩﻿]+|[\s​-‏‪-‮⁦-⁩﻿]+$/g;
+    const bare = path.replace(unseen, "");
+    return /^".*"$/.test(bare) ? bare.slice(1, -1).replace(unseen, "") : bare;
+  }
   /** The profile the tabs' "From profile" lists are of, as their headings name it */
   const profileShown = $derived(openingProfile?.name ?? DEFAULT_PROFILE);
   /** What the session sets itself, which wins over its profile's, so its profile's isn't listed (fromProfile.ts) */
@@ -525,6 +546,11 @@
         <p class="note jump" role="note" aria-label="Key">Logs in with the key {loginKey.file} (profile "{loginKey.owner}"), fetched by
           its Fetch command when it's missing{loginKey.lifetime ? ` or older than ${loginKey.lifetime} minutes` : ""}: the
           sign-in (a link, a PIN) happens in the tab.</p>
+      {:else if loginKey}
+        <!-- said in the tab too as it connects (launch.rs), so a refused login can be checked against the key -->
+        <p class="note jump" role="note" aria-label="Key">{loginKey.onePassword
+          ? `Logs in with the key ${loginKey.file} from 1Password, through its SSH agent (${loginKey.from})`
+          : `Logs in with the key file ${loginKey.file} (${loginKey.from})`}{jumpVia ? ", at the jump host too" : ""}.</p>
       {/if}
 
       <div class="row">

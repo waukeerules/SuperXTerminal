@@ -313,6 +313,43 @@ describe("Edit Session with a profile that has a jump host", () => {
   });
 });
 
+describe("Edit Session with a profile that has a key file", () => {
+  /** The General tab's note naming the key that logs in, spaces run together */
+  const said = async () => (await screen.findByRole("note", { name: "Key" })).textContent?.replace(/\s+/g, " ").trim();
+
+  it("says which key file logs in, and which profile it's from", async () => {
+    profileList = [{ name: "Default Settings", script: "" }, { name: "root", keyFile: "~/.ssh/Openmediavault", script: "" }];
+    open({ ...SESSION, extraArgs: "", profile: "root" });
+    expect(await said()).toBe('Logs in with the key file ~/.ssh/Openmediavault (profile "root").');
+  });
+
+  it("says the jump host is offered it too", async () => {
+    profileList = [{ name: "Default Settings", script: "" }, { name: "Jump Host", keyFile: "~/.ssh/Openmediavault", jumpHost: "root@omv.example", script: "" }];
+    open({ ...SESSION, extraArgs: "", profile: "Jump Host" });
+    expect(await said()).toBe('Logs in with the key file ~/.ssh/Openmediavault (profile "Jump Host"), at the jump host too.');
+  });
+
+  it("shows a pasted path without its hidden mark and quotes, and names Default Settings' key as its", async () => {
+    profileList = [{ name: "Default Settings", keyFile: '\u202A"C:\\Users\\me\\.ssh\\key"', script: "" }, { name: "root", script: "" }];
+    open({ ...SESSION, extraArgs: "", profile: "root" });
+    expect(await said()).toBe("Logs in with the key file C:\\Users\\me\\.ssh\\key (Default Settings).");
+    expect((screen.getByLabelText(/Password/) as HTMLInputElement).placeholder).toBe("none: the key C:\\Users\\me\\.ssh\\key logs in");
+  });
+
+  it("names a key in 1Password as one", async () => {
+    profileList = [{ name: "Default Settings", script: "" }, { name: "root", keyFile: '"op://Private/SSH Key/private key"', script: "" }];
+    open({ ...SESSION, extraArgs: "", profile: "root" });
+    expect(await said()).toBe('Logs in with the key op://Private/SSH Key/private key from 1Password, through its SSH agent (profile "root").');
+  });
+
+  it("says nothing of a key when there's none", async () => {
+    profileList = [{ name: "Default Settings", script: "" }, { name: "root", script: "" }];
+    open({ ...SESSION, extraArgs: "", profile: "root" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("note", { name: "Key" })).toBeNull();
+  });
+});
+
 describe("Edit Session with a CyberArk profile", () => {
   /** The CyberArk profile: a gateway as its Host, and a key its Fetch command gets, good for 240 minutes */
   const CYBERARK = { name: "CyberArk", username: "unknown", host: "gw.example.test", keyFile: "~/.ssh/cyberark_key", keyFetch: "sftp ...", keyLifetime: 240, script: "", hasPassword: false };

@@ -11,6 +11,7 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import ProfilesTab from "./ProfilesTab.svelte";
 import { DEFAULT_PROFILE, emptyProfile, type Profile } from "./profiles";
 import { isMac } from "../shortcuts";
+import { SYSTEM_KIND } from "../platform";
 import { settings } from "./store.svelte";
 import { context } from "../commands/sending.svelte";
 
@@ -221,7 +222,10 @@ describe("Settings > Profiles", () => {
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Fetch command examples" }), "CyberArk (MFA caching)");
     expect((screen.getByRole("textbox", { name: /^Fetch command/ }) as HTMLInputElement).value).toContain("@key@{cyberark_gateway}:/key");
     expect((screen.getByLabelText(/^Lifetime/) as HTMLInputElement).value).toBe("240");
-    expect((screen.getByLabelText("Key file") as HTMLInputElement).value).toBe("~/.ssh/cyberark_key");
+    // as this system writes it: ~/.ssh/cyberark_key, or %USERPROFILE%\.ssh\cyberark_key on Windows (the tests' web
+    // view says the system they run on)
+    expect((screen.getByLabelText("Key file") as HTMLInputElement).value).toBe(
+      SYSTEM_KIND === "windows" ? "%USERPROFILE%\\.ssh\\cyberark_key" : "~/.ssh/cyberark_key");
     // changed, so the button waits for Save
     expect(screen.getByText("Save the profile first: the fetch runs its saved command")).toBeTruthy();
   });

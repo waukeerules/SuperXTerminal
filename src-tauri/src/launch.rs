@@ -973,11 +973,24 @@ fn ssh(
     Ok(Launch { command, password, local: false, notices, look: Look { rules, tunnels, ..look(profile, default) }, stream: None, login: Some(login), server_load })
 }
 
-/// A path with a leading "~/" turned into the home folder
+/// A path with a leading home turned into the home folder: "~/" as written on the Mac and Linux, and on Windows its
+/// own "%USERPROFILE%\" and "~\" too, so a key file reads as Windows writes paths (%USERPROFILE%\.ssh\key), as
+/// Settings > Profiles' examples give it there. Before, only "~/" was, so those were looked for as they were written
 fn expand_home(path: &str) -> String {
-    match (path.strip_prefix("~/"), dirs::home_dir()) {
-        (Some(rest), Some(home)) => home.join(rest).display().to_string(),
-        _ => path.to_string(),
+    expand_home_in(path, dirs::home_dir().as_deref())
+}
+
+/// [`expand_home`], with the home folder given (the tests')
+fn expand_home_in(path: &str, home: Option<&std::path::Path>) -> String {
+    let Some(home) = home else { return path.to_string() };
+    let rest = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")).or_else(|| {
+        // %USERPROFILE% whatever its case, as Windows reads variables, then a \ or /
+        let head = path.get(..13)?;
+        head.eq_ignore_ascii_case("%USERPROFILE%").then(|| path[13..].strip_prefix(['\\', '/'])).flatten()
+    });
+    match rest {
+        Some(rest) => home.join(rest).display().to_string(),
+        None => path.to_string(),
     }
 }
 
@@ -1211,6 +1224,22 @@ mod tests {
     /// What CyberArk's variables are set to in the tests
     const CYBERARK_VALUES: [(&str, &str); 5] =
         [("ad_user", "me"), ("region", "r1"), ("target_user", "admin"), ("vault", "v1"), ("connector", "c1")];
+
+    #[test]
+    fn a_key_files_home_is_read_as_each_system_writes_it() {
+        let home = std::path::Path::new("/home/me");
+        let at = |rest: &str| home.join(rest).display().to_string();
+        assert_eq!(expand_home_in("~/.ssh/cyberark_key", Some(home)), at(".ssh/cyberark_key"));
+        // Windows' own: %USERPROFILE% in any case, and ~\
+        assert_eq!(expand_home_in("%USERPROFILE%\\.ssh\\cyberark_key", Some(home)), at(".ssh\\cyberark_key"));
+        assert_eq!(expand_home_in("%userprofile%/.ssh/key", Some(home)), at(".ssh/key"));
+        assert_eq!(expand_home_in("~\\.ssh\\key", Some(home)), at(".ssh\\key"));
+        // anything else as it is
+        for path in ["C:\\keys\\key", "/etc/key", "%USERPROFILE%x", "~user/key"] {
+            assert_eq!(expand_home_in(path, Some(home)), path);
+        }
+        assert_eq!(expand_home_in("~/key", None), "~/key");
+    }
 
     #[test]
     fn a_profiles_colours_win_over_default_settings_and_bad_ones_are_left_out() {

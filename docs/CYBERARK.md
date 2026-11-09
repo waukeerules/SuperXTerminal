@@ -91,7 +91,7 @@ function below connects that way); `-l` just leaves no doubt about where the use
 |---|---|
 | Username | the connection string above |
 | Host | e.g. `example.cyberark.cloud` (the gateway) |
-| Key file | the cached key (`~/.ssh/cyberark_key`, or the `.ppk` on Windows; `.ppk` files are converted for ssh) |
+| Key file | the cached key (`~/.ssh/cyberark_key`; on Windows `%USERPROFILE%\.ssh\cyberark_key` or `~/...` both work, or the `.ppk`, which is converted for ssh) |
 | SSH keys | either: with a key file, only that key is offered (`IdentitiesOnly`, as today), so no other key is spent on the gateway |
 | No username | use ssh's own (the profile always gives one) |
 

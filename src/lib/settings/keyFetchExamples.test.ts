@@ -14,7 +14,8 @@ describe("Fetch command examples", () => {
       for (const example of keyFetchExamples(system)) {
         expect(example.command, example.name).toContain("{key_file}");
         expect(example.lifetime, example.name).toBeGreaterThan(0);
-        expect(example.keyFile, example.name).toMatch(/^~\/\.ssh\//);
+        // in ~/.ssh, as the system writes it: Windows' own form there (launch.rs's expand_home reads it)
+        expect(example.keyFile, example.name).toMatch(system === "windows" ? /^%USERPROFILE%\\\.ssh\\[a-z_]+$/ : /^~\/\.ssh\/[a-z_]+$/);
       }
     });
   }

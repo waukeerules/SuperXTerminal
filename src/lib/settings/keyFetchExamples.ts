@@ -13,6 +13,7 @@ export interface KeyFetchExample {
   command: string;
   /** Minutes the key is good for, as the issuer usually gives it */
   lifetime: number;
+  /** Where the key goes when the profile has none: in ~/.ssh, written as the system writes paths */
   keyFile: string;
   /** What to check or set before it works */
   note: string;
@@ -26,40 +27,42 @@ export interface KeyFetchExample {
 export function keyFetchExamples(system: System, onePassword = true): KeyFetchExample[] {
   const windows = system === "windows";
   const words = wordsFor(system);
+  /** A file in ~/.ssh, as the system writes paths: %USERPROFILE%\.ssh\name on Windows (launch.rs reads it) */
+  const sshFile = (name: string) => (windows ? `%USERPROFILE%\\.ssh\\${name}` : `~/.ssh/${name}`);
   const all: KeyFetchExample[] = [
     {
       name: "CyberArk (MFA caching)",
       command: `sftp "{ad_username}@{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`,
       lifetime: 240,
-      keyFile: "~/.ssh/cyberark_key",
+      keyFile: sshFile("cyberark_key"),
       note: "The key from CyberArk's key target; sign in at the link it shows, then paste the PIN. Set {ad_username}, {cyberark_region} and {cyberark_gateway} (e.g. example.ssh.cyberark.cloud).",
     },
     {
       name: windows ? "A PowerShell function of your own" : "A shell function of your own",
       command: `pam_key "{key_file}"`,
       lifetime: 240,
-      keyFile: "~/.ssh/cyberark_key",
+      keyFile: sshFile("cyberark_key"),
       note: `A function in ${words.fetchFunctionHome} that writes the key to the path it's given (the fetch reads it).`,
     },
     {
       name: "1Password (an SSH Key item)",
       command: `op read "op://Private/SSH key/private key?ssh-format=openssh" --out-file "{key_file}" --force`,
       lifetime: 480,
-      keyFile: "~/.ssh/onepassword_key",
+      keyFile: sshFile("onepassword_key"),
       note: "Writes an SSH Key item's private key to the key file: change Private/SSH key to your vault and item. 1Password's own SSH agent is usually better, as the key never leaves 1Password: leave Key file empty with Offer SSH keys on.",
     },
     {
       name: "Teleport",
       command: `tsh login --proxy={teleport_proxy} --user={ad_username} --out="{key_file}" --format=openssh`,
       lifetime: 720,
-      keyFile: "~/.ssh/teleport_key",
+      keyFile: sshFile("teleport_key"),
       note: "Writes the key and its certificate (key-cert.pub, which ssh picks up). Set {teleport_proxy}; the lifetime is your cluster's.",
     },
     {
       name: "Smallstep",
       command: `step ssh certificate {email} "{key_file}" --no-password --insecure --force`,
       lifetime: 960,
-      keyFile: "~/.ssh/step_key",
+      keyFile: sshFile("step_key"),
       note: "A new key and certificate from your step CA; the lifetime is your CA's.",
     },
     {
@@ -68,7 +71,7 @@ export function keyFetchExamples(system: System, onePassword = true): KeyFetchEx
         ? `Remove-Item -ErrorAction SilentlyContinue "{key_file}","{key_file}.pub"; ssh-keygen -q -t ed25519 -N '""' -f "{key_file}"`
         : `rm -f "{key_file}" "{key_file}.pub"; ssh-keygen -q -t ed25519 -N "" -f "{key_file}"`,
       lifetime: 1,
-      keyFile: "~/.ssh/fetch_test_key",
+      keyFile: sshFile("fetch_test_key"),
       note: "Makes a new key every minute, to try the fetch without a real issuer. Devices won't accept it.",
     },
   ];

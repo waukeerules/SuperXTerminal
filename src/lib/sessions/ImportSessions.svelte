@@ -212,9 +212,10 @@
           (PuttySession), as SuperXPuTTY imports them.{kind === "putty" ? " KiTTY's go in a KiTTY folder." : ""}</p>
       {:else if kind === "securecrt"}
         <p class="note">Each session's protocol, host, port and username in Session Manager's folders, with its key file
-          (-i) and serial settings as extra arguments, and a jump through another session kept. SecureCRT's Default
-          sessions are left out. Passwords aren't imported: SecureCRT encrypts them, so set them in the session or its
-          profile. Another folder can be chosen if SecureCRT's settings were moved (Global Options &gt; Configuration
+          (-i, SecureCRT's global one too), agent and X11 forwarding, port forwards and serial settings as extra
+          arguments, and a jump through another session kept. SecureCRT's Default sessions are left out. Passwords
+          aren't imported: SecureCRT encrypts them, so set them in the session or its profile. Its Config folder or
+          Sessions folder can be chosen if SecureCRT's settings were moved (Global Options &gt; Configuration
           Paths).</p>
       {:else if kind === "rdpRegistry"}
         <p class="note">One RDP session for each computer in Remote Desktop Connection's recent list.</p>

@@ -288,7 +288,7 @@ pub struct Summary {
     pub adds: usize,
     pub updates: usize,
     pub skips: usize,
-    /// "Line 4: no name", the first eight
+    /// "Line 4: no name" (CSV), or "ImportedFromSecureCRT/modem: a TAPI session..." (another app's), the first eight
     pub skipped: Vec<String>,
     pub ignored: Vec<String>,
     pub error: Option<String>,
@@ -307,7 +307,8 @@ impl Plan {
             skipped: self
                 .rows
                 .iter()
-                .filter_map(|r| r.skip.as_ref().map(|why| format!("Line {}: {why}", r.line)))
+                // a CSV row by its line; another app's session (added, numbered when taken) by where it would have gone
+                .filter_map(|r| r.skip.as_ref().map(|why| if r.unique && !r.id.is_empty() { format!("{}: {why}", r.id) } else { format!("Line {}: {why}", r.line) }))
                 .take(8)
                 .collect(),
             ignored: self.ignored.clone(),
@@ -567,6 +568,11 @@ fn plan_added(found: Vec<Found>, folder: &str, store: Store) -> Plan {
         }
         let sub = f.folder.trim_matches('/');
         row.id = [folder, sub, &name].iter().filter(|p| !p.is_empty()).copied().collect::<Vec<_>>().join("/");
+        if f.skip.is_some() {
+            row.skip = f.skip;
+            plan.rows.push(row);
+            continue;
+        }
         row.values = vec![
             ("SessionName".into(), name),
             ("Proto".into(), f.protocol.into()),
@@ -606,6 +612,8 @@ struct Found {
     note: String,
     /// The PuTTY profile (PuttySession); empty for the default
     profile: String,
+    /// Why it isn't imported (a kind that can't be opened here), said in the plan's skipped list; None to import it
+    skip: Option<String>,
 }
 
 // ---- MobaXterm
@@ -726,14 +734,42 @@ fn securecrt_values(text: &str) -> std::collections::HashMap<String, String> {
     values
 }
 
-/// Sessions in a SecureCRT Sessions folder (or a folder in it): one `.ini` file per session, named as the session,
-/// and Session Manager's folders as folders. SecureCRT's own files in the top folder aren't sessions: Default.ini
-/// (and Default_RDP.ini, Default_LocalShell.ini...), the template new sessions take, and each folder's
-/// `__FolderData__.ini`. Ordered by folder and name, as Session Manager lists them
-fn read_securecrt_folder(folder: &Path) -> Result<Vec<Found>, String> {
-    std::fs::read_dir(folder).map_err(|e| format!("Couldn't read {}: {e}", folder.display()))?;
+/// What a SecureCRT session's settings are read with, from its Config folder: the folder itself, for paths SecureCRT
+/// writes from it (`${VDS_CONFIG_PATH}\Keys\Identity`), and the global key, SSH2.ini's `Identity Filename V2`, for
+/// sessions set to Use Global Public Key
+struct SecureCrtConfig {
+    folder: String,
+    global_key: String,
+}
+
+impl SecureCrtConfig {
+    /// A key path as ssh takes it: `${VDS_CONFIG_PATH}` replaced by the Config folder, without the `::rawkey` (or
+    /// `::cert`) SecureCRT adds after it, and the private key named when it's given as the public half (`.pub`)
+    fn key(&self, path: &str) -> String {
+        let path = path.split("::").next().unwrap_or("").trim().replace("${VDS_CONFIG_PATH}", &self.folder);
+        path.strip_suffix(".pub").map(str::to_string).unwrap_or(path)
+    }
+}
+
+/// Sessions in a SecureCRT Sessions folder (or a folder in it), or in the Config folder that holds it: one `.ini` file
+/// per session, named as the session, and Session Manager's folders as folders. SecureCRT's own files in the top
+/// folder aren't sessions: Default.ini (and Default_RDP.ini, Default_LocalShell.ini...), the template new sessions
+/// take, and each folder's `__FolderData__.ini`; nor are a cloud sync's "conflicted copy" duplicates. Ordered by folder
+/// and name, as Session Manager lists them
+fn read_securecrt_folder(picked: &Path) -> Result<Vec<Found>, String> {
+    std::fs::read_dir(picked).map_err(|e| format!("Couldn't read {}: {e}", picked.display()))?;
+    // the Config folder chosen: its Sessions folder; a Sessions folder (SecureCRT's own): its parent is the Config
+    let (folder, config) = if picked.join("Sessions").is_dir() {
+        (picked.join("Sessions"), picked.to_path_buf())
+    } else {
+        (picked.to_path_buf(), picked.parent().map(Path::to_path_buf).unwrap_or_default())
+    };
+    let mut config = SecureCrtConfig { folder: config.display().to_string(), global_key: String::new() };
+    if let Ok(text) = read_text(&Path::new(&config.folder).join("SSH2.ini")) {
+        config.global_key = config.key(securecrt_values(&text).get("identity filename v2").map(String::as_str).unwrap_or(""));
+    }
     let mut found = Vec::new();
-    let mut pending = vec![(folder.to_path_buf(), String::new())];
+    let mut pending = vec![(folder.clone(), String::new())];
     while let Some((dir, sub)) = pending.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for entry in entries.flatten() {
@@ -744,35 +780,40 @@ fn read_securecrt_folder(folder: &Path) -> Result<Vec<Found>, String> {
                 continue;
             }
             let Some(name) = file.strip_suffix(".ini").or_else(|| file.strip_suffix(".INI")) else { continue };
-            if name.eq_ignore_ascii_case("__FolderData__") || (sub.is_empty() && (name.eq_ignore_ascii_case("Default") || name.starts_with("Default_"))) {
+            let default = sub.is_empty() && (name.eq_ignore_ascii_case("Default") || name.starts_with("Default_"));
+            if name.eq_ignore_ascii_case("__FolderData__") || default || name.contains("conflicted copy") {
                 continue;
             }
             let Ok(text) = read_text(&path) else { continue };
-            if let Some(f) = securecrt_session(name, &sub, &securecrt_values(&text)) {
-                found.push(f);
-            }
+            found.push(securecrt_session(name, &sub, &securecrt_values(&text), &config));
         }
     }
     found.sort_by_key(|f| if f.folder.is_empty() { f.name.to_lowercase() } else { format!("{}/{}", f.folder, f.name).to_lowercase() });
     Ok(found)
 }
 
-/// One SecureCRT session, from its settings ([`securecrt_values`]); None for a kind SuperXTerminal can't open (TAPI,
-/// a Local Shell). Its key file (`Identity Filename V2`, without the `::rawkey` SecureCRT adds) becomes `-i`, unless
-/// it uses SecureCRT's global key, which lives in SecureCRT's own settings. A jump through another session
-/// (`Firewall Name` "Session:name") names that session as it's imported, in the same folder of imports. Passwords
-/// aren't taken: SecureCRT encrypts them, and the profile or the session's own Password keeps them here
-fn securecrt_session(name: &str, folder: &str, values: &std::collections::HashMap<String, String>) -> Option<Found> {
+/// One SecureCRT session, from its settings ([`securecrt_values`]); a kind SuperXTerminal can't open (TAPI, a Local
+/// Shell) comes back with why it's skipped. For SSH, as extra arguments: its key file as `-i` (its own
+/// `Identity Filename V2`, or SSH2.ini's when it's set to Use Global Public Key; see [`SecureCrtConfig::key`]),
+/// unless its authentications leave public keys out; agent forwarding (`-A`) and X11 forwarding (`-X`) when they're on;
+/// and its port forwards (`-L`). A jump through another session (`Firewall Name` "Session:name") names that session as
+/// it's imported, in the same folder of imports. Passwords aren't taken: SecureCRT encrypts them, and the profile or
+/// the session's own Password keeps them here
+fn securecrt_session(name: &str, folder: &str, values: &std::collections::HashMap<String, String>, config: &SecureCrtConfig) -> Found {
     let get = |key: &str| values.get(key).map(|v| v.trim().to_string()).unwrap_or_default();
     let number = |key: &str| get(key).parse::<u32>().ok();
-    let (protocol, icon, port_key) = match get("protocol name").to_ascii_lowercase().as_str() {
+    let kind = get("protocol name");
+    let (protocol, icon, port_key) = match kind.to_ascii_lowercase().as_str() {
         "ssh2" | "ssh1" | "" => ("SSH", "computer", "[ssh2] port"),
         "telnet" | "telnet/ssl" => ("Telnet", "application_xp_terminal", "port"),
         "rlogin" => ("Rlogin", "application_xp_terminal", "port"),
         "raw" => ("Raw", "application_xp_terminal", "port"),
         "serial" => ("Serial", "telephone", ""),
         "rdp" => ("RDP", "monitor", "port"),
-        _ => return None,
+        _ => {
+            let skip = Some(format!("a {kind} session, which can't be opened here"));
+            return Found { folder: folder.to_string(), name: name.to_string(), skip, ..Found::default() };
+        }
     };
     let mut f = Found {
         folder: folder.to_string(),
@@ -799,10 +840,30 @@ fn securecrt_session(name: &str, folder: &str, values: &std::collections::HashMa
         }
     }
     if protocol == "SSH" {
-        let key = get("identity filename v2");
-        let key = key.split("::").next().unwrap_or("").trim();
-        if number("use global public key").unwrap_or(0) == 0 {
-            add_arg(&mut f.extra_args, "-i", key);
+        let key = if number("use global public key").unwrap_or(0) != 0 { config.global_key.clone() } else { config.key(&get("identity filename v2")) };
+        // a session SecureCRT logs in to by password alone would have its key offered first, a failed attempt
+        let auths = get("ssh2 authentications v2").to_ascii_lowercase();
+        if auths.is_empty() || auths.contains("publickey") {
+            add_arg(&mut f.extra_args, "-i", &key);
+        }
+        // 1 is on; SecureCRT writes 2 for the global setting, which lives in its own Global Options
+        for (setting, switch) in [("enable agent forwarding", "-A"), ("forward x11", "-X")] {
+            if number(setting) == Some(1) {
+                f.extra_args = [f.extra_args.as_str(), switch].iter().filter(|a| !a.is_empty()).copied().collect::<Vec<_>>().join(" ");
+            }
+        }
+        // Port Forward Table V3, a line each: flag|name|[bind,]port|1 when it names a host|host|port|... With no host
+        // named, SecureCRT connects to the SSH server itself, which is localhost there
+        for entry in values.get("port forward table v3").map(String::as_str).unwrap_or("").lines() {
+            let fields: Vec<&str> = entry.split('|').map(str::trim).collect();
+            if let [_, _, listen, has_host, host, port, ..] = fields[..] {
+                let (bind, listen) = listen.rsplit_once(',').unwrap_or(("", listen));
+                let host = if has_host == "1" && !host.is_empty() { host } else { "localhost" };
+                if listen.parse::<u16>().is_ok_and(|p| p > 0) && port.parse::<u16>().is_ok_and(|p| p > 0) {
+                    let bind = if bind.is_empty() { String::new() } else { format!("{bind}:") };
+                    add_arg(&mut f.extra_args, "-L", &format!("{bind}{listen}:{host}:{port}"));
+                }
+            }
         }
         let firewall = get("firewall name");
         if let Some(session) = firewall.strip_prefix("Session:").or_else(|| firewall.strip_prefix("session:")) {
@@ -810,7 +871,7 @@ fn securecrt_session(name: &str, folder: &str, values: &std::collections::HashMa
             f.jump_host = format!("ImportedFromSecureCRT/{}", session.trim_matches('/'));
         }
     }
-    Some(f)
+    f
 }
 
 // ---- Remote Desktop files
@@ -1649,12 +1710,14 @@ mod tests {
             r#"D:"Use Global Public Key"=00000001"#,
             r#"S:"Identity Filename V2"=C:\ignored\while\the\global\key\is\used"#,
         ]);
-        // a kind SuperXTerminal can't open: left out
+        // a kind SuperXTerminal can't open: skipped, saying why
         securecrt_file(&dir.join("modem.ini"), &[r#"S:"Protocol Name"=TAPI"#]);
 
         let found = read_securecrt_folder(&dir).unwrap();
         let plan = plan_added(found, "ImportedFromSecureCRT", Store::Private);
         std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(plan.summary().skipped, ["ImportedFromSecureCRT/modem: a TAPI session, which can't be opened here"]);
+        let plan = Plan { rows: plan.rows.into_iter().filter(|r| r.skip.is_none()).collect(), ..plan };
         let ids: Vec<&str> = plan.rows.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, [
             "ImportedFromSecureCRT/Lab/Core/sw1",
@@ -1694,6 +1757,56 @@ mod tests {
             println!("  {}  {}", row.id, shown.join(" "));
         }
         assert!(plan.error.is_none(), "{:?}", plan.error);
+    }
+
+    #[test]
+    fn takes_securecrt_keys_forwards_and_forwarding_from_its_config_folder() {
+        let dir = std::env::temp_dir().join(format!("sxt-securecrt-config-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = dir.join("Config");
+        let sessions = config.join("Sessions");
+        // SecureCRT's global key, in SSH2.ini, its path written from the Config folder
+        securecrt_file(&config.join("SSH2.ini"), &[r#"S:"Identity Filename V2"=${VDS_CONFIG_PATH}\Keys\Identity::rawkey"#]);
+        securecrt_file(&sessions.join("global.ini"), &[r#"S:"Protocol Name"=SSH2"#, r#"S:"Hostname"=g"#, r#"D:"Use Global Public Key"=00000001"#]);
+        // its own key, given as the public half; agent and X11 forwarding; two local forwards, one to the server itself
+        securecrt_file(&sessions.join("own.ini"), &[
+            r#"S:"Protocol Name"=SSH2"#,
+            r#"S:"Hostname"=o"#,
+            r#"D:"Use Global Public Key"=00000000"#,
+            r#"S:"Identity Filename V2"=C:\keys\me.pub"#,
+            r#"D:"Enable Agent Forwarding"=00000001"#,
+            r#"D:"Forward X11"=00000001"#,
+            r#"Z:"Port Forward Table V3"=00000002"#,
+            " 0|web|8080|1|intranet|80|",
+            " 0|mail|127.0.0.1,2525|0||25|",
+        ]);
+        // a key that can't be used: the session logs in by password only
+        securecrt_file(&sessions.join("password.ini"), &[
+            r#"S:"Protocol Name"=SSH2"#,
+            r#"S:"Hostname"=p"#,
+            r#"D:"Use Global Public Key"=00000000"#,
+            r#"S:"Identity Filename V2"=C:\keys\unused"#,
+            r#"S:"SSH2 Authentications V2"=password,keyboard-interactive"#,
+            r#"D:"Enable Agent Forwarding"=00000002"#,
+        ]);
+        // a cloud sync's duplicate, not a session of its own; and a kind that can't be opened, said as skipped
+        securecrt_file(&sessions.join("own (conflicted copy 2026-01-01).ini"), &[r#"S:"Protocol Name"=SSH2"#, r#"S:"Hostname"=o"#]);
+        securecrt_file(&sessions.join("modem.ini"), &[r#"S:"Protocol Name"=TAPI"#]);
+
+        // the Config folder or its Sessions folder: the same sessions, the key paths from the Config folder
+        for picked in [&config, &sessions] {
+            let plan = plan_added(read_securecrt_folder(picked).unwrap(), "ImportedFromSecureCRT", Store::Private);
+            let row = |id: &str| plan.rows.iter().find(|r| r.id == format!("ImportedFromSecureCRT/{id}")).unwrap_or_else(|| panic!("no {id}: {:?}", plan.rows));
+            let args = |id: &str| row(id).values.iter().find(|(n, _)| n == "ExtraArgs").map(|(_, v)| v.clone()).unwrap_or_default();
+            assert_eq!(plan.rows.len(), 4, "{picked:?}: {:?}", plan.rows.iter().map(|r| &r.id).collect::<Vec<_>>());
+            let global = format!("{}\\Keys\\Identity", config.display());
+            let global = if global.contains(' ') { format!("-i \"{global}\"") } else { format!("-i {global}") };
+            assert_eq!(args("global"), global, "{picked:?}");
+            assert_eq!(args("own"), r"-i C:\keys\me -A -X -L 8080:intranet:80 -L 127.0.0.1:2525:localhost:25");
+            assert_eq!(args("password"), "");
+            assert_eq!(row("modem").skip.as_deref(), Some("a TAPI session, which can't be opened here"));
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

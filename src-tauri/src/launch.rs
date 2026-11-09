@@ -352,9 +352,11 @@ pub fn key_fetch(profiles: &Profiles, values: &HashMap<String, String>, profile_
     };
     #[cfg(not(windows))]
     let command = {
-        let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/bin/zsh".into());
+        // the user's shell; without $SHELL, the Mac's own zsh, or on Linux sh, which every system has
+        let fallback = if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/sh" };
+        let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| fallback.into());
         let mut command = CommandBuilder::new(shell);
-        // -i reads the rc file (~/.zshrc), where a function like pam lives
+        // -i reads the rc file (~/.zshrc on the Mac, ~/.bashrc for bash on Linux), where a function like pam lives
         command.args(["-i", "-c", &text]);
         command
     };

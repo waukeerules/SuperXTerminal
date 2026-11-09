@@ -2,9 +2,12 @@
  * Examples for a profile's Fetch command (Settings > Profiles > Login), for keys issued for a short time: picked from a
  * list beside the field, then edited. Each fills the command, its lifetime and, when none is set, a key file. The
  * names in {braces} other than {key_file} are Environment Variables the user sets (Tools > Environment Variables,
- * which lists the ones used but not defined). Commands run through the user's shell on the Mac (its ~/.zshrc read) and
- * PowerShell on Windows (its profile read), so OpenSSH's sftp and ssh-keygen work the same on both.
+ * which lists the ones used but not defined). Commands run through the user's shell on the Mac and Linux (its rc file
+ * read: ~/.zshrc, ~/.bashrc) and PowerShell on Windows (its profile read), so OpenSSH's sftp and ssh-keygen work the
+ * same on all three; where the shells differ (removing a file), the Mac and Linux share the Unix command.
  */
+import { wordsFor, type System } from "../platform";
+
 export interface KeyFetchExample {
   name: string;
   command: string;
@@ -16,10 +19,13 @@ export interface KeyFetchExample {
 }
 
 /**
- * The examples for this system: `mac` for the Mac's shell commands, else PowerShell's
+ * The examples for a system: a Unix shell's commands on the Mac and Linux, PowerShell's on Windows
+ * @param system which system's
  * @param onePassword Whether 1Password is turned on (Settings > General); off, its example isn't offered
  */
-export function keyFetchExamples(mac: boolean, onePassword = true): KeyFetchExample[] {
+export function keyFetchExamples(system: System, onePassword = true): KeyFetchExample[] {
+  const windows = system === "windows";
+  const words = wordsFor(system);
   const all: KeyFetchExample[] = [
     {
       name: "CyberArk (MFA caching)",
@@ -29,13 +35,11 @@ export function keyFetchExamples(mac: boolean, onePassword = true): KeyFetchExam
       note: "The key from CyberArk's key target; sign in at the link it shows, then paste the PIN. Set {ad_username}, {cyberark_region} and {cyberark_gateway} (e.g. example.ssh.cyberark.cloud).",
     },
     {
-      name: mac ? "A shell function of your own" : "A PowerShell function of your own",
+      name: windows ? "A PowerShell function of your own" : "A shell function of your own",
       command: `pam_key "{key_file}"`,
       lifetime: 240,
       keyFile: "~/.ssh/cyberark_key",
-      note: mac
-        ? "A function in your ~/.zshrc that writes the key to the path it's given (the fetch reads ~/.zshrc)."
-        : "A function in your PowerShell profile that writes the key to the path it's given.",
+      note: `A function in ${words.fetchFunctionHome} that writes the key to the path it's given (the fetch reads it).`,
     },
     {
       name: "1Password (an SSH Key item)",
@@ -60,9 +64,9 @@ export function keyFetchExamples(mac: boolean, onePassword = true): KeyFetchExam
     },
     {
       name: "Test: a throwaway key",
-      command: mac
-        ? `rm -f "{key_file}" "{key_file}.pub"; ssh-keygen -q -t ed25519 -N "" -f "{key_file}"`
-        : `Remove-Item -ErrorAction SilentlyContinue "{key_file}","{key_file}.pub"; ssh-keygen -q -t ed25519 -N '""' -f "{key_file}"`,
+      command: windows
+        ? `Remove-Item -ErrorAction SilentlyContinue "{key_file}","{key_file}.pub"; ssh-keygen -q -t ed25519 -N '""' -f "{key_file}"`
+        : `rm -f "{key_file}" "{key_file}.pub"; ssh-keygen -q -t ed25519 -N "" -f "{key_file}"`,
       lifetime: 1,
       keyFile: "~/.ssh/fetch_test_key",
       note: "Makes a new key every minute, to try the fetch without a real issuer. Devices won't accept it.",

@@ -6,11 +6,10 @@
   colleague's or another computer's.
 -->
 <script lang="ts">
-  import { MONOSPACE_FONTS, SECRET_STORE, SSH_CONFIG, SSH_KEYS, THIS_COMPUTER } from "../platform";
+  import { FETCH_SHELL, MONOSPACE_FONTS, SECRET_STORE, SSH_CONFIG, SSH_KEYS, SYSTEM_KIND, THIS_COMPUTER } from "../platform";
   import { onMount, tick } from "svelte";
   import { ask, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
-  import { isMac } from "../shortcuts";
   import { context, jumpHostOf } from "../commands/sending.svelte";
   import { keyFetchExamples } from "./keyFetchExamples";
   import { chosenScript, isFullPath } from "../scripting/scriptPath";
@@ -428,7 +427,7 @@
   }
 
   /** Examples for the Fetch command, for this system; the one last picked, for its note */
-  const examples = $derived(keyFetchExamples(isMac, settings.onePassword));
+  const examples = $derived(keyFetchExamples(SYSTEM_KIND, settings.onePassword));
   let example = $state<(typeof examples)[number] | null>(null);
 
   /** Fill the fetch from an example: its command and lifetime, and a key file when there's none */
@@ -599,7 +598,7 @@
       <label>{@render caption("Lifetime", "keyLifetime")}<input class="short" type="number" min="0" bind:value={draft.keyLifetime} />
         <span class="note">minutes a fetched key is good for (0: fetched only when there's none)</span></label>
       {#if draft.keyFetch.trim()}
-        <p class="note under">{keyState} The fetch runs in the session's tab, through {isMac ? "your shell (its ~/.zshrc read, so a function works)" : "PowerShell"},
+        <p class="note under">{keyState} The fetch runs in the session's tab, through {FETCH_SHELL},
           so its sign-in (a link, a PIN) happens there; {"{key_file}"} and your Environment Variables are filled in. See docs/CYBERARK.md.</p>
       {/if}
       <p class="under">
@@ -677,7 +676,7 @@
           <option value="off">Don't show</option>
         </select></label>
       <p class="note under">The server's CPU, memory, root disk and network traffic, every 3 seconds, while one of this
-        profile's tabs is in front, read with cat and df: nothing on the server changes. {#if isMac}Read over the tab's
+        profile's tabs is in front, read with cat and df: nothing on the server changes. {#if SYSTEM_KIND !== "windows"}Read over the tab's
         own connection, with no second login.{:else}Read over a second login of its own (Windows' OpenSSH can't share the
         tab's), which needs a key, a key file or ssh-agent: a server that asks for a password gives none.{/if} Linux
         only: leave it off for Cisco and other network devices, which would log the attempt as a command, and for
@@ -831,7 +830,7 @@
         </select></label>
       <p class="note under">As PuTTY's Remote character set, for a device that doesn't send UTF-8: its accents, or its
         boxes and lines, show as � or stray letters until this matches it. What's typed is sent in it too.
-        {#if !isMac}Telnet, Raw and Serial sessions only on Windows: for SSH, Windows' console turns the device's
+        {#if SYSTEM_KIND === "windows"}Telnet, Raw and Serial sessions only on Windows: for SSH, Windows' console turns the device's
         characters into UTF-8 before SuperXTerminal sees them.{/if}</p>
       <label>{@render caption("Colours", "colours")}
         <select value={shownChoice(draft)} onchange={(e) => (draft.colours = e.currentTarget.value)}>

@@ -518,6 +518,26 @@ test.describe("Special Command in the terminal's menu", () => {
   });
 });
 
+test("the menu scrolls in a terminal too short for it, its last rows still in reach", async ({ page }) => {
+  // the test's 400-pixel page is shorter than the menu, as a terminal is with the Log Viewer open under it
+  await openTerminal(page, {});
+  await page.locator("#terminal").click({ button: "right", position: { x: 20, y: 300 } });
+  const menu = page.locator("#menu");
+  const fits = await menu.evaluate((m) => {
+    const box = m.getBoundingClientRect();
+    return { top: box.top, bottom: box.bottom, height: window.innerHeight, scrolls: m.scrollHeight > m.clientHeight };
+  });
+  expect(fits.top).toBeGreaterThanOrEqual(0);
+  expect(fits.bottom).toBeLessThanOrEqual(fits.height);
+  expect(fits.scrolls).toBe(true);
+  // the last row, scrolled to, can be clicked
+  const last = menu.locator(".item", { hasText: "Close All Tabs" });
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport();
+  const box = await last.boundingBox();
+  expect(box!.y + box!.height).toBeLessThanOrEqual(fits.height);
+});
+
 test("a file dropped on the terminal doesn't open in its place", async ({ page }) => {
   await openTerminal(page, {});
   // a real DataTransfer with a file, as Finder's drop gives the page

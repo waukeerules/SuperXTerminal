@@ -485,6 +485,23 @@ mod tests {
         assert_eq!(prefs.get("cursorBlink").map(String::as_str), Some("off"));
     }
 
+    /// Some demo sessions name profiles the demo doesn't have, so Settings > Profiles' "Named by sessions, not set up"
+    /// has something to show: Arista EOS by two switches, Palo Alto by one firewall
+    #[test]
+    fn some_demo_sessions_name_profiles_that_arent_set_up() {
+        let root = std::env::temp_dir().join(format!("sxt-demo-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (user, shared) = (root.join("user"), root.join("shared"));
+        seed(&user, &shared).unwrap();
+        let mut problems = Vec::new();
+        let saved = crate::sessions::read_sessions_file(&shared.join("Sessions.xml"), &mut problems);
+        let named = saved.iter().map(|s| (s.get("PuttySession"), format!("session {}", s.id())));
+        let missing = crate::profiles::missing(&profiles(), named);
+        let counts: Vec<(&str, usize)> = missing.iter().map(|(name, places)| (name.as_str(), places.len())).collect();
+        assert_eq!(counts, [("Arista EOS", 2), ("Palo Alto", 1)]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn demo_mode_is_asked_for_by_the_switch_or_the_variable() {
         assert!(asked(&["--demo".into()], None));
@@ -576,11 +593,13 @@ mod tests {
             assert!(shortcuts.recent.iter().any(|r| r == id), "{id} is open but not in Recent");
         }
 
-        // every profile the sessions name is there
+        // every profile the sessions name is there, but the two left out on purpose, for Settings > Profiles to list
+        // as not set up (some_demo_sessions_name_profiles_that_arent_set_up)
         let profiles = crate::profiles::Profiles::load(&user);
         for session in saved.iter().chain(&private).chain(&cached.sessions) {
             let name = session.get("PuttySession");
-            assert!(profiles.profiles.iter().any(|p| p.name == name), "{} uses profile {name}, which isn't there", session.id());
+            let on_purpose = name == "Arista EOS" || name == "Palo Alto";
+            assert!(on_purpose || profiles.profiles.iter().any(|p| p.name == name), "{} uses profile {name}, which isn't there", session.id());
         }
 
         let bars = crate::buttonbars::load(&shared.join("ButtonBars.xml"));

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Demo mode's Saved sessions (Sessions.xml in its settings folder): a made-up company's network, every name and
-     address invented (example.net, and private or documentation ranges). The app runs each as a stand-in device
+     address invented (example.net, and private or documentation ranges). A few name profiles the demo doesn't have
+     (Arista EOS, Palo Alto), for Settings > Profiles' "Named by sessions, not set up". The app runs each as a stand-in device
      (demo.rs), never ssh. Copied to a fresh folder on each demo start, so changes made while demoing go nowhere. -->
 <ArrayOfSessionData xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <SessionData SessionId="Production/Network/Core/core-sw-01" SessionName="core-sw-01" ImageKey="coreswitch" Host="core-sw-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" Note="Catalyst 9500, core A. Change window: Sundays 02:00-04:00." ButtonBar="Cisco" />
@@ -10,6 +11,9 @@
   <SessionData SessionId="Production/Network/Edge/edge-rtr-01" SessionName="edge-rtr-01" ImageKey="router" Host="edge-rtr-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" Note="ISR 4451, upstream A (203.0.113.1)." ButtonBar="Cisco" />
   <SessionData SessionId="Production/Network/Edge/edge-srx-01" SessionName="edge-srx-01" ImageKey="firewall" Host="edge-srx-01.example.net" Port="22" Proto="SSH" PuttySession="Juniper" Username="netops" Note="SRX345 cluster, node 0." ButtonBar="Junos" />
   <SessionData SessionId="Production/Network/Edge/vpn-01" SessionName="vpn-01" ImageKey="vpn" Host="vpn-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
+  <SessionData SessionId="Production/Network/Edge/edge-pa-01" SessionName="edge-pa-01" ImageKey="firewall" Host="edge-pa-01.example.net" Port="22" Proto="SSH" PuttySession="Palo Alto" Username="netops" Note="PA-3410. Its profile, Palo Alto, isn't set up in the demo: Settings &gt; Profiles lists it to set up." />
+  <SessionData SessionId="Production/Network/Data Centre/dc-leaf-01" SessionName="dc-leaf-01" ImageKey="switch" Host="dc-leaf-01.example.net" Port="22" Proto="SSH" PuttySession="Arista EOS" Username="netops" Note="Arista 7050X, leaf A. Its profile, Arista EOS, isn't set up in the demo." />
+  <SessionData SessionId="Production/Network/Data Centre/dc-leaf-02" SessionName="dc-leaf-02" ImageKey="switch" Host="dc-leaf-02.example.net" Port="22" Proto="SSH" PuttySession="Arista EOS" Username="netops" Note="Arista 7050X, leaf B." />
   <SessionData SessionId="Production/Network/Wireless/wlc-01" SessionName="wlc-01" ImageKey="wlc" Host="wlc-01.example.net" Port="22" Proto="SSH" PuttySession="Network devices" Username="netops" ButtonBar="Cisco" />
   <SessionData SessionId="Production/Servers/web-01" SessionName="web-01" ImageKey="ubuntu" Host="web-01.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="deploy" Note="nginx + app, behind lb-01." ButtonBar="Linux" />
   <SessionData SessionId="Production/Servers/web-02" SessionName="web-02" ImageKey="ubuntu" Host="web-02.example.net" Port="22" Proto="SSH" PuttySession="Linux servers" Username="deploy" ButtonBar="Linux" />

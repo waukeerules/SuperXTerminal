@@ -981,8 +981,9 @@ pub(crate) fn expand_home(path: &str) -> String {
     expand_home_in(path, dirs::home_dir().as_deref())
 }
 
-/// [`expand_home`], with the home folder given (the tests')
+/// [`expand_home`], with the home folder given (the tests'). The path is [`pasted_path`]-cleaned first
 pub(crate) fn expand_home_in(path: &str, home: Option<&std::path::Path>) -> String {
+    let path = pasted_path(path);
     let Some(home) = home else { return path.to_string() };
     let rest = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")).or_else(|| {
         // %USERPROFILE% whatever its case, as Windows reads variables, then a \ or /
@@ -992,6 +993,22 @@ pub(crate) fn expand_home_in(path: &str, home: Option<&std::path::Path>) -> Stri
     match rest {
         Some(rest) => home.join(rest).display().to_string(),
         None => path.to_string(),
+    }
+}
+
+/// A path as typed or pasted, without what copying it from Windows adds: the unseen direction marks (U+202A and its
+/// kin, U+200E, a byte order mark) that File > Properties > Security's Object name starts with, the double quotes
+/// File Explorer's Copy as path puts round it, and spaces round either. With them the file "isn't there", though
+/// the path looks right in Settings > Profiles
+pub(crate) fn pasted_path(path: &str) -> &str {
+    /// Characters that take no space and are never part of a file's name as typed
+    fn unseen(c: char) -> bool {
+        matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+    }
+    let path = path.trim_matches(|c: char| c.is_whitespace() || unseen(c));
+    match path.strip_prefix('"').and_then(|p| p.strip_suffix('"')) {
+        Some(inner) => inner.trim_matches(|c: char| c.is_whitespace() || unseen(c)),
+        None => path,
     }
 }
 
@@ -1482,6 +1499,26 @@ mod tests {
         let mut no_fetch = fetching(&key, 240);
         no_fetch.profiles[2].key_fetch.clear();
         assert!(launched(&no_fetch, &[], &sw).is_ok());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_key_path_pasted_from_windows_is_used_though_it_carries_hidden_marks_or_quotes() {
+        let folder = std::env::temp_dir().join(format!("sxt-pastedkey-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let key = folder.join("Openmediavault");
+        std::fs::write(&key, "key").unwrap();
+        let real = key.display().to_string();
+        let sw = at("10.0.0.7", &[("PuttySession", "Jump Host"), ("Username", "root")]);
+        // File > Properties > Security's Object name starts with an unseen U+202A; File Explorer's Copy as path puts
+        // the path in double quotes; either was taken as part of the name, and the key "wasn't there"
+        for pasted in [format!("\u{202A}{real}"), format!("\"{real}\""), format!(" \u{202A}\"{real}\"\u{200E} ")] {
+            let mut profiles = profiles();
+            profiles.profiles.push(Profile { name: "Jump Host".into(), key_file: pasted.clone(), ..Profile::default() });
+            let args = launched(&profiles, &[], &sw).unwrap();
+            let at = args.iter().position(|a| a == "-i").unwrap_or_else(|| panic!("no key for {pasted:?}: {args:?}"));
+            assert_eq!(args[at + 1], real, "{pasted:?}");
+        }
         std::fs::remove_dir_all(&folder).unwrap();
     }
 

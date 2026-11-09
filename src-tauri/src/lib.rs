@@ -7,6 +7,7 @@ mod buttonbars;
 mod cli;
 mod charset;
 mod onepassword;
+mod own_process;
 mod ui_themes;
 mod clipboard;
 mod command_history;

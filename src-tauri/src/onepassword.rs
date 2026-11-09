@@ -234,7 +234,8 @@ fn op_program() -> Option<std::path::PathBuf> {
     on_path.chain(usual).find(|p| p.is_file())
 }
 
-/// 1Password's CLI, ready to run with its window hidden on Windows and nothing to read from; or why it can't be
+/// 1Password's CLI, ready to run with its window hidden on Windows and nothing to read from, by
+/// [`crate::own_process::output`]; or why it can't be
 fn op_command() -> Result<std::process::Command, String> {
     let program = op_program().ok_or_else(|| format!("1Password's CLI (op) isn't installed: {INSTALL}, then turn on Integrate with 1Password CLI in 1Password's Settings > Developer ({GET_STARTED})."))?;
     let mut command = std::process::Command::new(program);
@@ -255,11 +256,12 @@ pub fn check() -> Result<String, String> {
         return Err(format!("{TURNED_OFF}."));
     }
     let mut version = op_command()?;
-    let version = version.arg("--version").output().map_err(|e| format!("op didn't start ({e})."))?;
+    version.arg("--version");
+    let version = crate::own_process::output(version).map_err(|e| format!("op didn't start ({e})."))?;
     let version = String::from_utf8_lossy(&version.stdout).trim().to_string();
     let mut vaults = op_command()?;
     vaults.args(["vault", "list", "--format=json"]);
-    let output = finish(vaults.spawn().map_err(|e| format!("op didn't start ({e})."))?, "1Password")?;
+    let output = finish(vaults, "1Password")?;
     if !output.status.success() {
         return Err(explain("1Password", &String::from_utf8_lossy(&output.stderr)));
     }
@@ -267,15 +269,16 @@ pub fn check() -> Result<String, String> {
     Ok(format!("1Password's CLI {version} works, through the 1Password app: {count} vault{} it can read.", if count == 1 { "" } else { "s" }))
 }
 
-/// A started op's output, giving up after [`APPROVE_WITHIN`] as it may be waiting for the user's approval
+/// An op run's output, giving up after [`APPROVE_WITHIN`] as it may be waiting for the user's approval. Run by
+/// [`crate::own_process::output`], so on the Mac op is let into 1Password's container (see that module)
 #[cfg_attr(test, allow(dead_code))]
-fn finish(child: std::process::Child, what: &str) -> Result<std::process::Output, String> {
+fn finish(command: std::process::Command, what: &str) -> Result<std::process::Output, String> {
     let (sent, got) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = sent.send(child.wait_with_output());
+        let _ = sent.send(crate::own_process::output(command));
     });
     match got.recv_timeout(APPROVE_WITHIN) {
-        Ok(output) => output.map_err(|e| format!("{what} wasn't read: {e}.")),
+        Ok(output) => output.map_err(|e| format!("{what} wasn't read: op didn't start ({e}).")),
         Err(_) => Err(format!("{what} wasn't read: 1Password wasn't approved within {} seconds.", APPROVE_WITHIN.as_secs())),
     }
 }
@@ -285,8 +288,7 @@ fn finish(child: std::process::Child, what: &str) -> Result<std::process::Output
 fn run_op(reference: &str) -> Result<String, String> {
     let mut command = op_command().map_err(|why| format!("{reference} wasn't read: {why}"))?;
     command.args(["read", "--no-newline", reference]);
-    let child = command.spawn().map_err(|e| format!("{reference} wasn't read: op didn't start ({e})."))?;
-    let output = finish(child, reference)?;
+    let output = finish(command, reference)?;
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).to_string());
     }

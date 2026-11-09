@@ -58,6 +58,11 @@ The steps to click through are in each build guide:
    The Linux packages come from `node scripts/build-linux.mjs --into releases/<version>` ([BUILD-Linux.md](BUILD-Linux.md)),
    which `release.bat` runs after Windows' build.
 
+   Those are Tauri's names, which only say the processor. Publishing renames them to say the system as well
+   (`scripts/release-names.mjs`), and these are the names in the release and its download table:
+   `SuperXTerminal-<version>-macOS-AppleSilicon.dmg`, `-Windows-x64.msi`, `-Windows-x64-setup.exe`,
+   `-Linux-x64.deb`, `-Linux-x64.rpm` and `-Linux-x64.AppImage`.
+
    Git ignores `releases/`, so it never syncs between the computers.
 3. **The notes.** On the first computer, write `releases/<version>/NOTES.md`: what's new, the download table, and the
    "Before you install" warnings for Gatekeeper and SmartScreen. `gh release view --json body -q .body` prints the

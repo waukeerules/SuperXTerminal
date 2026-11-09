@@ -4,6 +4,9 @@
 // which is when the app's update check offers it, so it refuses until the Mac's .dmg, Windows' .msi and -setup.exe,
 // and the Linux .deb, .rpm and AppImage (built in Docker on the Windows PC, scripts/build-linux.mjs) are all in.
 //
+// Before uploading, the installers in releases/<version>/ are renamed from Tauri's names to ones that say their system
+// (SuperXTerminal-0.8.0-macOS-AppleSilicon.dmg, -Windows-x64.msi, -Linux-x64.deb...): scripts/release-names.mjs.
+//
 // The notes are releases/<version>/NOTES.md when it's there (what's new, the download table, how to get past
 // Gatekeeper and SmartScreen), put in whenever the script runs so they can be written or changed while it's a draft;
 // without it, GitHub's generated notes, which for commits straight to main are little more than a changelog link.
@@ -12,10 +15,11 @@
 // the same as origin/main. Whether the release exists is read from `gh release list`, which includes drafts, so an
 // older GitHub CLI that can't look a draft up by its tag stops with its own error rather than making a second release;
 // keep the CLI up to date (docs/BUILD-Windows.md). Needs that CLI, signed in (gh auth login). docs/RELEASE.md.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { expectedNames, releaseName } from "./release-names.mjs";
 
 /** The repository's folder (fileURLToPath, not the URL's pathname: on Windows that's "/C:/...") */
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -58,16 +62,21 @@ function releaseExists(tag) {
   return (list ? JSON.parse(list) : []).some((r) => r.tagName === tag);
 }
 
-/** The installers that must all be in before the release is public: the Mac's, Windows' two and Linux's three */
-function expected(version) {
-  return [
-    `SuperXTerminal_${version}_aarch64.dmg`,
-    `SuperXTerminal_${version}_x64_en-US.msi`,
-    `SuperXTerminal_${version}_x64-setup.exe`,
-    `SuperXTerminal_${version}_amd64.deb`,
-    `SuperXTerminal-${version}-1.x86_64.rpm`,
-    `SuperXTerminal_${version}_amd64.AppImage`,
-  ];
+/**
+ * Rename the installers in the version's folder to their release names (scripts/release-names.mjs), saying so
+ * @param {string} folder releases/<version>
+ * @param {string} version the version
+ * @returns {string[]} the folder's file names afterwards
+ */
+function renameForRelease(folder, version) {
+  for (const file of readdirSync(folder)) {
+    const name = releaseName(file, version);
+    if (name && name !== file) {
+      renameSync(join(folder, file), join(folder, name));
+      console.log(`${file} is ${name} in the release.`);
+    }
+  }
+  return readdirSync(folder);
 }
 
 /** Stop unless this checkout is what GitHub has: tracked files as committed, and the commit origin/main's */
@@ -84,7 +93,7 @@ function main() {
   const version = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8")).version;
   const tag = `v${version}`;
   const folder = join(root, "releases", version);
-  const names = existsSync(folder) ? readdirSync(folder) : [];
+  const names = existsSync(folder) ? renameForRelease(folder, version) : [];
   const files = names.filter((f) => f !== NOTES && !f.startsWith(".")).map((f) => join(folder, f));
   const notes = names.includes(NOTES) ? join(folder, NOTES) : null;
   const final = process.argv.includes("--final");
@@ -121,7 +130,7 @@ function main() {
 
   if (final) {
     const assets = output(["gh", "release", "view", tag, "--json", "assets", "--jq", ".assets[].name"]).split(/\r?\n/);
-    const missing = expected(version).filter((name) => !assets.includes(name));
+    const missing = expectedNames(version).filter((name) => !assets.includes(name));
     if (missing.length) fail(`\n${tag} stays a draft: it hasn't got ${missing.join(", ")} yet. Run npm run release:publish on the computer that has them.`);
     run(["gh", "release", "edit", tag, "--draft=false"]);
     console.log(`\n${tag} is public: the app's update check offers it now.`);

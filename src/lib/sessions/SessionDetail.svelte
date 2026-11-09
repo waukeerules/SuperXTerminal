@@ -44,11 +44,15 @@
   let fields = $state<SessionFields | null>(null);
   let picked = $state(0);
 
-  // the selected session's fields, read again whenever another is selected
+  // the selected session's fields, read again whenever another is selected. The last one's stay until they come:
+  // emptying the pane meanwhile ("Reading…") changed its height for a moment, and the tree above it jumped at every
+  // click. An answer for a session no longer selected is dropped (stale)
   $effect(() => {
     const s = session;
-    fields = null;
-    if (!s) return;
+    if (!s) {
+      fields = null;
+      return;
+    }
     let stale = false;
     getSession(s.store, s.id).then((f) => !stale && (fields = f), () => {});
     return () => (stale = true);

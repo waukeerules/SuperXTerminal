@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { applyUiTheme, loadUiThemes, themeColours, uiThemeNamed } from "./uiThemes.svelte";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { Dock } from "../layout/dock";
 
 /** The settings, as the Rust core keeps them */
 export interface AppSettings {
@@ -45,9 +46,13 @@ export interface AppSettings {
   useSessionsXml: boolean;
   /** Private sessions (PrivateSessions.xml, only yours) are used; one of the two stays on */
   usePrivateSessions: boolean;
-  /** The Sessions pane's width in points, as dragged at its edge */
+  /** The Sessions pane's width in points, as dragged at its edge, while it's docked at the left or right */
   sessionsPaneWidth: number;
-  /** The Sessions pane is auto-hidden: a tab at the left edge slides it out */
+  /** Where the Sessions pane is docked: its title dragged to the window's left, right or bottom (layout/dock.ts) */
+  sessionsDock: Dock;
+  /** The Sessions pane's height in points, as dragged at its edge, while it's docked at the bottom */
+  sessionsPaneHeight: number;
+  /** The Sessions pane is auto-hidden: a tab at the edge where it's docked slides it out */
   sessionsAutoHide: boolean;
   /** The layout opened at start ("" for none, "<Auto Restore>" for the last), as SuperXPuTTY's DefaultLayoutName */
   defaultLayoutName: string;
@@ -140,6 +145,8 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   useSessionsXml: true,
   usePrivateSessions: true,
   sessionsPaneWidth: 280,
+  sessionsDock: "left",
+  sessionsPaneHeight: 260,
   sessionsAutoHide: false,
   defaultLayoutName: "",
   showSessionDetail: false,

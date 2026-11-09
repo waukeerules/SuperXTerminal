@@ -41,6 +41,7 @@
   import SessionDetail from "./lib/sessions/SessionDetail.svelte";
   import { AUTO_RESTORE, LAYOUTS_CHANGED, listLayouts, readLayout, renameLayout, saveLayout, type Layout } from "./lib/layout/layouts";
   import type { LayoutActions } from "./lib/settings/LayoutsTab.svelte";
+  import { clampPaneHeight, clampPaneWidth, dockTarget, dockZones, type Dock } from "./lib/layout/dock";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
   import { getVersion } from "@tauri-apps/api/app";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -311,19 +312,28 @@
 
   /** The Sessions pane's width while its edge is dragged; the setting otherwise */
   let paneWidth = $state<number | null>(null);
+  /** Its height while its edge is dragged, docked at the bottom; the setting otherwise */
+  let paneHeight = $state<number | null>(null);
+  /** The area the pane shares with the tabs (.main): where it can be docked, and what its size is kept within */
+  let mainArea = $state<HTMLElement>();
   /** While searching, the width the Sessions tree's matches need (Settings > General: widen while searching) */
   let searchWidth = $state<number | null>(null);
   /** The widest the Sessions pane grows to fit a search's matches */
   const SEARCH_MAX = 600;
   /** The Sessions pane's width before the user has dragged it */
   const PANE_DEFAULT = 280;
-  /** A width the Sessions pane can take: at least 160 points, and leaving the tabs 320 */
-  const clampWidth = (w: number) => Math.round(Math.max(160, Math.min(w, window.innerWidth - 320)));
+  /** Its height at the bottom before the user has dragged it */
+  const PANE_DEFAULT_HEIGHT = 260;
+  /** A width the Sessions pane can take beside the tabs (dock.ts) */
+  const clampWidth = (w: number) => clampPaneWidth(w, mainArea?.clientWidth || window.innerWidth);
+  /** Where the Sessions pane is docked now */
+  const dock = $derived<Dock>(settings.sessionsDock === "right" || settings.sessionsDock === "bottom" ? settings.sessionsDock : "left");
 
   /**
-   * Drag the Sessions pane's edge, as SuperXPuTTY's docked pane splitter: 8 points wide with a grip line down its
-   * middle so it's easy to find; the width is kept in the settings. Tabs' web pages don't take the pointer while
-   * dragging, so it isn't lost over a terminal.
+   * Drag the Sessions pane's edge, as SuperXPuTTY's docked pane splitter: 8 points wide with a grip line along its
+   * middle so it's easy to find. Beside the tabs it sets the width (the edge on the tabs' side, so dragging away from
+   * the window's edge widens it, on the left or right alike); under them, the height. Kept in the settings. Tabs' web
+   * pages don't take the pointer while dragging, so it isn't lost over a terminal.
    */
   function startResize(event: PointerEvent): void {
     if (event.button !== 0) return;
@@ -331,16 +341,25 @@
     const handle = event.currentTarget as HTMLElement;
     handle.setPointerCapture(event.pointerId);
     const startX = event.clientX;
+    const startY = event.clientY;
     const startWidth = settings.sessionsPaneWidth || PANE_DEFAULT;
+    const startHeight = settings.sessionsPaneHeight || PANE_DEFAULT_HEIGHT;
+    const side = dock;
     document.body.classList.add("resizing-pane");
-    const move = (e: PointerEvent) => (paneWidth = clampWidth(startWidth + e.clientX - startX));
+    document.body.classList.toggle("rows", side === "bottom");
+    const move = (e: PointerEvent) => {
+      if (side === "bottom") paneHeight = clampPaneHeight(startHeight - (e.clientY - startY), mainArea?.clientHeight || window.innerHeight);
+      else paneWidth = clampWidth(startWidth + (side === "right" ? startX - e.clientX : e.clientX - startX));
+    };
     const done = () => {
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", done);
       handle.removeEventListener("pointercancel", done);
-      document.body.classList.remove("resizing-pane");
+      document.body.classList.remove("resizing-pane", "rows");
       if (paneWidth !== null && paneWidth !== settings.sessionsPaneWidth) void saveSettings({ sessionsPaneWidth: paneWidth });
+      if (paneHeight !== null && paneHeight !== settings.sessionsPaneHeight) void saveSettings({ sessionsPaneHeight: paneHeight });
       paneWidth = null;
+      paneHeight = null;
     };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", done);
@@ -348,7 +367,68 @@
   }
 
   /**
-   * Auto hide, as DockPanelSuite's unpinned pane in SuperXPuTTY: the Sessions pane folds to a tab at the left edge.
+   * While the pane's title is dragged: where it would land if let go now (null: nowhere new), and how far the drop
+   * outlines reach in, so they're drawn just where they land (dockZones)
+   */
+  let docking = $state<{ target: Dock | null; zone: { width: number; height: number } } | null>(null);
+
+  /**
+   * Drag the Sessions pane by its title to dock it at the window's left, right or bottom edge, as DockPanelSuite's
+   * panes in SuperXPuTTY: once the pointer has moved a little, the edges it can go to show, and the one it's near
+   * lights up with the pane's outline there; letting go docks it there (kept in the settings, and in layouts saved
+   * after). Letting go elsewhere, or Escape, leaves it where it was. The pin, in the title, isn't a handle.
+   */
+  function startDock(event: PointerEvent): void {
+    if (event.button !== 0 || (event.target as Element).closest("button")) return;
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moving = false;
+    const move = (e: PointerEvent) => {
+      // a click, or a hand that shook, isn't a drag
+      if (!moving && Math.hypot(e.clientX - startX, e.clientY - startY) < 6) return;
+      moving = true;
+      document.body.classList.add("docking-pane");
+      const box = mainArea?.getBoundingClientRect();
+      if (!box) return;
+      // the pane as it would be docked: its width beside the tabs, its height under them
+      const pane = {
+        width: clampWidth(settings.sessionsPaneWidth || PANE_DEFAULT),
+        height: clampPaneHeight(settings.sessionsPaneHeight || PANE_DEFAULT_HEIGHT, box.height),
+      };
+      docking = { target: dockTarget(e.clientX, e.clientY, box, pane), zone: dockZones(box, pane) };
+    };
+    const finish = (drop: boolean) => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("keydown", escape, true);
+      document.body.classList.remove("docking-pane");
+      const target = docking?.target;
+      docking = null;
+      if (drop && target && target !== dock) {
+        slid = false;
+        void saveSettings({ sessionsDock: target });
+      }
+    };
+    const up = () => finish(true);
+    const cancel = () => finish(false);
+    const escape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      finish(false);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", cancel);
+    window.addEventListener("keydown", escape, true);
+  }
+
+  /**
+   * Auto hide, as DockPanelSuite's unpinned pane in SuperXPuTTY: the Sessions pane folds to a tab at the edge where
+   * it's docked (left, right or bottom).
    * Hovering it (or a click) slides the pane out over the tabs; it goes again a couple of seconds after the pointer
    * leaves it, when a session opens, or when a terminal is clicked.
    */
@@ -635,6 +715,8 @@
       tabs: tabs.layoutState(),
       panes: {
         sessionsPaneWidth: settings.sessionsPaneWidth,
+        sessionsDock: settings.sessionsDock,
+        sessionsPaneHeight: settings.sessionsPaneHeight,
         sessionsAutoHide: settings.sessionsAutoHide,
         showSessionDetail: settings.showSessionDetail,
       },
@@ -661,6 +743,8 @@
     const panes = layout.panes ?? {};
     await saveSettings({
       sessionsPaneWidth: panes.sessionsPaneWidth || settings.sessionsPaneWidth,
+      sessionsDock: panes.sessionsDock ?? settings.sessionsDock,
+      sessionsPaneHeight: panes.sessionsPaneHeight || settings.sessionsPaneHeight,
       sessionsAutoHide: panes.sessionsAutoHide ?? settings.sessionsAutoHide,
       showSessionDetail: panes.showSessionDetail ?? settings.showSessionDetail,
     });
@@ -830,10 +914,20 @@
     <SendCommands onOpenEditor={() => (editorOpen = true)} />
   {/if}
 
-  <div class="main" class:autohide={settings.sessionsAutoHide} class:nopane={!settings.showSessionsPane}>
+  <div class="main" bind:this={mainArea} class:autohide={settings.sessionsAutoHide} class:nopane={!settings.showSessionsPane}
+    class:dock-right={dock === "right"} class:dock-bottom={dock === "bottom"}>
+    {#if docking}
+      <!-- while the pane's title is dragged: the edges it can dock at, and the one it would land on lit, its size there -->
+      <div class="dock-zones" aria-hidden="true">
+        {#each ["left", "right", "bottom"] as const as side (side)}
+          <div class="dock-zone {side}" class:target={docking.target === side}
+            style:--pane-width="{docking.zone.width}px" style:--pane-height="{docking.zone.height}px"></div>
+        {/each}
+      </div>
+    {/if}
     {#if settings.sessionsAutoHide}
-      <!-- the auto-hide strip, as DockPanelSuite's: a tab per folded pane, each only as tall as its name (more panes
-           folded to this side would add theirs below) -->
+      <!-- the auto-hide strip, as DockPanelSuite's: a tab per folded pane, each only as long as its name (more panes
+           folded to this side would add theirs after), at the edge where the pane is docked -->
       <div class="edge">
         <button class="edge-tab" class:active={slid} title="Sessions" onclick={slideOut}
           onmouseenter={() => { clearTimeout(hideTimer); showTimer = setTimeout(slideOut, 250); }}
@@ -843,11 +937,13 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="side" class:out={slid} onmouseenter={() => clearTimeout(hideTimer)} onmouseleave={scheduleHide}>
       <aside class="sessions"
-        style:width="{paneWidth ?? clampWidth(Math.max(settings.sessionsPaneWidth || PANE_DEFAULT, Math.min(searchWidth ?? 0, SEARCH_MAX)))}px">
-        <div class="pane-title">
+        style:width={dock === "bottom" ? null : `${paneWidth ?? clampWidth(Math.max(settings.sessionsPaneWidth || PANE_DEFAULT, Math.min(searchWidth ?? 0, SEARCH_MAX)))}px`}
+        style:height={dock === "bottom" ? `${paneHeight ?? clampPaneHeight(settings.sessionsPaneHeight || PANE_DEFAULT_HEIGHT, mainArea?.clientHeight || window.innerHeight)}px` : null}>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="pane-title" onpointerdown={startDock} title="Drag to dock the pane at the window's left, right or bottom">
           <span>Sessions</span>
           <button class="pin" class:unpinned={settings.sessionsAutoHide} onclick={() => setAutoHide(!settings.sessionsAutoHide)}
-            title={settings.sessionsAutoHide ? "Keep the pane open (dock it)" : "Auto hide: fold the pane to the left edge"}
+            title={settings.sessionsAutoHide ? "Keep the pane open (dock it)" : `Auto hide: fold the pane to the ${dock} edge`}
             aria-label={settings.sessionsAutoHide ? "Dock the Sessions pane" : "Auto hide the Sessions pane"}>
             <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
               <path d="M5 1.5h6M6 1.5v5L4 9h8l-2-2.5v-5M8 9v5.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" />
@@ -864,8 +960,8 @@
         {/if}
       </aside>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="splitter" title="Drag to resize; double-click for the usual width" onpointerdown={startResize}
-        ondblclick={() => void saveSettings({ sessionsPaneWidth: PANE_DEFAULT })}></div>
+      <div class="splitter" title={`Drag to resize; double-click for the usual ${dock === "bottom" ? "height" : "width"}`} onpointerdown={startResize}
+        ondblclick={() => void saveSettings(dock === "bottom" ? { sessionsPaneHeight: PANE_DEFAULT_HEIGHT } : { sessionsPaneWidth: PANE_DEFAULT })}></div>
     </div>
     <div class="tabs" class:close-on-right={settings.tabClose === "right"} style:--tab-name-max={tabNameWidth(settings.tabNameMax)}
       bind:this={tabElement}></div>
@@ -1080,8 +1176,172 @@
     user-select: none;
   }
 
-  :global(body.resizing-pane iframe) {
+  :global(body.resizing-pane iframe),
+  :global(body.docking-pane iframe) {
     pointer-events: none;
+  }
+
+  /* docked at the bottom, the edge is dragged up and down */
+  :global(body.resizing-pane.rows),
+  :global(body.resizing-pane.rows *) {
+    cursor: row-resize !important;
+  }
+
+  /* the title is the pane's handle for docking it elsewhere */
+  .pane-title {
+    cursor: grab;
+    user-select: none;
+  }
+
+  :global(body.docking-pane),
+  :global(body.docking-pane *) {
+    cursor: grabbing !important;
+    user-select: none;
+  }
+
+  /* docked at the right: the pane after the tabs, its edge on their side, its strip at the window's right */
+  .dock-right {
+    flex-direction: row-reverse;
+  }
+
+  .dock-right .side {
+    flex-direction: row-reverse;
+  }
+
+  .dock-right .splitter {
+    border-right: 0;
+    border-left: 1px solid var(--border);
+  }
+
+  .dock-right .edge {
+    border-right: 0;
+    border-left: 1px solid var(--border);
+  }
+
+  .dock-right .edge-tab {
+    border-left: 0;
+    border-right: 3px solid var(--border);
+  }
+
+  .dock-right .edge-tab:hover,
+  .dock-right .edge-tab.active {
+    border-right-color: var(--accent);
+  }
+
+  .autohide.dock-right .side {
+    left: auto;
+    right: 22px;
+    box-shadow: -4px 0 18px rgb(0 0 0 / 0.35);
+  }
+
+  /* docked at the bottom: under the tabs, the full width, its edge above it and its strip along the window's foot */
+  .dock-bottom {
+    flex-direction: column-reverse;
+  }
+
+  .dock-bottom .side {
+    flex-direction: column-reverse;
+  }
+
+  .dock-bottom .sessions {
+    transition: height 0.15s ease-out;
+    min-height: 0;
+  }
+
+  .dock-bottom .splitter {
+    width: auto;
+    height: 8px;
+    cursor: row-resize;
+    border-right: 0;
+    border-top: 1px solid var(--border);
+    background: linear-gradient(var(--border), var(--border)) center / 100% 1px no-repeat, var(--bg-pane);
+  }
+
+  .dock-bottom .splitter:hover,
+  :global(body.resizing-pane) .dock-bottom .splitter {
+    background: linear-gradient(var(--accent), var(--accent)) center / 100% 2px no-repeat, var(--bg-pane);
+  }
+
+  .dock-bottom .tabs {
+    min-height: 0;
+  }
+
+  .dock-bottom .edge {
+    width: auto;
+    height: 22px;
+    flex-direction: row;
+    padding: 0 0 0 6px;
+    border-right: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .dock-bottom .edge-tab {
+    writing-mode: horizontal-tb;
+    margin: 3px 0;
+    padding: 0 8px;
+    border-left: 0;
+    border-bottom: 3px solid var(--border);
+  }
+
+  .dock-bottom .edge-tab:hover,
+  .dock-bottom .edge-tab.active {
+    border-bottom-color: var(--accent);
+  }
+
+  .autohide.dock-bottom .side {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 22px;
+    box-shadow: 0 -4px 18px rgb(0 0 0 / 0.35);
+  }
+
+  /* while the title is dragged: each edge it can dock at, faintly, and the one it would land on as the pane's
+     outline there */
+  .dock-zones {
+    position: absolute;
+    inset: 0;
+    z-index: 80;
+    pointer-events: none;
+  }
+
+  .dock-zone {
+    position: absolute;
+    border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+    border-radius: 4px;
+    transition: background 0.1s, border-color 0.1s;
+  }
+
+  /* each outline is exactly where the pane lands when let go in it (dock.ts dockZones): the pane's width at the
+     sides, its height along the foot, the sides stopping above the foot's */
+  .dock-zone {
+    box-sizing: border-box;
+  }
+
+  .dock-zone.left {
+    left: 0;
+    top: 0;
+    width: var(--pane-width);
+    bottom: var(--pane-height);
+  }
+
+  .dock-zone.right {
+    right: 0;
+    top: 0;
+    width: var(--pane-width);
+    bottom: var(--pane-height);
+  }
+
+  .dock-zone.bottom {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--pane-height);
+  }
+
+  .dock-zone.target {
+    border: 2px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
 
   .pane-title {

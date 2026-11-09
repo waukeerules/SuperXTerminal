@@ -61,10 +61,15 @@ pub struct AppSettings {
     /// Private sessions (PrivateSessions.xml in the user's own folder) are read and written; off, only Saved and
     /// Database sessions are used and the file is left as it is. One of the two stays on (Settings > General)
     pub use_private_sessions: bool,
-    /// The Sessions pane's width in points, as dragged at its edge
+    /// The Sessions pane's width in points, as dragged at its edge, while it's docked at the left or right
     pub sessions_pane_width: u32,
-    /// The Sessions pane is auto-hidden, as DockPanelSuite's unpinned pane in SuperXPuTTY: a tab at the window's left
-    /// edge that slides it out
+    /// Where the Sessions pane is docked, its title dragged there as DockPanelSuite's in SuperXPuTTY: "left" (the
+    /// default), "right", or "bottom", under the tabs (src/lib/layout/dock.ts)
+    pub sessions_dock: String,
+    /// The Sessions pane's height in points, as dragged at its edge, while it's docked at the bottom
+    pub sessions_pane_height: u32,
+    /// The Sessions pane is auto-hidden, as DockPanelSuite's unpinned pane in SuperXPuTTY: a tab at the window's edge
+    /// where it's docked, which slides it out
     pub sessions_auto_hide: bool,
     /// The layout opened at start ("" for none: a Local Shell; "<Auto Restore>" for the last one), as SuperXPuTTY's
     /// DefaultLayoutName
@@ -155,6 +160,8 @@ impl Default for AppSettings {
             use_sessions_xml: true,
             use_private_sessions: true,
             sessions_pane_width: 280,
+            sessions_dock: "left".into(),
+            sessions_pane_height: 260,
             sessions_auto_hide: false,
             default_layout_name: String::new(),
             show_session_detail: false,
@@ -204,6 +211,18 @@ impl AppSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A settings file from before docking reads with the Sessions pane on the left, at its usual height for the
+    /// bottom; one docked since keeps its place. One that still has the Layouts pane's showLayouts reads without it.
+    #[test]
+    fn the_sessions_pane_is_on_the_left_until_its_docked_elsewhere() {
+        let older: AppSettings = serde_json::from_str(r#"{"sessionsPaneWidth":300,"showLayouts":true}"#).unwrap();
+        assert_eq!((older.sessions_dock.as_str(), older.sessions_pane_height, older.sessions_pane_width), ("left", 260, 300));
+        let docked: AppSettings = serde_json::from_str(r#"{"sessionsDock":"bottom","sessionsPaneHeight":320}"#).unwrap();
+        assert_eq!((docked.sessions_dock.as_str(), docked.sessions_pane_height), ("bottom", 320));
+        let saved = serde_json::to_value(&docked).unwrap();
+        assert_eq!(saved["sessionsDock"], "bottom");
+    }
 
     /// A settings file from before Settings > General > Scripts reads with Rhai as the new scripts' language, and a
     /// choice made since is kept

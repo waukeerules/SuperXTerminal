@@ -5,6 +5,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import type { SerializedDockview } from "dockview-core";
+import type { Dock } from "./dock";
 
 /** SuperXPuTTY's LayoutData.AutoRestore */
 export const AUTO_RESTORE = "<Auto Restore>";
@@ -17,6 +18,9 @@ export interface Layout {
   /** The panes beside the tabs */
   panes: {
     sessionsPaneWidth: number;
+    /** Where the Sessions pane is docked, and its height at the bottom; absent from layouts saved before docking */
+    sessionsDock?: Dock;
+    sessionsPaneHeight?: number;
     sessionsAutoHide: boolean;
     showSessionDetail: boolean;
   };

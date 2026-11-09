@@ -1,10 +1,11 @@
 # SuperXTerminal
 
-A consistent Mac and Windows alternative to SuperPuTTY: a terminal and session manager for **teams** who look after a
-lot of servers and network devices together. One shared set of sessions for the whole team, with each person's own
-login, settings and exceptions kept on their own computer, where they don't get in a teammate's way. A tree of
+A consistent Mac, Windows and Linux alternative to SuperPuTTY: a terminal and session manager for **teams** who look
+after a lot of servers and network devices together. One shared set of sessions for the whole team, with each person's
+own login, settings and exceptions kept on their own computer, where they don't get in a teammate's way. A tree of
 sessions, tabs and splits, SSH, Telnet, serial and Remote Desktop in the same window, a button bar of commands, and
-highlighting for Cisco and Junos output, built to look and work the same on both systems.
+highlighting for Cisco and Junos output, built to look and work the same on each system. Linux is the newest of the
+three and the least tried (see [Download](#download)).
 
 ![The main window: Favorites, Recent, Saved, Private and 3,247 Database sessions, a switch and a server side by side with line numbers, and the button bar](docs/screenshots/main-window.png)
 
@@ -19,7 +20,7 @@ It does that by splitting a session in two, as PuTTY's saved sessions did:
 
 | Shared with the team | Kept on your own computer |
 |---|---|
-| **What** a session is: its name, folder, host, protocol, icon, environment colour, and the *name* of the profile it uses | **How you** log in: the profile of that name, with your username, password (in the Keychain or Windows' Credential Manager), key file, port, jump host, SSH algorithms and terminal preferences |
+| **What** a session is: its name, folder, host, protocol, icon, environment colour, and the *name* of the profile it uses | **How you** log in: the profile of that name, with your username, password (in the Keychain, Windows' Credential Manager or Linux's Secret Service), key file, port, jump host, SSH algorithms and terminal preferences |
 | Button bars, scripts and highlighting rules | Environment Variables, your own values for `{placeholders}` in shared sessions, secrets included |
 | Folder colours and folder defaults | Local overrides: your own host, port, username, profile or jump host for a session, without changing it for anyone else |
 | | Private sessions, Favorites and Recent |
@@ -41,7 +42,8 @@ A shared session only says which profile it uses.
 - **A profile can name the host itself,** for a gateway such as CyberArk's SSH gateway: the session keeps naming the
   real device, and the profile says where ssh connects ([docs/CYBERARK.md](docs/CYBERARK.md)).
 - **Passwords stay out of shared files.** A profile's password, or a session's own, is kept in the system's
-  password store: the Keychain on the Mac, Windows Credential Manager on Windows. It stays on that computer, never in
+  password store: the Keychain on the Mac, Windows Credential Manager on Windows, the Secret Service (GNOME Keyring or
+  KWallet) on Linux. It stays on that computer, never in
   Sessions.xml or the shared database. A `-pw` password already in a session moves there with Edit Session's
   **Move -pw here**.
 - **Optionally, passwords and keys can stay in 1Password,** if you use it: turn it on in Settings > General >
@@ -89,8 +91,8 @@ extra arguments or jump host on your computer only, and can carry a note of why.
 - **Database sessions:** a PostgreSQL table for larger teams, with locked rows and fields so the standard entries stay
   standard, an offline cache, and changes queued and sent when the connection comes back.
 - **Private sessions** for what's only yours, and Copy to between all three.
-- **A mixed team on Mac and Windows.** The files and the table are the same as SuperXPuTTY's, so people using either
-  app work from one set of sessions.
+- **A mixed team on Mac, Windows and Linux.** The files and the table are the same as SuperXPuTTY's, so people using
+  either app work from one set of sessions.
 - **Environment colours** (production in red, say) on the tree, the tab, the terminal's frame and the cursor, the same
   for everyone, so nobody types into production thinking it's the lab.
 
@@ -99,8 +101,8 @@ extra arguments or jump host on your computer only, and can carry a note of why.
 The same works for one person with more than one computer: a Mac at the desk and a Windows laptop on the road, say,
 or a work machine and a home one. Point each computer at the same settings folder, in iCloud Drive, OneDrive, Dropbox
 or a share, or at the same Database table, and they all have one set of sessions, button bars, scripts and
-highlighting rules. A session added or changed on one shows up on the others, on the Mac and on Windows alike, rather
-than one copy per computer that slowly drifts apart.
+highlighting rules. A session added or changed on one shows up on the others, on the Mac, Windows and Linux alike,
+rather than one copy per computer that slowly drifts apart.
 
 What stays on each computer is what belongs to that computer: its passwords in its own keychain, its key files, its
 local overrides, and its Private sessions (so keep anything you want everywhere in Saved or Database sessions).
@@ -138,7 +140,7 @@ application that put PuTTY sessions into tabs with a sessions tree beside them, 
 
 SuperPuTTY puts PuTTY's own windows inside its tabs, which only Windows can do. SuperXTerminal draws every tab itself
 instead: SSH goes through the system's own OpenSSH in a terminal drawn by [xterm.js](https://xtermjs.org), so it looks
-and works the same on the Mac and on Windows. It's built with [Tauri 2](https://tauri.app) and Svelte 5.
+and works the same on the Mac, Windows and Linux. It's built with [Tauri 2](https://tauri.app) and Svelte 5.
 
 ## Screenshots
 
@@ -167,8 +169,8 @@ and works the same on the Mac and on Windows. It's built with [Tauri 2](https://
   away, matching folders open, and the pane widens so long names fit. It's fast: over 10,000 sessions each search
   takes a few milliseconds.
 - Sessions in SuperPuTTY's `Sessions.xml` format, with folders, button bars, highlighting rules and scripts beside it.
-  Keep them in a shared folder and a team on Mac and Windows works from one set; changes made elsewhere show up within
-  seconds.
+  Keep them in a shared folder and a team on Mac, Windows and Linux works from one set; changes made elsewhere show up
+  within seconds.
 - Database sessions: a PostgreSQL table shared by the team, with an offline cache, locked rows and fields, and changes
   written when the connection comes back.
 - Icons (62 templates and 26 brand logos, or your own), and environment colours (production in red, say) on the tree,
@@ -232,12 +234,12 @@ Anything that can't work on the system it's running on is shown greyed out, with
 ## How it works
 
 SuperXTerminal is a [Tauri 2](https://tauri.app) app: a core written in Rust, and a window drawn by the system's own
-web view (WebKit on the Mac, WebView2 on Windows), with the interface in TypeScript and Svelte 5.
+web view (WebKit on the Mac, WebView2 on Windows, WebKitGTK on Linux), with the interface in TypeScript and Svelte 5.
 
 - **SSH is OpenSSH.** Each SSH tab runs the system's own `ssh` (Windows has it built in too) in a pseudo terminal, so
   keys, ssh-agent, `~/.ssh/config`, jump hosts and known hosts work as they do in any other terminal. The app builds
   the command from the session, its folder's defaults and its profile. A saved password is kept in the Keychain (or
-  Windows' Credential Manager) and typed at the first password prompt, never put on the command line. When ssh ends,
+  Windows' Credential Manager, or Linux's Secret Service) and typed at the first password prompt, never put on the command line. When ssh ends,
   the tab reads what ssh said last to tell you what went wrong, and reconnects only when that can help.
 - **The core, in Rust,** runs the pseudo terminals (ConPTY on Windows) and what OpenSSH doesn't: Telnet, Raw TCP and
   serial ports are spoken by the core itself, and Remote Desktop by [IronRDP](https://github.com/Devolutions/IronRDP).
@@ -256,8 +258,12 @@ Its tests are Rust's own for the core, [Vitest](https://vitest.dev) for the inte
 ## Download
 
 Installers are on the [Releases page](https://github.com/waukeerules/SuperXTerminal/releases): a `.dmg` for Apple
-silicon Macs, and an MSI or setup `.exe` for Windows. The Mac build isn't notarised yet, so on first open right-click
-the app and choose Open; Windows SmartScreen warns about the unsigned installer the first time it runs.
+silicon Macs, an MSI or setup `.exe` for Windows, and for x86_64 Linux a `.deb` (Ubuntu, Debian), an `.rpm` (Fedora,
+RHEL) or an AppImage. The Mac build isn't notarised yet, so on first open right-click the app and choose Open; Windows
+SmartScreen warns about the unsigned installer the first time it runs.
+
+Linux is new: it's been installed on Ubuntu and used for SSH sessions, and the rest is still to be tried there. Saved
+passwords need a Secret Service (GNOME Keyring or KWallet), which a desktop session has.
 
 ## Guides
 
@@ -276,8 +282,11 @@ the app and choose Open; Windows SmartScreen warns about the unsigned installer 
   the checks, the release build and its `.dmg`, notarisation, and publishing a release.
 - **[docs/BUILD-Windows.md](docs/BUILD-Windows.md):** building and running it on Windows, what works there and what's
   still Mac-only, and its MSI and setup `.exe`.
-- **[docs/RELEASE.md](docs/RELEASE.md):** making a release: the version, building on both systems into `releases/`,
-  and publishing the installers on GitHub.
+- **[docs/BUILD-Linux.md](docs/BUILD-Linux.md):** the `.deb`, `.rpm` and AppImage, built in Docker from the Mac or the
+  Windows PC, and installing them on Linux.
+- **[docs/RELEASE.md](docs/RELEASE.md):** making a release: one command on each computer (`release.sh` on the Mac,
+  `release.bat` on the Windows PC, which builds Linux's packages too), into `releases/`, and publishing the installers
+  on GitHub.
 - **[docs/PLAN.md](docs/PLAN.md):** the plan: the chosen stack (Tauri 2 and Svelte 5, with xterm.js and Monaco),
   licensing, the feature matrix, data compatibility and open questions.
 - **[docs/ROADMAP.md](docs/ROADMAP.md):** one line per feature, ticked as each is delivered.

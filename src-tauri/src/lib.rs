@@ -37,6 +37,9 @@ mod secrets;
 mod server_load;
 mod outbox;
 mod overrides;
+// taskbar pins exist on Windows alone
+#[cfg(windows)]
+mod pins;
 mod sessions;
 mod session_passwords;
 mod shortcuts;
@@ -3022,6 +3025,12 @@ pub fn run() {
         .setup(|app| {
             console::allow_ctrl_c();
             logs::sweep_temp();
+            // pins left by an older MSI show a blank file once their icon has gone (pins.rs). Not for a demo, which
+            // may be a development build: its pins are the installed app's
+            #[cfg(windows)]
+            if !demo::on() {
+                pins::repair();
+            }
             #[cfg(target_os = "macos")]
             no_siri_badge();
             main_window(app.handle())?;

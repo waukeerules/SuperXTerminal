@@ -5837,6 +5837,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tokio",
  "tokio-postgres",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

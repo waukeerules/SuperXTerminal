@@ -56,6 +56,8 @@ rhai = { version = "1.27.0", features = ["internals"] }
 windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_Devices_Communication", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole"] }
 # the login helper's tokens (askpass.rs)
 getrandom = "0.3"
+# the taskbar pins' shortcuts, read and written through the shell's COM objects (pins.rs). The version Tauri already uses
+windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell"] }
 
 # the main window's WebKit settings (Writing Tools off), as Tauri itself uses them
 [target.'cfg(target_os = "macos")'.dependencies]

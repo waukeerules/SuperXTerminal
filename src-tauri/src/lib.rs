@@ -2454,6 +2454,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> tauri::Result
             &plain("settings:Terminal", "Terminal Settings…")?,
             &plain("settings:Remote Desktop", "Remote Desktop Settings…")?,
             &plain("settings:Shortcuts", "Shortcut Settings…")?,
+            &plain("settings:Layouts", "Layout Settings…")?,
             &PredefinedMenuItem::separator(app)?,
             &CheckMenuItem::with_id(app, "toggleLocalOverrides", "Use Local Overrides", true, overrides_on, None::<&str>)?,
         ],

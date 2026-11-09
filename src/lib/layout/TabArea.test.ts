@@ -121,6 +121,56 @@ describe("switching tabs", () => {
   });
 });
 
+describe("a right-click in the terminal", () => {
+  /**
+   * The page of tab `id` as the test stands it in: jsdom loads no page, so the frame's own blank document is given
+   * the terminal page's #terminal and the tab area is told it has loaded, as it is when the real page does
+   */
+  function page(id: string): Document {
+    const frame = tabs.api.getPanel(id)!.view.content.element.querySelector("iframe")!;
+    const doc = frame.contentDocument!;
+    if (!doc.getElementById("terminal")) {
+      const terminal = doc.createElement("div");
+      terminal.id = "terminal";
+      // jsdom's frame document may have no html or body yet
+      if (!doc.documentElement) doc.append(doc.createElement("html"));
+      if (!doc.body) doc.documentElement.append(doc.createElement("body"));
+      doc.body.append(terminal);
+      frame.dispatchEvent(new Event("load"));
+    }
+    return doc;
+  }
+
+  it("opens the menu in the tab in front, not in a tab behind it that the Mac hands the click to", () => {
+    // the Mac's WebView gives the right-click to the newest tab's page, stacked hidden over the one in front
+    const sw1 = open("sw1");
+    const sw2 = open("sw2");
+    const front = page(sw1);
+    const behind = page(sw2);
+    tabs.activate(sw1);
+    const menus: string[] = [];
+    front.getElementById("terminal")!.addEventListener("contextmenu", () => menus.push("sw1"));
+    behind.getElementById("terminal")!.addEventListener("contextmenu", () => menus.push("sw2"));
+    // xterm.js takes the keyboard on a right-click, and a tab whose page gets the keyboard comes to the front
+    behind.getElementById("terminal")!.addEventListener("contextmenu", () => behind.defaultView!.dispatchEvent(new FocusEvent("focus")));
+    front.elementFromPoint = () => front.getElementById("terminal");
+    behind.getElementById("terminal")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 40, clientY: 30 }));
+    expect(tabs.api.activePanel?.id).toBe(sw1);
+    expect(menus).toEqual(["sw1"]);
+  });
+
+  it("is left alone in the tab in front", () => {
+    const sw1 = open("sw1");
+    const front = page(sw1);
+    const menus: string[] = [];
+    front.getElementById("terminal")!.addEventListener("contextmenu", () => menus.push("sw1"));
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+    front.getElementById("terminal")!.dispatchEvent(event);
+    expect(menus).toEqual(["sw1"]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
 describe("a profile's Tab colour", () => {
   /** Start tab `id`'s session with this profile (its look, as the Rust side sends it) */
   async function start(id: string, profile: string, tabColor: string): Promise<void> {

@@ -1079,7 +1079,8 @@ export class TabArea {
 
   /**
    * Make tab `id` the active one when its page (same origin, in `frame`) is clicked or gets the keyboard. Its events
-   * stay in its own document, so they're watched there, again each time it loads.
+   * stay in its own document, so they're watched there, again each time it loads. A right-click that reaches the
+   * page while its tab is hidden is passed on to the tab in front (passRightClick).
    */
   watchFrame(frame: HTMLIFrameElement, id: string): void {
     frame.addEventListener("load", () => {
@@ -1087,7 +1088,50 @@ export class TabArea {
       if (!page) return;
       page.addEventListener("focus", () => this.activateIfNot(id));
       page.document.addEventListener("pointerdown", () => this.activateIfNot(id), true);
+      // capture: before xterm.js, which takes the keyboard on a right-click (and so would bring its tab to the front)
+      page.document.addEventListener("contextmenu", (event) => this.passRightClick(frame, id, event), true);
     });
+  }
+
+  /**
+   * A right-click that reached the page of tab `id` while the tab is hidden behind another: stopped there, and given
+   * to the page shown at that spot instead, so its menu opens where the user clicked. The Mac's WebView does this:
+   * every tab's page stays loaded, stacked in the same place (dockview's renderer "always"), and it hands the
+   * right-click (contextmenu) to the newest one, hidden or not, though the press itself (pointerdown) goes to the one
+   * shown. Without this, the hidden tab's terminal took the keyboard and came to the front, menu and all.
+   * @param frame The hidden tab's iframe
+   * @param id The hidden tab
+   * @param event The right-click, in the hidden page's coordinates
+   */
+  private passRightClick(frame: HTMLIFrameElement, id: string, event: MouseEvent): void {
+    const panel = this.api.getPanel(id);
+    if (!panel || panel.api.isVisible) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const frameOf = (p: { view: { content: { element: HTMLElement } } } | undefined) =>
+      p?.view.content.element.querySelector("iframe") ?? null;
+    // the point in this window, then the shown tab's page there: any split's, else this tab's own split's front tab
+    const box = frame.getBoundingClientRect();
+    const x = box.left + event.clientX;
+    const y = box.top + event.clientY;
+    const inside = (f: HTMLIFrameElement) => {
+      const r = f.getBoundingClientRect();
+      return x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+    };
+    const shown = this.api.panels.filter((p) => p.api.isVisible).map(frameOf).filter((f): f is HTMLIFrameElement => !!f);
+    const target = shown.find(inside) ?? frameOf(panel.group.activePanel ?? undefined);
+    const doc = target?.contentDocument;
+    const view = target?.contentWindow as (Window & typeof globalThis) | null | undefined;
+    if (!target || target === frame || !doc || !view) return;
+    const r = target.getBoundingClientRect();
+    const clientX = x - r.left;
+    const clientY = y - r.top;
+    const under = doc.elementFromPoint(clientX, clientY) ?? doc.getElementById("terminal") ?? doc.body;
+    under?.dispatchEvent(new view.MouseEvent("contextmenu", {
+      bubbles: true, cancelable: true, composed: true, button: 2, buttons: 2, clientX, clientY,
+      screenX: event.screenX, screenY: event.screenY,
+      ctrlKey: event.ctrlKey, shiftKey: event.shiftKey, altKey: event.altKey, metaKey: event.metaKey,
+    }));
   }
 
   /** Put the keyboard in the active tab: after a tab is clicked or switched to, a button, or Send Commands */

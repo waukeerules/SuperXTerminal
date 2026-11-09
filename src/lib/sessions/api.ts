@@ -390,10 +390,10 @@ export function overriddenFields(o: Override | undefined): string[] {
 /**
  * Where sessions come from: "csv" (a spreadsheet), "mobaxterm", "rdp" (Remote Desktop files), "ssh" (~/.ssh/config),
  * "superputty" (another Sessions.xml), "puttycm" (a PuTTY Connection Manager export), "puttyFolder" (a folder of
- * PuTTY session files), "putty" (PuTTY's and KiTTY's saved sessions) or "rdpRegistry" (Remote Desktop's recent
- * computers, Windows only)
+ * PuTTY session files), "securecrt" (SecureCRT's Sessions folder), "putty" (PuTTY's and KiTTY's saved sessions) or
+ * "rdpRegistry" (Remote Desktop's recent computers, Windows only)
  */
-export type ImportKind = "csv" | "mobaxterm" | "rdp" | "ssh" | "superputty" | "puttycm" | "puttyFolder" | "putty" | "rdpRegistry";
+export type ImportKind = "csv" | "mobaxterm" | "rdp" | "ssh" | "superputty" | "puttycm" | "puttyFolder" | "securecrt" | "putty" | "rdpRegistry";
 
 /**
  * A file's name from its path, with Windows' or the Mac's separators

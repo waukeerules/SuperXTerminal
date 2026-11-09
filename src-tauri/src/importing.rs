@@ -8,6 +8,7 @@
 //!
 //! MobaXterm (`.mxtsessions`), Remote Desktop (`.rdp`) files and `~/.ssh/config` add new sessions in a folder of
 //! their own ("ImportedFromMobaXterm", ...), as SuperXPuTTY's `ImportSessions`, numbered when a name is taken.
+//! SecureCRT's Sessions folder (SuperXTerminal's own; SuperXPuTTY has none) does the same, into ImportedFromSecureCRT.
 //!
 //! Nothing is changed until the user has seen the plan's summary: [`Plan`] is worked out first, then [`apply`]
 //! writes each file once.
@@ -668,6 +669,150 @@ fn read_mobaxterm(text: &str) -> Vec<Found> {
     found
 }
 
+// ---- SecureCRT
+
+/// Where SecureCRT keeps its sessions, where the import window starts: `%APPDATA%\VanDyke\Config\Sessions` on
+/// Windows, `~/Library/Application Support/VanDyke/SecureCRT/Config/Sessions` on the Mac, and
+/// `~/.vandyke/SecureCRT/Config/Sessions` on Linux. Global Options > Configuration Paths can move it, so another
+/// folder can be chosen
+pub fn securecrt_folder() -> PathBuf {
+    if cfg!(windows) {
+        dirs::config_dir().unwrap_or_default().join("VanDyke").join("Config").join("Sessions")
+    } else if cfg!(target_os = "macos") {
+        dirs::config_dir().unwrap_or_default().join("VanDyke/SecureCRT/Config/Sessions")
+    } else {
+        dirs::home_dir().unwrap_or_default().join(".vandyke/SecureCRT/Config/Sessions")
+    }
+}
+
+/// One SecureCRT `.ini` file's settings, by lower-cased name. Each line is `T:"Name"=value`, its type T being `S`
+/// (text), `D` (a number, written as 8 hex digits: given here in decimal), `Z` (a list: its count, then one line per
+/// item, each starting with a space; given joined by new lines) or `B` (binary: its byte count, then hex lines, each
+/// starting with a space; left out)
+fn securecrt_values(text: &str) -> std::collections::HashMap<String, String> {
+    let mut values = std::collections::HashMap::new();
+    let mut list: Option<String> = None;
+    for line in text.trim_start_matches('\u{feff}').lines() {
+        let line = line.trim_end_matches('\r');
+        if let Some(item) = line.strip_prefix(' ') {
+            // a Z list's item, or a B value's bytes
+            if let Some(name) = &list {
+                let joined: &mut String = values.entry(name.clone()).or_default();
+                if !joined.is_empty() {
+                    joined.push('\n');
+                }
+                joined.push_str(item);
+            }
+            continue;
+        }
+        list = None;
+        let Some((kind, rest)) = line.split_once(":\"") else { continue };
+        let Some((name, value)) = rest.split_once("\"=") else { continue };
+        let name = name.to_ascii_lowercase();
+        match kind {
+            "S" => {
+                values.insert(name, value.to_string());
+            }
+            "D" => {
+                values.insert(name, u32::from_str_radix(value.trim(), 16).map(|n| n.to_string()).unwrap_or_default());
+            }
+            "Z" => {
+                values.insert(name.clone(), String::new());
+                list = Some(name);
+            }
+            _ => {}
+        }
+    }
+    values
+}
+
+/// Sessions in a SecureCRT Sessions folder (or a folder in it): one `.ini` file per session, named as the session,
+/// and Session Manager's folders as folders. SecureCRT's own files in the top folder aren't sessions: Default.ini
+/// (and Default_RDP.ini, Default_LocalShell.ini...), the template new sessions take, and each folder's
+/// `__FolderData__.ini`. Ordered by folder and name, as Session Manager lists them
+fn read_securecrt_folder(folder: &Path) -> Result<Vec<Found>, String> {
+    std::fs::read_dir(folder).map_err(|e| format!("Couldn't read {}: {e}", folder.display()))?;
+    let mut found = Vec::new();
+    let mut pending = vec![(folder.to_path_buf(), String::new())];
+    while let Some((dir, sub)) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file = entry.file_name().to_string_lossy().to_string();
+            if path.is_dir() {
+                pending.push((path, if sub.is_empty() { file } else { format!("{sub}/{file}") }));
+                continue;
+            }
+            let Some(name) = file.strip_suffix(".ini").or_else(|| file.strip_suffix(".INI")) else { continue };
+            if name.eq_ignore_ascii_case("__FolderData__") || (sub.is_empty() && (name.eq_ignore_ascii_case("Default") || name.starts_with("Default_"))) {
+                continue;
+            }
+            let Ok(text) = read_text(&path) else { continue };
+            if let Some(f) = securecrt_session(name, &sub, &securecrt_values(&text)) {
+                found.push(f);
+            }
+        }
+    }
+    found.sort_by_key(|f| if f.folder.is_empty() { f.name.to_lowercase() } else { format!("{}/{}", f.folder, f.name).to_lowercase() });
+    Ok(found)
+}
+
+/// One SecureCRT session, from its settings ([`securecrt_values`]); None for a kind SuperXTerminal can't open (TAPI,
+/// a Local Shell). Its key file (`Identity Filename V2`, without the `::rawkey` SecureCRT adds) becomes `-i`, unless
+/// it uses SecureCRT's global key, which lives in SecureCRT's own settings. A jump through another session
+/// (`Firewall Name` "Session:name") names that session as it's imported, in the same folder of imports. Passwords
+/// aren't taken: SecureCRT encrypts them, and the profile or the session's own Password keeps them here
+fn securecrt_session(name: &str, folder: &str, values: &std::collections::HashMap<String, String>) -> Option<Found> {
+    let get = |key: &str| values.get(key).map(|v| v.trim().to_string()).unwrap_or_default();
+    let number = |key: &str| get(key).parse::<u32>().ok();
+    let (protocol, icon, port_key) = match get("protocol name").to_ascii_lowercase().as_str() {
+        "ssh2" | "ssh1" | "" => ("SSH", "computer", "[ssh2] port"),
+        "telnet" | "telnet/ssl" => ("Telnet", "application_xp_terminal", "port"),
+        "rlogin" => ("Rlogin", "application_xp_terminal", "port"),
+        "raw" => ("Raw", "application_xp_terminal", "port"),
+        "serial" => ("Serial", "telephone", ""),
+        "rdp" => ("RDP", "monitor", "port"),
+        _ => return None,
+    };
+    let mut f = Found {
+        folder: folder.to_string(),
+        name: name.to_string(),
+        protocol,
+        icon,
+        host: get("hostname"),
+        port: if port_key.is_empty() { 0 } else { number(port_key).and_then(|p| u16::try_from(p).ok()).unwrap_or(0) },
+        username: get("username"),
+        note: values.get("description").cloned().unwrap_or_default(),
+        ..Found::default()
+    };
+    if protocol == "Serial" {
+        // PuTTY's -sercfg speed,data,parity,stop,flow: SecureCRT's parity 0-4 is none, odd, even, mark, space; its
+        // stop bits 0-2 are 1, 1.5 and 2; flow is RTS/CTS, DSR/DTR or XON/XOFF, the first that's on
+        f.host = get("com port");
+        f.username.clear();
+        let parity = ["n", "o", "e", "m", "s"].get(number("parity").unwrap_or(0) as usize).copied().unwrap_or("n");
+        let stop = ["1", "1.5", "2"].get(number("stop bits").unwrap_or(0) as usize).copied().unwrap_or("1");
+        let on = |key: &str| number(key).unwrap_or(0) != 0;
+        let flow = if on("cts flow") { "R" } else if on("dsr flow") { "D" } else if on("xon flow") { "X" } else { "N" };
+        if let Some(speed) = number("baud rate").filter(|&s| s > 0) {
+            f.extra_args = format!("-sercfg {speed},{},{parity},{stop},{flow}", number("data bits").unwrap_or(8));
+        }
+    }
+    if protocol == "SSH" {
+        let key = get("identity filename v2");
+        let key = key.split("::").next().unwrap_or("").trim();
+        if number("use global public key").unwrap_or(0) == 0 {
+            add_arg(&mut f.extra_args, "-i", key);
+        }
+        let firewall = get("firewall name");
+        if let Some(session) = firewall.strip_prefix("Session:").or_else(|| firewall.strip_prefix("session:")) {
+            let session = session.trim().replace('\\', "/");
+            f.jump_host = format!("ImportedFromSecureCRT/{}", session.trim_matches('/'));
+        }
+    }
+    Some(f)
+}
+
 // ---- Remote Desktop files
 
 /// A session from a `.rdp` file: its name, `full address:s:host[:port]` and `username:s:`
@@ -1049,6 +1194,8 @@ fn read_putty_saved() -> Result<Vec<Found>, String> {
 pub fn source_of_import(kind: &str) -> Option<String> {
     match kind {
         "ssh" => Some(ssh_config_path().display().to_string()),
+        // SecureCRT's Sessions folder where it has one; otherwise the window waits for one to be chosen
+        "securecrt" => Some(securecrt_folder()).filter(|f| f.is_dir()).map(|f| f.display().to_string()),
         #[cfg(windows)]
         "putty" => Some(format!("{PUTTY_SESSIONS} and KiTTY's")),
         #[cfg(not(windows))]
@@ -1180,7 +1327,8 @@ pub fn ssh_config_path() -> PathBuf {
 }
 
 /// Plan an import: `kind` is "csv", "mobaxterm", "rdp" (one or more files), "ssh", "superputty" (a Sessions.xml),
-/// "puttycm" (a PuTTY CM export), "puttyFolder" (a folder of PuTTY session files), "putty" (PuTTY's and KiTTY's
+/// "puttycm" (a PuTTY CM export), "puttyFolder" (a folder of PuTTY session files), "securecrt" (SecureCRT's Sessions
+/// folder, or a folder in it), "putty" (PuTTY's and KiTTY's
 /// saved sessions) or "rdpRegistry" (Remote Desktop's recent computers); `store` is where new sessions from other
 /// apps go (CSV rows say their own). The last two read no file.
 pub fn plan(kind: &str, paths: &[PathBuf], store: Store, existing: &Existing) -> Result<Plan, String> {
@@ -1201,6 +1349,7 @@ pub fn plan(kind: &str, paths: &[PathBuf], store: Store, existing: &Existing) ->
         }
         "puttycm" => Ok(plan_added(read_puttycm(&read_text(first)?)?, "ImportedFromPuTTYCM", store)),
         "puttyFolder" => Ok(plan_added(read_putty_folder(first, "")?, "ImportedFromPortablePuTTY", store)),
+        "securecrt" => Ok(plan_added(read_securecrt_folder(first)?, "ImportedFromSecureCRT", store)),
         "csv" => Ok(plan_csv(&read_text(first)?, existing)),
         "mobaxterm" => Ok(plan_added(read_mobaxterm(&read_text(first)?), "ImportedFromMobaXterm", store)),
         "rdp" => {
@@ -1446,6 +1595,116 @@ mod tests {
         assert_eq!((lab.protocol, lab.host.as_str(), lab.port, lab.username.as_str(), lab.profile.as_str()), ("SSH", "10.0.0.1", 2222, "admin", "lab switch"));
         assert_eq!((found[0].protocol, found[0].host.as_str(), found[0].port), ("Serial", "/dev/cu.usbserial", 0));
         assert_eq!((found[2].protocol, found[2].port), ("Telnet", 23));
+    }
+
+    /// A SecureCRT session file as SecureCRT writes it: a UTF-8 byte order mark, then `T:"Name"=value` lines
+    fn securecrt_file(path: &Path, lines: &[&str]) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, format!("\u{feff}{}\r\n", lines.join("\r\n"))).unwrap();
+    }
+
+    #[test]
+    fn reads_a_securecrt_sessions_folder_with_its_folders() {
+        let dir = std::env::temp_dir().join(format!("sxt-securecrt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // SecureCRT's own files beside the sessions, which aren't sessions to import
+        securecrt_file(&dir.join("Default.ini"), &[r#"S:"Protocol Name"=SSH2"#, r#"S:"Hostname"="#]);
+        securecrt_file(&dir.join("Default_RDP.ini"), &[r#"S:"Protocol Name"=RDP"#]);
+        securecrt_file(&dir.join("__FolderData__.ini"), &[r#"Z:"Session List V2"=00000001"#, " openmediavault.localdomain"]);
+        // an SSH session, its port in hex, a description over two lines and a key file of its own
+        securecrt_file(&dir.join("openmediavault.localdomain.ini"), &[
+            r#"S:"Username"=root"#,
+            r#"D:"Is Session"=00000001"#,
+            r#"S:"Protocol Name"=SSH2"#,
+            r#"S:"Hostname"=openmediavault.localdomain"#,
+            r#"S:"Firewall Name"=None"#,
+            r#"D:"[SSH2] Port"=00000898"#,
+            r#"D:"Use Global Public Key"=00000000"#,
+            r#"S:"Identity Filename V2"=C:\Users\me\.ssh\omv key::rawkey"#,
+            r#"Z:"Description"=00000002"#,
+            " The NAS",
+            " in the rack",
+            r#"B:"Keyword Set"=00000004"#,
+            " 01 02 03 04",
+        ]);
+        // a serial console: 9600 baud, 8 data bits, no parity, 1 stop bit, RTS/CTS
+        securecrt_file(&dir.join("Serial-COM3.ini"), &[
+            r#"S:"Protocol Name"=Serial"#,
+            r#"S:"Com Port"=COM3"#,
+            r#"D:"Baud Rate"=00002580"#,
+            r#"D:"Data Bits"=00000008"#,
+            r#"D:"Parity"=00000000"#,
+            r#"D:"Stop Bits"=00000000"#,
+            r#"D:"CTS Flow"=00000001"#,
+            r#"D:"XON Flow"=00000000"#,
+        ]);
+        // in a folder: Telnet on its own port, and SSH through another session (SecureCRT's Firewall "Session:...")
+        securecrt_file(&dir.join("Lab").join("router.ini"), &[r#"S:"Protocol Name"=Telnet"#, r#"S:"Hostname"=10.0.0.1"#, r#"D:"Port"=00000017"#]);
+        securecrt_file(&dir.join("Lab").join("Core").join("sw1.ini"), &[
+            r#"S:"Protocol Name"=SSH2"#,
+            r#"S:"Hostname"=10.0.0.2"#,
+            r#"S:"Username"=admin"#,
+            r#"D:"[SSH2] Port"=00000016"#,
+            r#"S:"Firewall Name"=Session:openmediavault.localdomain"#,
+            r#"D:"Use Global Public Key"=00000001"#,
+            r#"S:"Identity Filename V2"=C:\ignored\while\the\global\key\is\used"#,
+        ]);
+        // a kind SuperXTerminal can't open: left out
+        securecrt_file(&dir.join("modem.ini"), &[r#"S:"Protocol Name"=TAPI"#]);
+
+        let found = read_securecrt_folder(&dir).unwrap();
+        let plan = plan_added(found, "ImportedFromSecureCRT", Store::Private);
+        std::fs::remove_dir_all(&dir).unwrap();
+        let ids: Vec<&str> = plan.rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, [
+            "ImportedFromSecureCRT/Lab/Core/sw1",
+            "ImportedFromSecureCRT/Lab/router",
+            "ImportedFromSecureCRT/openmediavault.localdomain",
+            "ImportedFromSecureCRT/Serial-COM3",
+        ]);
+        let value = |row: usize, name: &str| plan.rows[row].values.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone()).unwrap_or_default();
+
+        // SSH: host, port 2200, user, the key file as -i (without SecureCRT's ::rawkey), the description as the note
+        assert_eq!((value(2, "Proto"), value(2, "Host"), value(2, "Port"), value(2, "Username")), ("SSH".into(), "openmediavault.localdomain".into(), "2200".into(), "root".into()));
+        assert_eq!(value(2, "ExtraArgs"), r#"-i "C:\Users\me\.ssh\omv key""#);
+        assert_eq!(value(2, "Note"), "The NAS\nin the rack");
+        assert_eq!(value(2, "JumpHost"), "", "Firewall None: no jump host");
+
+        // through another session: that session as imported, and the global key (SecureCRT's own) not taken
+        assert_eq!(value(0, "JumpHost"), "ImportedFromSecureCRT/openmediavault.localdomain");
+        assert_eq!(value(0, "ExtraArgs"), "");
+        assert_eq!((value(0, "Port"), value(0, "Username")), ("22".into(), "admin".into()));
+
+        // Telnet on port 23, and the serial line with its settings as PuTTY's -sercfg
+        assert_eq!((value(1, "Proto"), value(1, "Host"), value(1, "Port")), ("Telnet".into(), "10.0.0.1".into(), "23".into()));
+        assert_eq!((value(3, "Proto"), value(3, "Host"), value(3, "ExtraArgs")), ("Serial".into(), "COM3".into(), "-sercfg 9600,8,n,1,R".into()));
+    }
+
+    /// This computer's own SecureCRT sessions, as the import would add them: for checking against a real SecureCRT,
+    /// on Windows and the Mac. Not run with the rest, as most computers have none:
+    /// `cargo test --lib this_computers_securecrt -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn this_computers_securecrt_sessions_as_imported() {
+        let folder = securecrt_folder();
+        let plan = plan_added(read_securecrt_folder(&folder).unwrap(), "ImportedFromSecureCRT", Store::Private);
+        println!("{}: {} sessions", folder.display(), plan.rows.len());
+        for row in &plan.rows {
+            let shown: Vec<String> = row.values.iter().filter(|(n, v)| !v.is_empty() && n != "SessionName" && n != "ImageKey").map(|(n, v)| format!("{n}={v:?}")).collect();
+            println!("  {}  {}", row.id, shown.join(" "));
+        }
+        assert!(plan.error.is_none(), "{:?}", plan.error);
+    }
+
+    #[test]
+    fn a_securecrt_folder_with_no_sessions_says_so() {
+        let dir = std::env::temp_dir().join(format!("sxt-securecrt-empty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        securecrt_file(&dir.join("Default.ini"), &[r#"S:"Protocol Name"=SSH2"#]);
+        let plan = plan_added(read_securecrt_folder(&dir).unwrap(), "ImportedFromSecureCRT", Store::Private);
+        assert_eq!(plan.error.as_deref(), Some("No sessions were found in it."));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(read_securecrt_folder(&dir).unwrap_err().contains("Couldn't read"));
     }
 
     #[test]

@@ -2373,6 +2373,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> tauri::Result
                     &MenuItem::with_id(app, "import:rdpRegistry", "From RDP (Registry)…", cfg!(windows), None::<&str>)?,
                     &plain("import:rdp", "From Remote Desktop (.rdp) Files…")?,
                     &plain("import:mobaxterm", "From MobaXterm File…")?,
+                    // SuperXTerminal's own: SecureCRT's Sessions folder
+                    &plain("import:securecrt", "From SecureCRT…")?,
                     &plain("import:csv", "From CSV File…")?,
                     &plain("import:ssh", "From ssh config…")?,
                 ],

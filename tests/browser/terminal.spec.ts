@@ -472,6 +472,52 @@ test.describe("the menu's keys", () => {
   });
 });
 
+test.describe("Special Command in the terminal's menu", () => {
+  /** Open the page as a tab of this kind: putty false is SuperXTerminal's (no PuTTY), left out SuperXPuTTY's */
+  async function openAs(page: Page, config: Record<string, unknown>) {
+    // tall enough for the whole menu: in the usual 400 pixels its lower rows are off the page, out of the mouse's reach
+    await page.setViewportSize({ width: 700, height: 1000 });
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    await page.evaluate((config) => (window as any).terminalDev.message({ type: "config", prefs: {}, themes: [{ name: "PuTTY", colors: {} }], ...config }), config);
+    await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+    await page.locator("#terminal").click({ button: "right", position: { x: 20, y: 20 } });
+  }
+
+  /** The labels of the rows in the menu, or in the submenu a row opens when the mouse is on it */
+  async function rows(page: Page, under?: string): Promise<string[]> {
+    if (under) await page.locator("#menu .item", { hasText: under }).first().hover();
+    const menu = page.locator(under ? "#submenu" : "#menu");
+    return menu.locator(".item > span:first-child").allTextContents();
+  }
+
+  test("an ssh tab says it can't send any, with no Open in PuTTY, as the tab's own menu does", async ({ page }) => {
+    await openAs(page, { putty: false, specials: [] });
+    const menu = await rows(page);
+    expect(menu.filter((label) => label.includes("PuTTY"))).toEqual([]);
+    expect(menu).toContain("Special Command");
+    expect(await rows(page, "Special Command")).toEqual(["Not in the built-in terminal: ssh can't send them"]);
+    await expect(page.locator("#submenu .item").first()).toHaveClass(/disabled/);
+    // nor does Send Key offer a Break that needs PuTTY
+    expect(await rows(page, "Send Key")).not.toContain("Break");
+  });
+
+  test("a Telnet tab lists the commands it sends itself", async ({ page }) => {
+    await openAs(page, { putty: false, specials: [{ label: "Break", command: "break" }, { label: "Are You There", command: "ayt" }] });
+    expect(await rows(page, "Special Command")).toEqual(["Break", "Are You There"]);
+  });
+
+  test("a local shell has no Special Command at all", async ({ page }) => {
+    await openAs(page, { putty: false, local: true, specials: [] });
+    expect(await rows(page)).not.toContain("Special Command");
+  });
+
+  test("SuperXPuTTY, which has PuTTY, still offers Open in PuTTY", async ({ page }) => {
+    await openAs(page, { specials: [] });
+    expect(await rows(page)).toContain("Open in PuTTY (Special Commands)");
+  });
+});
+
 test("a file dropped on the terminal doesn't open in its place", async ({ page }) => {
   await openTerminal(page, {});
   // a real DataTransfer with a file, as Finder's drop gives the page

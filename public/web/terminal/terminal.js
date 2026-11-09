@@ -13,7 +13,7 @@
  *
  * Messages from TerminalControl: config, data, notice, paste, focus, action, cursorColor. To it: ready, size, input,
  * ack, log, copy, pasteRequest (every paste, so TerminalControl can ask first; with "text" for one not from the
- * clipboard), document, bell, tab, openInPutty, special (a Special Command, when config.specials offers it), openLink (a link Ctrl+clicked), pref, cleared (the screen was cleared
+ * clipboard), document, bell, tab, openInPutty (only while config.putty isn't false), special (a Special Command, when config.specials offers it), openLink (a link Ctrl+clicked), pref, cleared (the screen was cleared
  * here; Windows' pseudo console keeps its own copy, whose redraw after a resize the page drops: dropConptyRedraw).
  *
  * xterm.js add-ons: web links (Ctrl+click opens) and WebGL drawing (Options > Terminal > Drawing; the DOM renderer
@@ -43,6 +43,9 @@
     var localShell = false;         // cmd, PowerShell or WSL rather than a connection through plink
     var serialSession = false;      // a serial port: Open in PuTTY replaces this tab, as the port can only be open once
     var specials = [];              // Special Commands the host sends itself ({label, command}): then no Open in PuTTY
+    // whether there's a PuTTY to open the session in for the Special Commands the host can't send: SuperXPuTTY's
+    // plink tabs have one; SuperXTerminal (config.putty false) has none, so its menu says why there are none instead
+    var puttyToHand = true;
     var menuKeys = [];              // Send Key's keys ({key, label, hint}), from TerminalKeys.MenuKeys
     // the keys the menu shows for Copy, Paste and Find, as the app has them (SuperXTerminal: the Mac's ⌘C, ⌘V and its
     // Settings > Shortcuts Find); PuTTY's Windows keys where the app gives none (SuperXPuTTY)
@@ -1182,12 +1185,13 @@
             // typed through the tab (ctlPuttyPanel.SendKey), as SENDKEY types them; Other Key... asks there
             { label: 'Send Key', items: menuKeys.map(function (k) {
                 return { label: k.label, key: k.hint, action: function () { post({ type: 'sendKey', key: k.key }); } };
-            }).concat([
+            }).concat(
                 // a Break is a signal on the line, not a key: plink can't send one, PuTTY's Special Command can
+                // (SuperXTerminal has no PuTTY, so there it's left out where the tab can't send one, as the tab's menu does)
                 specials.some(function (s) { return s.command === 'break'; })
-                    ? { label: 'Break', key: 'signal', action: function () { post({ type: 'special', command: 'break' }); } }
-                    : { label: 'Break', key: 'needs PuTTY', enabled: false },
-                '-',
+                    ? [{ label: 'Break', key: 'signal', action: function () { post({ type: 'special', command: 'break' }); } }, '-']
+                    : puttyToHand ? [{ label: 'Break', key: 'needs PuTTY', enabled: false }, '-'] : []
+            ).concat([
                 { label: 'Other Key...', action: function () { post({ type: 'sendKey' }); } }
             ]) },
             '-'
@@ -1196,7 +1200,11 @@
                 return { label: s.label, action: function () { post({ type: 'special', command: s.command }); } };
             }) },
             '-'
-        ] : localShell ? [] : [
+        ] : localShell ? [] : !puttyToHand ? [
+            // SuperXTerminal: ssh can't send them and there's no PuTTY to open, so the menu says so, as the tab's does
+            { label: 'Special Command', items: [{ label: "Not in the built-in terminal: ssh can't send them", enabled: false }] },
+            '-'
+        ] : [
             // plink can't send PuTTY's Special Commands (Break, signals...); PuTTY's own window can
             { label: serialSession ? 'Open in PuTTY (Special Commands, replaces this tab)' : 'Open in PuTTY (Special Commands)',
                 action: function () { post({ type: 'openInPutty' }); } },
@@ -1605,6 +1613,7 @@
         localShell = !!config.local;
         serialSession = !!config.serial;
         specials = config.specials || [];
+        puttyToHand = config.putty !== false;
         menuKeys = config.menuKeys || [];
         keyLabels = config.keyLabels || {};
         titleFindButton();

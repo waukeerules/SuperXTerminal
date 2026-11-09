@@ -884,6 +884,8 @@ export class PageHost implements ScriptTarget {
       serial: false,
       // the Special Commands this tab sends itself (the page then offers them instead of Open in PuTTY)
       specials: specialCommands(this.link),
+      // no PuTTY to open the session in: where the tab sends none, the page's menu says why, as the tab's menu does
+      putty: false,
       prefs: allPrefs(),
       // the system's own monospaced fonts, for the page's font menu
       fonts: MONOSPACE_FONTS,

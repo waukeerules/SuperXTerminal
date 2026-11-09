@@ -21,7 +21,7 @@ import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailu
 import { antiIdleKeys } from "./antiIdle";
 import { running } from "../commands/sending.svelte";
 import { checkPaste } from "./pasting.svelte";
-import { MONOSPACE_FONTS, THIS_COMPUTER } from "../platform";
+import { MONOSPACE_FONTS, SYSTEM_KIND, THIS_COMPUTER, type System } from "../platform";
 import { clipboardText } from "../clipboard";
 import { isMac, loadShortcuts, shortcutLabel } from "../shortcuts";
 import { listen } from "@tauri-apps/api/event";
@@ -169,9 +169,21 @@ const keyFetches = new Map<string, Promise<boolean>>();
  * lag (it was a second, which showed). On Windows the end comes later: ConPTY keeps ssh's output open after it exits,
  * so the core finds the end by looking every 250 ms and then leaving 500 ms for the last output (EXIT_POLL and
  * EXIT_GRACE in pty.rs). Inside that, a reconnect that timed out went green between ssh's "Connection timed out" and
- * its end; so on Windows it's longer than both, with a little over for the message to arrive
+ * its end; so on Windows it's longer than both, with a little over for the message to arrive. Linux's pseudo terminal
+ * ends as the Mac's does, so it waits as the Mac does ([`conptyWaits`])
  */
-const ANSWERED_AFTER_MS = isMac ? 300 : 1000;
+const ANSWERED_AFTER_MS = conptyWaits(SYSTEM_KIND) ? 1000 : 300;
+
+/**
+ * Whether a system's tabs run in Windows' pseudo console (ConPTY), and so need its workarounds: a later "connected",
+ * the size settled before a tab opens and held until the session's first text (it printed ssh's first line twice
+ * otherwise). Windows only: the Mac and Linux have a Unix pseudo terminal, which takes a resize at any time and ends
+ * when the program does
+ * @param system which system
+ */
+export function conptyWaits(system: System): boolean {
+  return system === "windows";
+}
 
 /**
  * Whether output holds text, not only terminal codes: what's left once escape sequences (a window title's included,
@@ -1105,10 +1117,11 @@ export class PageHost implements ScriptTarget {
    * line twice ("Last login" on two lines), about a third of the time: seen in captures of the app's tabs and in ssh
    * logins through ConPTY, never with no resize. The profile's own look comes with the "started" event as before;
    * only a profile's own font can change the size again, and that resize waits for the session's text (resizePty).
-   * Not on the Mac, whose pseudo terminal takes a resize at any time, nor for a tab already configured (a reconnect)
+   * Not on the Mac or Linux, whose pseudo terminal takes a resize at any time, nor for a tab already configured (a
+   * reconnect)
    */
   private async settledSize(): Promise<void> {
-    if (isMac || this.configured) return;
+    if (!conptyWaits(SYSTEM_KIND) || this.configured) return;
     const changed = new Promise<void>((resolve) => {
       this.sizeChanged = resolve;
       setTimeout(resolve, SETTLE_SIZE_MS);
@@ -1140,7 +1153,7 @@ export class PageHost implements ScriptTarget {
   /** Tell the pseudo terminal the page's size now, or, on Windows before the session's first text, once it comes */
   private async resizePty(): Promise<void> {
     if (this.ptyId === null) return;
-    if (!isMac && !this.printed) {
+    if (conptyWaits(SYSTEM_KIND) && !this.printed) {
       this.sizeHeld = true;
       return;
     }

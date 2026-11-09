@@ -27,6 +27,8 @@ let puttyFile: Profile[];
 let pickedFile: string;
 /** The team's templates in the settings folder, as profile_templates reads them */
 let templates: Profile[];
+/** The profiles sessions name that aren't set up, with where, as profiles_missing finds them */
+let missing: [string, string[]][];
 
 beforeEach(() => {
   settings.onePassword = false;
@@ -40,6 +42,7 @@ beforeEach(() => {
   puttyFile = [];
   pickedFile = "/tmp/profiles.json";
   templates = [];
+  missing = [];
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: payload });
@@ -71,6 +74,8 @@ beforeEach(() => {
     if (cmd === "profiles_read_file") return inFile;
     if (cmd === "profiles_read_putty") return puttyFile;
     if (cmd === "profile_templates") return templates;
+    // what profiles_missing would say now: the names still not among the profiles stored
+    if (cmd === "profiles_missing") return missing.filter(([name]) => !stored.some((p) => p.name.toLowerCase() === name.toLowerCase()));
     if (cmd === "profile_template_share") return templates;
     if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [], tabIcons: [] }, { name: "Cisco", buttons: [], tabIcons: [] }];
     // the key fetch's key file: 37 minutes old, or 5 hours for the "old" one
@@ -529,6 +534,39 @@ describe("Settings > Profiles", () => {
     });
     // set up now: no longer offered
     expect(listed().queryByText("Team templates")).toBeNull();
+  });
+
+  it("lists the profiles sessions name that aren't set up here, marked apart, and sets one up with its name", async () => {
+    missing = [
+      ["Lab Devices", ["session core-sw1", "session core-sw2", "folder Lab/Cisco"]],
+      // a team template of the same name is offered as the template instead
+      ["netops", ["session edge-1"]],
+    ];
+    templates = [{ ...emptyProfile("netops"), jumpHost: "bastion" }];
+    await open();
+    const list = listed();
+    expect(list.getByText("Named by sessions, not set up")).toBeTruthy();
+    const lab = await list.findByRole("option", { name: /Lab Devices/ });
+    expect(lab.classList.contains("missing")).toBe(true);
+    expect(lab.textContent).toContain("3");
+    expect(lab.title).toContain("session core-sw1\nsession core-sw2\nfolder Lab/Cisco");
+    expect(list.queryAllByRole("option").map((o) => o.textContent?.trim().replace(/\s+\d+$/, ""))).toEqual([DEFAULT_PROFILE, "root", "CyberArk", "netops", "Lab Devices"]);
+    await userEvent.click(lab);
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Lab Devices");
+    expect(screen.getByText(/2 sessions and 1 folder use the profile "Lab Devices", which isn't set up on .* yet\. Until it is, they use Default Settings\./)).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("Username"), "admin");
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args).toMatchObject({ previousName: "", profile: { name: "Lab Devices", username: "admin" } });
+    // set up now: no longer listed as missing
+    expect(listed().queryByText("Named by sessions, not set up")).toBeNull();
+    expect(listed().getByRole("option", { name: "Lab Devices" }).classList.contains("missing")).toBe(false);
+  });
+
+  it("opens on a new profile of the name asked for when it isn't set up, as Edit Session's Profiles… asks", async () => {
+    missing = [["Lab Devices", ["session core-sw1"]]];
+    await open("lab devices");
+    await expect.poll(() => (screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Lab Devices");
+    expect(screen.getByText(/^1 session uses the profile "Lab Devices", which isn't set up on .* yet\. Until it is, it uses Default Settings\./)).toBeTruthy();
   });
 
   it("shares a profile with the team from its menu, once there's a settings folder, after asking", async () => {

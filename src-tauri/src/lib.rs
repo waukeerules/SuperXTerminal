@@ -1240,6 +1240,34 @@ fn variables_usage(state: State<'_, AppState>) -> BTreeMap<String, Vec<String>> 
     usage
 }
 
+/// The profiles that sessions, folders, local overrides and presets name but that aren't set up on this computer,
+/// each with the places naming it ([`profiles::missing`]), for Settings > Profiles to list under the user's own. Those
+/// sessions open with Default Settings until it's set up.
+#[tauri::command]
+fn profiles_missing(state: State<'_, AppState>) -> Vec<(String, Vec<String>)> {
+    let mut named: Vec<(String, String)> = Vec::new();
+    {
+        let sessions = state.sessions.lock().unwrap();
+        for session in sessions.saved.iter().chain(&sessions.private).chain(&sessions.database) {
+            let name = session.id().trim_start_matches("@db/").to_string();
+            named.push((session.get("PuttySession").to_string(), format!("session {name}")));
+        }
+        for folders in sessions.folders.values() {
+            for folder in folders.values() {
+                named.push((folder.putty_profile.clone(), format!("folder {}", folder.path)));
+            }
+        }
+    }
+    for (id, o) in overrides::load(&state.user_folder) {
+        named.push((o.putty_profile.unwrap_or_default(), format!("your override for {}", id.trim_start_matches("@db/"))));
+    }
+    for (name, o) in overrides::presets(&state.user_folder) {
+        named.push((o.putty_profile.unwrap_or_default(), format!("preset {name}")));
+    }
+    let profiles = state.profiles.lock().unwrap();
+    profiles::missing(&profiles, named.iter().map(|(n, p)| (n.as_str(), p.clone())))
+}
+
 /// The placeholders SuperXTerminal fills itself, with what each is
 #[tauri::command]
 fn variables_built_in() -> Vec<(String, String)> {
@@ -3070,6 +3098,7 @@ pub fn run() {
             override_presets_get,
             profile_key_age,
             variables_usage,
+            profiles_missing,
             variables_built_in,
             override_presets_set,
             pty::pty_serial_get,

@@ -59,8 +59,25 @@
   let templates = $state<Profile[]>([]);
   /** The team template the new profile being edited came from, to say what's left to fill in; "" for none */
   let fromTemplate = $state("");
+  /** The name sessions use that the new profile being edited is for, not set up here till it's saved; "" for none */
+  let fromNamed = $state("");
+  /** The places naming it ("session core-sw1", "folder Lab"...), for the note over the fields to count */
+  let fromNamedPlaces = $state<string[]>([]);
   /** The templates not set up here yet, by name: offered under the profiles */
   const newTemplates = $derived(templates.filter((t) => !profiles.some((p) => p.name.toLowerCase() === t.name.toLowerCase())));
+  /**
+   * The profiles that sessions, folders, local overrides and presets name but that aren't set up here, each with
+   * where it's named (profiles_missing). Those sessions open with Default Settings until it is
+   */
+  let named = $state<[string, string[]][]>([]);
+  /**
+   * The ones listed under the profiles: not set up since (saved here), and not a team template, which is offered as
+   * the template instead, with the team's settings filled in
+   */
+  const notSetUp = $derived(named.filter(([name]) => {
+    const key = name.toLowerCase();
+    return !profiles.some((p) => p.name.toLowerCase() === key) && !newTemplates.some((t) => t.name.toLowerCase() === key);
+  }));
 
   /** Whether the profile shown is Default Settings, which can't be renamed or deleted */
   const isDefault = $derived(originalName.toLowerCase() === DEFAULT_PROFILE.toLowerCase());
@@ -191,7 +208,17 @@
     const wanted = initial ? profiles.find((p) => p.name.toLowerCase() === initial.trim().toLowerCase()) : undefined;
     select(wanted?.name ?? DEFAULT_PROFILE);
     if (field) void reveal(field);
-    await loadTemplates();
+    await Promise.all([loadTemplates(), loadNamed()]);
+    // one a session names that isn't set up (Edit Session's Profiles…): a new profile of that name, ready to fill in
+    const missing = initial && !wanted && initial.trim().toLowerCase() !== DEFAULT_PROFILE.toLowerCase() ? initial.trim() : "";
+    if (missing) {
+      const template = newTemplates.find((t) => t.name.toLowerCase() === missing.toLowerCase());
+      if (template) setUp(template);
+      else {
+        const listed = named.find(([n]) => n.toLowerCase() === missing.toLowerCase());
+        setUpNamed(listed?.[0] ?? missing, listed?.[1] ?? []);
+      }
+    }
   });
 
   /** The field lit up after Edit Session's link to it, until the light fades */
@@ -218,6 +245,7 @@
     if (!profile) return;
     selected = name;
     fromTemplate = "";
+    fromNamed = "";
     draft = { ...profile };
     saved = { ...profile };
     originalName = profile.name;
@@ -229,11 +257,50 @@
   function add(): void {
     selected = "";
     fromTemplate = "";
+    fromNamed = "";
     draft = { ...emptyProfile(""), offerKeys: false };
     saved = { ...draft };
     originalName = "";
     password = undefined;
     message = "Name it after the PuTTY profile your sessions use, e.g. root.";
+  }
+
+  /** Read which profiles sessions name that aren't set up here; none when that can't be read */
+  async function loadNamed(): Promise<void> {
+    named = (await invoke<[string, string[]][] | null>("profiles_missing").catch(() => null)) ?? [];
+  }
+
+  /**
+   * Set up a profile that sessions name but this computer doesn't have: a new one of that name, for the login to be
+   * added and saved. Nothing is saved until then; meanwhile those sessions go on with Default Settings
+   */
+  function setUpNamed(name: string, places: string[] = []): void {
+    selected = "";
+    fromTemplate = "";
+    fromNamed = name;
+    fromNamedPlaces = places;
+    saved = { ...emptyProfile(""), offerKeys: false };
+    draft = { ...emptyProfile(name), offerKeys: false };
+    originalName = "";
+    password = undefined;
+    message = "";
+  }
+
+  /**
+   * Who names a profile, counted by kind for the note over a new profile's fields: "2 sessions and 1 folder",
+   * "1 session"; "Sessions" when the places aren't known (a name asked for that profiles_missing didn't list)
+   * @param places Each place, as profiles_missing words it ("session core-sw1", "folder Lab", "your override for
+   *   srv1", "preset From home")
+   */
+  function namedBy(places: string[]): string {
+    const kinds: [string, string, string][] = [["session ", "session", "sessions"], ["folder ", "folder", "folders"],
+      ["your override for ", "local override", "local overrides"], ["preset ", "preset", "presets"]];
+    const counts = kinds
+      .map(([prefix, one, many]) => [places.filter((p) => p.startsWith(prefix)).length, one, many] as const)
+      .filter(([n]) => n > 0)
+      .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+    if (!counts.length) return "Sessions";
+    return counts.length === 1 ? counts[0] : `${counts.slice(0, -1).join(", ")} and ${counts[counts.length - 1]}`;
   }
 
   /** Read the team's templates again (after one is shared); a file that can't be read says so here */
@@ -258,6 +325,7 @@
     password = undefined;
     message = "";
     fromTemplate = template.name;
+    fromNamed = "";
   }
 
   /** Share a profile with the team as a template in the settings folder, without its login, after asking */
@@ -283,6 +351,8 @@
       );
       select(draft.name.trim());
       message = "Saved.";
+      // a profile renamed leaves its old name to the sessions that still name it
+      void loadNamed();
     } catch (e) {
       message = String(e);
     }
@@ -303,6 +373,8 @@
       profiles = await deleteProfile(name);
       select(DEFAULT_PROFILE);
       message = `Removed "${name}".`;
+      // the sessions naming it now name one that isn't set up
+      void loadNamed();
     } catch (e) {
       message = String(e);
     }
@@ -539,6 +611,20 @@
           </li>
         {/each}
       {/if}
+      {#if notSetUp.length}
+        <li class="group" role="presentation">Named by sessions, not set up</li>
+        {#each notSetUp as [name, places] (name)}
+          <!-- named in sessions but not here: they use Default Settings meanwhile; a click starts it, with its name -->
+          <li role="option" aria-selected="false" aria-disabled={changes > 0} class="missing" class:locked={changes > 0}
+            title={changes > 0
+              ? "Save or revert the changes first"
+              : `Not set up on ${THIS_COMPUTER}: these use Default Settings until it is. Click to set it up.\n\n${places.join("\n")}`}
+            onclick={() => changes === 0 && setUpNamed(name, places)}
+            onkeydown={(e) => e.key === "Enter" && changes === 0 && setUpNamed(name, places)} tabindex="0">
+            <span>{name}</span> <span class="count" aria-label="{places.length} {places.length === 1 ? 'place' : 'places'}">{places.length}</span>
+          </li>
+        {/each}
+      {/if}
     </ul>
     <div class="list-buttons">
       <button onclick={add} disabled={changes > 0}>New</button>
@@ -565,6 +651,11 @@
 
     {#if fromTemplate}
       <p class="from-template">From the team's template "{fromTemplate}": add your username and password (or key file), then Save.</p>
+    {:else if fromNamed}
+      <!-- "1 session uses", "2 sessions and 1 folder use": the verb follows the count when it's one thing -->
+      {@const who = namedBy(fromNamedPlaces)}
+      {@const one = fromNamedPlaces.length === 1}
+      <p class="from-template">{who} {one ? "uses" : "use"} the profile "{fromNamed}", which isn't set up on {THIS_COMPUTER} yet. Until it is, {one ? "it uses" : "they use"} Default Settings. Add your login, then Save.</p>
     {/if}
     <fieldset>
       <legend>Profile</legend>
@@ -954,6 +1045,22 @@
 
   li.template {
     font-style: italic;
+    color: var(--text-muted);
+  }
+
+  /* a profile sessions name that isn't set up here: in italics, in the amber of Environment Variables' "not set",
+     with how many places name it */
+  li.missing {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-style: italic;
+    color: #d29922;
+  }
+
+  li.missing .count {
+    font-style: normal;
+    font-size: 12px;
     color: var(--text-muted);
   }
 

@@ -318,6 +318,28 @@ pub fn is_default(name: &str) -> bool {
     name.trim().is_empty() || name.trim().eq_ignore_ascii_case(DEFAULT_PROFILE)
 }
 
+/// The profiles named but not set up on this computer, as Settings > Profiles lists them under its own: each name as
+/// first written, with the places naming it ("session core-sw1", "folder Lab/Cisco"...), one each. Default Settings,
+/// a name left empty and one set up (whatever its case) aren't missing; two spellings of one name are one, as a
+/// session's profile is matched ignoring case. Such sessions open with Default Settings meanwhile, as PuTTY's do
+/// with a saved session that isn't there. `named` is each profile name with the place naming it.
+pub fn missing<'a>(profiles: &Profiles, named: impl IntoIterator<Item = (&'a str, String)>) -> Vec<(String, Vec<String>)> {
+    let mut found: Vec<(String, Vec<String>)> = Vec::new();
+    for (name, place) in named {
+        let name = name.trim();
+        if is_default(name) || profiles.get(name).is_some() {
+            continue;
+        }
+        match found.iter_mut().find(|(n, _)| n.eq_ignore_ascii_case(name)) {
+            Some((_, places)) if !places.contains(&place) => places.push(place),
+            Some(_) => {}
+            None => found.push((name.to_string(), vec![place])),
+        }
+    }
+    found.sort_by_key(|(n, _)| n.to_lowercase());
+    found
+}
+
 /// The Keychain account for a profile's password
 fn account(profile: &str) -> String {
     format!("profile:{}", profile.to_lowercase())
@@ -493,6 +515,33 @@ mod tests {
         assert_eq!(imported[0].script, "scripts/linux.spsl");
         let older: Profile = serde_json::from_str(r#"{"name":"Old"}"#).unwrap();
         assert_eq!(older.script, "");
+    }
+
+    #[test]
+    fn a_profile_named_by_sessions_but_not_set_up_is_listed_once_with_where_its_named() {
+        let profiles = Profiles {
+            profiles: vec![
+                Profile { name: "Default Settings".into(), ..Profile::default() },
+                Profile { name: "netops".into(), ..Profile::default() },
+            ],
+        };
+        let named = [
+            ("Lab Devices", "session core-sw1".to_string()),
+            ("lab devices", "session core-sw2".to_string()),
+            ("Lab Devices", "session core-sw1".to_string()),
+            ("Lab Devices", "folder Lab/Cisco".to_string()),
+            ("NETOPS", "session edge-1".to_string()),
+            ("Default Settings", "session srv1".to_string()),
+            ("", "session srv2".to_string()),
+            (" Ansible ", "your override for srv3".to_string()),
+        ];
+        assert_eq!(
+            super::missing(&profiles, named),
+            vec![
+                ("Ansible".to_string(), vec!["your override for srv3".to_string()]),
+                ("Lab Devices".to_string(), vec!["session core-sw1".to_string(), "session core-sw2".to_string(), "folder Lab/Cisco".to_string()]),
+            ]
+        );
     }
 
     #[test]

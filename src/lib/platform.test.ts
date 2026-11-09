@@ -3,7 +3,7 @@
  * Linux's own words, which were Windows' before Linux was told apart. Pure functions, so nothing is stood in.
  */
 import { describe, expect, it } from "vitest";
-import { systemOf, wordsFor } from "./platform";
+import { inDocuments, systemOf, wordsFor } from "./platform";
 
 describe("the system", () => {
   it("is told from each web view's user agent: WKWebView's Mac, WebView2's Windows, WebKitGTK's Linux", () => {
@@ -35,6 +35,14 @@ describe("Linux's words", () => {
     expect(linux.onePasswordInstall).toEqual({ words: expect.stringMatching(/1password-cli package, from its apt or dnf repository/) });
     expect(wordsFor("mac").onePasswordInstall).toEqual({ command: "brew install 1password-cli" });
     expect(wordsFor("windows").onePasswordInstall).toEqual({ command: "winget install 1password-cli" });
+  });
+
+  it("write the Documents folders the app uses as each system writes paths, and name where serial devices are", () => {
+    expect(inDocuments(["SuperXTerminal", "output"], "windows")).toBe("Documents\\SuperXTerminal\\output");
+    expect(inDocuments(["SuperXTerminal", "logs"], "mac")).toBe("Documents/SuperXTerminal/logs");
+    expect(inDocuments(["SuperXTerminal", "logs"], "linux")).toBe("Documents/SuperXTerminal/logs");
+    expect(wordsFor("mac").serialDevices).toBe("/dev/cu.*");
+    expect(wordsFor("linux").serialDevices).toBe("/dev/ttyUSB*, /dev/ttyACM*");
   });
 
   it("leave the Mac's and Windows' as they were", () => {

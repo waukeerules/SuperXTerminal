@@ -11,6 +11,7 @@
 <script lang="ts">
   import { ask } from "@tauri-apps/plugin-dialog";
   import { SEND_KEY_NAMES } from "./keys";
+  import { SCRIPT_OUTPUT_FOLDER } from "../platform";
   import Prompt from "../ui/Prompt.svelte";
   import SavedScriptEditor from "./SavedScriptEditor.svelte";
   import { deleteScript, kindName, listScripts, loadScript, saveScript, scriptNameProblem, type SavedScript } from "./library";
@@ -67,7 +68,7 @@
     ["{0} {1} {name}", "What the last wait matched ({0}), a regular expression's groups ({1}…{9}) and (?<name>…) groups", "{1}"],
     ["FAILON % Invalid input", "From here on, any wait that sees it stops the script, naming the device's line. /i and /re as WAITFOR; FAILON OFF forgets them", "FAILON "],
     ["ECHO text", "Show the text in the status bar, {variables} filled in"],
-    ["SAVE file.txt", "Save what the last command printed (without its echo and prompt) to Documents/SuperXTerminal/output, or a full path; /append adds to it", "SAVE "],
+    ["SAVE file.txt", `Save what the last command printed (without its echo and prompt) to ${SCRIPT_OUTPUT_FOLDER}, or a full path; /append adds to it`, "SAVE "],
     ["CALL name", "Run a saved script here (the Saved scripts tab), with the same variables, then go on"],
     ["REPEAT 5 … END", "Run the lines up to END 5 times; {repeat} is the round (1, 2…)", "REPEAT 5\n  \nEND\n"],
     ["LIMIT 10m", "The whole script may run that long (90s, 10m, 1h), its waits included; then it stops. A loop that goes round 10,000 times without waiting stops anyway", "LIMIT "],

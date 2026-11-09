@@ -34,6 +34,7 @@
  * the connection it started on: it stops when the session ends or reconnects.
  */
 import { isKeyName, canTypeKey, keySequence, parseSendKey } from "./keys";
+import { SCRIPT_OUTPUT_FOLDER } from "../platform";
 
 /** Where a wait's text was found, and what it saved: the whole match, its numbered groups and named groups */
 export interface Match {
@@ -378,7 +379,7 @@ export function parseLine(raw: string): Step | null {
       return { kind: "echo", text: args };
     case "SAVE": {
       const options = waitOptions(args);
-      if (!options.rest) throw new Error("SAVE needs a file: SAVE show-run.txt (in Documents/SuperXTerminal/output) or a full path");
+      if (!options.rest) throw new Error(`SAVE needs a file: SAVE show-run.txt (in ${SCRIPT_OUTPUT_FOLDER}) or a full path`);
       return { kind: "save", path: options.rest, append: options.append };
     }
     case "CALL":

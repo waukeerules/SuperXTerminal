@@ -66,6 +66,8 @@ beforeEach(() => {
     if (cmd === "plugin:dialog|open") return JSON.stringify(payload).includes("login script") ? "/Users/me/SuperXTerminal/scripts/linux-login.spsl" : pickedFile;
     // as scripts::as_spec, for a settings folder of /Users/me/SuperXTerminal: a script in there is kept relative
     if (cmd === "script_chosen") return String(payload.path).replace(/^\/Users\/me\/SuperXTerminal\//, "");
+    // the user's home folder, as this system writes it
+    if (cmd === "plugin:path|resolve_directory") return SYSTEM_KIND === "windows" ? "C:\\Users\\me" : "/Users/me";
     if (cmd === "profiles_read_file") return inFile;
     if (cmd === "profiles_read_putty") return puttyFile;
     if (cmd === "profile_templates") return templates;
@@ -213,6 +215,14 @@ describe("Settings > Profiles", () => {
     await userEvent.clear(keyFile);
     await userEvent.type(keyFile, "~/.ssh/old_key");
     expect(await screen.findByText(/The key is 5 h old, past its 4 h: the next session fetches a new one\./)).toBeTruthy();
+  });
+
+  it("opens Key file's Choose… in the user's own .ssh folder, written as the system writes paths", async () => {
+    await open("root");
+    await userEvent.click(within(screen.getByLabelText("Key file").closest("label")!).getByRole("button", { name: "Choose…" }));
+    const chosen = calls.find((c) => c.cmd === "plugin:dialog|open")!;
+    // not "~/.ssh", which the dialog doesn't read
+    expect((chosen.args.options as { defaultPath: string }).defaultPath).toBe(SYSTEM_KIND === "windows" ? "C:\\Users\\me\\.ssh" : "/Users/me/.ssh");
   });
 
   it("fills the key fetch from an example, and says what Log in & cache key needs", async () => {

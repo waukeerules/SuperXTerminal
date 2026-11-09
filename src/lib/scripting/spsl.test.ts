@@ -6,6 +6,7 @@
 // stood in for by `Device`, whose output is a string with WAITFOR's mark in it, and which answers what's typed as a
 // switch would; the window (PROMPT, the status bar) by a host that records the status lines.
 import { describe, expect, it } from "vitest";
+import { SCRIPT_OUTPUT_FOLDER } from "../platform";
 import { checkScript, runScript, ScriptRun, type ScriptHost, type ScriptTarget } from "./spsl";
 
 /** A stand-in switch: what it prints after each thing typed, in turn, and what it has been sent */
@@ -385,7 +386,8 @@ describe("Check script on the new commands", () => {
       "1: SET names a variable, then its value: SET vlan 20 (a name starts with a letter or _)",
       "2: WAITQUIET needs how long the output must stay quiet, in milliseconds, e.g. WAITQUIET 1500",
       "3: FAILON needs what the device says when it refuses, e.g. FAILON % Invalid input; FAILON OFF forgets them",
-      "4: SAVE needs a file: SAVE show-run.txt (in Documents/SuperXTerminal/output) or a full path",
+      // the output folder as this system writes it (Documents\SuperXTerminal\output on Windows)
+      `4: SAVE needs a file: SAVE show-run.txt (in ${SCRIPT_OUTPUT_FOLDER}) or a full path`,
       '5: There\'s no saved SPSL script "nothing" in the scripts folder; the script will stop here.',
       "6: WAITPROMPT takes only /t: and /else:; to wait for a prompt of your own, SET prompt to a regular expression first",
     ]);

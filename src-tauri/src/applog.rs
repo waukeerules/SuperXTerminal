@@ -30,7 +30,8 @@ const ROLL_AT: u64 = 5 * 1024 * 1024;
 /// The last sequence number given, and the entries kept for the log viewer (the newest [`KEPT`])
 static LOG: Mutex<(u64, VecDeque<Entry>)> = Mutex::new((0, VecDeque::new()));
 
-/// The log file: in ~/Library/Logs on the Mac, %LOCALAPPDATA%\SuperXTerminal\logs on Windows
+/// The log file: in ~/Library/Logs on the Mac, %LOCALAPPDATA%\SuperXTerminal\logs on Windows, and on Linux
+/// ~/.local/share/SuperXTerminal/logs (its XDG data folder, which data_local_dir gives there)
 pub fn file() -> PathBuf {
     if cfg!(target_os = "macos") {
         dirs::home_dir().unwrap_or_default().join("Library/Logs/SuperXTerminal/SuperXTerminal.log")

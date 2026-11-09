@@ -975,13 +975,14 @@ fn ssh(
 
 /// A path with a leading home turned into the home folder: "~/" as written on the Mac and Linux, and on Windows its
 /// own "%USERPROFILE%\" and "~\" too, so a key file reads as Windows writes paths (%USERPROFILE%\.ssh\key), as
-/// Settings > Profiles' examples give it there. Before, only "~/" was, so those were looked for as they were written
-fn expand_home(path: &str) -> String {
+/// Settings > Profiles' examples give it there. Before, only "~/" was, so those were looked for as they were written.
+/// Also File transfer's local folder and a script's SAVE, so a path reads the same wherever it's typed
+pub(crate) fn expand_home(path: &str) -> String {
     expand_home_in(path, dirs::home_dir().as_deref())
 }
 
 /// [`expand_home`], with the home folder given (the tests')
-fn expand_home_in(path: &str, home: Option<&std::path::Path>) -> String {
+pub(crate) fn expand_home_in(path: &str, home: Option<&std::path::Path>) -> String {
     let Some(home) = home else { return path.to_string() };
     let rest = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")).or_else(|| {
         // %USERPROFILE% whatever its case, as Windows reads variables, then a \ or /

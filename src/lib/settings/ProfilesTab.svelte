@@ -6,9 +6,10 @@
   colleague's or another computer's.
 -->
 <script lang="ts">
-  import { FETCH_SHELL, MONOSPACE_FONTS, SECRET_STORE, SSH_CONFIG, SSH_KEYS, SYSTEM_KIND, THIS_COMPUTER } from "../platform";
+  import { FETCH_SHELL, MONOSPACE_FONTS, PATH_SEPARATOR, SECRET_STORE, SSH_CONFIG, SSH_KEYS, SYSTEM_KIND, THIS_COMPUTER } from "../platform";
   import { onMount, tick } from "svelte";
   import { ask, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
+  import { homeDir } from "@tauri-apps/api/path";
   import { invoke } from "@tauri-apps/api/core";
   import { context, jumpHostOf } from "../commands/sending.svelte";
   import { keyFetchExamples } from "./keyFetchExamples";
@@ -414,9 +415,14 @@
     };
   }
 
-  /** Choose a private key file */
+  /**
+   * Choose a private key file, starting in the user's .ssh folder: its full path, as the dialog doesn't read ~ (which
+   * it was given before, on every system), joined as the system writes paths (C:\Users\me\.ssh on Windows)
+   */
   async function chooseKey(): Promise<void> {
-    const path = await open({ title: "Choose a private key (OpenSSH format)", defaultPath: "~/.ssh" });
+    const home = await homeDir().catch(() => "");
+    const defaultPath = home ? `${home.replace(/[\\/]+$/, "")}${PATH_SEPARATOR}.ssh` : undefined;
+    const path = await open({ title: "Choose a private key (OpenSSH format)", defaultPath });
     if (typeof path === "string") draft.keyFile = path;
   }
 

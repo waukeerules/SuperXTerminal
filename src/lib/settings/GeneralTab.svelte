@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
   import { SEARCH_FIELDS, searchFieldsOf, toggledSearchFields } from "../sessions/tree";
-  import { FILE_MANAGER, ONEPASSWORD_INSTALL, SYSTEM, THIS_COMPUTER } from "../platform";
+  import { FILE_MANAGER, ONEPASSWORD_INSTALL, SESSION_LOG_FOLDER, SYSTEM, THIS_COMPUTER } from "../platform";
   import { chooseSettingsFolder, saveSettings, settings, type ScriptLanguage } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
@@ -372,7 +372,7 @@
     <label class="check"><input type="checkbox" checked={settings.sessionLogEnabled}
       onchange={(e) => void saveSettings({ sessionLogEnabled: e.currentTarget.checked })} /> Keep a log of every session (one file per session, named with its start time)</label>
     <div class="row">
-      <input value={settings.sessionLogFolder} placeholder="Documents/SuperXTerminal/logs" aria-label="Log folder" disabled={!settings.sessionLogEnabled}
+      <input value={settings.sessionLogFolder} placeholder={SESSION_LOG_FOLDER} aria-label="Log folder" disabled={!settings.sessionLogEnabled}
         onchange={(e) => void saveSettings({ sessionLogFolder: e.currentTarget.value.trim() })} />
       <button disabled={!settings.sessionLogEnabled} onclick={chooseLogFolder}>Choose…</button>
     </div>

@@ -743,12 +743,14 @@ fn text_file_write(path: PathBuf, text: String) -> Result<(), String> {
     std::fs::write(path, text.replace("\r\n", "\n").replace('\n', "\r\n")).map_err(|e| e.to_string())
 }
 
-/// Where a script's SAVE writes: a full path as it is, `~/…` in the home folder, anything else in `output`
+/// Where a script's SAVE writes: a full path as it is, one in the home folder (`~/…`, or on Windows `~\…` and
+/// `%USERPROFILE%\…`, as launch.rs's expand_home reads them) there, anything else in `output`
 /// (Documents/SuperXTerminal/output, beside the session logs' own folder)
 fn script_output_path(path: &str, home: &std::path::Path, output: &std::path::Path) -> PathBuf {
     let path = path.trim();
-    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
-        return home.join(rest);
+    let expanded = launch::expand_home_in(path, Some(home));
+    if expanded != path {
+        return PathBuf::from(expanded);
     }
     let given = PathBuf::from(path);
     if given.is_absolute() { given } else { output.join(given) }
@@ -3325,6 +3327,9 @@ mod tests {
         assert_eq!(super::script_output_path("sw1-run.txt", home, output), output.join("sw1-run.txt"));
         assert_eq!(super::script_output_path("lab/sw1.txt", home, output), output.join("lab/sw1.txt"));
         assert_eq!(super::script_output_path("~/Desktop/run.txt", home, output), home.join("Desktop/run.txt"));
+        // Windows' own ways of writing the home folder too, as a key file's
+        assert_eq!(super::script_output_path("%USERPROFILE%\\Desktop\\run.txt", home, output), home.join("Desktop\\run.txt"));
+        assert_eq!(super::script_output_path("~\\Desktop\\run.txt", home, output), home.join("Desktop\\run.txt"));
         let full = if cfg!(windows) { "C:\\backups\\run.txt" } else { "/tmp/backups/run.txt" };
         assert_eq!(super::script_output_path(full, home, output), Path::new(full));
     }

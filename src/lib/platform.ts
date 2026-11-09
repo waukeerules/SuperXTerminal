@@ -2,7 +2,7 @@
  * Words that differ between the Mac, Windows and Linux, for what the interface says: the system's name, the computer,
  * where secrets are kept (the keyring crate's store: the Keychain, Windows Credential Manager, or the Secret Service),
  * the file manager, ssh's own keys and settings file, the shell a profile's Fetch command runs in, a serial device's
- * name, how 1Password's CLI is installed, the modifier key of the app's shortcuts, and the monospaced fonts that come
+ * name, how 1Password's CLI is installed, the separator in a path (and so the Documents folders the app writes to), the modifier key of the app's shortcuts, and the monospaced fonts that come
  * with the system.
  *
  * The system is told from the web view's user agent (WKWebView says Mac, WebView2 Windows, WebKitGTK Linux). Each
@@ -71,6 +71,10 @@ export interface SystemWords {
    * where none fits every distribution, words (`words`)
    */
   onePasswordInstall: { command: string } | { words: string };
+  /** The separator in the system's paths: / on the Mac and Linux, \ on Windows */
+  pathSeparator: string;
+  /** The serial devices a COM name is chosen from, as a serial tab says there are none: none on Windows, where a COM name is the port */
+  serialDevices: string;
 }
 
 /**
@@ -88,6 +92,7 @@ export function wordsFor(system: System): SystemWords {
         serialExample: "e.g. /dev/cu.usbserial-1, or COM1",
         serialNote: "Pick a device from the list, or type a COM name (e.g. COM1) to share the session with Windows: the Mac asks once which device it is.",
         onePasswordInstall: { command: "brew install 1password-cli" },
+        pathSeparator: "/", serialDevices: "/dev/cu.*",
       };
     case "linux":
       return {
@@ -101,6 +106,7 @@ export function wordsFor(system: System): SystemWords {
         serialExample: "e.g. /dev/ttyUSB0, or COM1",
         serialNote: "Pick a device from the list (USB adapters are /dev/ttyUSB… and /dev/ttyACM…, and need your user in the dialout group), or type a COM name (e.g. COM1) to share the session with Windows: this computer asks once which device it is.",
         onePasswordInstall: { words: "1Password's 1password-cli package, from its apt or dnf repository (its getting-started page says how)" },
+        pathSeparator: "/", serialDevices: "/dev/ttyUSB*, /dev/ttyACM*",
       };
     default:
       return {
@@ -111,6 +117,7 @@ export function wordsFor(system: System): SystemWords {
         serialExample: "e.g. COM1",
         serialNote: "Pick a COM port from the list (the ports present now), or type one.",
         onePasswordInstall: { command: "winget install 1password-cli" },
+        pathSeparator: "\\", serialDevices: "COM ports",
       };
   }
 }
@@ -145,3 +152,22 @@ export const SERIAL_EXAMPLE = WORDS.serialExample;
 export const SERIAL_NOTE = WORDS.serialNote;
 /** How 1Password's CLI is installed here */
 export const ONEPASSWORD_INSTALL = WORDS.onePasswordInstall;
+/** The separator in this system's paths: / on the Mac and Linux, \ on Windows */
+export const PATH_SEPARATOR = WORDS.pathSeparator;
+/** Where a serial tab looks for devices, as it says when there are none */
+export const SERIAL_DEVICES = WORDS.serialDevices;
+
+/**
+ * A folder in the user's Documents as a system writes it, relative, for what the interface says:
+ * Documents/SuperXTerminal/output, or Documents\SuperXTerminal\output on Windows
+ * @param parts the folders below Documents
+ * @param system which system's: this one's, unless a test says
+ */
+export function inDocuments(parts: string[], system: System = SYSTEM_KIND): string {
+  return ["Documents", ...parts].join(wordsFor(system).pathSeparator);
+}
+
+/** Where a script's SAVE writes a bare name: Documents/SuperXTerminal/output (lib.rs's script_output_path) */
+export const SCRIPT_OUTPUT_FOLDER = inDocuments(["SuperXTerminal", "output"]);
+/** Where session logs go when Settings > General names no folder: Documents/SuperXTerminal/logs */
+export const SESSION_LOG_FOLDER = inDocuments(["SuperXTerminal", "logs"]);

@@ -1156,16 +1156,15 @@ async fn demo_transfer(
     Ok(())
 }
 
-/// A folder on this computer (`~` is home), its path made absolute
+/// A folder on this computer (`~` is home, and `~/…`, or on Windows `~\…` and `%USERPROFILE%\…`, are in it, as
+/// launch.rs's expand_home reads them), its path made absolute
 #[tauri::command]
 pub fn local_list(path: String) -> Result<Listing, String> {
     let path = path.trim();
-    let path = if path.is_empty() || path == "~" {
+    let path = if path.is_empty() || path == "~" || path.eq_ignore_ascii_case("%USERPROFILE%") {
         dirs::home_dir().unwrap_or_default()
-    } else if let Some(rest) = path.strip_prefix("~/") {
-        dirs::home_dir().unwrap_or_default().join(rest)
     } else {
-        std::path::PathBuf::from(path)
+        std::path::PathBuf::from(crate::launch::expand_home(path))
     };
     let path = plain_path(&std::fs::canonicalize(&path).map_err(|e| format!("{}: {e}", path.display()))?);
     let mut entries = Vec::new();

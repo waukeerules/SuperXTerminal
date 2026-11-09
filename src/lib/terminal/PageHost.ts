@@ -21,7 +21,7 @@ import { reconnectDelay, retries, sshFailure, type SshFailure } from "./sshFailu
 import { antiIdleKeys } from "./antiIdle";
 import { running } from "../commands/sending.svelte";
 import { checkPaste } from "./pasting.svelte";
-import { MONOSPACE_FONTS, SYSTEM_KIND, THIS_COMPUTER, type System } from "../platform";
+import { MONOSPACE_FONTS, SERIAL_DEVICES, SYSTEM_KIND, THIS_COMPUTER, type System } from "../platform";
 import { clipboardText } from "../clipboard";
 import { isMac, loadShortcuts, shortcutLabel } from "../shortcuts";
 import { listen } from "@tauri-apps/api/event";
@@ -1240,11 +1240,14 @@ export class PageHost implements ScriptTarget {
     this.flush();
   }
 
-  /** Ask which /dev/cu.* device a COM name is on this Mac, and remember it; false if there's none or it's cancelled */
+  /**
+   * Ask which device a COM name is on this Mac or Linux computer (/dev/cu.*, /dev/ttyUSB*...), and remember it; false
+   * if there's none or it's cancelled
+   */
   private async chooseSerialDevice(name: string): Promise<boolean> {
     const devices = await invoke<string[]>("serial_devices_list");
     if (devices.length === 0) {
-      this.post({ type: "notice", text: `${name}: no serial device is plugged in (none in /dev/cu.*).`, kind: "error" });
+      this.post({ type: "notice", text: `${name}: no serial device is plugged in (none in ${SERIAL_DEVICES}).`, kind: "error" });
       return false;
     }
     const device = await askChoice(`Which serial device is ${name} on ${THIS_COMPUTER}?`, `${name}:`, devices);

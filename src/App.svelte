@@ -36,11 +36,11 @@
   import QuickSelector, { type QuickItem } from "./lib/sessions/QuickSelector.svelte";
   import type { PageHost, QuickConnect as QuickFields } from "./lib/terminal/PageHost";
   import type { MovingTab, SessionStates } from "./lib/layout/TabArea";
-  import LayoutsList from "./lib/layout/LayoutsList.svelte";
   import LogViewer from "./lib/layout/LogViewer.svelte";
   import { checkForUpdates } from "./lib/settings/updates";
   import SessionDetail from "./lib/sessions/SessionDetail.svelte";
   import { AUTO_RESTORE, LAYOUTS_CHANGED, listLayouts, readLayout, renameLayout, saveLayout, type Layout } from "./lib/layout/layouts";
+  import type { LayoutActions } from "./lib/settings/LayoutsTab.svelte";
   import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
   import { getVersion } from "@tauri-apps/api/app";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -157,7 +157,8 @@
       if (currentLayout && currentLayout !== AUTO_RESTORE) void saveLayoutAs(currentLayout);
       else askLayoutName();
     } else if (id === "saveLayoutAs") askLayoutName();
-    else if (id === "toggleLayouts") void saveSettings({ showLayouts: !settings.showLayouts });
+    // the saved layouts are managed in Settings > Layouts, where the Layouts pane under the tree was
+    else if (id === "toggleLayouts") void openSettings("Layouts");
     else if (id === "toggleLogViewer") void saveSettings({ showLogViewer: !settings.showLogViewer });
     else if (id === "toggleSessionsPane") void saveSettings({ showSessionsPane: !settings.showSessionsPane });
     else if (id === "toggleStatusBar") void saveSettings({ showStatusBar: !settings.showStatusBar });
@@ -635,7 +636,6 @@
       panes: {
         sessionsPaneWidth: settings.sessionsPaneWidth,
         sessionsAutoHide: settings.sessionsAutoHide,
-        showLayouts: settings.showLayouts,
         showSessionDetail: settings.showSessionDetail,
       },
     };
@@ -662,7 +662,6 @@
     await saveSettings({
       sessionsPaneWidth: panes.sessionsPaneWidth || settings.sessionsPaneWidth,
       sessionsAutoHide: panes.sessionsAutoHide ?? settings.sessionsAutoHide,
-      showLayouts: panes.showLayouts ?? settings.showLayouts,
       showSessionDetail: panes.showSessionDetail ?? settings.showSessionDetail,
     });
     area.loadLayout(layout.tabs);
@@ -671,15 +670,20 @@
     return true;
   }
 
-  /** Save the window as a layout of this name */
-  async function saveLayoutAs(name: string): Promise<void> {
+  /** Save the window as a layout of this name; throws when it can't be saved */
+  async function storeLayout(name: string): Promise<void> {
     const layout = layoutNow();
-    if (!layout) return;
+    if (!layout) throw new Error("There are no tabs to save.");
+    await saveLayout(name, layout);
+    currentLayout = name;
+    status = `Saved layout: ${name}`;
+    window.dispatchEvent(new Event(LAYOUTS_CHANGED));
+  }
+
+  /** Save the window as a layout of this name (File > Save Layout), saying in the status bar if it can't */
+  async function saveLayoutAs(name: string): Promise<void> {
     try {
-      await saveLayout(name, layout);
-      currentLayout = name;
-      status = `Saved layout: ${name}`;
-      window.dispatchEvent(new Event(LAYOUTS_CHANGED));
+      await storeLayout(name);
     } catch (e) {
       status = `Couldn't save the layout: ${e}`;
     }
@@ -701,24 +705,24 @@
     };
   }
 
-  /** Rename a layout from the Layouts pane */
-  function askLayoutRename(from: string): void {
-    naming = {
-      title: "Rename layout",
-      value: from,
-      onOk: async (to) => {
-        naming = null;
-        try {
-          await renameLayout(from, to);
-          if (currentLayout === from) currentLayout = to;
-          if (settings.defaultLayoutName === from) await saveSettings({ defaultLayoutName: to });
-          window.dispatchEvent(new Event(LAYOUTS_CHANGED));
-        } catch (e) {
-          status = String(e);
-        }
-      },
-    };
+  /** Rename a layout (Settings > Layouts), the open one's name and the default's following; throws when it can't */
+  async function renameLayoutTo(from: string, to: string): Promise<void> {
+    await renameLayout(from, to);
+    if (currentLayout === from) currentLayout = to;
+    if (settings.defaultLayoutName === from) await saveSettings({ defaultLayoutName: to });
+    window.dispatchEvent(new Event(LAYOUTS_CHANGED));
   }
+
+  /** What Settings > Layouts needs of this window: its tabs loaded from a layout, or saved as one, and renaming */
+  const layoutActions: LayoutActions = {
+    // a layout loaded closes Settings, to show it
+    load: async (name) => {
+      if (await openLayout(name)) settingsTab = null;
+    },
+    loadInNewWindow: (name) => void invoke("window_new", { open: null, adopt: null, layout: name }),
+    save: storeLayout,
+    rename: renameLayoutTo,
+  };
 
   // the automatic layout, when it's the default: saved a moment after the tabs or their arrangement change, so
   // they're back at the next start (SuperXPuTTY saved it on exit, which Cmd+Q can skip)
@@ -813,7 +817,8 @@
 {/if}
 
 {#if settingsTab}
-  <Settings tab={settingsTab} profile={settingsProfile} field={settingsField} onClose={() => (settingsTab = null)} />
+  <Settings tab={settingsTab} profile={settingsProfile} field={settingsField} layout={currentLayout} {layoutActions}
+    onClose={() => (settingsTab = null)} />
 {/if}
 
 <div class="window">
@@ -853,11 +858,6 @@
           customs = icons;
           if (tabs) tabs.customs = icons;
         }} onSelected={(s) => (selectedSession = s)} onWantWidth={(w) => (searchWidth = w)} />
-        {#if settings.showLayouts}
-          <LayoutsList current={currentLayout} onLoad={(name) => void openLayout(name)} onRename={askLayoutRename}
-            onLoadInNewWindow={(name) => void invoke("window_new", { open: null, adopt: null, layout: name })}
-            onClose={() => void saveSettings({ showLayouts: false })} />
-        {/if}
         {#if settings.showSessionDetail}
           <SessionDetail session={selectedSession} {customs} onEdit={(s) => tree?.editSession(s)}
             onClose={() => void saveSettings({ showSessionDetail: false })} />

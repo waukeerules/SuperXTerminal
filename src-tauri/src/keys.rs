@@ -60,7 +60,7 @@ pub const ACTIONS: &[Action] = &[
     Action { id: "toggleSessionsAutoHide", label: "Auto Hide Sessions", default: "" , other: "" },
     Action { id: "toggleSendCommands", label: "Send Commands", default: "" , other: "" },
     Action { id: "toggleButtonBar", label: "Button Bar", default: "" , other: "" },
-    Action { id: "toggleLayouts", label: "Layouts", default: "" , other: "" },
+    Action { id: "toggleLayouts", label: "Layouts…", default: "" , other: "" },
     Action { id: "toggleSessionDetail", label: "Session Detail", default: "" , other: "" },
     Action { id: "toggleLogViewer", label: "Log Viewer", default: "" , other: "" },
     Action { id: "toggleSessionsPane", label: "Sessions", default: "" , other: "" },

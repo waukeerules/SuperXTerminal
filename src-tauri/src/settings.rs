@@ -69,8 +69,8 @@ pub struct AppSettings {
     /// The layout opened at start ("" for none: a Local Shell; "<Auto Restore>" for the last one), as SuperXPuTTY's
     /// DefaultLayoutName
     pub default_layout_name: String,
-    /// View > Layouts and View > Session Detail: the panes under the Sessions tree
-    pub show_layouts: bool,
+    /// View > Session Detail: the pane under the Sessions tree. (The Layouts pane that was there is Settings > Layouts
+    /// now; a settings file with its showLayouts is read without it.)
     pub show_session_detail: bool,
     /// Settings > Shortcuts: the actions' keys the user changed ("" for none); the others have keys.rs's defaults
     pub shortcuts: std::collections::BTreeMap<String, String>,
@@ -157,7 +157,6 @@ impl Default for AppSettings {
             sessions_pane_width: 280,
             sessions_auto_hide: false,
             default_layout_name: String::new(),
-            show_layouts: false,
             show_session_detail: false,
             shortcuts: std::collections::BTreeMap::new(),
             show_in_menu_bar: false,

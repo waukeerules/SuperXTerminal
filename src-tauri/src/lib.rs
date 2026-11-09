@@ -1358,15 +1358,14 @@ fn window_changes(before: &AppSettings, after: &AppSettings) -> WindowChanges {
 /// The View menu's items that are shown or hidden, each with whether it's shown now, for its tick (as a Mac app's
 /// View menu, and SuperXPuTTY's, tick the panes and bars on screen). Each is a setting, saved when the item is chosen,
 /// so the menu is made again then ([`window_changes`]) and the tick follows. Full Screen isn't among them: the Mac's
-/// own View menu doesn't tick it either.
-fn view_checks(settings: &AppSettings) -> [(&'static str, bool); 9] {
+/// own View menu doesn't tick it either. Nor is Layouts…, which opens Settings > Layouts.
+fn view_checks(settings: &AppSettings) -> [(&'static str, bool); 8] {
     [
         ("toggleSessionsPane", settings.show_sessions_pane),
         ("toggleSendCommands", settings.show_send_commands),
         ("toggleButtonBar", settings.show_button_bar),
         ("toggleStatusBar", settings.show_status_bar),
         ("toggleSessionsAutoHide", settings.sessions_auto_hide),
-        ("toggleLayouts", settings.show_layouts),
         ("toggleSessionDetail", settings.show_session_detail),
         ("toggleLogViewer", settings.show_log_viewer),
         ("toggleAlwaysOnTop", settings.always_on_top),
@@ -2471,7 +2470,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> tauri::Result
             &shown("toggleStatusBar")?,
             &PredefinedMenuItem::separator(app)?,
             &shown("toggleSessionsAutoHide")?,
-            &shown("toggleLayouts")?,
+            // the saved layouts, in Settings > Layouts
+            &action("toggleLayouts")?,
             &shown("toggleSessionDetail")?,
             &shown("toggleLogViewer")?,
             &PredefinedMenuItem::separator(app)?,
@@ -3412,7 +3412,6 @@ mod tests {
         settings.show_button_bar = true;
         settings.show_status_bar = true;
         settings.sessions_auto_hide = false;
-        settings.show_layouts = false;
         settings.show_session_detail = true;
         settings.show_log_viewer = false;
         settings.always_on_top = true;
@@ -3424,7 +3423,6 @@ mod tests {
                 ("toggleButtonBar", true),
                 ("toggleStatusBar", true),
                 ("toggleSessionsAutoHide", false),
-                ("toggleLayouts", false),
                 ("toggleSessionDetail", true),
                 ("toggleLogViewer", false),
                 ("toggleAlwaysOnTop", true),

@@ -21,6 +21,7 @@
   import TerminalTab from "./TerminalTab.svelte";
   import ShortcutsTab from "./ShortcutsTab.svelte";
   import RemoteDesktopTab from "./RemoteDesktopTab.svelte";
+  import LayoutsTab, { type LayoutActions } from "./LayoutsTab.svelte";
   import { themesEditorShown } from "./UiThemesEditor.svelte";
 
   interface Props {
@@ -32,9 +33,13 @@
     profile?: string | null;
     /** And a field of it to scroll to and light up (its name in Profile, e.g. "forwards") */
     field?: string | null;
+    /** The layout open in the window, for the Layouts tab to mark */
+    layout?: string | null;
+    /** What the window does for the Layouts tab: load, save and rename (LayoutsTab); without it the tab isn't offered */
+    layoutActions?: LayoutActions;
   }
 
-  let { onClose, tab = "General", profile = null, field = null }: Props = $props();
+  let { onClose, tab = "General", profile = null, field = null, layout = null, layoutActions }: Props = $props();
 
   let current = $state(untrack(() => tab));
 
@@ -163,6 +168,7 @@
     { name: "Terminal" },
     { name: "Remote Desktop" },
     { name: "Shortcuts" },
+    { name: "Layouts" },
   ];
 </script>
 
@@ -210,7 +216,7 @@
 </div>
 
 {#snippet tabContent(name: string, shown: boolean)}
-  {#if name === "General"}<GeneralTab />{:else if name === "Terminal"}<TerminalTab />{:else if name === "Remote Desktop"}<RemoteDesktopTab />{:else if name === "Shortcuts"}<ShortcutsTab />{:else}<ProfilesTab initial={shown ? profile : null} field={shown ? field : null} onLeave={onClose} />{/if}
+  {#if name === "General"}<GeneralTab />{:else if name === "Terminal"}<TerminalTab />{:else if name === "Remote Desktop"}<RemoteDesktopTab />{:else if name === "Shortcuts"}<ShortcutsTab />{:else if name === "Layouts"}{#if layoutActions}<LayoutsTab current={layout} actions={layoutActions} />{/if}{:else}<ProfilesTab initial={shown ? profile : null} field={shown ? field : null} onLeave={onClose} />{/if}
 {/snippet}
 
 <style>

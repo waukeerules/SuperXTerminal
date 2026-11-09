@@ -18,7 +18,6 @@ export interface Layout {
   panes: {
     sessionsPaneWidth: number;
     sessionsAutoHide: boolean;
-    showLayouts: boolean;
     showSessionDetail: boolean;
   };
 }
@@ -55,5 +54,5 @@ export function renameLayout(from: string, to: string): Promise<void> {
   return invoke("layout_rename", { from, to });
 }
 
-/** The window event sent when the layouts change (saved, renamed, deleted), so the Layouts pane lists them again */
+/** The window event sent when the layouts change (saved, renamed, deleted), so Settings > Layouts lists them again */
 export const LAYOUTS_CHANGED = "superxterminal:layouts-changed";

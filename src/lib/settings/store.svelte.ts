@@ -51,8 +51,7 @@ export interface AppSettings {
   sessionsAutoHide: boolean;
   /** The layout opened at start ("" for none, "<Auto Restore>" for the last), as SuperXPuTTY's DefaultLayoutName */
   defaultLayoutName: string;
-  /** View > Layouts and View > Session Detail */
-  showLayouts: boolean;
+  /** View > Session Detail: the pane under the Sessions tree */
   showSessionDetail: boolean;
   /** Settings > Shortcuts: the actions' keys changed from the defaults ("" for none) */
   shortcuts: Record<string, string>;
@@ -143,7 +142,6 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   sessionsPaneWidth: 280,
   sessionsAutoHide: false,
   defaultLayoutName: "",
-  showLayouts: false,
   showSessionDetail: false,
   shortcuts: {},
   showInMenuBar: false,

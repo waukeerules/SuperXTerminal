@@ -200,7 +200,14 @@ fn with_kept<T>(work: impl FnOnce(&mut Kept) -> T) -> T {
 }
 
 /// How to install 1Password's CLI on this system, as its getting-started page says
-pub const INSTALL: &str = if cfg!(windows) { "winget install 1password-cli" } else { "brew install 1password-cli" };
+pub const INSTALL: &str = if cfg!(windows) {
+    "winget install 1password-cli"
+} else if cfg!(target_os = "macos") {
+    "brew install 1password-cli"
+} else {
+    // no one command fits every distribution: its apt, dnf or other repository, which the getting-started page lists
+    "install 1Password's 1password-cli package from its repository"
+};
 
 /// 1Password's CLI getting-started page, for installing it and turning on its link to the 1Password app
 pub const GET_STARTED: &str = "https://www.1password.dev/cli/get-started";

@@ -441,8 +441,8 @@ fn stream(
             crate::streams::Target::Raw { host, port, via, family: address_family(profile, default) }
         }
         _ => {
-            // on Windows the COM name is the port itself; on the Mac a COM name is asked once which /dev/cu.* device
-            // it is, and a /dev path is used as it is
+            // on Windows the COM name is the port itself; on the Mac and Linux a COM name is asked once which /dev
+            // device it is (/dev/cu.* on the Mac, /dev/ttyUSB* and the like on Linux), and a /dev path is used as it is
             let device = if cfg!(windows) {
                 host.to_uppercase()
             } else if host.starts_with("/dev/") {

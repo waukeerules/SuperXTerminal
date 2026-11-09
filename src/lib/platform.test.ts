@@ -22,8 +22,19 @@ describe("Linux's words", () => {
     expect(linux.sshConfig).toBe("~/.ssh/config");
     expect(linux.monospaceFonts).toContain("DejaVu Sans Mono");
     expect(linux.fetchShell).toMatch(/~\/\.bashrc/);
-    // none of Windows' or the Mac's
-    expect(JSON.stringify(linux)).not.toMatch(/Windows|PowerShell|C:\\\\|Keychain|zshrc|Finder/);
+    // none of Windows' or the Mac's (but the serial note, which says a COM name shares a session with Windows)
+    const { serialNote, ...rest } = linux;
+    expect(serialNote).toMatch(/share the session with Windows/);
+    expect(JSON.stringify(rest)).not.toMatch(/Windows|PowerShell|C:\\\\|Keychain|zshrc|Finder/);
+  });
+
+  it("name Linux's serial devices and how to get 1Password's CLI there, which has no one command", () => {
+    const linux = wordsFor("linux");
+    expect(linux.serialExample).toBe("e.g. /dev/ttyUSB0, or COM1");
+    expect(linux.serialNote).toMatch(/\/dev\/ttyUSB… and \/dev\/ttyACM…, and need your user in the dialout group/);
+    expect(linux.onePasswordInstall).toEqual({ words: expect.stringMatching(/1password-cli package, from its apt or dnf repository/) });
+    expect(wordsFor("mac").onePasswordInstall).toEqual({ command: "brew install 1password-cli" });
+    expect(wordsFor("windows").onePasswordInstall).toEqual({ command: "winget install 1password-cli" });
   });
 
   it("leave the Mac's and Windows' as they were", () => {

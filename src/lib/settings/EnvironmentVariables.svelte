@@ -28,8 +28,7 @@
 </script>
 
 <script lang="ts">
-  import { isMac } from "../shortcuts";
-  import { SECRET_STORE } from "../platform";
+  import { isWindows, SECRET_STORE, THIS_COMPUTER } from "../platform";
   import { OP_REFERENCE_HINT, isReference, referencedItem } from "./onepassword";
   import { settings } from "./store.svelte";
   import { onMount, tick } from "svelte";
@@ -231,7 +230,7 @@
   /** What an empty secret field says */
   function secretHint(row: Variable): string {
     if (row.hasValue) return `Stored in ${SECRET_STORE}`;
-    if (row.fromWindows) return isMac ? "Set on Windows: type it again here" : "Set for another Windows account: type it again here";
+    if (row.fromWindows) return isWindows ? "Set for another Windows account: type it again here" : "Set on Windows: type it again here";
     return "Type the secret";
   }
 </script>
@@ -245,7 +244,7 @@
       <button class="help-button" class:on={helpOpen} onclick={() => (helpOpen = !helpOpen)} aria-label="How these work" aria-expanded={helpOpen}
         title="How these work">?</button>
     </div>
-    <p class="hint">Your values for <code>{"{placeholders}"}</code> in sessions, profiles and scripts. Only on {isMac ? "this Mac" : "this PC"}.</p>
+    <p class="hint">Your values for <code>{"{placeholders}"}</code> in sessions, profiles and scripts. Only on {THIS_COMPUTER}.</p>
     {#if helpOpen}
       <div class="help" role="note" aria-label="How Environment Variables work">
         <p>A session can use them in its host, username, extra arguments and jump host, e.g.

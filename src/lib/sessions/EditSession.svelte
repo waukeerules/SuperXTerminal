@@ -29,8 +29,7 @@
   import RdpOptionsForm from "./RdpOptionsForm.svelte";
   import { formatRdpOptions, parseRdpOptions, userDefaults, type RdpOptions } from "./rdpOptions";
   import { settings } from "../settings/store.svelte";
-  import { isMac } from "../shortcuts";
-  import { SECRET_STORE, THIS_COMPUTER } from "../platform";
+  import { SECRET_STORE, SERIAL_EXAMPLE, SERIAL_NOTE, THIS_COMPUTER } from "../platform";
   import { lineOf, withLine } from "./serial";
   import { OP_REFERENCE_HINT } from "../settings/onepassword";
   import { chosenScript } from "../scripting/scriptPath";
@@ -483,19 +482,18 @@
         <button onclick={() => onOpenProfiles(draft.profile.trim() || undefined)} title="Settings > Profiles, on this session's profile">Profiles…</button>
       </div>
       {#if reason}<p class="note">{reason}</p>{/if}
-      {#if profileMissing}<p class="note">Profile "{draft.profile.trim()}" isn't set up on {isMac ? "this Mac" : "this PC"}, so Default Settings is used. Add it in Profiles….</p>{/if}
+      {#if profileMissing}<p class="note">Profile "{draft.profile.trim()}" isn't set up on {THIS_COMPUTER}, so Default Settings is used. Add it in Profiles….</p>{/if}
 
       {#if serial}
         <div class="row">
           <label class="grow">{@render caption("Serial line:", "host")}
             <input list="serial-devices" bind:value={draft.host} disabled={locked("host")} title={locked("host") ? lockTip : ""}
-              placeholder={serialDevices[0] ?? (isMac ? "e.g. /dev/cu.usbserial-1, or COM1" : "e.g. COM1")} />
+              placeholder={serialDevices[0] ?? SERIAL_EXAMPLE} />
             <datalist id="serial-devices">{#each serialDevices as d}<option value={d}></option>{/each}</datalist>
           </label>
           <button onclick={listSerialDevices} title="List the serial devices plugged in now">Refresh</button>
         </div>
-        <p class="note">{#if isMac}Pick a device from the list, or type a COM name (e.g. COM1) to share the session with Windows: the Mac asks once which device it is.
-          {:else}Pick a COM port from the list (the ports present now), or type one.{/if}
+        <p class="note">{SERIAL_NOTE}
           {#if serialDevices.length === 0}No serial device is plugged in now.{/if}</p>
         <div class="row">
           <SerialLineFields {line} disabled={locked("extra_args")} onChange={(l) => (draft.extraArgs = withLine(draft.extraArgs, l))} />

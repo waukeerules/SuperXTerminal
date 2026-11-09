@@ -6,8 +6,7 @@
  * button that copies the script in (ScriptPathNote.svelte).
  */
 import { invoke } from "@tauri-apps/api/core";
-import { THIS_COMPUTER } from "../platform";
-import { isMac } from "../shortcuts";
+import { SYSTEM_KIND, THIS_COMPUTER, type System } from "../platform";
 
 /**
  * A script file picked in the file dialog, as it's kept: relative to the settings folder when it's in there
@@ -28,15 +27,30 @@ export function isFullPath(spec: string): boolean {
 }
 
 /**
- * Whether a full path is the other system's, which no file on this computer can have: a Windows drive or share
- * (C:\..., \\server\...) on the Mac, a Unix one (/Users/..., ~/...) on Windows
+ * Whether a full path is another system's, which no file on this computer can have: a Windows drive or share
+ * (C:\..., \\server\...) on the Mac and Linux, a Unix one (/Users/..., ~/...) on Windows. Linux's paths are Unix
+ * ones, its own; it took them for another system's when only the Mac was told from Windows
  * @param spec The login script as typed or chosen
+ * @param system Whose paths are this computer's: this system's, unless a test says
  */
-export function isOtherSystemsPath(spec: string): boolean {
+export function isOtherSystemsPath(spec: string, system: System = SYSTEM_KIND): boolean {
   const s = spec.trim().replace(/^file:\/\//i, "");
   const windows = /^[a-z]:[\\/]/i.test(s) || s.startsWith("\\\\");
   const unix = s.startsWith("/") || s.startsWith("~");
-  return isMac ? windows : unix;
+  return system === "windows" ? unix : windows;
+}
+
+/**
+ * Whose a full path is, as the warning names it: Windows for a drive or share, the Mac for /Users/..., Linux for
+ * /home/..., and "Mac or Linux" for another Unix path (~/..., /opt/...), which could be either
+ * @param spec A full path
+ */
+export function systemOfPath(spec: string): string {
+  const s = spec.trim().replace(/^file:\/\//i, "");
+  if (/^[a-z]:[\\/]/i.test(s) || s.startsWith("\\\\")) return "Windows";
+  if (s.startsWith("/Users/")) return "Mac";
+  if (s.startsWith("/home/")) return "Linux";
+  return "Mac or Linux";
 }
 
 /**

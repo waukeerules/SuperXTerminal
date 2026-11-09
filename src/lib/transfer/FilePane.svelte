@@ -5,11 +5,11 @@
   folders) are copied there. Its right-click menu has the side's own actions.
 -->
 <script lang="ts">
-  import { FILE_MANAGER } from "../platform";
+  import { FILE_MANAGER, THIS_COMPUTER } from "../platform";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { formatSize, formatTime, joinPath, parentPath, type Entry, type Listing } from "./api";
   import { ResizableColumns } from "../ui/columns.svelte";
-  import { commandKey, commandLabel, isMac } from "../shortcuts";
+  import { commandKey, commandLabel } from "../shortcuts";
 
   interface Props {
     /** Which side it is: this computer's files, or the session's */
@@ -215,7 +215,7 @@
     <button title="Home folder" aria-label="Home" onclick={() => onNavigate(home)}>⌂</button>
     <button title="Refresh" aria-label="Refresh" onclick={() => listing && onNavigate(listing.path)}>⟳</button>
     {#if onMkdir}<button title="New folder" aria-label="New folder" onclick={onMkdir}>+</button>{/if}
-    <button class="copy" title={side === "local" ? "Copy the selected files to the remote folder" : `Copy the selected files to ${isMac ? "this Mac" : "this PC"}'s folder`}
+    <button class="copy" title={side === "local" ? "Copy the selected files to the remote folder" : `Copy the selected files to ${THIS_COMPUTER}'s folder`}
       disabled={!selected.size} onclick={() => onCopy(chosen().map(full))}>{side === "local" ? "Upload →" : "← Download"}</button>
   </header>
   <form class="path" onsubmit={(e) => { e.preventDefault(); onNavigate(typed); }}>

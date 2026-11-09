@@ -5,7 +5,7 @@
   menu, or dropping them from Finder onto the remote side. The connection is the session's own ssh (sftp.rs).
 -->
 <script lang="ts">
-  import { FILE_MANAGER } from "../platform";
+  import { FILE_MANAGER, THIS_COMPUTER } from "../platform";
   import { onDestroy, onMount } from "svelte";
   import { ask as confirm } from "@tauri-apps/plugin-dialog";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -13,7 +13,6 @@
   import { ResizableColumns } from "../ui/columns.svelte";
   import { askName } from "../scripting/asking.svelte";
   import type { Store } from "../sessions/api";
-  import { isMac } from "../shortcuts";
   import {
     cancelTransfer, closeTransfer, formatSize, joinPath, listLocal, listRemote, localMkdir, localRename, openTransfer,
     remoteDelete, remoteMkdir, remoteRename, revealLocal, transfer, type Entry, type Listing, type Opened,
@@ -246,7 +245,7 @@
     <div class="failed"><p>Connecting…</p></div>
   {:else}
     <div class="panes">
-      <FilePane side="local" title={isMac ? "Local (this Mac)" : "Local (this PC)"} home={localHome} {...sides.local}
+      <FilePane side="local" title={`Local (${THIS_COMPUTER})`} home={localHome} {...sides.local}
         onNavigate={(p) => void load("local", p)}
         onCopy={(paths) => sides.remote.listing && void queue(true, paths, sides.remote.listing.path)}
         onDrop={(paths, folder) => void queue(false, paths, folder)}

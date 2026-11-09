@@ -12,8 +12,7 @@ import { resolveSnippet, askOne } from "../scripting/asking.svelte";
 import { parseSendString } from "../scripting/sendString";
 import { clipboardText } from "../clipboard";
 import { THIS_COMPUTER } from "../platform";
-import { isMac } from "../shortcuts";
-import { isOtherSystemsPath } from "../scripting/scriptPath";
+import { isOtherSystemsPath, systemOfPath } from "../scripting/scriptPath";
 import { ScriptRun, runScript, scriptVariables, SESSION_VARIABLES, type ScriptHost } from "../scripting/spsl";
 import { envNames, runRhai } from "../scripting/rhai";
 import type { SessionView } from "../sessions/api";
@@ -218,7 +217,7 @@ export function openingScriptWarning(found: { kind: string; path?: string; looke
   const warning = `${whose} login script ${found.path} isn't on ${THIS_COMPUTER}, so the session opens without it.`;
   const path = found.path ?? "";
   const toRun = found.looked ? `To run it here, save your own copy as ${found.looked}.`
-    : isOtherSystemsPath(path) ? `That's a ${isMac ? "Windows" : "Mac"} path: to run it here, put a copy in the settings folder's scripts folder and choose it from there.`
+    : isOtherSystemsPath(path) ? `That's a ${systemOfPath(path)} path: to run it here, put a copy in the settings folder's scripts folder and choose it from there.`
     : "To run it here, save your own copy at that path.";
   return `${warning} ${toRun}`;
 }

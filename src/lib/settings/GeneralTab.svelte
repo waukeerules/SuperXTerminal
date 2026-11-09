@@ -5,12 +5,12 @@
 -->
 <script lang="ts">
   import { SEARCH_FIELDS, searchFieldsOf, toggledSearchFields } from "../sessions/tree";
-  import { FILE_MANAGER, SYSTEM, THIS_COMPUTER } from "../platform";
+  import { FILE_MANAGER, ONEPASSWORD_INSTALL, SYSTEM, THIS_COMPUTER } from "../platform";
   import { chooseSettingsFolder, saveSettings, settings, type ScriptLanguage } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { checkForUpdates } from "./updates";
-  import { isMac, shortcutLabel } from "../shortcuts";
+  import { shortcutLabel } from "../shortcuts";
   import { OP_REFERENCE_EXAMPLE } from "./onepassword";
 
   /** Choose where kept session logs go */
@@ -67,7 +67,7 @@
   let opMessage = $state("");
   let opProblem = $state(false);
   /** 1Password's CLI install command here, and its getting-started page (onepassword.rs's INSTALL, GET_STARTED) */
-  const OP_INSTALL = isMac ? "brew install 1password-cli" : "winget install 1password-cli";
+  const OP_INSTALL = ONEPASSWORD_INSTALL;
   const OP_GET_STARTED = "https://www.1password.dev/cli/get-started";
   /** How SuperXTerminal uses 1Password: docs/1PASSWORD.md on GitHub */
   const OP_DOC = "https://github.com/waukeerules/SuperXTerminal/blob/main/docs/1PASSWORD.md";
@@ -191,7 +191,7 @@
         <span class="hint" class:problem={opProblem}>{opMessage}</span>
       </div>
       {#if opProblem}
-        <p class="hint">To install it: <code>{OP_INSTALL}</code>, then start SuperXTerminal again.
+        <p class="hint">To install it: {#if "command" in OP_INSTALL}<code>{OP_INSTALL.command}</code>{:else}{OP_INSTALL.words}{/if}, then start SuperXTerminal again.
           <a href={OP_GET_STARTED} onclick={openLink}>1Password CLI: get started</a></p>
       {/if}
     {:else}

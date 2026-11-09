@@ -6,8 +6,7 @@
  * with the tab's look (launch.rs: the ones ssh was given, after any left out as incomplete).
  */
 import type { Forward } from "../settings/profiles";
-import { THIS_COMPUTER } from "../platform";
-import { isMac } from "../shortcuts";
+import { SYSTEM_KIND, THIS_COMPUTER, type System } from "../platform";
 
 /** One tunnel, explained */
 export interface TunnelInfo {
@@ -44,14 +43,20 @@ function targetPort(to: string): string {
   return to.slice(to.lastIndexOf(":") + 1);
 }
 
-/** curl as typed on this computer: in PowerShell plain curl is another command, so curl.exe on Windows */
-const CURL = isMac ? "curl" : "curl.exe";
+/**
+ * curl as typed on a system: in PowerShell plain curl is another command, so curl.exe on Windows; curl on the Mac and
+ * Linux
+ */
+const curlOn = (system: System) => (system === "windows" ? "curl.exe" : "curl");
 
 /**
- * A tunnel in plain words, with its link and a test
+ * A tunnel in plain words, with its link and a test: its commands as typed here, nc on the Mac and Linux, PowerShell's
+ * Test-NetConnection on Windows
  * @param tunnel As the profile gives it
+ * @param system Whose commands: this system's, unless a test says
  */
-export function describeTunnel(tunnel: Forward): TunnelInfo {
+export function describeTunnel(tunnel: Forward, system: System = SYSTEM_KIND): TunnelInfo {
+  const CURL = curlOn(system);
   const { host, port } = listenAddress(tunnel.listen.trim());
   const here = `${host}:${port}`;
   const to = tunnel.to.trim();
@@ -81,7 +86,7 @@ export function describeTunnel(tunnel: Forward): TunnelInfo {
     link,
     test: link
       ? { command: `${CURL} -I${scheme === "https" ? "k" : ""} ${link}`, where: "here" }
-      : { command: isMac ? `nc -vz ${host} ${port}` : `Test-NetConnection ${host} -Port ${port}`, where: "here" },
+      : { command: system === "windows" ? `Test-NetConnection ${host} -Port ${port}` : `nc -vz ${host} ${port}`, where: "here" },
   };
 }
 

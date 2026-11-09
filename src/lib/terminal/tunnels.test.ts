@@ -57,6 +57,19 @@ describe("a tunnel, explained", () => {
   });
 });
 
+describe("a tunnel's tests on each system", () => {
+  it("are curl and nc on the Mac and Linux, curl.exe and Test-NetConnection in Windows' PowerShell", () => {
+    const socks = tunnel("dynamic", "1080");
+    const db = tunnel("local", "5432", "localhost:5432");
+    for (const system of ["mac", "linux"] as const) {
+      expect(describeTunnel(socks, system).test?.command, system).toBe("curl --socks5-hostname localhost:1080 -I http://localhost");
+      expect(describeTunnel(db, system).test?.command, system).toBe("nc -vz localhost 5432");
+    }
+    expect(describeTunnel(socks, "windows").test?.command).toBe("curl.exe --socks5-hostname localhost:1080 -I http://localhost");
+    expect(describeTunnel(db, "windows").test?.command).toBe("Test-NetConnection localhost -Port 5432");
+  });
+});
+
 describe("a tab's tunnels", () => {
   it("are listed at its top, one line each, then where to see them again; none says nothing", () => {
     const lines = tunnelNotices([tunnel("local", "8080", "localhost:80"), tunnel("dynamic", "1080")]);

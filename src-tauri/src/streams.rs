@@ -5,8 +5,8 @@
 //! - **Telnet:** a small client that negotiates as PuTTY does: it offers the terminal type (XTERM) and window size,
 //!   lets the server echo and suppress go-ahead, refuses the rest, and sends Return as a Telnet new line (CR LF).
 //! - **Raw:** a TCP connection, bytes as they are.
-//! - **Serial:** a `/dev/cu.*` device driven directly (termios) on the Mac, a COM port (Windows' serial API) on
-//!   Windows, with PuTTY's line settings: 9600 baud, 8 data bits, no parity, 1 stop bit and XON/XOFF unless `-sercfg`
+//! - **Serial:** a `/dev` device driven directly (termios) on the Mac (`/dev/cu.*`) and Linux (`/dev/ttyUSB*`,
+//!   `/dev/ttyACM*`...), a COM port (Windows' serial API) on Windows, with PuTTY's line settings: 9600 baud, 8 data bits, no parity, 1 stop bit and XON/XOFF unless `-sercfg`
 //!   says otherwise.
 
 use std::io::{Read, Write};
@@ -786,15 +786,17 @@ pub fn serial_devices() -> Vec<String> {
     ports
 }
 
-/// The serial devices on this Mac (`/dev/cu.*`), for choosing which one a COM name is
+/// The serial devices on this Mac or Linux computer, for choosing which one a COM name is: the Mac's `/dev/cu.*`,
+/// Linux's USB adapters and boards (`/dev/ttyUSB*`, `/dev/ttyACM*`) ([`is_serial_device`])
 #[cfg(not(windows))]
 pub fn serial_devices() -> Vec<String> {
+    let mac = cfg!(target_os = "macos");
     let mut devices: Vec<String> = std::fs::read_dir("/dev")
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
                 .map(|e| e.file_name().to_string_lossy().to_string())
-                .filter(|name| name.starts_with("cu.") && name != "cu.Bluetooth-Incoming-Port" && name != "cu.debug-console")
+                .filter(|name| is_serial_device(name, mac))
                 .map(|name| format!("/dev/{name}"))
                 .collect()
         })
@@ -803,10 +805,33 @@ pub fn serial_devices() -> Vec<String> {
     devices
 }
 
+/// Whether a name in /dev is a serial device to offer. The Mac's are `cu.*` (its callout devices, which open without
+/// waiting for a modem's carrier), but for its Bluetooth port and debug console. Linux's are a USB adapter's
+/// `ttyUSB*`, a USB board's (Arduino, a console cable with CDC) `ttyACM*`, a Raspberry Pi's own `ttyAMA*`, and a
+/// Bluetooth one's `rfcomm*`; not the `ttyS*` every PC has, mostly with nothing on them. Linux has no `cu.*`, so before
+/// it had its own names it listed none
+#[cfg_attr(windows, allow(dead_code))]
+fn is_serial_device(name: &str, mac: bool) -> bool {
+    if mac {
+        name.starts_with("cu.") && name != "cu.Bluetooth-Incoming-Port" && name != "cu.debug-console"
+    } else {
+        ["ttyUSB", "ttyACM", "ttyAMA", "rfcomm"].iter().any(|kind| name.strip_prefix(kind).is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use telnet::*;
+
+    #[test]
+    fn serial_devices_are_the_macs_callouts_and_linuxs_usb_and_board_ports() {
+        let names = ["cu.usbserial-1", "cu.Bluetooth-Incoming-Port", "cu.debug-console", "tty.usbserial-1", "ttyUSB0", "ttyACM1", "ttyAMA0", "rfcomm0", "ttyS0", "tty1", "ttyUSB"];
+        let mac: Vec<&str> = names.iter().copied().filter(|n| is_serial_device(n, true)).collect();
+        let linux: Vec<&str> = names.iter().copied().filter(|n| is_serial_device(n, false)).collect();
+        assert_eq!(mac, ["cu.usbserial-1"]);
+        assert_eq!(linux, ["ttyUSB0", "ttyACM1", "ttyAMA0", "rfcomm0"]);
+    }
 
     #[test]
     fn a_connection_tries_only_the_addresses_of_its_internet_protocol_version() {

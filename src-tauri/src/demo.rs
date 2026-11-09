@@ -304,7 +304,7 @@ fn profiles() -> crate::profiles::Profiles {
 
 /// The demo's settings: its own settings folder and Database, the environment colour rules its folders are named
 /// for, the button bar and Send Commands shown, the Demo layout at start, the terminal unwrapped with line numbers and
-/// a block cursor, and nothing that reaches out (update checks, session logs, the menu bar icon beside a real
+/// a steady block cursor, and nothing that reaches out (update checks, session logs, the menu bar icon beside a real
 /// SuperXTerminal's)
 fn settings(shared: &Path) -> crate::settings::AppSettings {
     let mut settings = crate::settings::AppSettings::default();
@@ -326,8 +326,9 @@ fn settings(shared: &Path) -> crate::settings::AppSettings {
     settings.terminal_prefs.insert("wrap".into(), "false".into());
     settings.terminal_prefs.insert("lineNumbers".into(), "true".into());
     settings.terminal_prefs.insert("fontSize".into(), "12".into());
-    // a block cursor, easy to see in a screenshot, whatever the demo's profiles say
+    // a block cursor that doesn't blink, so a screenshot always has it, whatever the demo's profiles say
     settings.terminal_prefs.insert("cursorShape".into(), "block".into());
+    settings.terminal_prefs.insert("cursorBlink".into(), "off".into());
     settings
 }
 
@@ -474,12 +475,14 @@ mod tests {
         StoredSession { attributes: vec![("Host".into(), host.into()), ("ImageKey".into(), icon.into())] }
     }
 
-    /// The demo's terminal draws a block cursor, whatever a profile says, as the terminal's menu's Cursor > Block does
+    /// The demo's terminal draws a block cursor that doesn't blink, whatever a profile says, as the terminal menu's
+    /// Cursor > Block and Don't Blink do
     #[test]
-    fn the_demo_terminal_has_a_block_cursor() {
+    fn the_demo_terminal_has_a_steady_block_cursor() {
         let shared = std::env::temp_dir().join("sxt-demo-cursor");
         let prefs = settings(&shared).terminal_prefs;
         assert_eq!(prefs.get("cursorShape").map(String::as_str), Some("block"));
+        assert_eq!(prefs.get("cursorBlink").map(String::as_str), Some("off"));
     }
 
     #[test]

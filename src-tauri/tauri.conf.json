@@ -47,6 +47,11 @@
         }
       }
     },
+    "windows": {
+      "wix": {
+        "template": "windows/main.wxs"
+      }
+    },
     "resources": {
       "../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt"
     }

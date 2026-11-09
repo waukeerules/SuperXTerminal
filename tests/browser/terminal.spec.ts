@@ -538,6 +538,17 @@ test("the menu scrolls in a terminal too short for it, its last rows still in re
   expect(box!.y + box!.height).toBeLessThanOrEqual(fits.height);
 });
 
+test("a menu that scrolls shows its scroll bar all the time, not only while it's scrolled (the Mac's way)", async ({ page, browserName }) => {
+  // Playwright's headless Chromium hides every scroll bar (--hide-scrollbars), so there's none to measure there; the
+  // Mac's WebKit is the one that hid it, and is checked
+  test.skip(browserName === "chromium", "headless Chromium draws no scroll bars");
+  await openTerminal(page, {});
+  await page.locator("#terminal").click({ button: "right", position: { x: 20, y: 300 } });
+  // a scroll bar the Mac hides floats over the rows and takes no room; one always shown takes its own 10 pixels
+  const bar = await page.locator("#menu").evaluate((m) => m.offsetWidth - m.clientWidth - 2);
+  expect(bar).toBe(10);
+});
+
 test("a file dropped on the terminal doesn't open in its place", async ({ page }) => {
   await openTerminal(page, {});
   // a real DataTransfer with a file, as Finder's drop gives the page

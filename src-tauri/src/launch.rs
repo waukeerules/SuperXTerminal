@@ -938,7 +938,10 @@ fn ssh(
         // said at the top of the tab, as the gateway is: the login prompts that follow may be the jump host's
         let named = if via == jump_host.trim() { via.clone() } else { format!("{} ({via})", jump_host.trim()) };
         notices.push(format!("Connecting to {host} through the jump host {named}, from {jump_from}."));
-        args.extend(["-J".into(), via]);
+        match jump_with_key(&via, &login.key_file) {
+            Some(proxy) => args.extend(["-o".into(), proxy]),
+            None => args.extend(["-J".into(), via]),
+        }
     }
     let mut tunnels = Vec::new();
     args.extend(forwarding(profile, default, &mut notices, &mut tunnels));
@@ -1023,6 +1026,21 @@ pub fn openssh(program: &str) -> std::ffi::OsString {
         }
     }
     program.into()
+}
+
+/// The jump host as a `ProxyCommand=` option that logs in there with the key file too, or None to leave it to ssh's
+/// own `-J` (no key file, or a chain "a,b" that -J alone follows). ssh's -J starts the jump host's connection with
+/// only -l, -p and -W, so a key given with -i reached the target alone: the jump host was offered ssh's own keys and
+/// the agent, and refused a key kept anywhere else (Permission denied (publickey)). The key is added to those, not in
+/// their place, so a jump host that took them still does. `ssh://` takes the same [user@]host[:port] as -J; `%` is
+/// doubled, as ProxyCommand reads %h and %p
+fn jump_with_key(via: &str, key_file: &str) -> Option<String> {
+    if key_file.is_empty() || via.contains(',') {
+        return None;
+    }
+    let ssh = openssh("ssh").to_string_lossy().replace('%', "%%");
+    let key = key_file.replace('%', "%%");
+    Some(format!("ProxyCommand=\"{ssh}\" -i \"{key}\" -W \"[%h]:%p\" ssh://{}", via.replace('%', "%%")))
 }
 
 /// A jump host as `ssh -J` takes it, as SuperXPuTTY's JumpHosts.Resolve: a saved session (by its id, in the same
@@ -1499,6 +1517,37 @@ mod tests {
         let mut no_fetch = fetching(&key, 240);
         no_fetch.profiles[2].key_fetch.clear();
         assert!(launched(&no_fetch, &[], &sw).is_ok());
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn the_profiles_key_file_logs_in_to_the_jump_host_too() {
+        let folder = std::env::temp_dir().join(format!("sxt-jumpkey-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let key = folder.join("Openmediavault");
+        std::fs::write(&key, "key").unwrap();
+        let sw = at("192.168.0.50", &[("PuttySession", "Jump Host")]);
+        let mut profiles = profiles();
+        profiles.profiles.push(Profile {
+            name: "Jump Host".into(),
+            username: "root".into(),
+            key_file: "~/no-such-key".into(),
+            jump_host: "root@omv.example:2200".into(),
+            ..Profile::default()
+        });
+
+        // no key file to give it: ssh's own -J, which offers the jump host ssh's own keys and the agent
+        let args = launched(&profiles, &[], &sw).unwrap();
+        assert!(args.windows(2).any(|w| w == ["-J", "root@omv.example:2200"]), "{args:?}");
+
+        // with one: ssh's -J leaves -i off the jump host's connection, so it was refused (Permission denied
+        // (publickey)) though the key was right. The jump goes through a ProxyCommand that offers the key there too
+        profiles.profiles[2].key_file = key.display().to_string();
+        let args = launched(&profiles, &[], &sw).unwrap();
+        assert!(!args.iter().any(|a| a == "-J"), "{args:?}");
+        let proxy = args.iter().find(|a| a.starts_with("ProxyCommand=")).unwrap_or_else(|| panic!("{args:?}"));
+        assert!(proxy.contains(&format!("-i \"{}\"", key.display())), "{proxy}");
+        assert!(proxy.ends_with(" -W \"[%h]:%p\" ssh://root@omv.example:2200"), "{proxy}");
         std::fs::remove_dir_all(&folder).unwrap();
     }
 

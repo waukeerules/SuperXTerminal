@@ -893,6 +893,9 @@ fn ssh(
             true
         };
         if usable {
+            // said at the top of the tab, as a 1Password key is: which key logs in, and which profile it's from
+            let from = if profiles::is_default(&key_owner.name) { "Default Settings".to_string() } else { format!("profile \"{}\"", key_owner.name) };
+            notices.push(format!("Logging in with the key file {}, from {from}.", pasted_path(key_file)));
             login.key_file = path.clone();
             args.extend(["-i".into(), path, "-o".into(), "IdentitiesOnly=yes".into()]);
         }
@@ -1548,6 +1551,32 @@ mod tests {
         let proxy = args.iter().find(|a| a.starts_with("ProxyCommand=")).unwrap_or_else(|| panic!("{args:?}"));
         assert!(proxy.contains(&format!("-i \"{}\"", key.display())), "{proxy}");
         assert!(proxy.ends_with(" -W \"[%h]:%p\" ssh://root@omv.example:2200"), "{proxy}");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn the_tab_says_which_key_file_logs_in_and_whose_it_is() {
+        let folder = std::env::temp_dir().join(format!("sxt-keysaid-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let key = folder.join("Openmediavault");
+        std::fs::write(&key, "key").unwrap();
+        let shown = key.display().to_string();
+        let said = |profiles: &Profiles, name: &str| {
+            let (_, notices) = args_of(&Sessions::default(), profiles, &session(&[("PuttySession", name)]));
+            notices.into_iter().filter(|n| n.contains("key")).collect::<Vec<_>>()
+        };
+
+        // the profile's own, as pasted (its hidden mark left out of what's shown)
+        let mut profiles = profiles();
+        profiles.profiles.push(Profile { name: "Jump Host".into(), key_file: format!("\u{202A}{shown}"), ..Profile::default() });
+        assert_eq!(said(&profiles, "Jump Host"), [format!("Logging in with the key file {shown}, from profile \"Jump Host\".")]);
+
+        // one the profile leaves to Default Settings
+        profiles.profiles[0].key_file = shown.clone();
+        assert_eq!(said(&profiles, "root"), [format!("Logging in with the key file {shown}, from Default Settings.")]);
+
+        // no key file: nothing said, as ssh's own keys and the agent are as ever
+        assert!(said(&self::profiles(), "root").is_empty());
         std::fs::remove_dir_all(&folder).unwrap();
     }
 

@@ -1318,7 +1318,7 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
     }
     let changes = window_changes(&before, &current);
     // the menu bar's keys follow Settings > Shortcuts
-    if changes.menu && let Ok(bar) = menu(&app, &current.shortcuts, current.use_local_overrides) {
+    if changes.menu && let Ok(bar) = menu(&app, &current) {
         let _ = app.set_menu(bar);
     }
     if changes.theme {
@@ -1337,7 +1337,7 @@ fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettin
 /// What a settings save has to redo in the windows themselves (see [`window_changes`])
 #[derive(Debug, PartialEq)]
 struct WindowChanges {
-    /// The menu bar again: its keys (Settings > Shortcuts) or Local overrides changed
+    /// The menu bar again: its keys (Settings > Shortcuts), Local overrides, or what View ticks changed
     menu: bool,
     /// The menu bar, menus and title bars in the theme again: Settings > General > Theme changed
     theme: bool,
@@ -1348,9 +1348,29 @@ struct WindowChanges {
 /// checkbox in a terminal tab's menu saves too)
 fn window_changes(before: &AppSettings, after: &AppSettings) -> WindowChanges {
     WindowChanges {
-        menu: before.shortcuts != after.shortcuts || before.use_local_overrides != after.use_local_overrides,
+        menu: before.shortcuts != after.shortcuts
+            || before.use_local_overrides != after.use_local_overrides
+            || view_checks(before) != view_checks(after),
         theme: before.theme != after.theme,
     }
+}
+
+/// The View menu's items that are shown or hidden, each with whether it's shown now, for its tick (as a Mac app's
+/// View menu, and SuperXPuTTY's, tick the panes and bars on screen). Each is a setting, saved when the item is chosen,
+/// so the menu is made again then ([`window_changes`]) and the tick follows. Full Screen isn't among them: the Mac's
+/// own View menu doesn't tick it either.
+fn view_checks(settings: &AppSettings) -> [(&'static str, bool); 9] {
+    [
+        ("toggleSessionsPane", settings.show_sessions_pane),
+        ("toggleSendCommands", settings.show_send_commands),
+        ("toggleButtonBar", settings.show_button_bar),
+        ("toggleStatusBar", settings.show_status_bar),
+        ("toggleSessionsAutoHide", settings.sessions_auto_hide),
+        ("toggleLayouts", settings.show_layouts),
+        ("toggleSessionDetail", settings.show_session_detail),
+        ("toggleLogViewer", settings.show_log_viewer),
+        ("toggleAlwaysOnTop", settings.always_on_top),
+    ]
 }
 
 /// Database sessions' settings for the window, and whether a password is stored
@@ -2290,12 +2310,22 @@ fn open_notices<R: Runtime>(app: &AppHandle<R>) {
 /// The menu bar: the app menu (with Settings..., Cmd+,), File (New Local Shell, Cmd+T), Edit (which WebKit needs for
 /// Cmd+C/V), Tools (Environment Variables...) and Window.
 /// SuperXPuTTY's File, View and Tools menus join it as their features arrive.
-/// `overrides_on` ticks Tools > Use Local Overrides (the menu is made again whenever the settings are saved, so it
-/// follows them however they change: the item itself, or the status bar's "Local overrides off").
-fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>, overrides_on: bool) -> tauri::Result<Menu<R>> {
+/// Its keys are the settings' (Settings > Shortcuts). Tools > Use Local Overrides is ticked while they're used, and
+/// View's panes and bars while they're shown ([`view_checks`]): the menu is made again whenever one of those changes
+/// ([`window_changes`]), so the ticks follow however it changed: the item itself, the status bar's "Local overrides
+/// off", or a pane's own ×.
+fn menu<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> tauri::Result<Menu<R>> {
+    let shortcuts = &settings.shortcuts;
+    let overrides_on = settings.use_local_overrides;
     // an action's item, with its key now (keys.rs: the user's, else the Mac default)
     let action = |id: &str| MenuItem::with_id(app, id, keys::label(id), true, keys::key(shortcuts, id).as_deref());
     let plain = |id: &str, label: &str| MenuItem::with_id(app, id, label, true, None::<&str>);
+    // a View item that shows or hides something: ticked while it's shown, with its key as an action's
+    let views = view_checks(settings);
+    let shown = |id: &str| {
+        let on = views.iter().any(|(view, on)| *view == id && *on);
+        CheckMenuItem::with_id(app, id, keys::label(id), true, on, keys::key(shortcuts, id).as_deref())
+    };
     let app_menu = Submenu::with_items(
         app,
         "SuperXTerminal",
@@ -2435,17 +2465,17 @@ fn menu<R: Runtime>(app: &AppHandle<R>, shortcuts: &BTreeMap<String, String>, ov
         "View",
         true,
         &[
-            &action("toggleSessionsPane")?,
-            &action("toggleSendCommands")?,
-            &action("toggleButtonBar")?,
-            &action("toggleStatusBar")?,
+            &shown("toggleSessionsPane")?,
+            &shown("toggleSendCommands")?,
+            &shown("toggleButtonBar")?,
+            &shown("toggleStatusBar")?,
             &PredefinedMenuItem::separator(app)?,
-            &action("toggleSessionsAutoHide")?,
-            &action("toggleLayouts")?,
-            &action("toggleSessionDetail")?,
-            &action("toggleLogViewer")?,
+            &shown("toggleSessionsAutoHide")?,
+            &shown("toggleLayouts")?,
+            &shown("toggleSessionDetail")?,
+            &shown("toggleLogViewer")?,
             &PredefinedMenuItem::separator(app)?,
-            &action("toggleAlwaysOnTop")?,
+            &shown("toggleAlwaysOnTop")?,
             &action("fullScreen")?,
         ],
     )?;
@@ -2955,9 +2985,8 @@ pub fn run() {
                 .build(),
         )
         .menu({
-            let shortcuts = settings.shortcuts.clone();
-            let overrides_on = settings.use_local_overrides;
-            move |app| menu(app, &shortcuts, overrides_on)
+            let settings = settings.clone();
+            move |app| menu(app, &settings)
         })
         // menu items the UI handles arrive there as a "menu" event with the item's id
         .on_menu_event(|app, event| {
@@ -3363,7 +3392,7 @@ mod tests {
         assert_eq!(super::script_output_path(full, home, output), Path::new(full));
     }
 
-    use super::{loading_colour, remembered_state, remembers_place, window_changes, WindowChanges};
+    use super::{loading_colour, remembered_state, remembers_place, view_checks, window_changes, WindowChanges};
     use crate::settings::AppSettings;
     use tauri_plugin_window_state::StateFlags;
 
@@ -3373,6 +3402,41 @@ mod tests {
         assert_eq!(loading_colour("light"), Color(0xf5, 0xf5, 0xf5, 0xff));
         assert_eq!(loading_colour("dark"), Color(0x2d, 0x2d, 0x30, 0xff));
         assert_eq!(loading_colour("system"), Color(0x2d, 0x2d, 0x30, 0xff));
+    }
+
+    #[test]
+    fn the_view_menu_ticks_what_is_shown_and_follows_each_change() {
+        let mut settings = AppSettings::default();
+        settings.show_sessions_pane = true;
+        settings.show_send_commands = false;
+        settings.show_button_bar = true;
+        settings.show_status_bar = true;
+        settings.sessions_auto_hide = false;
+        settings.show_layouts = false;
+        settings.show_session_detail = true;
+        settings.show_log_viewer = false;
+        settings.always_on_top = true;
+        assert_eq!(
+            view_checks(&settings),
+            [
+                ("toggleSessionsPane", true),
+                ("toggleSendCommands", false),
+                ("toggleButtonBar", true),
+                ("toggleStatusBar", true),
+                ("toggleSessionsAutoHide", false),
+                ("toggleLayouts", false),
+                ("toggleSessionDetail", true),
+                ("toggleLogViewer", false),
+                ("toggleAlwaysOnTop", true),
+            ]
+        );
+        // each shown or hidden makes the menu again, so its tick follows
+        let mut log = settings.clone();
+        log.show_log_viewer = true;
+        assert_eq!(window_changes(&settings, &log), WindowChanges { menu: true, theme: false });
+        let mut top = settings.clone();
+        top.always_on_top = false;
+        assert_eq!(window_changes(&settings, &top), WindowChanges { menu: true, theme: false });
     }
 
     #[test]

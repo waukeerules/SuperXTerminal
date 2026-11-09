@@ -1,6 +1,6 @@
 {
   "name": "superxterminal",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "A macOS counterpart of SuperXPuTTY: its sessions tree, Database sessions, icons, colours and tabs, with SSH through OpenSSH",
   "private": true,
   "license": "MIT",

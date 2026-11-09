@@ -17,7 +17,7 @@ function row(store: Store, id: string, more: Partial<SessionFields> = {}, lock: 
   const plain = id.replace(/^@db\//, "");
   const slash = plain.lastIndexOf("/");
   return {
-    store, id, locked: false, lockedFields: "", ...lock,
+    store, id, locked: false, lockedFields: "", hasPassword: false, ...lock,
     fields: {
       name: plain.slice(slash + 1), folder: slash < 0 ? "" : plain.slice(0, slash), protocol: "SSH", host: "", port: 22,
       username: "", profile: "Default Settings", color: "", icon: "switch", highlightRules: "", extraArgs: "", jumpHost: "",
@@ -66,6 +66,7 @@ beforeEach(() => {
       return `@db/${f.folder}/${f.name}`;
     }
     if (cmd === "sessions_transfer") return { done: (a.ids as string[]).length, problems: [] };
+    if (cmd === "session_passwords_set") return (a.ids as string[]).length;
     if (cmd === "sessions_load") return loaded;
     if (cmd === "profiles_list") return [{ name: "Default Settings", basedOn: "" }, { name: "Cisco", basedOn: "" }];
     if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
@@ -378,6 +379,52 @@ describe("Edit Sessions as Table", () => {
     expect(said).toContain("Line 6: unknown protocol \"Gopher\"");
     // nothing saved by the import itself
     expect(calls.some((c) => ["sessions_table_save", "db_session_save", "sessions_transfer"].includes(c.cmd))).toBe(false);
+  });
+
+  it("sets a session's own password, forgets a stored one, and puts a moved session's under its new id", async () => {
+    rows = [
+      row("saved", "Lab/core1", {}, { hasPassword: true }),
+      row("saved", "Lab/sw1"),
+      row("saved", "Lab/sw2"),
+      // locked in a read-only table, but the password is this computer's
+      row("database", "@db/Branch/rtr1", {}, { locked: true }),
+    ];
+    await open({ enabled: true, writable: true } as DbState);
+    // the profile's password recommended, for sessions that share a login
+    expect(screen.getByRole("columnheader", { name: /Password/ }).title).toMatch(/profile's password is usually better/);
+    // never shown, only whether there's one
+    expect(cell("Lab/core1", "Password").value).toBe("");
+    expect(cell("Lab/core1", "Password").placeholder).toBe("stored");
+    expect(cell("Lab/sw1", "Password").placeholder).toBe("none");
+    // forgotten with ×, which ↶ takes back, then forgotten again
+    await userEvent.click(within(rowOf("Lab/core1")).getByRole("button", { name: "Forget password" }));
+    expect(cell("Lab/core1", "Password").placeholder).toBe("forgotten on Save");
+    await userEvent.click(within(rowOf("Lab/core1")).getByRole("button", { name: "Keep password" }));
+    expect(cell("Lab/core1", "Password").closest("td")!.classList.contains("changed")).toBe(false);
+    await userEvent.click(within(rowOf("Lab/core1")).getByRole("button", { name: "Forget password" }));
+    expect(cell("Lab/core1", "Password").closest("td")!.classList.contains("changed")).toBe(true);
+    // a password alone, a password and a move to Database, and one on a locked row
+    await userEvent.type(cell("Lab/sw1", "Password"), "s3cret");
+    await userEvent.type(cell("Lab/sw2", "Password"), "s3cret");
+    await userEvent.selectOptions(cell("Lab/sw2", "Store"), "database");
+    expect(cell("@db/Branch/rtr1", "Password").disabled).toBe(false);
+    await userEvent.type(cell("@db/Branch/rtr1", "Password"), "other");
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await expect.poll(() => savedReport).toBe("Saved 4 sessions");
+    const sets = calls.filter((c) => c.cmd === "session_passwords_set").map((c) => [c.args.password, c.args.ids]);
+    expect(sets).toEqual(expect.arrayContaining([["", ["Lab/core1"]], ["s3cret", ["Lab/sw1", "@db/Lab/sw2"]], ["other", ["@db/Branch/rtr1"]]]));
+    expect(sets).toHaveLength(3);
+    // passwords after the move, and the fields themselves untouched: nothing but the move and the passwords
+    const order = calls.map((c) => c.cmd).filter((c) => ["sessions_transfer", "session_passwords_set"].includes(c));
+    expect(order[0]).toBe("sessions_transfer");
+    expect(calls.some((c) => c.cmd === "sessions_table_save" || c.cmd === "db_session_save")).toBe(false);
+  });
+
+  it("offers Auto and None for highlighting, as Edit sessions does", async () => {
+    await open();
+    const options = [...cell("Lab/core1", "Highlight rules").options].map((o) => o.value);
+    expect(options).toEqual(["", "auto", "none"]);
   });
 
   it("asks before dropping changes on Cancel, and keeps them when told to", async () => {

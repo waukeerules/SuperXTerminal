@@ -485,6 +485,8 @@ export interface TableRow {
   locked: boolean;
   /** Database sessions: the columns locked in the table, comma-separated ("host,port") */
   lockedFields: string;
+  /** It has a password of its own in the Keychain (Edit Session's Password); the password itself never comes here */
+  hasPassword: boolean;
 }
 
 /** Every session, Saved, Private and Database, with all its fields, for Edit Sessions as Table… */
@@ -541,4 +543,22 @@ export async function readTableCsv(): Promise<{ file: string; csv: CsvSessions }
   const path = await open({ title: "Import sessions from CSV", multiple: false, filters: [{ name: "CSV files", extensions: ["csv"] }] });
   if (!path || Array.isArray(path)) return null;
   return { file: fileNameOf(path), csv: await invoke<CsvSessions>("sessions_table_read_csv", { path }) };
+}
+
+/**
+ * The advice beside setting many sessions' own passwords at once (Edit sessions…, Edit Sessions as Table…): sessions
+ * that share a login are better served by their profile's password, one place to change it. Theirs is still offered
+ */
+export const PROFILE_PASSWORD_ADVICE =
+  "For sessions that share a login, their profile's password is usually better (Settings > Profiles > Login): one place " +
+  "to change it. A password here is each session's own, used before its profile's.";
+
+/**
+ * One password stored as each session's own (Edit Session's Password), in the Keychain or Credential Manager on this
+ * computer only, never in the sessions' files or the Database table; "" forgets each one's. For Edit sessions… and
+ * Edit Sessions as Table…. Returns how many
+ * @param ids the sessions' ids, a Database session's with its @db/
+ */
+export function setSessionPasswords(ids: string[], password: string): Promise<number> {
+  return invoke<number>("session_passwords_set", { ids, password });
 }

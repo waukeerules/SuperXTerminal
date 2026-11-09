@@ -363,6 +363,8 @@ struct TableRow {
     locked: bool,
     /// Database sessions: the columns locked in the table, comma-separated ("host,port")
     locked_fields: String,
+    /// It has a password of its own in the Keychain (Edit Session's Password), from the list, the Keychain not read
+    has_password: bool,
 }
 
 /// Every session, Saved, Private and Database, with all its fields, for File > Edit Sessions as Table…. The tree's
@@ -371,6 +373,7 @@ struct TableRow {
 #[tauri::command]
 fn sessions_table_load(state: State<'_, AppState>) -> Vec<TableRow> {
     use sessions::Store;
+    let with_password = session_passwords::listed(&state.user_folder);
     let sessions = state.sessions.lock().unwrap();
     let rows = |store: Store, list: &[sessions::StoredSession]| -> Vec<TableRow> {
         list.iter()
@@ -380,6 +383,7 @@ fn sessions_table_load(state: State<'_, AppState>) -> Vec<TableRow> {
                 fields: editing::SessionFields::of(s),
                 locked: s.get("DatabaseLocked") == "true",
                 locked_fields: s.get("DatabaseLockedFields").to_string(),
+                has_password: with_password.contains(s.id()),
             })
             .collect()
     };
@@ -427,6 +431,13 @@ fn session_password_has(state: State<'_, AppState>, id: String) -> bool {
 #[tauri::command]
 fn session_password_set(state: State<'_, AppState>, id: String, password: String) -> Result<(), String> {
     session_passwords::set(&state.user_folder, &id, &password)
+}
+
+/// Edit sessions… and Edit Sessions as Table…: one password stored as each session's own, in the Keychain on this
+/// computer only, or forgotten from each when `password` is empty. Returns how many
+#[tauri::command]
+fn session_passwords_set(state: State<'_, AppState>, ids: Vec<String>, password: String) -> Result<usize, String> {
+    session_passwords::set_many(&state.user_folder, &ids, &password)
 }
 
 /// Edit Session's Move to Password: the session's stored -pw becomes its own password in the Keychain. The -pw stays
@@ -3020,6 +3031,7 @@ pub fn run() {
             sessions_table_save,
             sessions_table_export_csv,
             sessions_table_read_csv,
+            session_passwords_set,
             sessions_export_csv,
             sessions_csv_template,
             onepassword_check,

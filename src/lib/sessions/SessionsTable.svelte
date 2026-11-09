@@ -4,6 +4,9 @@
   ignoring case; Store's a choice), and every cell can be edited in place: Store moves the session to another store,
   Folder shows its path until clicked, then takes a new one (moving it within its store), Icon opens Choose Icon,
   Colour the palette, Protocol and Highlight rules are lists, Profile suggests the profiles, the rest are text.
+  Password is the session's own, in the Keychain on this computer: never shown, only whether there's one; typing sets
+  a new one, and × forgets the one stored (↶ keeps it again). Its heading and cells recommend the profile's password
+  instead, for sessions that share a login.
 
   Each column can be resized by dragging its heading's right edge (a double click puts it back), the widths kept for
   next time. New Session adds a row at the top, in the store the Store filter shows (else the first in use), which
@@ -41,7 +44,8 @@
   import { listProfiles } from "../settings/profiles";
   import { highlighting } from "../terminal/highlighting";
   import { ResizableColumns } from "../ui/columns.svelte";
-  import { exportTableCsv, loadTable, PROTOCOLS, readTableCsv, type DbState, type SessionFields, type SessionsLoaded, type Store } from "./api";
+  import { SECRET_STORE, THIS_COMPUTER } from "../platform";
+  import { exportTableCsv, loadTable, PROFILE_PASSWORD_ADVICE, PROTOCOLS, readTableCsv, type DbState, type SessionFields, type SessionsLoaded, type Store } from "./api";
   import {
     applyCsv, cellText, changed, COLUMNS, draftOf, isNew, locked, matches, newDraft, problems, rowChanged, saveDrafts,
     STORE_LABELS, type Column, type ColumnKey, type Draft,
@@ -281,7 +285,7 @@
         <thead>
           <tr>
             {#each COLUMNS as c, i (c.key)}
-              <th>{c.label}
+              <th title={c.key === "password" ? PROFILE_PASSWORD_ADVICE : undefined}>{c.label}
                 <span class="grip" role="separator" aria-orientation="vertical" aria-label="Resize {c.label}"
                   title="Drag to resize; double-click for the default width"
                   ondblclick={() => columns.reset(i)} onpointerdown={(e) => columns.startResize(e, i)}></span>
@@ -351,13 +355,27 @@
                       {/if}
                       {#each PROTOCOLS as p (p)}<option value={p}>{p}</option>{/each}
                     </select>
+                  {:else if c.key === "password"}
+                    <div class="password">
+                      <input type="password" aria-label="Password" value={d.password ?? ""} autocomplete="new-password"
+                        placeholder={d.password === "" ? "forgotten on Save" : d.row.hasPassword ? "stored" : "none"}
+                        title={`The session's own, kept in ${SECRET_STORE} on ${THIS_COMPUTER} only: type a new one. ${PROFILE_PASSWORD_ADVICE}`}
+                        oninput={(e) => (d.password = e.currentTarget.value || undefined)} />
+                      {#if d.row.hasPassword && !d.password}
+                        <button class="remove" aria-label={d.password === "" ? "Keep password" : "Forget password"}
+                          title={d.password === "" ? "Keep the stored password" : "Forget the stored password"}
+                          onclick={() => (d.password = d.password === "" ? undefined : "")}>{d.password === "" ? "↶" : "×"}</button>
+                      {/if}
+                    </div>
                   {:else if c.key === "highlightRules"}
                     <select aria-label="Highlight rules" value={d.fields.highlightRules} disabled={off} onchange={(e) => set(d, "highlightRules", e.currentTarget.value)}>
-                      <option value="">(profile's)</option>
-                      {#if d.fields.highlightRules && !ruleSets.some((r) => r.id === d.fields.highlightRules)}
+                      <option value="">From the folder, or Settings</option>
+                      <option value="auto">Auto (picked from the prompt)</option>
+                      {#if d.fields.highlightRules && !["auto", "none"].includes(d.fields.highlightRules) && !ruleSets.some((r) => r.id === d.fields.highlightRules)}
                         <option value={d.fields.highlightRules}>{d.fields.highlightRules}</option>
                       {/if}
                       {#each ruleSets as r (r.id)}<option value={r.id}>{r.name}</option>{/each}
+                      <option value="none">None</option>
                     </select>
                   {:else}
                     <input aria-label={c.label} value={cellText(d, c.key)} disabled={off} spellcheck="false"
@@ -552,7 +570,8 @@
     box-shadow: inset 3px 0 0 var(--accent);
   }
 
-  .store {
+  .store,
+  .password {
     display: flex;
     align-items: center;
     gap: 2px;

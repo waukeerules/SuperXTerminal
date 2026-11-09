@@ -55,6 +55,38 @@ pub fn set(user_folder: &Path, id: &str, password: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Store one password for many sessions, or forget each one's when `password` is empty: Edit sessions… and Edit
+/// Sessions as Table…, for a site whose devices share a login. The list is written once, not once a session. Returns
+/// how many were set or forgotten; the first the Keychain refuses stops it, saying which, those before it done
+pub fn set_many(user_folder: &Path, ids: &[String], password: &str) -> Result<usize, String> {
+    let mut all = self::ids(user_folder);
+    let before = all.clone();
+    let mut done = 0;
+    let mut failed = None;
+    for id in ids {
+        if let Err(e) = secrets::set(&account(id), password) {
+            failed = Some(format!("{id}: {e}"));
+            break;
+        }
+        if password.is_empty() {
+            all.remove(id);
+        } else {
+            all.insert(id.clone());
+        }
+        done += 1;
+    }
+    if all != before {
+        save_ids(user_folder, &all)?;
+    }
+    failed.map_or(Ok(done), Err)
+}
+
+/// The ids of every session with a password of its own, for Edit Sessions as Table… to say which have one without
+/// reading the Keychain
+pub fn listed(user_folder: &Path) -> BTreeSet<String> {
+    ids(user_folder)
+}
+
 /// Follow sessions renamed or moved: `rename` maps an old id to its new one, or None to leave it
 pub fn follow(user_folder: &Path, rename: impl Fn(&str) -> Option<String>) {
     for id in ids(user_folder) {
@@ -96,6 +128,23 @@ mod tests {
         set(&dir, "Lab/sw1", "").unwrap();
         assert_eq!(get("Lab/sw1"), None);
         assert!(!has(&dir, "Lab/sw1"));
+    }
+
+    #[test]
+    fn one_password_is_set_on_many_sessions_and_forgotten_from_them() {
+        let dir = folder("many");
+        let ids = ["Site/sw1".to_string(), "Site/sw2".to_string(), "@db/Site/sw3".to_string()];
+        assert_eq!(set_many(&dir, &ids, "shared").unwrap(), 3);
+        for id in &ids {
+            assert_eq!(get(id).as_deref(), Some("shared"), "{id}");
+        }
+        assert_eq!(listed(&dir), ids.iter().cloned().collect());
+        assert!(!std::fs::read_to_string(file(&dir)).unwrap().contains("shared"));
+        // forgotten from two, the third keeps it
+        assert_eq!(set_many(&dir, &ids[..2], "").unwrap(), 2);
+        assert_eq!(get("Site/sw1"), None);
+        assert_eq!(listed(&dir), ["@db/Site/sw3".to_string()].into_iter().collect());
+        set_many(&dir, &ids[2..], "").unwrap();
     }
 
     #[test]

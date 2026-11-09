@@ -11,14 +11,18 @@
  *      refused doesn't stop the others.
  *   3. Rows whose Store changed: moved there afterwards, as the tree's Move to does (sessions_transfer), once the
  *      sessions have been read again so the move finds them under their new ids.
+ *   4. Passwords typed or forgotten: each session's own, in the Keychain on this computer (session_passwords_set),
+ *      under its id once everything else is saved. Never in the shared data, so a Database row that's locked or
+ *      read-only still takes one.
  */
 import {
-  loadSessions, saveSession, saveTable, transferSessions, type CsvSessions, type SessionFields, type Store, type TableRow,
+  loadSessions, saveSession, saveTable, setSessionPasswords, transferSessions, type CsvSessions, type SessionFields, type Store,
+  type TableRow,
 } from "./api";
 
 /** A column's field: one of SessionFields', or the session's store */
-export type ColumnKey = "store" | "folder" | "name" | "icon" | "color" | "protocol" | "host" | "port" | "username" | "profile"
-  | "note" | "extraArgs" | "jumpHost" | "script" | "highlightRules";
+export type ColumnKey = "store" | "folder" | "name" | "icon" | "color" | "protocol" | "host" | "port" | "username" | "password"
+  | "profile" | "note" | "extraArgs" | "jumpHost" | "script" | "highlightRules";
 
 /** One column: its field, heading, width in pixels, and the Database table's column a lock names it by */
 export interface Column {
@@ -40,6 +44,8 @@ export const COLUMNS: Column[] = [
   { key: "host", label: "Host", width: 160, dbColumn: "host" },
   { key: "port", label: "Port", width: 66, dbColumn: "port" },
   { key: "username", label: "Username", width: 120, dbColumn: "username" },
+  // the session's own, kept on this computer, not a field of the session's; beside the username it goes with
+  { key: "password", label: "Password", width: 120 },
   { key: "profile", label: "Profile", width: 140, dbColumn: "putty_profile" },
   { key: "note", label: "Note", width: 180, dbColumn: "notes" },
   { key: "extraArgs", label: "Extra args", width: 160, dbColumn: "extra_args" },
@@ -60,6 +66,8 @@ export interface Draft {
   store: Store;
   fields: SessionFields;
   key: string;
+  /** A password typed for it, "" to forget its own; undefined leaves it as it is */
+  password?: string;
 }
 
 /** A row's draft, its fields copied so editing them leaves the row as read */
@@ -80,15 +88,19 @@ export function newDraft(store: Store): Draft {
     icon: "computer", highlightRules: "", extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "",
     rdpOptions: "", sshAlgorithms: "", buttonBar: "",
   };
-  return { row: { store, id: "", fields: { ...fields }, locked: false, lockedFields: "" }, store, fields, key: `new:${++added}` };
+  return { row: { store, id: "", fields: { ...fields }, locked: false, lockedFields: "", hasPassword: false }, store, fields, key: `new:${++added}` };
 }
 
 /** Whether a row is a new session, not saved yet */
 export const isNew = (draft: Draft): boolean => draft.row.id === "";
 
-/** A cell's text, as the filters match it: the store's name, the port as a number, the rest as written */
+/**
+ * A cell's text, as the filters match it: the store's name, the port as a number, Password "stored" or "" (never the
+ * password, which the table hasn't got), the rest as written
+ */
 export function cellText(draft: Draft, key: ColumnKey): string {
   if (key === "store") return STORE_LABELS[draft.store];
+  if (key === "password") return draft.password ? "stored" : draft.password === "" ? "" : draft.row.hasPassword ? "stored" : "";
   return String(draft.fields[key] ?? "");
 }
 
@@ -115,17 +127,18 @@ export function changed(draft: Draft, key: ColumnKey): boolean {
   // a new row is marked as a whole, not cell by cell
   if (isNew(draft)) return false;
   if (key === "store") return draft.store !== draft.row.store;
+  if (key === "password") return draft.password !== undefined && !(draft.password === "" && !draft.row.hasPassword);
   return String(draft.fields[key] ?? "").trim() !== String(draft.row.fields[key] ?? "").trim();
 }
 
 /** Whether any field changed (not counting the store); a new row's are all to save */
 export function fieldsChanged(draft: Draft): boolean {
-  return isNew(draft) || COLUMNS.some(({ key }) => key !== "store" && changed(draft, key));
+  return isNew(draft) || COLUMNS.some(({ key }) => key !== "store" && key !== "password" && changed(draft, key));
 }
 
-/** Whether anything in the row changed */
+/** Whether anything in the row changed, its password included */
 export function rowChanged(draft: Draft): boolean {
-  return draft.store !== draft.row.store || fieldsChanged(draft);
+  return draft.store !== draft.row.store || fieldsChanged(draft) || changed(draft, "password");
 }
 
 /**
@@ -134,7 +147,8 @@ export function rowChanged(draft: Draft): boolean {
  * @param writable Whether Database sessions can be changed at all (DbState.writable)
  */
 export function locked(draft: Draft, column: Column, writable: boolean): boolean {
-  if (draft.row.store !== "database") return false;
+  // a session's own password is this computer's, not the table's
+  if (draft.row.store !== "database" || column.key === "password") return false;
   if (!writable || draft.row.locked) return true;
   const fields = draft.row.lockedFields.split(",").map((f) => f.trim());
   return !!column.dbColumn && fields.includes(column.dbColumn);
@@ -225,6 +239,9 @@ export async function saveDrafts(drafts: Draft[]): Promise<SaveReport> {
     }
   }
 
+  // a row whose password alone changed keeps its id
+  for (const d of todo) if (!now.has(d) && !fieldsChanged(d) && d.store === d.row.store) now.set(d, d.row.id);
+
   const moves = todo.filter((d) => !isNew(d) && d.store !== d.row.store && now.has(d));
   if (moves.length) {
     // the move finds sessions in what was last read: read them again, with the new ids
@@ -243,7 +260,24 @@ export async function saveDrafts(drafts: Draft[]): Promise<SaveReport> {
         }
       } catch (e) {
         report.problems.push(`Moving to ${STORE_LABELS[store]}: ${e}`);
+        for (const d of group) now.delete(d);
       }
+    }
+  }
+
+  // passwords last, under each session's id now: a moved one's in its new store (Database's with @db/)
+  const passwords = new Map<string, string[]>();
+  for (const d of todo.filter((d) => changed(d, "password") && now.has(d))) {
+    const id = d.store !== (isNew(d) ? d.store : d.row.store) ? idOf(d.store, d.fields) : now.get(d)!;
+    passwords.set(d.password!, [...(passwords.get(d.password!) ?? []), id]);
+  }
+  for (const [password, ids] of passwords) {
+    try {
+      await setSessionPasswords(ids, password);
+      // a row whose password alone changed counts here; one with other changes too was counted already
+      report.saved += todo.filter((d) => changed(d, "password") && !fieldsChanged(d) && d.store === d.row.store && ids.includes(now.get(d) ?? "")).length;
+    } catch (e) {
+      report.problems.push(`Passwords: ${e}`);
     }
   }
   return report;

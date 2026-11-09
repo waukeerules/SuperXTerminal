@@ -2,7 +2,10 @@
   Edit sessions…, as SuperXPuTTY's dlgBulkEdit: change the same fields on many sessions at once, e.g. a new username
   for every device at a site. Lists the sessions (a folder's with its subfolders', or the selection), all ticked; only
   the fields ticked are changed. Database sessions go to the table in one batch, and those with a changed field
-  locked there are left alone and listed.
+  locked there are left alone and listed. Password is each session's own (Edit Session's Password), kept in the
+  Keychain or Credential Manager on this computer only, never in the shared data, so it's set even on a Database
+  session that's locked or read-only; left empty, it forgets each one's. A note under it recommends the profile's
+  password instead, for sessions that share a login: one place to change it.
 -->
 <script lang="ts">
   import { onMount, untrack } from "svelte";
@@ -13,7 +16,8 @@
   import { highlighting } from "../terminal/highlighting";
   import { listProfiles, DEFAULT_PROFILE } from "../settings/profiles";
   import Combobox from "../ui/Combobox.svelte";
-  import { PROTOCOLS, bulkEdit, type BulkChange, type SessionView } from "./api";
+  import { SECRET_STORE, THIS_COMPUTER } from "../platform";
+  import { PROFILE_PASSWORD_ADVICE, PROTOCOLS, bulkEdit, setSessionPasswords, type BulkChange, type SessionView } from "./api";
 
   interface Props {
     /** "in Lab" or "3 selected sessions", for the title */
@@ -39,8 +43,8 @@
   let ticked = $state(new Set(untrack(() => sessions.map(keyOf))));
 
   /** Which fields are changed, and their new values */
-  let use = $state({ username: false, profile: false, port: false, protocol: false, icon: false, color: false, extraArgs: false, jumpHost: false, highlightRules: false });
-  let values = $state({ username: "", profile: DEFAULT_PROFILE, port: 22, protocol: "SSH", icon: "computer", color: "", extraArgs: "", jumpHost: "", highlightRules: "" });
+  let use = $state({ username: false, profile: false, port: false, protocol: false, icon: false, color: false, extraArgs: false, jumpHost: false, highlightRules: false, password: false });
+  let values = $state({ username: "", profile: DEFAULT_PROFILE, port: 22, protocol: "SSH", icon: "computer", color: "", extraArgs: "", jumpHost: "", highlightRules: "", password: "" });
 
   let profileNames = $state<string[]>([]);
   let ruleSets = $state<{ id: string; name: string }[]>([]);
@@ -73,7 +77,7 @@
     if (use.extraArgs) change.extraArgs = values.extraArgs;
     if (use.jumpHost) change.jumpHost = values.jumpHost;
     if (use.highlightRules) change.highlightRules = values.highlightRules;
-    if (Object.keys(change).length === 0) {
+    if (Object.keys(change).length === 0 && !use.password) {
       error = "Tick the fields to change.";
       return;
     }
@@ -84,8 +88,10 @@
     }
     busy = true;
     try {
-      const report = await bulkEdit(items, change);
-      onDone(report.done, report.problems);
+      const report = Object.keys(change).length ? await bulkEdit(items, change) : { done: 0, problems: [] };
+      // the password after the fields, which don't rename anything, under each session's id
+      const passwords = use.password ? await setSessionPasswords(items.map(([, id]) => id), values.password) : 0;
+      onDone(Math.max(report.done, passwords), report.problems);
     } catch (e) {
       error = String(e);
     } finally {
@@ -119,6 +125,12 @@
     <div class="fields">
       <label class="use"><input type="checkbox" bind:checked={use.username} /> Login username:</label>
       <input bind:value={values.username} placeholder="e.g. admin, or {'{user}'}" disabled={!use.username} />
+
+      <label class="use"><input type="checkbox" bind:checked={use.password} /> Password:</label>
+      <input type="password" bind:value={values.password} disabled={!use.password} aria-label="Password"
+        placeholder={`each session's own, in ${SECRET_STORE}; empty forgets it`}
+        title={`Kept in ${SECRET_STORE} on ${THIS_COMPUTER} only, never in the sessions' files or the Database table, and used before a session's -pw and its profile's password`} />
+      <p class="note advice">{PROFILE_PASSWORD_ADVICE}</p>
 
       <label class="use"><input type="checkbox" bind:checked={use.profile} /> Profile:</label>
       <span>
@@ -154,6 +166,7 @@
         {#each ruleSets as r}<option value={r.id}>{r.name}</option>{/each}
         <option value="none">None</option>
       </select>
+
     </div>
 
     <footer>
@@ -238,6 +251,13 @@
     grid-template-columns: auto 1fr;
     gap: 6px 10px;
     align-items: center;
+  }
+
+  /* under Password, in the fields' column */
+  .advice {
+    grid-column: 2;
+    margin-top: -2px;
+    font-size: 12px;
   }
 
   .use {

@@ -168,7 +168,8 @@ and works the same on the Mac, Windows and Linux. It's built with [Tauri 2](http
   name, so "firewall" or "ubuntu" finds every session drawn with one). Match case and regular expressions are a click
   away, matching folders open, and the pane widens so long names fit. It's fast: over 10,000 sessions each search
   takes a few milliseconds.
-- Sessions in SuperPuTTY's `Sessions.xml` format, with folders, button bars, highlighting rules and scripts beside it.
+- Sessions in SuperPuTTY's `Sessions.xml` format, folders included, with SuperXTerminal's own button bars,
+  highlighting rules and scripts in files beside it.
   Keep them in a shared folder and a team on Mac, Windows and Linux works from one set; changes made elsewhere show up
   within seconds.
 - Database sessions: a PostgreSQL table shared by the team, with an offline cache, locked rows and fields, and changes

@@ -7,6 +7,9 @@
 //! second; if it still fails, the new contents are written into the old file directly, which they usually allow (they
 //! hold it open for reading, not against being written). An error after that names the file and says what's likely.
 //! A Mac doesn't lock files this way, so there it succeeds first time.
+//!
+//! A folder that won't take the new file at all (Program Files, where only administrators write) is another matter:
+//! no wait mends it, so its error says the folder is read-only and to choose a settings folder the user can write to.
 
 use std::io;
 use std::path::Path;
@@ -19,8 +22,20 @@ const PAUSE: Duration = Duration::from_millis(100);
 /// Write `contents` to `path` whole: to `path` with `temp_extension` first ("xml.saving"), then in its place, tried
 /// again while another program holds the file, else written in place; an error names the file and the likely reason
 pub fn save(path: &Path, temp_extension: &str, contents: impl AsRef<[u8]>) -> Result<(), String> {
+    save_with(path, temp_extension, contents.as_ref(), |temp, contents| std::fs::write(temp, contents))
+}
+
+/// [`save`], with the new file written by `write`, so a test can stand in for a folder that takes no new files.
+/// When the new file can't be made beside the old, the folder itself refuses (it's read-only to this account, such as
+/// Program Files), which no wait mends: the error says so rather than blaming another program.
+fn save_with(
+    path: &Path,
+    temp_extension: &str,
+    contents: &[u8],
+    write: impl FnOnce(&Path, &[u8]) -> io::Result<()>,
+) -> Result<(), String> {
     let temp = path.with_extension(temp_extension);
-    std::fs::write(&temp, contents.as_ref()).map_err(|e| explain(path, &e))?;
+    write(&temp, contents).map_err(|e| explain_folder(path, &e))?;
     replace(&temp, path, |from, to| std::fs::rename(from, to), std::thread::sleep).map_err(|e| explain(path, &e))
 }
 
@@ -70,6 +85,42 @@ fn explain(path: &Path, error: &io::Error) -> String {
         ""
     };
     format!("Couldn't save {name} in {folder}: {error}.{likely}")
+}
+
+/// A save's error when the new file couldn't be made in the folder at all: Access is denied there means the folder
+/// is read-only to this account, not that another program holds the file, so trying again won't help. Under Program
+/// Files (where a settings folder can end up beside the app, as SuperXPuTTY's often was) only an administrator can
+/// write; the way out is a settings folder the user can write to, or someone who can change the file there.
+fn explain_folder(path: &Path, error: &io::Error) -> String {
+    if error.kind() != io::ErrorKind::PermissionDenied {
+        return explain(path, error);
+    }
+    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.display().to_string());
+    let folder = path.parent().unwrap_or(Path::new(""));
+    let why = if under_program_files(folder) {
+        "Only an administrator can change files in Program Files"
+    } else {
+        "This account can't make files in that folder"
+    };
+    format!(
+        "Couldn't save {name} in {}: {error}. {why}: choose a settings folder you can write to in Settings > General, \
+         or ask whoever looks after this one to change it.",
+        folder.display()
+    )
+}
+
+/// Whether `folder` is in Windows' Program Files (either of them), where only administrators may write; never on the
+/// Mac or Linux
+fn under_program_files(folder: &Path) -> bool {
+    if !cfg!(windows) {
+        return false;
+    }
+    let folder = folder.to_string_lossy().to_lowercase();
+    ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+        .iter()
+        .filter_map(|var| std::env::var_os(var))
+        .map(|root| root.to_string_lossy().trim_end_matches('\\').to_lowercase())
+        .any(|root| folder == root || folder.starts_with(&format!("{root}\\")))
 }
 
 #[cfg(test)]
@@ -150,6 +201,23 @@ mod tests {
         assert!(message.starts_with("Couldn't save Sessions.xml in team: "), "{message}");
         assert!(message.contains("open in another program (OneDrive or antivirus"), "{message}");
         assert!(!explain(&path, &io::Error::from(io::ErrorKind::NotFound)).contains("OneDrive"));
+    }
+
+    #[test]
+    fn a_folder_that_takes_no_new_files_says_so_rather_than_to_try_again() {
+        // the settings folder where the app is installed, which Windows lets only administrators write to; the Mac has
+        // no Program Files, so there it's any folder this account can't write to
+        let folder = match std::env::var_os("ProgramFiles") {
+            Some(root) if cfg!(windows) => Path::new(&root).join("SuperXTerminal"),
+            _ => Path::new("/Library/SuperXTerminal").to_path_buf(),
+        };
+        let refused = |_: &Path, _: &[u8]| Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        let message = save_with(&folder.join("ButtonBars.xml"), "xml.tmp", b"<ButtonBars />", refused).unwrap_err();
+        assert!(message.starts_with(&format!("Couldn't save ButtonBars.xml in {}: ", folder.display())), "{message}");
+        assert!(!message.contains("OneDrive") && !message.contains("try again"), "{message}");
+        assert!(message.contains("choose a settings folder you can write to in Settings > General"), "{message}");
+        let why = if cfg!(windows) { "Only an administrator can change files in Program Files" } else { "This account can't make files in that folder" };
+        assert!(message.contains(why), "{message}");
     }
 
     #[test]

@@ -6,7 +6,7 @@
 // mockIPC: ButtonBars.xml's bars and the profiles stored. And a button asks before it runs, unless that's turned off;
 // a button whose Ask before it runs is unticked (Edit Button, kept in ButtonBars.xml) runs at once while the others ask;
 // a Rhai script button's script goes to the core (rhai_run) as written, its braces not taken for placeholders, once
-// the Environment Variables it reads (env.name) have values.
+// the Environment Variables it reads (env.name) have values. A bar that can't be saved says why, with only an OK.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -176,6 +176,32 @@ describe("a button that doesn't ask (Edit Button's Ask before it runs)", () => {
     await user.click(await screen.findByRole("menuitem", { name: "New Button…" }));
     expect((screen.getByRole("checkbox", { name: "Ask before it runs" }) as HTMLInputElement).disabled).toBe(true);
     Object.assign(settings, { confirmButtons: true });
+  });
+});
+
+describe("a button bar that can't be saved", () => {
+  it("says why with just an OK, not a Yes or No that answers nothing", async () => {
+    const refused =
+      "Couldn't save ButtonBars.xml in C:\\Program Files\\SuperXTerminal: Access is denied. (os error 5). Only an administrator can change files in Program Files: choose a settings folder you can write to in Settings > General, or ask whoever looks after this one to change it.";
+    const shown: { message: string; buttons?: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "buttonbars_load") return [{ name: "Default", buttons: [button("show clock")], tabIcons: [] }];
+      if (cmd === "buttonbars_save") throw refused;
+      if (cmd === "profiles_list" || cmd === "scripts_list") return [];
+      if (cmd === "plugin:dialog|message") {
+        shown.push(args as { message: string; buttons?: unknown });
+        return "Ok";
+      }
+      return null;
+    });
+    const user = userEvent.setup();
+    render(ButtonBar, { customs: new Map() });
+    await user.pointer({ keys: "[MouseRight]", target: await screen.findByRole("button", { name: /show clock/ }) });
+    await user.click(await screen.findByRole("menuitem", { name: "Edit Button…" }));
+    await user.click(screen.getByRole("button", { name: "OK" }));
+    await expect.poll(() => shown.length).toBe(1);
+    expect(shown[0]).toMatchObject({ message: refused, title: "Button bar", kind: "error" });
+    expect(shown[0].buttons).toBeUndefined();
   });
 });
 

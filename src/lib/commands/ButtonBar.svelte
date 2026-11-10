@@ -10,7 +10,7 @@
   and read again whenever the menu opens.
 -->
 <script lang="ts">
-  import { ask, open, save } from "@tauri-apps/plugin-dialog";
+  import { ask, message, open, save } from "@tauri-apps/plugin-dialog";
   import Icon from "../icons/Icon.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import Prompt from "../ui/Prompt.svelte";
@@ -101,7 +101,7 @@
       bars = next;
     } catch (e) {
       context.status(String(e));
-      await ask(String(e), { title: "Button bar", kind: "error" });
+      await message(String(e), { title: "Button bar", kind: "error" });
     }
   }
 
@@ -298,7 +298,7 @@
       await pick(last);
       context.status(`Imported the button bar "${last}"`);
     } catch (e) {
-      await ask(String(e), { title: "Import Button Bar", kind: "error" });
+      await message(String(e), { title: "Import Button Bar", kind: "error" });
     }
   }
 

@@ -30,19 +30,21 @@ export function keyFetchExamples(system: System, onePassword = true): KeyFetchEx
   /** A file in ~/.ssh, as the system writes paths: %USERPROFILE%\.ssh\name on Windows (launch.rs reads it) */
   const sshFile = (name: string) => (windows ? `%USERPROFILE%\\.ssh\\${name}` : `~/.ssh/${name}`);
   const all: KeyFetchExample[] = [
+    // CyberArk's documented command for an MFA caching key (its "MFA caching - *nix target" page):
+    // sftp <username>@<login_suffix>#<subdomain>@key@<SSH gateway>:/key <key path>
     {
-      name: "CyberArk (MFA caching)",
-      command: `sftp "{ad_username}@{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`,
+      name: "CyberArk: MFA caching key (sftp)",
+      command: `sftp "{cyberark_username}@{cyberark_login_suffix}#{cyberark_subdomain}@key@{cyberark_gateway}:/key" "{key_file}"`,
       lifetime: 240,
       keyFile: sshFile("cyberark_key"),
-      note: "The key from CyberArk's key target; sign in at the link it shows, then paste the PIN. Set {ad_username}, {cyberark_region} and {cyberark_gateway} (e.g. example.ssh.cyberark.cloud).",
+      note: "Downloads the key from CyberArk's key target, after its sign-in (with MFA) in the tab. Set {cyberark_username}, {cyberark_login_suffix} (e.g. example.com), {cyberark_subdomain} (your tenant) and {cyberark_gateway} (your SSH gateway); set the lifetime to the one your CyberArk administrators chose.",
     },
     {
       name: windows ? "A PowerShell function of your own" : "A shell function of your own",
-      command: `pam_key "{key_file}"`,
+      command: `fetch_key "{key_file}"`,
       lifetime: 240,
-      keyFile: sshFile("cyberark_key"),
-      note: `A function in ${words.fetchFunctionHome} that writes the key to the path it's given (the fetch reads it).`,
+      keyFile: sshFile("fetched_key"),
+      note: `A function in ${words.fetchFunctionHome}, named as you like, that signs in and writes the key to the path it's given (the fetch reads it); set the lifetime to the key's.`,
     },
     {
       name: "1Password (an SSH Key item)",
@@ -53,17 +55,17 @@ export function keyFetchExamples(system: System, onePassword = true): KeyFetchEx
     },
     {
       name: "Teleport",
-      command: `tsh login --proxy={teleport_proxy} --user={ad_username} --out="{key_file}" --format=openssh`,
+      command: `tsh login --proxy={teleport_proxy} --user={teleport_user} --out="{key_file}" --format=openssh`,
       lifetime: 720,
       keyFile: sshFile("teleport_key"),
-      note: "Writes the key and its certificate (key-cert.pub, which ssh picks up). Set {teleport_proxy}; the lifetime is your cluster's.",
+      note: "Writes the key and its certificate (key-cert.pub, which ssh picks up); --format=openssh makes them OpenSSH's. Set {teleport_proxy} and {teleport_user}; 12 hours is Teleport's usual, else your cluster's.",
     },
     {
       name: "Smallstep",
       command: `step ssh certificate {email} "{key_file}" --no-password --insecure --force`,
       lifetime: 960,
       keyFile: sshFile("step_key"),
-      note: "A new key and certificate from your step CA; the lifetime is your CA's.",
+      note: "A new key and certificate from your step CA, the key unencrypted (--no-password needs --insecure). Set {email} to the identity your CA signs for; 16 hours is step-ca's usual, else your CA's.",
     },
     {
       name: "Test: a throwaway key",

@@ -240,7 +240,7 @@ describe("Settings > Profiles", () => {
     await open("root");
     expect(screen.getByText("Set a Fetch command first (Examples has some)")).toBeTruthy();
     expect(button("Log in & cache key").disabled).toBe(true);
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Fetch command examples" }), "CyberArk (MFA caching)");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Fetch command examples" }), "CyberArk: MFA caching key (sftp)");
     expect((screen.getByRole("textbox", { name: /^Fetch command/ }) as HTMLInputElement).value).toContain("@key@{cyberark_gateway}:/key");
     expect((screen.getByLabelText(/^Lifetime/) as HTMLInputElement).value).toBe("240");
     // as this system writes it: ~/.ssh/cyberark_key, or %USERPROFILE%\.ssh\cyberark_key on Windows (the tests' web

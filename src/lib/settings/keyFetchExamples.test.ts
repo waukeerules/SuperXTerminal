@@ -20,11 +20,20 @@ describe("Fetch command examples", () => {
     });
   }
 
-  it("fetches CyberArk's key as its key target names it: the AD username, the region, then key@ the gateway", () => {
+  it("fetches CyberArk's key as CyberArk documents it: username@login_suffix#subdomain, then key@ the gateway", () => {
     for (const system of SYSTEMS) {
       const cyberArk = keyFetchExamples(system).find((e) => e.name.startsWith("CyberArk"))!;
-      expect(cyberArk.command).toBe(`sftp "{ad_username}@{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`);
-      expect(cyberArk.note).not.toContain("{domain}");
+      expect(cyberArk.name).toBe("CyberArk: MFA caching key (sftp)");
+      expect(cyberArk.command).toBe(`sftp "{cyberark_username}@{cyberark_login_suffix}#{cyberark_subdomain}@key@{cyberark_gateway}:/key" "{key_file}"`);
+    }
+  });
+
+  it("names no one's own setup: every placeholder in a command is one its note says to set", () => {
+    for (const system of SYSTEMS) {
+      for (const example of keyFetchExamples(system)) {
+        const used = [...example.command.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).filter((k) => k !== "key_file");
+        for (const key of used) expect(example.note, example.name).toContain(`{${key}}`);
+      }
     }
   });
 

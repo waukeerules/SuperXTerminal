@@ -144,8 +144,10 @@ and [MFA caching (PSM for SSH)](https://docs.cyberark.com/privilege-cloud-standa
 
 - Your administrators turn it on and set how long a key lasts (`GracePeriodMinutes`), and whether it needs a
   passphrase. It needs PSM for SSH 12.1 or later, with OpenSSH 7.8 or later on its machine.
-- The key is generated in CyberArk's web portal (PSM for SSH MFA caching), or with its REST API, and comes as
-  OpenSSH, PEM or PPK. SuperXTerminal uses Windows' and the Mac's own OpenSSH, so take the OpenSSH one (a `.ppk`
+- The key is generated in CyberArk's web portal (PSM for SSH MFA caching), with its REST API, or, where CyberArk's
+  [MFA caching - *nix target](https://docs.cyberark.com/access/latest/en/infrastructure/sas-linux-mfa-cache/) page
+  applies, downloaded with `sftp <username>@<login_suffix>#<subdomain>@key@<SSH gateway>:/key <key path>` after a
+  sign-in. It comes as OpenSSH, PEM or PPK. SuperXTerminal uses Windows' and the Mac's own OpenSSH, so take the OpenSSH one (a `.ppk`
   works anyway: the app converts any profile's `.ppk`).
 - It's used as any key is, `ssh -i <key file>`, with the full user name (`name@example.com`) in the connection
   string. ssh refuses a key others can read; CyberArk's docs say to `chmod 600` it, which the app does itself after a
@@ -170,7 +172,7 @@ Settings > Profiles > Login, under Key file:
 | Lifetime | How long a key is good for, in minutes: your CyberArk key's validity period (e.g. 240 for 4 hours); 0 fetches only when there's none. |
 
 **Examples…** beside the Fetch command fills it from a list for the system it's on (`keyFetchExamples.ts`): CyberArk
-(an `sftp` download of the key, where the tenant offers one), a shell or PowerShell function of your own, Teleport
+(the `sftp` download of an MFA caching key, as CyberArk documents it), a shell or PowerShell function of your own, Teleport
 (`tsh login … --out`), Smallstep (`step ssh certificate`), and a test that makes a throwaway key every minute. Picking
 one also sets the Lifetime, and the Key file when there's none, and says what to set (its Environment Variables), for
 editing from there. Any command that signs you in and writes the key to `{key_file}` will do: CyberArk's REST API

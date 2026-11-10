@@ -1,6 +1,7 @@
 // Settings' search: it finds a setting in any tab, not only the open one, and a result opens its tab with the
 // setting flashed. And General's Use PrivateSessions.xml, which can be turned off only while Saved sessions are in use,
-// and the Show in Finder / File Explorer beside each sessions file; Look's themes of your own, and Tabs' Longest tab name.
+// and the Show in Finder / File Explorer beside each sessions file; choosing a settings folder that can't be saved to
+// asks first; Look's themes of your own, and Tabs' Longest tab name.
 // The Rust side is stood in for by mockIPC, which saves the settings and notes the files asked to be shown.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
@@ -118,6 +119,66 @@ describe("Use PrivateSessions.xml", () => {
     await expect.poll(() => saved.at(-1)?.usePrivateSessions).toBe(false);
     await expect.poll(() => (screen.getByRole("checkbox", { name: /Use Sessions\.xml/ }) as HTMLInputElement).disabled).toBe(true);
     Object.assign(settings, { usePrivateSessions: true });
+  });
+});
+
+describe("Settings > General > Settings folder", () => {
+  /** The folder chosen before, and three to choose: Program Files, a read-only share, and one of the user's own */
+  const TEAM = String.raw`C:\Users\me\Team`;
+  const PROGRAM_FILES = String.raw`C:\Program Files\SuperXTerminal`;
+  const SHARE = String.raw`\\fileserver\team-settings`;
+  const OWN = String.raw`C:\Users\me\OneDrive\Team`;
+
+  /** The folders settings_set_folder was given, and the warnings shown */
+  let used: string[];
+  let warned: { message: string; buttons?: unknown }[];
+
+  /** Choose `folder` with Choose…, the core saying whether this account can write there; `answer` to the warning */
+  async function choose(folder: string, canWrite: boolean, answer: "Use It" | "Cancel"): Promise<void> {
+    used = [];
+    warned = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "plugin:dialog|open") return folder;
+      if (cmd === "folder_writable") return canWrite;
+      if (cmd === "plugin:dialog|message") {
+        warned.push(args as { message: string; buttons?: unknown });
+        return answer;
+      }
+      if (cmd === "settings_set_folder") return void used.push((args as { path: string }).path);
+      if (cmd === "profiles_list") return [emptyProfile(DEFAULT_PROFILE)];
+      if (cmd === "shortcuts_keys" || cmd === "shortcuts_reserved") return [];
+      if (cmd === "highlighting_load") return { themes: [], ruleSets: [], problems: [] };
+      return null;
+    });
+    Object.assign(settings, { settingsFolder: TEAM });
+    render(Settings, { onClose: () => {} });
+    const row = screen.getByRole("textbox", { name: "Settings folder" }).parentElement!;
+    await userEvent.click(within(row).getByRole("button", { name: "Choose…" }));
+  }
+
+  /** The folder Settings shows */
+  const shown = () => (screen.getByRole("textbox", { name: "Settings folder" }) as HTMLInputElement).value;
+
+  it("warns before using Program Files, which can't be saved to, and keeps the folder it had on Cancel", async () => {
+    await choose(PROGRAM_FILES, false, "Cancel");
+    await expect.poll(() => warned.length).toBe(1);
+    expect(warned[0].message).toMatch(/^You can't save to this folder: changes to sessions, button bars and layouts won't be kept\./);
+    expect(warned[0].buttons).toEqual({ OkCancelCustom: ["Use It", "Cancel"] });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(used).toEqual([]);
+    expect(shown()).toBe(TEAM);
+  });
+
+  it("uses it once told to: a team's folder may be read-only on purpose", async () => {
+    await choose(SHARE, false, "Use It");
+    await expect.poll(() => used).toEqual([SHARE]);
+    expect(warned).toHaveLength(1);
+  });
+
+  it("uses a folder that can be saved to without a word", async () => {
+    await choose(OWN, true, "Cancel");
+    await expect.poll(() => used).toEqual([OWN]);
+    expect(warned).toEqual([]);
   });
 });
 

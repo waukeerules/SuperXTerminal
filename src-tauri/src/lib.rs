@@ -2281,6 +2281,13 @@ fn db_import(state: State<'_, AppState>, path: String) -> Result<db::DbSettings,
     })
 }
 
+/// Whether this account can make files in a folder chosen as the settings folder, so the UI can warn first (see
+/// [`saving::writable`])
+#[tauri::command]
+fn folder_writable(path: String) -> bool {
+    saving::writable(std::path::Path::new(&path))
+}
+
 /// Use another settings folder (chosen in the UI), and remember it
 #[tauri::command]
 fn settings_set_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -3060,6 +3067,7 @@ pub fn run() {
             sessions_load,
             settings_get,
             settings_set_folder,
+            folder_writable,
             settings_save,
             icons_custom,
             highlighting_load,

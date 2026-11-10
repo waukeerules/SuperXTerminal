@@ -5,7 +5,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { applyUiTheme, loadUiThemes, themeColours, uiThemeNamed } from "./uiThemes.svelte";
-import { open } from "@tauri-apps/plugin-dialog";
+import { ask, open } from "@tauri-apps/plugin-dialog";
 import type { Dock } from "../layout/dock";
 
 /** The settings, as the Rust core keeps them */
@@ -216,10 +216,23 @@ export async function saveSettings(changes: Partial<AppSettings>): Promise<void>
   applyTheme();
 }
 
-/** Ask for the settings folder (where Sessions.xml is) and remember it; false if the user cancelled */
+/** What's said before using a settings folder this account can't make files in */
+export const READ_ONLY_FOLDER =
+  "You can't save to this folder: changes to sessions, button bars and layouts won't be kept.\n\n" +
+  "Use it anyway? A folder kept read-only on purpose, with the team's settings set up by someone else, is fine.";
+
+/**
+ * Ask for the settings folder (where Sessions.xml is) and remember it; false if the user cancelled. A folder this
+ * account can't write to (Program Files, a read-only share) is used only once the user says so: everything changed in
+ * the app would fail to save there, though a team's folder may be read-only on purpose.
+ */
 export async function chooseSettingsFolder(): Promise<boolean> {
   const path = await open({ directory: true, title: "Choose the settings folder (the folder holding Sessions.xml)" });
   if (typeof path !== "string") return false;
+  if (!(await invoke<boolean>("folder_writable", { path }))) {
+    const use = await ask(READ_ONLY_FOLDER, { title: "Settings Folder", kind: "warning", okLabel: "Use It", cancelLabel: "Cancel" });
+    if (!use) return false;
+  }
   await invoke("settings_set_folder", { path });
   settings.settingsFolder = path;
   return true;

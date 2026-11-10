@@ -39,6 +39,21 @@ fn save_with(
     replace(&temp, path, |from, to| std::fs::rename(from, to), std::thread::sleep).map_err(|e| explain(path, &e))
 }
 
+/// Whether this account can make files in `folder`: a small file is made there and taken away again. Settings >
+/// General asks before using a settings folder that can't take one (Program Files, a read-only share), since nothing
+/// changed in the app (sessions, button bars, layouts) could then be saved there.
+pub fn writable(folder: &Path) -> bool {
+    let probe = folder.join(format!(".superxterminal-write-check-{}", std::process::id()));
+    match std::fs::OpenOptions::new().write(true).create_new(true).open(&probe) {
+        Ok(file) => {
+            drop(file);
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 /// Put `temp` in place of `path` with `rename`, trying again (waiting with `wait`) while the file is held, then
 /// writing it in place; `temp` is gone afterwards either way it succeeds. Its parts are given, so tests can stand in
 /// for a file OneDrive holds
@@ -218,6 +233,16 @@ mod tests {
         assert!(message.contains("choose a settings folder you can write to in Settings > General"), "{message}");
         let why = if cfg!(windows) { "Only an administrator can change files in Program Files" } else { "This account can't make files in that folder" };
         assert!(message.contains(why), "{message}");
+    }
+
+    #[test]
+    fn a_folder_is_writable_when_a_file_can_be_made_there_and_nothing_is_left_behind() {
+        let (dir, _path, _temp) = files("writable");
+        assert!(writable(&dir.0));
+        let mut left: Vec<_> = std::fs::read_dir(&dir.0).unwrap().map(|e| e.unwrap().file_name()).collect();
+        left.sort();
+        assert_eq!(left, ["Sessions.xml", "Sessions.xml.saving"]);
+        assert!(!writable(&dir.0.join("not there")));
     }
 
     #[test]

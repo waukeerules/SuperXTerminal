@@ -1,7 +1,9 @@
-# CyberArk sessions
+# Sessions through an SSH gateway
 
-How SuperXTerminal connects through CyberArk's Privileged Session Manager for SSH (PSM for SSH, also called PSMP)
-while the session itself keeps naming the real device. The app's side is built and covered by tests (`launch.rs`),
+How SuperXTerminal connects through an SSH gateway that takes the target in the username, such as CyberArk's
+Privileged Session Manager for SSH (PSM for SSH, also called PSMP), while the session itself keeps naming the real
+device; and how a profile fetches a key issued for a short time, from CyberArk or any other issuer (Teleport,
+Smallstep, Vault…). CyberArk is the worked example throughout. The app's side is built and covered by tests (`launch.rs`),
 and it has been tried with CyberArk on a production network, on Windows (November 2026).
 
 ## What PSM for SSH is

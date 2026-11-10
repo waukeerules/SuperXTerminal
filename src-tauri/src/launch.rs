@@ -377,7 +377,7 @@ pub fn key_fetch(profiles: &Profiles, values: &HashMap<String, String>, profile_
 }
 
 /// The built-in placeholder for the session's own host (its target), for a username that names it; `host_port` is
-/// its port (docs/CYBERARK.md)
+/// its port (docs/SSH-GATEWAYS.md)
 pub const HOST_ADDRESS: &str = "host_address";
 
 /// What a launch's error starts with when an SSH session has no username and its profile asks for one; the tab asks
@@ -724,7 +724,7 @@ fn ssh(
     }
 
     // the built-in placeholders: the session's own target, for a username that names it (a CyberArk gateway's,
-    // docs/CYBERARK.md); they win over Environment Variables of the same name, so none can redirect a session
+    // docs/SSH-GATEWAYS.md); they win over Environment Variables of the same name, so none can redirect a session
     let mut with_builtins = values.clone();
     with_builtins.insert(HOST_ADDRESS.into(), variables::substitute(session.get("Host").trim(), values));
     with_builtins.insert("host_port".into(), (if port != 0 { port } else { 22 }).to_string());
@@ -740,7 +740,7 @@ fn ssh(
             }
         }
     }
-    // the profile's Host (docs/CYBERARK.md), at the profile's port: for a session with no host of its own, as a PuTTY
+    // the profile's Host (docs/SSH-GATEWAYS.md), at the profile's port: for a session with no host of its own, as a PuTTY
     // saved session's Host Name; and for a username naming the session's host ({host_address}), a gateway's, which
     // takes the target in the username. Any other username connects to the session's host, so a local override's
     // own username (and profile) goes straight there.

@@ -697,7 +697,7 @@
         <span class="note">minutes a fetched key is good for (0: fetched only when there's none)</span></label>
       {#if draft.keyFetch.trim()}
         <p class="note under">{keyState} The fetch runs in the session's tab, through {FETCH_SHELL},
-          so its sign-in (a link, a PIN) happens there; {"{key_file}"} and your Environment Variables are filled in. See docs/CYBERARK.md.</p>
+          so its sign-in (a link, a PIN) happens there; {"{key_file}"} and your Environment Variables are filled in. See docs/SSH-GATEWAYS.md.</p>
       {/if}
       <p class="under">
         <button disabled={!!loginBlocked} title={loginBlocked || "Run the fetch now in a tab of its own, so sessions log in with the key"}
@@ -735,7 +735,7 @@
       <p class="note under">Used, at the Port above, by sessions with no host of their own, as a PuTTY saved session's
         Host Name; and by sessions whose username names their host as {"{host_address}"} (a CyberArk SSH gateway, which
         takes the target in the username). Otherwise a session's own host wins{#if !isDefault}, unless Log in here is
-        ticked{/if}. See docs/CYBERARK.md.</p>
+        ticked{/if}. See docs/SSH-GATEWAYS.md.</p>
       <!-- not on Default Settings: every session would then log in to one host -->
       {#if !isDefault}
         <label>{@render caption("Log in here", "logInHere")}<span class="check"><input type="checkbox" bind:checked={draft.logInHere} />

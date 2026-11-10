@@ -231,7 +231,7 @@
     draft.username.trim() || folders.find((f) => f.username)?.username || openingProfile?.username || defaultProfile?.username || "",
   );
   /**
-   * The gateway the session connects through (CyberArk's, docs/CYBERARK.md): its username names its host as
+   * The gateway the session connects through (CyberArk's, docs/SSH-GATEWAYS.md): its username names its host as
    * {host_address}, so the tab connects to the profile's Host (else Default Settings') and the target travels in the
    * username. "" for the host when neither has one, which doesn't open
    */

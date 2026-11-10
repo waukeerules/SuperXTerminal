@@ -49,7 +49,7 @@ pub struct Profile {
     pub jump_host: String,
     /// Where ssh connects, at the profile's port, for a session with no host of its own, as a PuTTY saved session's
     /// Host Name; and for one whose username names its host as {host_address} (a CyberArk SSH gateway, which takes the
-    /// target in the username). Otherwise the session's host wins (docs/CYBERARK.md). Was "gatewayHost".
+    /// target in the username). Otherwise the session's host wins (docs/SSH-GATEWAYS.md). Was "gatewayHost".
     #[serde(alias = "gatewayHost")]
     pub host: String,
     /// Seconds between keep-alives (ssh's ServerAliveInterval); 0 for not set

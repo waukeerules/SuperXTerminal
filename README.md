@@ -40,7 +40,7 @@ A shared session only says which profile it uses.
 - **Older devices handled once.** A profile can carry the older key exchange and ciphers an old switch needs, so the
   sessions for those devices just name that profile.
 - **A profile can name the host itself,** for a gateway such as CyberArk's SSH gateway: the session keeps naming the
-  real device, and the profile says where ssh connects ([docs/CYBERARK.md](docs/CYBERARK.md)).
+  real device, and the profile says where ssh connects ([docs/SSH-GATEWAYS.md](docs/SSH-GATEWAYS.md)).
 - **Passwords stay out of shared files.** A profile's password, or a session's own, is kept in the system's
   password store: the Keychain on the Mac, Windows Credential Manager on Windows, the Secret Service (GNOME Keyring or
   KWallet) on Linux. It stays on that computer, never in
@@ -272,8 +272,8 @@ passwords need a Secret Service (GNOME Keyring or KWallet), which a desktop sess
   that work, pitfalls and complete examples. Written so a person or an LLM can write a working script from it alone.
 - **[docs/RHAI.md](docs/RHAI.md):** Rhai scripts, for what SPSL can't do: deciding, counting and remembering, with
   examples to copy.
-- **[docs/CYBERARK.md](docs/CYBERARK.md):** sessions through CyberArk's SSH gateway: the profile, the username built
-  from Environment Variables, and the short-lived key.
+- **[docs/SSH-GATEWAYS.md](docs/SSH-GATEWAYS.md):** sessions through an SSH gateway such as CyberArk's PSM for SSH: the
+  profile, the username built from Environment Variables, and fetching keys issued for a short time.
 - **[docs/1PASSWORD.md](docs/1PASSWORD.md):** passwords and SSH keys kept in 1Password: references read as a session
   opens, and keys from its SSH agent.
 

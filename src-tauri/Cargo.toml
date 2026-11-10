@@ -43,6 +43,8 @@ ironrdp-graphics = "0.9"
 smallvec = "1"
 ironrdp-cliprdr = "0.7"
 ironrdp-core = "0.2"
+# the connection sequence itself, which rdp.rs's tests drive with a terminal server's PDUs (licensing, probes)
+ironrdp-connector = "0.10"
 russh-sftp = "3.0.1"
 futures-util = "0.3"
 tauri-plugin-window-state = "2"
@@ -84,3 +86,11 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.ironrdp-pdu]
 opt-level = 3
+
+# IronRDP's connection sequence with one fix not yet published: a Windows Server 2022 terminal server's network probe
+# (an Auto-Detect Request) in the middle of licensing, or before its capabilities, ended the connection with "invalid
+# securityHeaderFlags" (IronRDP #1629, fixed by #2128). patches/ironrdp-connector is 0.10.0 with that fix
+# backported; README.SuperXTerminal.md there says what changed. Drop it once a release of ironrdp-client takes a
+# connector with the fix.
+[patch.crates-io]
+ironrdp-connector = { path = "patches/ironrdp-connector" }

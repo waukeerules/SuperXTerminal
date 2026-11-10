@@ -644,4 +644,134 @@ mod tests {
         assert_eq!(&packet[..4], FRAME);
         assert_eq!(packet.len(), 16 + 3 * 2 * 4);
     }
+
+    /// The connection sequence a terminal server's PDUs are fed to, as IronRDP's client engine drives it, standing at
+    /// the phase `state` with the server's MCS channels: I/O 1003, the user's 1007, the message channel 1004.
+    mod connecting {
+        use std::sync::Arc;
+
+        use ironrdp_connector::connection_activation::{ConnectionActivationSequence, ConnectionActivationState};
+        use ironrdp_connector::{
+            ClientConnector, ClientConnectorState, ConnectorResult, LicenseCache, LicenseExchangeSequence,
+            LicenseExchangeState, Sequence, State as _,
+        };
+        use ironrdp_core::{decode, encode_vec, WriteBuf};
+        use ironrdp_pdu::mcs::{SendDataIndication, SendDataRequest};
+        use ironrdp_pdu::rdp::autodetect::{AutoDetectResponse, AutoDetectRspPdu};
+        use ironrdp_pdu::rdp::server_license::{LicenseEncryptionData, LicenseInformation};
+        use ironrdp_pdu::x224::X224;
+
+        use super::*;
+
+        const IO: u16 = 1003;
+        const USER: u16 = 1007;
+        const MESSAGE: u16 = 1004;
+
+        /// No licences kept, as the app keeps none
+        #[derive(Debug)]
+        struct NoLicences;
+        impl LicenseCache for NoLicences {
+            fn get_license(&self, _: LicenseInformation) -> ConnectorResult<Option<Vec<u8>>> {
+                Ok(None)
+            }
+            fn store_license(&self, _: LicenseInformation) -> ConnectorResult<()> {
+                Ok(())
+            }
+        }
+
+        /// The connector config the app's own builder makes, for a made-up terminal server
+        fn config() -> ironrdp_connector::Config {
+            ConfigBuilder::new()
+                .with_destination(Destination::new("ts.example:3389").unwrap())
+                .with_username("me".to_string())
+                .with_password("secret".to_string())
+                .with_client_name("SuperXTerminal")
+                .with_client_build(0)
+                .with_client_dir(r"C:\Windows\System32\mstscax.dll")
+                .with_platform(ironrdp_pdu::rdp::capability_sets::MajorPlatformType::OSX)
+                .build()
+                .unwrap()
+                .connector()
+                .clone()
+        }
+
+        /// A connector at `state`, the message channel negotiated
+        fn at(state: ClientConnectorState) -> ClientConnector {
+            let mut connector = ClientConnector::new(config(), "127.0.0.1:50000".parse().unwrap());
+            connector.message_channel_id = Some(MESSAGE);
+            connector.state = state;
+            connector
+        }
+
+        /// Licensing, the client's New License Request sent and the server's Platform Challenge awaited
+        fn awaiting_the_platform_challenge() -> ClientConnectorState {
+            let mut license_exchange = LicenseExchangeSequence::new(IO, "me".into(), None, [0; 4], Arc::new(NoLicences));
+            license_exchange.state = LicenseExchangeState::PlatformChallenge {
+                encryption_data: LicenseEncryptionData { premaster_secret: vec![0; 48], mac_salt_key: vec![0; 16], license_key: vec![0; 16] },
+            };
+            ClientConnectorState::LicensingExchange { io_channel_id: IO, user_channel_id: USER, license_exchange }
+        }
+
+        /// An Auto-Detect Request on the message channel: the security header (SEC_AUTODETECT_REQ), then `request`
+        fn on_the_message_channel(request: &[u8]) -> Vec<u8> {
+            let mut user_data = vec![0x00, 0x10, 0x00, 0x00];
+            user_data.extend_from_slice(request);
+            encode_vec(&X224(SendDataIndication { initiator_id: 1002, channel_id: MESSAGE, user_data: user_data.into() }))
+                .unwrap()
+        }
+
+        /// The probe Windows Server 2022 with RDS licensing sends in the middle of licensing (IronRDP #1629's capture,
+        /// byte for byte): continuous network detection's Bandwidth Measure Start (request type 0x0014), number 0,
+        /// which wants no answer
+        fn bandwidth_probe() -> Vec<u8> {
+            on_the_message_channel(&[0x06, 0x00, 0x00, 0x00, 0x14, 0x00])
+        }
+
+        /// A round-trip probe: RTT Measure Request (connect-time, request type 0x1001) number 5, which wants one back
+        fn round_trip_probe() -> Vec<u8> {
+            on_the_message_channel(&[0x06, 0x00, 0x05, 0x00, 0x01, 0x10])
+        }
+
+        /// The Auto-Detect Response the client sent back, on the message channel
+        fn answer(output: &WriteBuf) -> AutoDetectResponse {
+            let request = decode::<X224<SendDataRequest<'_>>>(output.filled()).unwrap().0;
+            assert_eq!((request.initiator_id, request.channel_id), (USER, MESSAGE));
+            decode::<AutoDetectRspPdu>(&request.user_data).unwrap().response
+        }
+
+        /// The connector, still waiting for the server's Platform Challenge
+        fn still_awaiting_the_platform_challenge(connector: &ClientConnector) {
+            let ClientConnectorState::LicensingExchange { license_exchange, .. } = &connector.state else {
+                panic!("left licensing: {}", connector.state.name());
+            };
+            assert!(matches!(license_exchange.state, LicenseExchangeState::PlatformChallenge { .. }));
+        }
+
+        #[test]
+        fn a_terminal_servers_probe_in_the_middle_of_licensing_doesnt_end_the_connection() {
+            let mut connector = at(awaiting_the_platform_challenge());
+            let mut output = WriteBuf::new();
+            connector.step(&bandwidth_probe(), &mut output).expect("the probe doesn't end the connection");
+            assert!(output.filled().is_empty(), "a Bandwidth Measure Start isn't answered");
+            still_awaiting_the_platform_challenge(&connector);
+            connector.step(&round_trip_probe(), &mut output).expect("nor does a round-trip probe");
+            assert_eq!(answer(&output), AutoDetectResponse::RttResponse { sequence_number: 5 });
+            still_awaiting_the_platform_challenge(&connector);
+        }
+
+        #[test]
+        fn a_terminal_servers_probe_before_its_capabilities_doesnt_end_the_connection() {
+            let mut connector = at(ClientConnectorState::CapabilitiesExchange {
+                connection_activation: ConnectionActivationSequence::new(config(), IO, USER),
+            });
+            let mut output = WriteBuf::new();
+            connector.step(&bandwidth_probe(), &mut output).expect("the probe doesn't end the connection");
+            connector.step(&round_trip_probe(), &mut output).expect("nor does a round-trip probe");
+            assert_eq!(answer(&output), AutoDetectResponse::RttResponse { sequence_number: 5 });
+            let ClientConnectorState::CapabilitiesExchange { connection_activation } = &connector.state else {
+                panic!("left the capabilities exchange: {}", connector.state.name());
+            };
+            assert!(matches!(connection_activation.connection_activation_state(), ConnectionActivationState::CapabilitiesExchange));
+        }
+    }
 }

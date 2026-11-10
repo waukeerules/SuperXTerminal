@@ -99,6 +99,9 @@ pub struct AppSettings {
     /// Settings > General > Tabs > Grid View off: "restore" puts back the splits there were before Grid View went on,
     /// "join" joins every tab into one group, as Join All Tabs
     pub grid_view_off: String,
+    /// Settings > General > Tabs > Remote Desktop in Grid View: "window" opens an RDP session in a window of its own
+    /// while Grid View is on (too small as a tile), "tile" tiles it with the others
+    pub grid_view_rdp: String,
     /// RDP sessions open in a tab with the built-in client (IronRDP), as SuperXPuTTY's General > Built-in client;
     /// off, in Windows App
     pub rdp_built_in: bool,
@@ -181,6 +184,7 @@ impl Default for AppSettings {
             always_on_top: false,
             grid_view: false,
             grid_view_off: "restore".into(),
+            grid_view_rdp: "window".into(),
             rdp_built_in: true,
             rdp_defaults: String::new(),
             filezilla_passwords: false,

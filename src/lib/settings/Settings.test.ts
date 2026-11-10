@@ -1,7 +1,7 @@
 // Settings' search: it finds a setting in any tab, not only the open one, and a result opens its tab with the
 // setting flashed. And General's Use PrivateSessions.xml, which can be turned off only while Saved sessions are in use,
 // and the Show in Finder / File Explorer beside each sessions file; choosing a settings folder that can't be saved to
-// asks first; Look's themes of your own, and Tabs' Longest tab name, Grid View and Grid View off.
+// asks first; Look's themes of your own, and Tabs' Longest tab name, Grid View, Grid View off and Remote Desktop in Grid View.
 // The Rust side is stood in for by mockIPC, which saves the settings and notes the files asked to be shown.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
@@ -335,5 +335,15 @@ describe("Tabs' Grid View off", () => {
     expect(choice.value).toBe("restore");
     await fireEvent.change(choice, { target: { value: "join" } });
     await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ gridViewOff: "join" }));
+  });
+});
+
+describe("Tabs' Remote Desktop in Grid View", () => {
+  it("opens in a new window by default, and saves taking a tile instead", async () => {
+    render(Settings, { onClose: () => {} });
+    const choice = screen.getByLabelText("Remote Desktop in Grid View") as HTMLSelectElement;
+    expect(choice.value).toBe("window");
+    await fireEvent.change(choice, { target: { value: "tile" } });
+    await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ gridViewRdp: "tile" }));
   });
 });

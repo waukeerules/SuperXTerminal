@@ -5,7 +5,7 @@
 // page), which records the "focus" the tab area sends the page; the Rust side by mockIPC, which answers with nothing
 // but hands over each tab's channel (pty_open), on which the test starts the session, and the profiles stored.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mockIPC } from "@tauri-apps/api/mocks";
+import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import { gridShape, TabArea } from "./TabArea";
 import { DEFAULT_PROFILE, emptyProfile, PROFILES_CHANGED, type Profile } from "../settings/profiles";
@@ -446,6 +446,38 @@ describe("Grid View off, putting the splits back", () => {
     tabs.forgetSplits();
     tabs.setGridView(false, true);
     expect(tabs.groupCount()).toBe(1);
+  });
+});
+
+describe("Grid View in a window of Remote Desktops", () => {
+  // a desktop's tab listens for events on its window: a stand-in window for it
+  beforeEach(() => mockWindows("main"));
+  /** Open a Remote Desktop session's tab */
+  const desktop = (title: string) => tabs.openRdp("saved", `Servers/${title}`, title, "windows", null);
+
+  it("keeps desktops alone in one group of tabs, each the whole window, when they're kept apart", async () => {
+    tabs.desktopsApart = true;
+    desktop("ts1");
+    desktop("ts2");
+    expect(tabs.onlyDesktops()).toBe(true);
+    tabs.setGridView(true);
+    expect(tabs.groupCount()).toBe(1);
+    desktop("ts3");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(tabs.groupCount()).toBe(1);
+  });
+
+  it("tiles them when they take a tile like the others, and a window with a terminal too", () => {
+    desktop("ts1");
+    desktop("ts2");
+    tabs.setGridView(true);
+    expect(tabs.groupCount()).toBe(2);
+    tabs.setGridView(false);
+    tabs.desktopsApart = true;
+    open("sw1");
+    expect(tabs.onlyDesktops()).toBe(false);
+    tabs.setGridView(true);
+    expect(tabs.groupCount()).toBe(3);
   });
 });
 

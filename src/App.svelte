@@ -31,6 +31,7 @@
   import TunnelsPanel from "./lib/terminal/TunnelsPanel.svelte";
   import Prompt from "./lib/ui/Prompt.svelte";
   import { tabMenu } from "./lib/layout/tabMenu";
+  import { rdpOpensInNewWindow } from "./lib/layout/gridView";
   import SearchOutput from "./lib/terminal/SearchOutput.svelte";
   import SerialSettings from "./lib/terminal/SerialSettings.svelte";
   import QuickSelector, { type QuickItem } from "./lib/sessions/QuickSelector.svelte";
@@ -494,6 +495,14 @@
     if (settings.sessionsAutoHide) slideIn();
     // RDP in a tab with the built-in client, as SuperXPuTTY's (unless Settings > General says Windows App)
     if (session.protocol.toUpperCase() === "RDP" && settings.rdpBuiltIn) {
+      // in Grid View a desktop would be a small tile: a window of its own, as Settings > General > Tabs says
+      if (rdpOpensInNewWindow(settings.gridView, settings.gridViewRdp, tabs?.allTabs().length ?? 0, tabs?.onlyDesktops() ?? false)) {
+        invoke("window_new", { open: `${session.store}:${session.id}` }).then(
+          () => (status = `Opened session: ${session.name} [RDP] in a new window`),
+          (e) => (status = String(e)),
+        );
+        return;
+      }
       tabs?.openRdp(session.store, session.id, session.name, session.icon, environment);
       status = `Opened session: ${session.name} [RDP]`;
       return;
@@ -620,6 +629,7 @@
   // View > Grid View: every window's tabs tiled, or put back (their old splits, or one group, as Settings > General >
   // Tabs says), as the setting changes
   $effect(() => {
+    if (tabs) tabs.desktopsApart = settings.gridViewRdp === "window";
     tabs?.setGridView(settings.gridView, settings.gridViewOff === "restore");
   });
 

@@ -510,6 +510,11 @@ export class TabArea {
    * (setGridView)
    */
   private gridView = false;
+  /**
+   * Settings > General > Tabs > Remote Desktop in Grid View is "Opens in a new window": a window of Remote Desktops
+   * alone isn't tiled, so each desktop still has the whole window (set by App)
+   */
+  desktopsApart = false;
   /** The tabs are being moved into a grid now, so the moves aren't taken for tabs opening or closing */
   private tiling = false;
   /** A new grid waiting for the tabs opening or closing together (a layout, Connect in a Grid) to be in */
@@ -1034,6 +1039,16 @@ export class TabArea {
     const active = this.api.activePanel;
     const panels = this.allTabs().map((t) => this.api.getPanel(t.id)).filter((p): p is NonNullable<typeof p> => !!p);
     if (panels.length === 0) return;
+    // a window of Remote Desktops alone, with them kept apart from the grid: tabs in one group, each the whole window
+    if (this.desktopsApart && this.onlyDesktops()) {
+      this.tiling = true;
+      try {
+        this.joinAll();
+      } finally {
+        this.tiling = false;
+      }
+      return;
+    }
     const { columns, rows } = gridShape(panels.length, this.api.width, this.api.height);
     this.tiling = true;
     try {
@@ -1068,6 +1083,12 @@ export class TabArea {
       this.tiling = false;
     }
     (active ?? panels[0]).api.setActive();
+  }
+
+  /** Whether this window has tabs and every one is a Remote Desktop (a window Grid View sent desktops to) */
+  onlyDesktops(): boolean {
+    const panels = this.api.panels;
+    return panels.length > 0 && panels.every((p) => p.view.contentComponent === "rdp");
   }
 
   /** Whether View > Grid View is on in this window */

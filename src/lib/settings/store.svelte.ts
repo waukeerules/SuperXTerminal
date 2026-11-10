@@ -78,6 +78,11 @@ export interface AppSettings {
    * every tab into one group
    */
   gridViewOff: "restore" | "join";
+  /**
+   * Settings > General > Tabs > Remote Desktop in Grid View: "window" opens an RDP session in a window of its own while
+   * Grid View is on, "tile" tiles it with the others
+   */
+  gridViewRdp: "window" | "tile";
   /** RDP sessions open in a tab with the built-in client; off, in Windows App */
   rdpBuiltIn: boolean;
   /** Settings > Remote Desktop: the defaults for RDP sessions, as SuperXPuTTY's RdpOptions */
@@ -167,6 +172,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   alwaysOnTop: false,
   gridView: false,
   gridViewOff: "restore",
+  gridViewRdp: "window",
   rdpBuiltIn: true,
   rdpDefaults: "",
   filezillaPasswords: false,

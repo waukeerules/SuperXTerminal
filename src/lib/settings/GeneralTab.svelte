@@ -252,6 +252,17 @@
     <p class="hint">What turning View > Grid View off ({shortcutLabel("toggleGridView") || "Grid View"}) does with the
       tiled tabs. Put back, each split returns with its tabs, and a tab opened in the grid joins the split that was in
       front. Join All Tabs always joins them.</p>
+    <div class="row">
+      <label for="grid-view-rdp">Remote Desktop in Grid View</label>
+      <select id="grid-view-rdp" value={settings.gridViewRdp}
+        onchange={(e) => void saveSettings({ gridViewRdp: e.currentTarget.value as "window" | "tile" })}>
+        <option value="window">Opens in a new window</option>
+        <option value="tile">Takes a tile like the others</option>
+      </select>
+    </div>
+    <p class="hint">A desktop is hard to use as one tile among terminals. In a new window it takes the whole window, and
+      more desktops opened from there join it as tabs rather than tiles. A Remote Desktop already open when Grid View
+      goes on is tiled with the others.</p>
   </fieldset>
 
   <fieldset>

@@ -104,8 +104,7 @@ fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
         return Err("This session has no host.".into());
     }
     let profiles = crate::profiles::Profiles::load(&state.user_folder);
-    let (username, profile) = login(&sessions, &profiles, store, &session);
-    let username = fill(username.trim());
+    let (username, profile) = login(&sessions, &profiles, &values, store, &session);
     let mut port = session.port();
     if port == 0 {
         port = along.iter().map(|f| f.port).find(|p| *p != 0).unwrap_or(0);
@@ -148,11 +147,13 @@ fn stored_password(
 /// Who an RDP session logs in as, and the profile its password comes from, in the order SSH sessions use
 /// (launch.rs): the session's username, else its folders' (nearest first), else its profile's (with what it's
 /// based on), else Default Settings'. The profile is the session's, else its folders', else Default Settings. A jump
-/// server profile (Log in here) gives no username, as its login is the jump server's, not the desktop's. Placeholders
-/// are left for the caller to fill.
+/// server profile (Log in here) gives no username, as its login is the jump server's, not the desktop's. Its
+/// placeholders are filled from `values`, and a username that's a 1Password reference (op://...), as typed or as an
+/// Environment Variable's value, is read from 1Password: sent as it was, the server refused it as a wrong login.
 fn login(
     sessions: &crate::sessions::Sessions,
     profiles: &crate::profiles::Profiles,
+    values: &std::collections::HashMap<String, String>,
     store: Store,
     session: &crate::sessions::StoredSession,
 ) -> (String, String) {
@@ -171,7 +172,8 @@ fn login(
         .chain([from_profile, default.username.clone()])
         .find(|u| !u.trim().is_empty())
         .unwrap_or_default();
-    (username, profile.name.clone())
+    let username = crate::onepassword::resolved(&crate::variables::substitute(username.trim(), values));
+    (username.trim().to_string(), profile.name.clone())
 }
 
 /// ".\\user" is a local account (no domain); "CORP\\user" a domain one; "user@domain" as it is
@@ -688,7 +690,7 @@ mod tests {
         let profiles = windows_profiles("");
         let none = Sessions::default();
         let login = |sessions: &Sessions, profiles: &crate::profiles::Profiles, attributes: &[(&str, &str)]| {
-            login(sessions, profiles, Store::Saved, &desktop(attributes))
+            login(sessions, profiles, &std::collections::HashMap::new(), Store::Saved, &desktop(attributes))
         };
         // the profile's username, and its password's name
         assert_eq!(login(&none, &profiles, &[("PuttySession", "Windows")]), ("CORP\\admin".into(), "Windows".into()));
@@ -713,6 +715,22 @@ mod tests {
         assert_eq!(login(&none, &profiles, &[("PuttySession", "Bastion")]).0, "");
         // nothing anywhere: the tab asks
         assert_eq!(login(&none, &profiles, &[]).0, "");
+    }
+
+    #[test]
+    fn a_desktops_username_that_is_a_1password_reference_logs_in_as_what_1password_holds() {
+        let profiles = windows_profiles("");
+        let none = crate::sessions::Sessions::default();
+        crate::onepassword::keep("op://Private/rdp-test/username", "me@outlook.com");
+        let values = std::collections::HashMap::from([("rdp_user".to_string(), "\"op://Private/rdp-test/username\"".to_string())]);
+        let login = |attributes: &[(&str, &str)]| login(&none, &profiles, &values, Store::Saved, &desktop(attributes)).0;
+        // typed as 1Password copies it, in quotes for its spaces
+        assert_eq!(login(&[("Username", "\"op://Private/rdp-test/username\"")]), "me@outlook.com");
+        // as an Environment Variable's value
+        assert_eq!(login(&[("Username", "{rdp_user}")]), "me@outlook.com");
+        // one that can't be read: none, so the tab asks for the login
+        assert_eq!(login(&[("Username", "op://Private/rdp-test-missing/username")]), "");
+        crate::onepassword::take_problems();
     }
 
     #[test]

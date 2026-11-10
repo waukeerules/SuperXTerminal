@@ -763,7 +763,9 @@ fn ssh(
         ));
     }
     let mut host = variables::substitute(session.get("Host").trim(), values);
-    let username = variables::substitute(&username, values);
+    // a username that's a 1Password reference (op://...), as typed or as an Environment Variable's value: read from
+    // 1Password, as a password is, or ssh logs in as "op://..." and the server refuses it
+    let username = crate::onepassword::resolved(&variables::substitute(&username, values));
     let jump_host = variables::substitute(&jump_host, values);
     let profile_host = variables::substitute(raw_profile_host, values);
     let profile_port = [profile.port, default.port].into_iter().find(|p| *p != 0);
@@ -1111,7 +1113,8 @@ fn jump_address(
         port = if profile.port != 0 { profile.port } else { default.port };
     }
     let mut address = variables::substitute(session.get("Host").trim(), values);
-    let username = variables::substitute(&username, values);
+    // the jump host's username read from 1Password, as the session's own is (op://...)
+    let username = crate::onepassword::resolved(&variables::substitute(&username, values));
     if !username.is_empty() {
         address = format!("{username}@{address}");
     }
@@ -2079,6 +2082,17 @@ mod tests {
         assert_eq!(unread.password, None);
         assert_eq!(crate::onepassword::take_problems(), ["op://Lab/launch-test-missing/password wasn't read: no op in the tests."]);
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_username_that_is_a_1password_reference_logs_in_as_what_1password_holds() {
+        crate::onepassword::keep("op://Lab/launch-test/username", "admin");
+        let typed = launch(&Sessions::default(), &profiles(), &HashMap::new(), &BTreeMap::new(), Store::Saved,
+            &session(&[("Username", "\"op://Lab/launch-test/username\"")])).unwrap();
+        assert_eq!(typed.login.map(|l| l.username).as_deref(), Some("admin"));
+        let values: HashMap<String, String> = [("admin_user".to_string(), "op://Lab/launch-test/username".to_string())].into();
+        let variable = launch(&Sessions::default(), &profiles(), &values, &BTreeMap::new(), Store::Saved, &session(&[("Username", "{admin_user}")])).unwrap();
+        assert_eq!(variable.login.map(|l| l.username).as_deref(), Some("admin"));
     }
 
     #[test]

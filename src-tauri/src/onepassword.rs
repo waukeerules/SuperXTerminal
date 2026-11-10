@@ -1,6 +1,6 @@
-//! 1Password secret references (`op://vault/item/field`) in place of stored secrets: an Environment Variable's value
-//! or a password (a profile's, a session's own) can be one, and it's read from 1Password as a session opens, with its
-//! own approval prompt (Windows Hello, Touch ID), rather than kept in Windows Credential Manager or the Keychain.
+//! 1Password secret references (`op://vault/item/field`) in place of stored secrets: an Environment Variable's value,
+//! a password or a username (a profile's, a session's own) can be one, and it's read from 1Password as a session opens,
+//! with its own approval prompt (Windows Hello, Touch ID), rather than kept in Windows Credential Manager or the Keychain.
 //!
 //! Read by 1Password's CLI, `op read`, which signs in through the 1Password app ("Integrate with 1Password CLI" in its
 //! Settings > Developer): there's no Rust SDK. A value read is kept in memory for [`KEPT_FOR`], so the tabs of one

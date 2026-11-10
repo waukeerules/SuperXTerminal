@@ -6,6 +6,14 @@ device; and how a profile fetches a key issued for a short time, from CyberArk o
 Smallstep, Vault…). CyberArk is the worked example throughout. The app's side is built and covered by tests (`launch.rs`),
 and it has been tried with CyberArk on a production network, on Windows (November 2026).
 
+| | How ssh reaches the device | Where the key comes from | Here |
+|---|---|---|---|
+| CyberArk PSM for SSH | through CyberArk's gateway, the target named in the username | an MFA caching key, for a set time | [the CyberArk sections](#what-psm-for-ssh-is) |
+| Teleport | through Teleport's Proxy Service, by a ProxyCommand `tsh config` writes | a certificate from `tsh login` | [Teleport](#teleport) |
+| Smallstep | straight to the device, which trusts the CA | a certificate from `step ssh` | [Smallstep](#smallstep) |
+
+All three fetch with a profile's [key fetch](#built-in-a-profiles-key-fetch), with an entry each under Examples….
+
 ## What PSM for SSH is
 
 From CyberArk's [Introduction to PSM for SSH](https://docs.cyberark.com/pam-self-hosted/latest/en/content/pasimp/introduction-to-psmp.htm):
@@ -218,6 +226,68 @@ Not built yet:
 The key is a credential, so it's kept only where the profile's Key file says, in the user's own folders (never the
 settings folder, the Database table or anything shared), and the fetch command and lifetime are profile fields,
 which are per user.
+
+## Teleport
+
+From Teleport's [Using Teleport with OpenSSH in agentless mode](https://goteleport.com/docs/enroll-resources/server-access/openssh/openssh-agentless/),
+[tsh reference](https://goteleport.com/docs/reference/cli/tsh/) and
+[Using the tsh Command Line Tool](https://goteleport.com/docs/connect-your-client/teleport-clients/tsh/):
+
+- `tsh login` signs you in to your Teleport cluster (through your identity provider, with MFA as the cluster asks)
+  and gets a short-lived certificate. Each user's is good for as long as the cluster allows; Teleport's examples show
+  12 hours.
+- Teleport's servers aren't reached directly: ssh goes through the cluster's Proxy Service. `tsh config` prints a
+  block for `~/.ssh/config` that does it: for hosts named `<node>.<cluster>` it runs `tsh proxy ssh` as the
+  ProxyCommand, at port 3022 (Teleport's own SSH service), with Teleport's known_hosts and certificate. The name
+  needn't resolve in DNS, as the Proxy Service routes it. Run `tsh config` again for each cluster, and when trusted
+  clusters change.
+- `tsh login --out=<file> --format=openssh` writes the key and its certificate (`<file>-cert.pub`) as OpenSSH's own
+  files, for `ssh -i`. Without `--format=openssh` it writes Teleport's identity file, which only `tsh -i` reads.
+- An OpenSSH server joined in agentless mode listens on 22, not 3022: Teleport's guide connects to one with `-p 22`.
+- OpenSSH checks the host's name against its host certificate's principals, usually its full DNS name.
+
+In SuperXTerminal:
+
+1. Add `tsh config`'s block to `~/.ssh/config` (once, and again when your clusters change). ssh reads that file
+   for every session, so the sessions below go through Teleport's Proxy Service by themselves.
+2. A **Teleport profile**: Fetch command from Examples… (`tsh login --proxy={teleport_proxy} --user={teleport_user}
+   --out="{key_file}" --format=openssh`), Key file `~/.ssh/teleport_key`, Lifetime your cluster's (720 for 12 hours).
+   For servers in agentless mode, `-p 22` in Extra ssh arguments, as the session's port 22 isn't passed to ssh.
+3. **Sessions**: Host `<node>.<cluster>` (e.g. `web1.teleport.example.com`), Username one of your Teleport logins
+   (`tsh status` lists them), the Teleport profile. The first session of the day signs in, in its tab; the rest use
+   the key until it expires.
+
+Not tried with Teleport yet: the sign-in in the tab (`tsh login` opens a browser), and on Windows, where `tsh config`
+has its own PowerShell form.
+
+## Smallstep
+
+From Smallstep's [`step ssh certificate`](https://smallstep.com/docs/step-cli/reference/ssh/certificate/),
+[Basic Certificate Authority Operations](https://smallstep.com/docs/step-ca/basic-certificate-authority-operations/),
+[Configuring step-ca](https://smallstep.com/docs/step-ca/configuration/) and
+[If you're not using SSH certificates you're doing SSH wrong](https://smallstep.com/blog/use-ssh-certificates/):
+
+- There's no gateway: ssh connects straight to the device, which trusts your step CA's user key (sshd's
+  `TrustedUserCAKeys`, the key from `step ssh config --roots`). The certificate is the login.
+- `step ssh certificate <identity> <key file>` makes a new key and has the CA sign it, after a sign-in through
+  whatever provisioner the CA uses (a single sign-on in the browser, say), writing `<key file>` and
+  `<key file>-cert.pub`. `--no-password --insecure` leaves the key unencrypted on disk (Smallstep says it isn't
+  recommended, and `--no-password` needs `--insecure`), so ssh can use it with no passphrase prompt.
+- A user certificate lasts 16 hours unless the CA says otherwise (`defaultUserSSHCertDuration`; 5 minutes to 24
+  hours by default).
+- The certificate's principals are the usernames it logs in as: the session's Username must be one of them.
+- `step ssh login` does the same, but puts the key and certificate in ssh-agent instead of a file.
+
+In SuperXTerminal:
+
+1. A **Smallstep profile**: Fetch command from Examples… (`step ssh certificate {email} "{key_file}" --no-password
+   --insecure --force`), Key file `~/.ssh/step_key`, Lifetime your CA's (960 for 16 hours). OpenSSH picks up
+   `step_key-cert.pub` beside the key by itself.
+2. **Sessions**: the device's own Host, a Username among the certificate's principals, the Smallstep profile.
+3. Or use `step ssh login` yourself and leave Key file empty with Offer SSH keys on, so ssh offers the agent's
+   certificate. A key fetch needs a Key file to check, so the app doesn't fetch then: sign in again when it expires.
+
+Not tried with Smallstep yet.
 
 ## Done, and still to do
 

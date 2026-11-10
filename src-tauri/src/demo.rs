@@ -207,8 +207,8 @@ fn seed(user: &Path, shared: &Path) -> std::io::Result<()> {
 }
 
 /// The demo's PuTTY profiles (Settings > Profiles), which its sessions use: network devices (Juniper, console
-/// servers and old IOS among them), Linux servers, servers through a jump host or CyberArk, cloud VMs, short-lived
-/// keys and a light-coloured lab. Made up; no keys or passwords
+/// servers and old IOS among them), Linux servers, web servers with a tunnel, servers through a jump host or
+/// CyberArk, cloud VMs, short-lived keys and a light-coloured lab. Made up; no keys or passwords
 fn profiles() -> crate::profiles::Profiles {
     use crate::profiles::{Forward, Profile};
     let mut profiles = crate::profiles::Profiles::default();
@@ -230,8 +230,15 @@ fn profiles() -> crate::profiles::Profiles {
         key_file: "~/.ssh/id_ed25519".into(),
         agent_forwarding: Some(true),
         server_load: Some(true),
-        forwards: vec![Forward { kind: "local".into(), listen: "8080".into(), to: "localhost:80".into() }],
         button_bar: "Linux".into(),
+        ..Profile::default()
+    });
+    // the web servers' own, for their tunnel: one port on this computer can be one tab's tunnel only, so the Demo
+    // layout's other Linux tabs (k8s-ctl-01, stg-db-01) don't ask for it too
+    profiles.profiles.push(Profile {
+        name: "Web servers".into(),
+        based_on: "Linux servers".into(),
+        forwards: vec![Forward { kind: "local".into(), listen: "8080".into(), to: "localhost:80".into() }],
         ..Profile::default()
     });
     profiles.profiles.push(Profile {
@@ -500,6 +507,36 @@ mod tests {
         let counts: Vec<(&str, usize)> = missing.iter().map(|(name, places)| (name.as_str(), places.len())).collect();
         assert_eq!(counts, [("Arista EOS", 2), ("Palo Alto", 1)]);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// No two tabs of the Demo layout ask for the same port on this computer, so none opens with "Port 8080 on this
+    /// Mac is already the tunnel of the tab..." at the top: only web-01's profile has the 8080 tunnel, whichever tab
+    /// starts first (the main-window screenshot shows web-01 with its tunnel listed, not a warning)
+    #[test]
+    fn no_two_tabs_of_the_demo_layout_ask_for_the_same_port() {
+        let sessions = include_str!("../demo/Sessions.xml");
+        let layout: serde_json::Value = serde_json::from_str(include_str!("../demo/Demo.layout.json")).unwrap();
+        let profiles = profiles();
+        let mut held: std::collections::HashMap<String, String> = Default::default();
+        for (_, panel) in layout["tabs"]["panels"].as_object().unwrap() {
+            let id = panel["params"]["target"]["id"].as_str().unwrap();
+            let profile = sessions
+                .lines()
+                .find(|l| l.contains(&format!(r#"SessionId="{id}""#)))
+                .and_then(|l| l.split(r#"PuttySession=""#).nth(1))
+                .and_then(|rest| rest.split('"').next())
+                .unwrap_or_else(|| panic!("{id} names no profile"));
+            let Some(resolved) = profiles.resolved(profile) else { continue };
+            if resolved.tunnels_off == Some(true) {
+                continue;
+            }
+            for forward in resolved.forwards.iter().filter(|f| f.kind != "remote") {
+                if let Some(other) = held.insert(forward.listen.clone(), id.to_string()) {
+                    panic!("{id} and {other} both ask for port {}", forward.listen);
+                }
+            }
+        }
+        assert_eq!(held.get("8080").map(String::as_str), Some("Production/Servers/web-01"));
     }
 
     #[test]

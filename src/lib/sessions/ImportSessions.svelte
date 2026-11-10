@@ -1,8 +1,9 @@
 <!--
   File > Import Sessions, as SuperXPuTTY's: from a CSV file (its SessionCsv: rows matched by Source, Folder and Name,
   existing Saved and Private sessions updated, the rest added), another Sessions.xml, a PuTTY CM export, a folder of
-  PuTTY portable sessions, PuTTY's and KiTTY's saved sessions, Remote Desktop's recent computers (Windows), a
-  MobaXterm sessions file, Remote Desktop (.rdp) files, or ~/.ssh/config, all but CSV into a folder of their own
+  PuTTY portable sessions, SecureCRT's Sessions folder, PuTTY's and KiTTY's saved sessions, Remote Desktop's recent
+  computers (Windows), a MobaXterm sessions file, Remote Desktop (.rdp) files, or ~/.ssh/config, all but CSV into a
+  folder of their own
   ("Imported", "ImportedFromPuTTY", ...). The file is dropped on the dialog's drop zone from Finder or File Explorer,
   or chosen by clicking it; then the dialog shows what importing will do before anything changes, as SuperXPuTTY's
   confirmation.
@@ -39,14 +40,18 @@
     superputty: "Import sessions from a SuperPuTTY XML file",
     puttycm: "Import sessions from a PuTTY CM export",
     puttyFolder: "Import PuTTY portable sessions",
+    securecrt: "Import sessions from SecureCRT",
     putty: "Import PuTTY's saved sessions",
     rdpRegistry: "Import Remote Desktop's recent computers",
   };
   /** The folder each kind's sessions go in, as SuperXPuTTY names them; a CSV file names its own */
   const FOLDERS: Record<ImportKind, string> = {
     csv: "", mobaxterm: "ImportedFromMobaXterm", rdp: "ImportedFromRDP", ssh: "ImportedFromSshConfig", superputty: "Imported",
-    puttycm: "ImportedFromPuTTYCM", puttyFolder: "ImportedFromPortablePuTTY", putty: "ImportedFromPuTTY", rdpRegistry: "ImportedFromRDPRecent",
+    puttycm: "ImportedFromPuTTYCM", puttyFolder: "ImportedFromPortablePuTTY", securecrt: "ImportedFromSecureCRT", putty: "ImportedFromPuTTY",
+    rdpRegistry: "ImportedFromRDPRecent",
   };
+  /** Imports of a folder rather than a file: PuTTY's portable Sessions folder, and SecureCRT's */
+  const FOLDER_KINDS: ImportKind[] = ["puttyFolder", "securecrt"];
   /** Imports with nothing to choose: they read where the system keeps them */
   const FIXED: ImportKind[] = ["putty", "rdpRegistry"];
   /** What each kind takes, for its drop zone and file picker: the file's extensions (none for any), in words */
@@ -58,6 +63,7 @@
     puttycm: { extensions: ["xml"], what: "a PuTTY CM .xml export", name: "XML files" },
     ssh: { extensions: [], what: "an ssh config file", name: "" },
     puttyFolder: { extensions: [], what: "PuTTY's portable Sessions folder", name: "" },
+    securecrt: { extensions: [], what: "SecureCRT's Sessions folder", name: "" },
     putty: { extensions: [], what: "", name: "" },
     rdpRegistry: { extensions: [], what: "", name: "" },
   };
@@ -104,13 +110,13 @@
     await plan();
   }
 
-  /** Ask for the file (or .rdp files, or a folder of PuTTY sessions); false if cancelled */
+  /** Ask for the file (or .rdp files, or a folder of PuTTY's or SecureCRT's sessions); false if cancelled */
   async function choose(): Promise<boolean> {
     const takes = TAKES[kind];
     const filters = takes.extensions.length ? [{ name: takes.name, extensions: takes.extensions }] : [];
     const chosen = await open({
-      title: kind === "puttyFolder" ? "Choose the portable Sessions folder" : TITLES[kind],
-      directory: kind === "puttyFolder",
+      title: kind === "puttyFolder" ? "Choose the portable Sessions folder" : kind === "securecrt" ? "Choose SecureCRT's Sessions folder" : TITLES[kind],
+      directory: FOLDER_KINDS.includes(kind),
       multiple: kind === "rdp",
       filters: filters.length ? [...filters, { name: "All files", extensions: ["*"] }] : undefined,
     });
@@ -176,7 +182,7 @@
     {#if FIXED.includes(kind)}
       <div class="file"><span class="path">{what}</span></div>
     {:else}
-      <DropZone {paths} extensions={TAKES[kind].extensions} multiple={kind === "rdp"} folder={kind === "puttyFolder"}
+      <DropZone {paths} extensions={TAKES[kind].extensions} multiple={kind === "rdp"} folder={FOLDER_KINDS.includes(kind)}
         what={TAKES[kind].what} onChoose={() => void choose()} onDrop={(chosen) => void dropped(chosen)} />
     {/if}
 
@@ -204,6 +210,13 @@
       {:else if kind === "putty" || kind === "puttyFolder" || kind === "puttycm"}
         <p class="note">Each session's host, port, protocol and username, with the PuTTY session it uses as its profile
           (PuttySession), as SuperXPuTTY imports them.{kind === "putty" ? " KiTTY's go in a KiTTY folder." : ""}</p>
+      {:else if kind === "securecrt"}
+        <p class="note">Each session's protocol, host, port and username in Session Manager's folders, with its key file
+          (-i, SecureCRT's global one too), agent and X11 forwarding, port forwards and serial settings as extra
+          arguments, and a jump through another session kept. SecureCRT's Default sessions are left out. Passwords
+          aren't imported: SecureCRT encrypts them, so set them in the session or its profile. Its Config folder or
+          Sessions folder can be chosen if SecureCRT's settings were moved (Global Options &gt; Configuration
+          Paths).</p>
       {:else if kind === "rdpRegistry"}
         <p class="note">One RDP session for each computer in Remote Desktop Connection's recent list.</p>
       {/if}

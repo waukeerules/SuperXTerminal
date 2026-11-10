@@ -105,6 +105,46 @@ describe("Import Sessions' drop zone", () => {
   });
 });
 
+describe("Import Sessions from SecureCRT", () => {
+  /** What the file picker was asked for */
+  let pickerAsked: { directory?: boolean; title?: string }[];
+
+  /** The dialog, with the core saying SecureCRT's Sessions folder is `source` (null: there's none here) */
+  function openSecureCrt(source: string | null): void {
+    pickerAsked = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "sessions_import_source") return source;
+      if (cmd === "sessions_import_plan") {
+        planned.push((args as { paths: string[] }).paths);
+        return { adds: 2, updates: 0, skips: 0, examples: ["ImportedFromSecureCRT/openmediavault.localdomain", "ImportedFromSecureCRT/Serial-COM3"], skipped: [], ignored: [], error: null };
+      }
+      if (cmd === "plugin:dialog|open") {
+        pickerAsked.push((args as { options: { directory?: boolean; title?: string } }).options);
+        return "D:\\Backup\\VanDyke\\Config\\Sessions";
+      }
+      return null;
+    });
+    render(ImportSessions, { kind: "securecrt", savedAvailable: true, onDone: () => {}, onCancel: () => {} });
+  }
+
+  it("reads SecureCRT's own Sessions folder at once, into a folder of its own", async () => {
+    openSecureCrt("C:\\Users\\me\\AppData\\Roaming\\VanDyke\\Config\\Sessions");
+    await expect.poll(() => planned).toEqual([["C:\\Users\\me\\AppData\\Roaming\\VanDyke\\Config\\Sessions"]]);
+    expect(screen.getByRole("dialog", { name: "Import sessions from SecureCRT" })).toBeTruthy();
+    expect(screen.getByText(/in the folder ImportedFromSecureCRT/)).toBeTruthy();
+    expect(screen.getByText(/Passwords aren't imported/)).toBeTruthy();
+    expect(await screen.findByText("ImportedFromSecureCRT/Serial-COM3")).toBeTruthy();
+  });
+
+  it("asks for a folder, not a file, when SecureCRT's isn't here or another is wanted", async () => {
+    openSecureCrt(null);
+    expect(planned).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: /SecureCRT's Sessions folder/ }));
+    await expect.poll(() => planned).toEqual([["D:\\Backup\\VanDyke\\Config\\Sessions"]]);
+    expect(pickerAsked).toEqual([expect.objectContaining({ directory: true, title: "Choose SecureCRT's Sessions folder" })]);
+  });
+});
+
 describe("Import Sessions from a CSV file", () => {
   it("saves a template to fill in, and says what to do with it", async () => {
     render(ImportSessions, { kind: "csv", savedAvailable: true, onDone: () => {}, onCancel: () => {} });

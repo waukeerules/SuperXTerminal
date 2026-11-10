@@ -1,29 +1,66 @@
 # CyberArk sessions
 
-How SuperXTerminal connects through CyberArk's SSH gateway (Privileged Session Manager for SSH) while the session
-itself keeps naming the real device. The app's side is built and covered by tests (`launch.rs`), and it has been
-tried with CyberArk on the production network, on Windows (November 2026): see
-[what's been checked there, and what hasn't](#to-check-in-production).
+How SuperXTerminal connects through CyberArk's Privileged Session Manager for SSH (PSM for SSH, also called PSMP)
+while the session itself keeps naming the real device. The app's side is built and covered by tests (`launch.rs`),
+and it has been tried with CyberArk on a production network, on Windows (November 2026).
 
-## What CyberArk needs
+## What PSM for SSH is
 
-CyberArk isn't a jump host. ssh connects to the gateway (e.g. `example.cyberark.cloud`), and the *username* says who
-you are and which target to open, for example:
+From CyberArk's [Introduction to PSM for SSH](https://docs.cyberark.com/pam-self-hosted/latest/en/content/pasimp/introduction-to-psmp.htm):
+
+- It sits between the user's own SSH client and the target devices. The user connects to the PSM for SSH machine on
+  the standard SSH port; it authenticates the user to CyberArk's Vault, takes the privileged account's credentials
+  from the Vault (as the user's permissions in the Safe allow) and opens the session to the target, by SSH or Telnet.
+- The user never sees the target's password (privileged single sign-on). Accounts kept in the Vault without a
+  password are a non-privileged SSO session instead: the user types the target's password when asked.
+- Every session is recorded as text in the Vault for auditing, and commands the policy doesn't allow can be blocked.
+- Users authenticate to the Vault with a CyberArk or LDAP password, RADIUS, or an SSH key. Native SFTP clients and
+  `scp` work through it too.
+
+So CyberArk isn't a jump host: ssh connects to the PSM for SSH address (the **gateway**), and the *username* says who
+you are and which target to open.
+
+## The connection string
+
+CyberArk's [Connect to Unix machines (using PSM for SSH)](https://docs.cyberark.com/privilege-cloud-shared-services/latest/en/content/privilege%20cloud/privcloud-connect-using-ssh.htm)
+(Privilege Cloud) and [Connect through PSM for SSH](https://docs.cyberark.com/pam-self-hosted/latest/en/content/pasimp/psso-pmsp.htm)
+(self-hosted) give it as:
 
 ```text
-{email}@{domain}#{cyberark_region}@{cyberark_username}#{cyberark_address}@{host_address}#{cyberark_connector}
+<ssh client> [-i <key file>] User@TargetUser#DomainAddress@TargetAddress[#TargetPort]@ProxyAddress
 ```
 
-- `{email}`, `{domain}`, `{cyberark_region}`, `{cyberark_username}`, `{cyberark_address}` and `{cyberark_connector}` are
-  each user's own Environment Variables (Tools > Environment Variables), so a shared Database session holds no one's
-  login.
-- The names are only names: what matters is that the profile's username and the Environment Variables use the same
-  ones. The first part is whatever CyberArk signs you in as, e.g. `{ad_username}@{domain}` where the email address is
-  the AD username at the domain, or one `{email}` variable holding it all. The fetch command (below) uses the same
-  first part.
-- `{host_address}` is the target: the session's own Host.
-- The login is an SSH key that CyberArk issues for a short time (MFA caching). It's fetched beforehand; on Windows
-  today that's a `.bat` (see [Getting the key](#getting-the-key)).
+| Part | What it is | Required |
+|---|---|---|
+| `User` | Your CyberArk (Vault) user name. It may hold one `@` of its own (`john@example.com`); with an MFA caching key it must be the full name in that form, not a short one | Yes |
+| `TargetUser` | The account on the target, e.g. `root` (case sensitive) | Yes |
+| `DomainAddress` | The domain server, or the address a centrally managed account (or SSH certificate group) is filed under | No |
+| `TargetAddress` | The target: IPv4, IPv6 (with `-` in place of `:`) or a DNS name (the DNS name, if that's how the account was defined) | Yes |
+| `TargetPort` | The target's port when the account doesn't set one: 22 means SSH, 23 Telnet | No |
+| `ProxyAddress` | The PSM for SSH machine's address or DNS name | Yes |
+
+- `@` separates the parts, and `#` comes before an optional one. Both are CyberArk's defaults, which an
+  administrator can change ([PSM for SSH Syntax Delimiter](https://docs.cyberark.com/pam-self-hosted/latest/en/content/pasimp/configuring-psmp-syntax-delimiters.htm)).
+- Your tenant may add parts of its own to this form (a tenant name after your user name, a connector pool after the
+  target): use the string your CyberArk administrators give you.
+- PSM for SSH asks for any required part that's missing, except over `scp`, which must be given them all.
+
+### In SuperXTerminal
+
+Everything before the last `@ProxyAddress` is the username. It goes in the **profile's** Username, with each person's
+parts as Environment Variables and the target as `{host_address}`, for example:
+
+```text
+{cyberark_user}@{target_user}@{host_address}
+```
+
+- `{cyberark_user}`, `{target_user}` and any other part are each user's own Environment Variables (Tools >
+  Environment Variables), so a shared Database session holds no one's login. The names are only names: what matters
+  is that the profile's username and the Environment Variables use the same ones.
+- `{host_address}` is the target: the session's own Host (and `{host_port}` its port, for `#{host_port}`).
+- `ProxyAddress` is the profile's Host (below), so it isn't part of the username.
+- The login is a password, or an SSH key that CyberArk issues for a short time with MFA caching
+  ([Getting the key](#getting-the-key)).
 
 So a CyberArk session has two addresses: the **target** (the session's Host, which stays filled in) and the
 **gateway** (where ssh actually connects).
@@ -32,7 +69,7 @@ So a CyberArk session has two addresses: the **target** (the session's Host, whi
 
 With the target in the session's own Host field, the same shared session works both ways:
 
-- **Through CyberArk**: its profile ("CyberArk") supplies the gateway, the key and the special username, and the
+- **Through CyberArk**: its profile ("CyberArk") supplies the gateway, the key and the connection string, and the
   target goes into the username as `{host_address}`.
 - **Directly, with your own login** (read-only AD access, say): a local override (Edit Session > Local overrides…)
   sets your own profile and username. The username no longer has `{host_address}` in it, so ssh connects to the
@@ -74,7 +111,7 @@ otherwise a session's own host wins:
   profile's Port, else the session's.
 - `{host_address}` in the username with no profile Host: the session doesn't start, and the tab says to set one.
   (Connecting to the target with a CyberArk username would only fail confusingly.)
-- The tab says where it's going first: "Connecting to 192.168.0.50 through the gateway example.cyberark.cloud.", or
+- The tab says where it's going first: "Connecting to 192.168.0.50 through the gateway psmp.example.com.", or
   "No host of its own: connecting to … (the Host of profile "…").".
 - A jump host still applies, to the gateway.
 - The app's log records `ssh command: … -l <user> <gateway>`; Verbose SSH (Settings > General > Diagnostics) shows
@@ -82,17 +119,17 @@ otherwise a session's own host wins:
 
 ### 3. The username goes to ssh with `-l`
 
-It already does (`launch.rs`). `user@host` form works too, as OpenSSH splits it at its *last* `@` (the macOS
-function below connects that way); `-l` just leaves no doubt about where the username ends.
+It already does (`launch.rs`). `user@host` form would work too, as OpenSSH splits it at its *last* `@`; `-l` just
+leaves no doubt about where the username ends, whatever `@` and `#` it holds.
 
 ### 4. The CyberArk profile
 
 | Field | Value |
 |---|---|
-| Username | the connection string above |
-| Host | e.g. `example.cyberark.cloud` (the gateway) |
-| Key file | the cached key (`~/.ssh/cyberark_key`; on Windows `%USERPROFILE%\.ssh\cyberark_key` or `~/...` both work, or the `.ppk`, which is converted for ssh) |
-| SSH keys | either: with a key file, only that key is offered (`IdentitiesOnly`, as today), so no other key is spent on the gateway |
+| Username | the connection string, without `@ProxyAddress` |
+| Host | the PSM for SSH address (the gateway) |
+| Key file | the MFA caching key (`~/.ssh/cyberark_key`, say; on Windows `%USERPROFILE%\.ssh\cyberark_key` or `~/...` both work, or the `.ppk`, which is converted for ssh); empty to log in with a password |
+| SSH keys | either: with a key file, only that key is offered (`IdentitiesOnly`), so no other key is spent on the gateway |
 | No username | use ssh's own (the profile always gives one) |
 
 The session's own Username stays blank (or the profile's is overridden per user), so the profile's connection
@@ -100,50 +137,23 @@ string applies.
 
 ## Getting the key
 
-CyberArk issues the SSH key for a short time (MFA caching), from a special `key` target on its gateway. Fetching it
-is itself an SSH login with a sign-in step: CyberArk prints a link, the link opens Okta in the browser, Okta shows a
-PIN after sign-in, and the PIN is pasted back into the terminal, where the fetch's ssh is waiting at a prompt. Then
-the key is written to a file, and sessions log in with it until it expires.
+With MFA caching, you sign in once (with your identity provider's MFA) and CyberArk gives you an SSH key good for a
+set time, which then logs you in to every target you're allowed, with no further sign-in until it expires. From
+CyberArk's [Authenticate to *nix accounts with MFA caching](https://docs.cyberark.com/access/latest/en/privilege-cloud/pasimp/mfa-caching-access/)
+and [MFA caching (PSM for SSH)](https://docs.cyberark.com/privilege-cloud-standard/latest/en/content/pasimp/mfa-caching.htm):
 
-Today on Windows a `.bat` does the fetch with `psftp` and converts the key to `.ppk` with WinSCP for PuTTY.
+- Your administrators turn it on and set how long a key lasts (`GracePeriodMinutes`), and whether it needs a
+  passphrase. It needs PSM for SSH 12.1 or later, with OpenSSH 7.8 or later on its machine.
+- The key is generated in CyberArk's web portal (PSM for SSH MFA caching), or with its REST API, and comes as
+  OpenSSH, PEM or PPK. SuperXTerminal uses Windows' and the Mac's own OpenSSH, so take the OpenSSH one (a `.ppk`
+  works anyway: the app converts any profile's `.ppk`).
+- It's used as any key is, `ssh -i <key file>`, with the full user name (`name@example.com`) in the connection
+  string. ssh refuses a key others can read; CyberArk's docs say to `chmod 600` it, which the app does itself after a
+  fetch.
+- Administrators can't log in through PSM for SSH with a key, and an administrator can revoke a key early.
 
-### By hand, today
-
-**macOS**: a shell function (in `~/.zshrc`, say), the Mac's version of the `.bat`. It fetches the key when there's
-none or it's over 4 hours old (14400 seconds, the key's lifetime here), then connects to the target given as its
-argument, e.g. `pam 192.168.0.50`:
-
-```bash
-function pam() {
-    email="my_email"
-    domain="example.com"
-    cyberark_region="example"
-    cyberark_username="PAM_EXAMPLE_001"
-    cyberark_address="example.com"
-    cyberark_connector="ConnectorPool"
-    ssh_host="example.ssh.cyberark.cloud"
-    key=~/.ssh/key
-
-    if [ -f "$key" ]; then
-        age=$(( $(date +%s) - $(stat -f %m "$key") ))
-    fi
-    if [ ! -f "$key" ] || [ "$age" -gt 14400 ]; then
-        sftp "$email@$domain#$cyberark_region@key@$ssh_host:/key" ~/.ssh
-    fi
-    ssh -i "$key" "$email@$domain#$cyberark_region@$cyberark_username#$cyberark_address@$1#$cyberark_connector@$ssh_host"
-}
-```
-
-- The fetch is `sftp` run interactively, downloading `/key` from the gateway's `key` target (`host:/key` form) into
-  `~/.ssh`. The sign-in (the link to Okta, then the PIN pasted back) happens at its prompts, in the same terminal.
-- The key's age is its file's modified time against now (`stat -f %m`, macOS's `stat`).
-- The connection is `user@host` form: OpenSSH splits at the last `@`, so the gateway is `$ssh_host` and everything
-  before it, `@` and `#` included, is the username. The target (`$1`) sits where SuperXTerminal puts `{host_address}`.
-- `~/.ssh/key` is a generic name; a name of its own (`~/.ssh/cyberark_key`) keeps it apart from other keys.
-
-**Windows**: the `.bat` fetches with `psftp` and converts the key to `.ppk` with WinSCP, for PuTTY. SuperXTerminal
-uses Windows' own OpenSSH, so the macOS function's `sftp` and `ssh` lines work in PowerShell as they are, with the
-key kept in OpenSSH's format; no conversion. (A `.ppk` works anyway: SuperXTerminal converts any profile's `.ppk`.)
+Downloading the key by hand each time works: point the profile's Key file at where you save it. Or let the profile
+fetch it.
 
 ### Built in: a profile's key fetch
 
@@ -156,14 +166,15 @@ Settings > Profiles > Login, under Key file:
 
 | Field | What it's for |
 |---|---|
-| Fetch command | The command that gets a new key into the Key file, with `{key_file}` for that path and the usual `{placeholders}` (each user's `{email}` and so on). Profiles are per computer, so each machine has its own. |
-| Lifetime | How long a key is good for, in minutes (240 here: CyberArk's 4 hours); 0 fetches only when there's none. |
+| Fetch command | The command that gets a new key into the Key file, with `{key_file}` for that path and the usual `{placeholders}` (each user's own, as in the username). Profiles are per computer, so each machine has its own. |
+| Lifetime | How long a key is good for, in minutes: your CyberArk key's validity period (e.g. 240 for 4 hours); 0 fetches only when there's none. |
 
 **Examples…** beside the Fetch command fills it from a list for the system it's on (`keyFetchExamples.ts`): CyberArk
-(`sftp "{ad_username}@{cyberark_region}@key@{cyberark_gateway}:/key" "{key_file}"`, 4 hours), a shell or
-PowerShell function of your own, Teleport (`tsh login … --out`), Smallstep (`step ssh certificate`), and a test that
-makes a throwaway key every minute. Picking one also sets the Lifetime, and the Key file when there's none, and says
-what to set (its Environment Variables), for editing from there.
+(an `sftp` download of the key, where the tenant offers one), a shell or PowerShell function of your own, Teleport
+(`tsh login … --out`), Smallstep (`step ssh certificate`), and a test that makes a throwaway key every minute. Picking
+one also sets the Lifetime, and the Key file when there's none, and says what to set (its Environment Variables), for
+editing from there. Any command that signs you in and writes the key to `{key_file}` will do: CyberArk's REST API
+called from a script, say.
 
 Below them the editor says how the next session will find the key: "Key: 37 min old, good for 4 h.", "The key is
 5 h old, past its 4 h: the next session fetches a new one.", or "No key yet".
@@ -174,9 +185,9 @@ When a session using the profile opens (`launch.rs` and `PageHost.ts`):
    key is fetched before connecting. The tab says why: "The key is 4 h 12 min old (good for 4 h): fetching a new
    one." That's the "why can't I connect" answer, before ssh even starts.
 2. **The fetch runs in the session's own tab** through the user's shell, its `~/.zshrc` read (`-i`) so a shell
-   function works, or PowerShell on Windows. CyberArk's link and its PIN prompt show there; the link opens with
-   Ctrl+click (or copy it), Okta signs in and shows the PIN, and the PIN is pasted into the tab. The app types
-   nothing itself here: no stored password goes into a fetch.
+   function works, or PowerShell on Windows. A sign-in it asks for shows there: a link opens with Ctrl+click (or copy
+   it), and a code or PIN the identity provider shows is pasted into the tab. The app types nothing itself here: no
+   stored password goes into a fetch.
 3. **When the fetch ends well** (exit code 0), the tab goes on to connect, the key made the user's own (mode 600 on
    the Mac, the user's own access on Windows), as ssh refuses a key others can read. If the fetch fails, or ends well
    but the key is still missing or old, the tab says so (naming the profile's Fetch command and Key file) rather
@@ -193,9 +204,6 @@ tab stays when it ends, saying the key is cached or why not; Enter runs it again
 unsaved changes, as it runs the saved command, and layouts leave such tabs out, so opening one never starts a
 sign-in.
 
-For a command like the macOS `pam` function above, the Fetch command is its `sftp` line (or a function of its own
-that runs it), and the Key file the path it writes, e.g. `~/.ssh/cyberark_key`.
-
 Not built yet:
 
 - A hint after ssh's "Permission denied (publickey)" when the gateway refuses the key anyway (revoked early, or the
@@ -206,33 +214,6 @@ Not built yet:
 The key is a credential, so it's kept only where the profile's Key file says, in the user's own folders (never the
 settings folder, the Database table or anything shared), and the fetch command and lifetime are profile fields,
 which are per user.
-
-## To check in production
-
-Checked on Windows, November 2026, with the CyberArk profile's Fetch command:
-
-- ✅ A session with no key file fetches one first, in its own tab: the fetch reached CyberArk, the key file was made
-  and saved, and the session then went on to connect through the gateway to the device.
-- ✅ The connection string's parts and order for this tenant, and `-l` with `#` and `@` reaching the gateway
-  unchanged: the session logged in to the device and it could be managed over SSH (its CLI).
-- ✅ The key, once fetched, works outside the app too: a connection from another shell, with the same key, logged in
-  to the device as well.
-- ✅ An expired key: the session asks to reconnect, and reconnecting fetches and saves a new key, then connects.
-- ✅ The fetch's sign-in in the tab: CyberArk's link opens with Ctrl+click.
-
-Still to check:
-
-- The PIN prompt: the PIN doesn't show as it's typed, where PuTTY showed it. The tab doesn't hide or show typing
-  itself; it shows what the fetch's program echoes. The prompt is CyberArk's (a keyboard-interactive question to
-  OpenSSH's `sftp`), which says whether the answer is echoed; PuTTY honours that, and Windows' OpenSSH seems to hide
-  every answer whatever it says. Not something the app controls; pasting the PIN works either way.
-- The Mac: all of the above. The link there opens with Ctrl+click too, though on the Mac Ctrl+click is also a
-  right-click (or else by copying it).
-- The gateway's host key: one key for every target, so known_hosts gets a single entry for the gateway.
-- MFA or other keyboard-interactive prompts at the gateway, and whether the app's automatic password typing must stay
-  out of them.
-- File transfer and SCP through the gateway: probably not offered by PSM for SSH; the file transfer tab should say so
-  rather than fail.
 
 ## Done, and still to do
 
@@ -249,6 +230,6 @@ Still to check:
   undefined one says so; the editor's key state.
 - ✅ Log in & cache key: the fetch on its own, in a tab, from the profile.
 - ✅ Tried in production with CyberArk, on Windows: the key fetched when missing or expired, then the session
-  connected to the device ([To check in production](#to-check-in-production) has what's left).
-- To do: the rest of [To check in production](#to-check-in-production), the Mac among it; the hint after "Permission
-  denied (publickey)" and Forget key; then a section in a user guide.
+  connected to the device.
+- To do: trying it on the Mac; the hint after "Permission denied (publickey)" and Forget key; then a section in a
+  user guide.

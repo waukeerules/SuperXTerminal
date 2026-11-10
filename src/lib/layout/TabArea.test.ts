@@ -373,6 +373,69 @@ describe("Grid View", () => {
   });
 });
 
+describe("Grid View off, putting the splits back", () => {
+  type Shape = string[] | Shape[];
+  /** The splits as nested lists: a split's tab titles in order, inside a list for each row or column of them */
+  function splits(): Shape {
+    type Node = { type: "leaf" | "branch"; data: unknown };
+    const walk = (node: Node): Shape =>
+      node.type === "leaf"
+        ? (node.data as { views: string[] }).views.map((v) => tabs.api.getPanel(v)?.title ?? v)
+        : (node.data as Node[]).map(walk) as Shape;
+    const root = tabs.api.toJSON().grid.root as Node;
+    // a branch of one, as dockview sometimes keeps around a single split, is the split itself
+    const flat = (shape: Shape): Shape => (shape.length === 1 && Array.isArray(shape[0]) ? flat(shape[0] as Shape) : shape.map((s) => (Array.isArray(s) ? flat(s as Shape) : s)) as Shape);
+    return flat(walk(root));
+  }
+  /** Each split's tab in front, by its first tab's title */
+  const inFront = () => Object.fromEntries(tabs.api.groups.map((g) => [g.panels[0]?.title, g.activePanel?.title]));
+
+  /** Six tabs: sw1-sw3 on the left; sw4 and sw5 at the right, over sw6 */
+  function arranged(): string[] {
+    const ids = ["sw1", "sw2", "sw3", "sw4", "sw5", "sw6"].map((t) => open(t));
+    tabs.split(ids[3], "right");
+    const right = tabs.api.getPanel(ids[3])!.group;
+    tabs.api.getPanel(ids[4])!.api.moveTo({ group: right });
+    tabs.api.getPanel(ids[5])!.api.moveTo({ group: right });
+    tabs.split(ids[5], "below");
+    tabs.activate(ids[1]);
+    return ids;
+  }
+
+  it("puts each split back with its tabs in order and the one in front, the same pages in them", () => {
+    const ids = arranged();
+    const before = splits();
+    const fronts = inFront();
+    const frames = ids.map((id) => tabs.api.getPanel(id)!.view.content.element.querySelector("iframe"));
+    tabs.setGridView(true, true);
+    expect(tabs.groupCount()).toBe(6);
+    tabs.setGridView(false, true);
+    expect(splits()).toEqual(before);
+    expect(inFront()).toEqual(fronts);
+    expect(tabs.api.activePanel?.id).toBe(ids[1]);
+    expect(ids.map((id) => tabs.api.getPanel(id)!.view.content.element.querySelector("iframe"))).toEqual(frames);
+  });
+
+  it("leaves out a tab closed in the grid, and puts one opened there in the split that was in front", async () => {
+    const ids = arranged();
+    tabs.setGridView(true, true);
+    tabs.command(ids[4], "close");
+    open("sw7");
+    await expect.poll(() => tabs.groupCount()).toBe(6);
+    tabs.setGridView(false, true);
+    // sw2 was in front, on the left
+    expect(splits()).toEqual([["sw1", "sw2", "sw3", "sw7"], [["sw4"], ["sw6"]]]);
+  });
+
+  it("joins the tabs instead after Join All Tabs, however it's set", () => {
+    arranged();
+    tabs.setGridView(true, true);
+    tabs.forgetSplits();
+    tabs.setGridView(false, true);
+    expect(tabs.groupCount()).toBe(1);
+  });
+});
+
 describe("gridShape", () => {
   it("gives a wide monitor more columns than rows, and a tall one more rows", () => {
     expect(gridShape(2, 2560, 1300)).toEqual({ columns: 2, rows: 1 });

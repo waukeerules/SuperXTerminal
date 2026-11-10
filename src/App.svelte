@@ -154,9 +154,12 @@
       const id = tabs?.api.activePanel?.id;
       if (id) tabs?.split(id, id === "splitRight" ? "right" : "below");
     } else if (id === "joinAll") {
-      // joined, the tabs aren't a grid any more: Grid View goes off, which joins them in every window
-      if (settings.gridView) void saveSettings({ gridView: false });
-      else tabs?.joinAll();
+      // joined, the tabs aren't a grid any more: Grid View goes off, joining them here rather than putting the old
+      // splits back (other windows go back as Settings says)
+      if (settings.gridView) {
+        tabs?.forgetSplits();
+        void saveSettings({ gridView: false });
+      } else tabs?.joinAll();
     } else if (id === "toggleGridView") void saveSettings({ gridView: !settings.gridView });
     else if (id === "saveLayout") {
       if (currentLayout && currentLayout !== AUTO_RESTORE) void saveLayoutAs(currentLayout);
@@ -614,9 +617,10 @@
     if (getCurrentWebviewWindow().label === "main" && settings.autoUpdateCheck) setTimeout(() => void checkForUpdates(false), 4000);
   }
 
-  // View > Grid View: every window's tabs tiled, or joined again, as the setting changes
+  // View > Grid View: every window's tabs tiled, or put back (their old splits, or one group, as Settings > General >
+  // Tabs says), as the setting changes
   $effect(() => {
-    tabs?.setGridView(settings.gridView);
+    tabs?.setGridView(settings.gridView, settings.gridViewOff === "restore");
   });
 
   // View > Always on Top, as SuperXPuTTY's AlwaysOnTop: every window, as the setting changes

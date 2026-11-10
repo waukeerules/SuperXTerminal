@@ -235,6 +235,17 @@
     </div>
     <p class="hint">A longer name is cut short with …, the whole of it shown when the pointer is on the tab. Shorter
       fits more tabs in the strip; 0 never cuts a name, however wide that makes its tab.</p>
+    <div class="row">
+      <label for="grid-view-off">Grid View off</label>
+      <select id="grid-view-off" value={settings.gridViewOff}
+        onchange={(e) => void saveSettings({ gridViewOff: e.currentTarget.value as "restore" | "join" })}>
+        <option value="restore">Puts back the splits from before</option>
+        <option value="join">Joins all tabs in one group</option>
+      </select>
+    </div>
+    <p class="hint">What turning View > Grid View off ({shortcutLabel("toggleGridView") || "Grid View"}) does with the
+      tiled tabs. Put back, each split returns with its tabs, and a tab opened in the grid joins the split that was in
+      front. Join All Tabs always joins them.</p>
   </fieldset>
 
   <fieldset>

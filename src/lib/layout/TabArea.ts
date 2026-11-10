@@ -514,6 +514,12 @@ export class TabArea {
   private tiling = false;
   /** A new grid waiting for the tabs opening or closing together (a layout, Connect in a Grid) to be in */
   private retile: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * The splits as they were when Grid View went on (dockview's own description of them, and the tab in front), to put
+   * back when it goes off with Settings > General > Tabs' "Grid View off" on Put back the splits; null when there
+   * are none to put back
+   */
+  private beforeGrid: { grid: SerializedDockview["grid"]; active: string | null } | null = null;
   /** Watched tabs, as ctlPuttyPanel's watches: activity on or off, silence in seconds (0 off) */
   private readonly watches = new Map<string, { activity: boolean; silence: number; length: number; lastOutput: number; silenceAlerted: boolean }>();
 
@@ -1066,15 +1072,103 @@ export class TabArea {
   }
 
   /**
-   * View > Grid View on or off: on tiles the tabs ([[tile]]) and keeps them tiled as tabs open and close; off joins
-   * them back into one group, as Join All Tabs, the active tab in front
+   * View > Grid View on or off: on, the splits as they are now are noted and the tabs tiled ([[tile]]), and kept
+   * tiled as tabs open and close. Off, the splits from before are put back ([[restoreSplits]]), or with `restore`
+   * false the tabs join into one group, as Join All Tabs; the active tab stays in front either way.
+   * @param restore Settings > General > Tabs' Grid View off: true to put the splits back, false to join the tabs
    */
-  setGridView(on: boolean): void {
+  setGridView(on: boolean, restore = false): void {
     if (on === this.gridView) return;
     this.gridView = on;
     clearTimeout(this.retile);
-    if (on) this.tile();
+    if (on) {
+      this.beforeGrid = { grid: this.api.toJSON().grid, active: this.api.activePanel?.id ?? null };
+      this.tile();
+      return;
+    }
+    const before = this.beforeGrid;
+    this.beforeGrid = null;
+    if (restore && before) this.restoreSplits(before.grid, before.active);
     else this.joinAll();
+  }
+
+  /**
+   * Join All Tabs while Grid View is on: what was noted when it went on is forgotten, so turning it off joins the
+   * tabs rather than putting the old splits back
+   */
+  forgetSplits(): void {
+    this.beforeGrid = null;
+  }
+
+  /**
+   * Put the splits back as `grid` describes them (noted as Grid View went on): each split where it was, about its
+   * size, with its tabs in their order and the one that was in front of it. A tab closed since is left out, and a
+   * split left with none goes; a tab opened since joins the split that had `active`, the tab in front then. Only
+   * the groups are made again: the tabs move into them, so their sessions carry on (dockview's fromJSON would make
+   * every tab again, starting its session over).
+   */
+  private restoreSplits(grid: SerializedDockview["grid"], active: string | null): void {
+    type Node = SerializedGridObject<GroupPanelViewState>;
+    const open = new Set(this.api.panels.map((p) => p.id));
+    const prune = (node: Node): Node | null => {
+      if (node.type === "leaf") {
+        const group = node.data as GroupPanelViewState;
+        const views = group.views.filter((v) => open.has(v));
+        if (views.length === 0) return null;
+        return { ...node, data: { ...group, views, activeView: views.includes(group.activeView ?? "") ? group.activeView : views[0] } };
+      }
+      const children = (node.data as Node[]).map(prune).filter((n): n is Node => !!n);
+      return children.length ? { ...node, data: children } : null;
+    };
+    const root = prune(grid.root as Node);
+    if (!root) {
+      this.joinAll();
+      return;
+    }
+    const leaves = (node: Node): GroupPanelViewState[] => (node.type === "leaf" ? [node.data as GroupPanelViewState] : (node.data as Node[]).flatMap(leaves));
+    const known = new Set(leaves(root).flatMap((l) => l.views));
+    const added = this.allTabs().map((t) => t.id).filter((id) => !known.has(id));
+    const home = leaves(root).find((l) => active !== null && l.views.includes(active)) ?? leaves(root)[0];
+    home.views = [...home.views, ...added];
+    const inFront = this.api.activePanel;
+    this.tiling = true;
+    try {
+      this.joinAll();
+      // each branch's splits are all made while each is still one group, then each is split in turn the other way:
+      // made one at a time, a split beside one already split the other way was put beside that one alone
+      const groups = new Map<Node, Group>();
+      const build = (node: Node, group: Group, horizontal: boolean): void => {
+        groups.set(node, group);
+        if (node.type === "leaf") return;
+        const children = node.data as Node[];
+        const made = [group];
+        for (let i = 1; i < children.length; i += 1) made.push(this.api.addGroup({ referenceGroup: made[i - 1], direction: horizontal ? "right" : "below" }));
+        children.forEach((child, i) => build(child, made[i], !horizontal));
+      };
+      build(root, this.api.groups[0], grid.orientation === "HORIZONTAL");
+      for (const [node, group] of groups) {
+        if (node.type !== "leaf") continue;
+        const data = node.data as GroupPanelViewState;
+        data.views.forEach((id, index) => this.api.getPanel(id)?.api.moveTo({ group, index, skipSetActive: true }));
+        // the tab that was in front in it; the window's own tab in front is put back last
+        if (data.activeView) this.api.getPanel(data.activeView)?.api.setActive();
+      }
+      // about the sizes they had: each split but the last in a branch, by its first group
+      const firstGroup = (node: Node): Group => (node.type === "leaf" ? groups.get(node)! : firstGroup((node.data as Node[])[0]));
+      const size = (node: Node, horizontal: boolean): void => {
+        if (node.type === "leaf") return;
+        const children = node.data as Node[];
+        children.slice(0, -1).forEach((child) => {
+          const at = (child as { size?: number }).size;
+          if (at && at > 0) firstGroup(child).api.setSize(horizontal ? { width: at } : { height: at });
+        });
+        children.forEach((child) => size(child, !horizontal));
+      };
+      if (this.api.width > 0 && this.api.height > 0) size(root, grid.orientation === "HORIZONTAL");
+    } finally {
+      this.tiling = false;
+    }
+    inFront?.api.setActive();
   }
 
   /**

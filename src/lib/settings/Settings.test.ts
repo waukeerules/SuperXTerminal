@@ -1,7 +1,7 @@
 // Settings' search: it finds a setting in any tab, not only the open one, and a result opens its tab with the
 // setting flashed. And General's Use PrivateSessions.xml, which can be turned off only while Saved sessions are in use,
 // and the Show in Finder / File Explorer beside each sessions file; choosing a settings folder that can't be saved to
-// asks first; Look's themes of your own, and Tabs' Longest tab name.
+// asks first; Look's themes of your own, and Tabs' Longest tab name and Grid View off.
 // The Rust side is stood in for by mockIPC, which saves the settings and notes the files asked to be shown.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
@@ -315,5 +315,15 @@ describe("Tabs' Longest tab name", () => {
     // more than a strip could show is kept to 200
     await fireEvent.change(field, { target: { value: "5000" } });
     await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ tabNameMax: 200 }));
+  });
+});
+
+describe("Tabs' Grid View off", () => {
+  it("puts back the splits by default, and saves joining them instead", async () => {
+    render(Settings, { onClose: () => {} });
+    const choice = screen.getByLabelText("Grid View off") as HTMLSelectElement;
+    expect(choice.value).toBe("restore");
+    await fireEvent.change(choice, { target: { value: "join" } });
+    await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ gridViewOff: "join" }));
   });
 });

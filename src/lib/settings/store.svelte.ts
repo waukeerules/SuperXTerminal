@@ -73,6 +73,11 @@ export interface AppSettings {
   alwaysOnTop: boolean;
   /** View > Grid View: the tabs tiled in a grid, one split each, as tabs open and close (TabArea.setGridView) */
   gridView: boolean;
+  /**
+   * Settings > General > Tabs > Grid View off: "restore" puts back the splits from before it went on, "join" joins
+   * every tab into one group
+   */
+  gridViewOff: "restore" | "join";
   /** RDP sessions open in a tab with the built-in client; off, in Windows App */
   rdpBuiltIn: boolean;
   /** Settings > Remote Desktop: the defaults for RDP sessions, as SuperXPuTTY's RdpOptions */
@@ -161,6 +166,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   showStatusBar: true,
   alwaysOnTop: false,
   gridView: false,
+  gridViewOff: "restore",
   rdpBuiltIn: true,
   rdpDefaults: "",
   filezillaPasswords: false,

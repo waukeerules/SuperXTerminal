@@ -807,3 +807,35 @@ test.describe("notices", () => {
     await expect.poll(() => Promise.all([0, 1, 2].map((l) => firstColour(page, l)))).toEqual([3, 6, 1]);
   });
 });
+
+test("with the host drawing the menu, a right-click sends it the menu, draws none in the tab, and runs what's chosen", async ({ page }) => {
+  // SuperXTerminal draws the menu over its whole window: a menu drawn in the page was cut off at the tab's edges,
+  // a small tile in Grid View
+  await page.goto("/web/terminal/index.html");
+  await page.waitForFunction(() => !!(window as any).terminalDev);
+  await page.evaluate(() => (window as any).terminalDev.message({ type: "config", prefs: {}, themes: [{ name: "PuTTY", colors: {} }], hostMenu: true }));
+  await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+  await page.evaluate(() => {
+    (window as any).sent = [];
+    window.addEventListener("message", (e) => { if (e.data?.channel === "sxt-page") (window as any).sent.push(e.data.message); });
+  });
+  await feed(page, "core-sw-01#show version\r\n");
+  await page.locator("#terminal").click({ button: "right", position: { x: 40, y: 60 } });
+  await expect(page.locator("#menu")).toBeHidden();
+  // postMessage delivers it a moment later
+  const menus = () => page.evaluate(() => (window as any).sent.filter((m: any) => m.type === "menu"));
+  await expect.poll(async () => (await menus()).length).toBe(1);
+  const sent = await menus();
+  expect([sent[0].x, sent[0].y]).toEqual([expect.any(Number), expect.any(Number)]);
+  const labels: string[] = sent[0].items.map((item: any) => item.label ?? "-");
+  expect(labels.slice(0, 3)).toEqual(["Copy", "Paste", "Copy and Paste"]);
+  // nothing selected: Copy is greyed, as in the page's own menu
+  expect(sent[0].items[0].enabled).toBe(false);
+  // a submenu goes with its rows, its ticks too
+  const theme = sent[0].items.find((item: any) => item.label === "Theme");
+  expect(theme.items.some((row: any) => row.label === "PuTTY" && row.checked === true)).toBe(true);
+  // Select All, chosen in the host's menu, selects the terminal's text
+  const selectAll = labels.indexOf("Select All");
+  await page.evaluate((index) => (window as any).terminalDev.message({ type: "menuChoose", path: [index] }), selectAll);
+  await expect.poll(() => page.evaluate(() => (window as any).terminalDev.term.getSelection())).toContain("show version");
+});

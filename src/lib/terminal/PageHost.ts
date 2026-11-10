@@ -25,6 +25,7 @@ import { MONOSPACE_FONTS, SERIAL_DEVICES, SYSTEM_KIND, THIS_COMPUTER, type Syste
 import { clipboardText } from "../clipboard";
 import { isMac, loadShortcuts, shortcutLabel } from "../shortcuts";
 import { listen } from "@tauri-apps/api/event";
+import type { MenuItem } from "../ui/Menu.svelte";
 
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
 type PtyEvent =
@@ -88,6 +89,31 @@ export interface QuickConnect {
 
 /** A message from the page; every message has a type, and the rest depends on it */
 type PageMessage = { type: string; [key: string]: unknown };
+
+/** One row of the page's right-click menu as it sends it ("menu"): a separator, or an item that may hold a submenu */
+type PageMenuItem = { separator: true } | { label: string; key?: string; enabled?: boolean; checked?: boolean; items?: PageMenuItem[] };
+
+/**
+ * The page's right-click menu as the window's own Menu draws it. Choosing an item tells the page which (its path:
+ * the item's place in the menu, then in its submenu), and the page runs it, as its own menu would have
+ * @param items The rows the page sent
+ * @param choose Tell the page an item was chosen
+ * @param path Where these rows are: [] for the menu, [n] for the submenu of its nth row
+ */
+export function windowMenu(items: readonly PageMenuItem[], choose: (path: number[]) => void, path: number[] = []): MenuItem[] {
+  return items.map((item, index) => {
+    if ("separator" in item) return { separator: true };
+    const at = [...path, index];
+    return {
+      label: item.label,
+      key: item.key || undefined,
+      disabled: item.enabled === false,
+      checked: item.checked,
+      items: item.items ? windowMenu(item.items, choose, at) : undefined,
+      action: item.items ? undefined : () => choose(at),
+    };
+  });
+}
 
 /** Text the Send Key menu offers, as SuperXPuTTY's `TerminalKeys.MenuKeys` */
 const MENU_KEYS = [
@@ -422,6 +448,13 @@ export class PageHost implements ScriptTarget {
   }
 
   /** Handle a window message if it's this tab's page talking */
+  /**
+   * The page's right-click menu, to show at (x, y) in the window. The page is an iframe as big as its tab, so a menu
+   * it drew itself was cut off at the tab's edges, which in Grid View is a small tile; the window draws it instead,
+   * over everything. Unset (the page's tests), the page draws its own
+   */
+  onMenu: ((x: number, y: number, items: MenuItem[]) => void) | null = null;
+
   private receive(event: MessageEvent): void {
     if (event.source !== this.frame.contentWindow || event.origin !== window.location.origin) return;
     const envelope = event.data;
@@ -509,6 +542,20 @@ export class PageHost implements ScriptTarget {
         // the page's Open as Document: Highlighted Output beside the tab
         this.onTabCommand("document");
         break;
+      case "menu": {
+        // the page's right-click menu, at the pointer in the page: placed in the window by where the tab's frame is
+        if (!this.onMenu || !Array.isArray(message.items)) break;
+        const frame = this.frame.getBoundingClientRect();
+        const items = windowMenu(message.items as PageMenuItem[], (path) => {
+          // back to the terminal, as after its own menu, then the page runs the item
+          this.frame.focus();
+          this.post({ type: "menuChoose", path });
+        });
+        // headed by the tab's title, so it's plain which terminal was right-clicked, in Grid View especially
+        const heading: MenuItem[] = this.title ? [{ label: this.title, heading: true }, { separator: true }] : [];
+        this.onMenu(frame.left + Number(message.x ?? 0), frame.top + Number(message.y ?? 0), [...heading, ...items]);
+        break;
+      }
       // log, document, bell, openInPutty, openLink, pref, cleared: later milestones
     }
   }
@@ -895,6 +942,8 @@ export class PageHost implements ScriptTarget {
       // the profile's font (Settings > Profiles > Font), else Default Settings'; "" and 0: the theme's
       profileFont: { family: look.fontFamily ?? "", points: look.fontSize ?? 0 },
       menuKeys: MENU_KEYS,
+      // the window draws the right-click menu, over every tab, rather than the page inside its own frame ("menu")
+      hostMenu: this.onMenu !== null,
       keyLabels: (await loadShortcuts(), menuKeyLabels()),
       sessionRules: look.rules,
       unlimitedScrollback: 1000000,

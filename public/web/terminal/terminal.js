@@ -64,6 +64,8 @@
     var entries = [];           // highlighted lines: {marker, decorations, text}
     var find = { matches: [], index: -1, decorations: [], current: null, selected: null };
     var menuSelection = null;   // the selection when the right button went down: {text, position}
+    var hostMenu = false;       // the host draws the right-click menu over its whole window ("config"'s hostMenu)
+    var hostMenuItems = null;   // the items of the menu the host is showing, which its "menuChoose" names by place
     var selectionMatches = [];  // marks ({marker, decoration}) on the other places the selected text appears
     var flushMarker = null;     // the marker flushDecorations adds its throwaway decoration on
     var sized = false;
@@ -1307,6 +1309,46 @@
         menu.style.top = Math.max(0, Math.min(y, window.innerHeight - menu.offsetHeight - 2)) + 'px';
     }
 
+    /**
+     * Have the host show the right-click menu at the mouse (SuperXTerminal): the page is only as big as its tab, a
+     * small tile in Grid View, and a menu drawn here is cut off at its edges; the host draws it over the whole window.
+     * It gets the rows without their actions, and says which was chosen ("menuChoose", chooseFromHost)
+     */
+    function showHostMenu(x, y) {
+        hostMenuItems = menuItems();
+        var rows = function (items) {
+            return items.map(function (item) {
+                if (item === '-') { return { separator: true }; }
+                return {
+                    label: item.label,
+                    key: item.items ? '' : (item.key || ''),
+                    enabled: item.enabled !== false,
+                    checked: item.checked === undefined ? undefined : !!item.checked,
+                    items: item.items ? rows(item.items) : undefined
+                };
+            });
+        };
+        post({ type: 'menu', x: x, y: y, items: rows(hostMenuItems) });
+    }
+
+    /**
+     * Run the item chosen in the host's menu, found by its place: path[0] in the menu, path[1] in that row's submenu
+     * @param path Where the item is
+     */
+    function chooseFromHost(path) {
+        var items = hostMenuItems;
+        var item = null;
+        (path || []).forEach(function (index) {
+            item = items && items[index];
+            items = item && item.items;
+        });
+        hostMenuItems = null;
+        if (!item || item === '-' || item.items || item.enabled === false) { return; }
+        item.action();
+        menuSelection = null;
+        if (document.getElementById('find').hidden) { term.focus(); }
+    }
+
     /** Hide the right-click menu and its submenu, and forget the selection remembered for it */
     function hideMenu() {
         menuSelection = null;
@@ -1615,6 +1657,7 @@
         specials = config.specials || [];
         puttyToHand = config.putty !== false;
         menuKeys = config.menuKeys || [];
+        hostMenu = !!config.hostMenu;
         keyLabels = config.keyLabels || {};
         titleFindButton();
         if (config.keys) { keysFromProfile = config.keys; }
@@ -1660,6 +1703,7 @@
             case 'notice': notice(message.text, message.kind); break;
             case 'paste': if (message.text) { term.paste(message.text); } break;
             case 'focus': term.focus(); break;
+            case 'menuChoose': chooseFromHost(message.path); break;
             case 'action': runAction(message.name); break;
             case 'cursorColor': cursorColor = message.color || null; applyTheme(); break;
             // the app went light or dark (SuperXTerminal): a theme that follows it changes with it
@@ -1834,7 +1878,7 @@
         element.addEventListener('contextmenu', function (e) {
             e.preventDefault();
             restoreSelection();
-            showMenu(e.clientX, e.clientY);
+            if (hostMenu) { showHostMenu(e.clientX, e.clientY); } else { showMenu(e.clientX, e.clientY); }
         });
         // middle-click pastes, as in PuTTY when the right button opens a menu
         element.addEventListener('auxclick', function (e) {

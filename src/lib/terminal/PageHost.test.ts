@@ -509,3 +509,43 @@ describe("a session's tunnels", () => {
     expect(host!.tunnels).toEqual([{ kind: "local", listen: "8080", to: "localhost:80" }]);
   });
 });
+
+describe("the terminal's right-click menu", () => {
+  it("is drawn by the window, at the pointer, so it isn't cut off at the tab's edges, headed by the tab's title, and runs in the page", async () => {
+    // a tile in Grid View: the tab's frame 500 pixels in and 400 down, far smaller than the menu
+    frame.getBoundingClientRect = () => new DOMRect(500, 400, 330, 180);
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    const shown: { x: number; y: number; items: import("../ui/Menu.svelte").MenuItem[] }[] = [];
+    host.title = "core-sw-01";
+    host.onMenu = (x, y, items) => shown.push({ x, y, items });
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    (channel!.onmessage as (e: unknown) => void)({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "root" }, link: "pty" });
+    // the page is told the window draws its menu
+    await expect.poll(() => (posted.find((m) => m.type === "config") as { hostMenu?: boolean } | undefined)?.hostMenu).toBe(true);
+
+    page({
+      type: "menu",
+      x: 20,
+      y: 30,
+      items: [
+        { label: "Copy", key: "⌘C", enabled: false },
+        { separator: true },
+        { label: "Theme", items: [{ label: "PuTTY", checked: true }, { label: "Light", checked: false }] },
+      ],
+    });
+    await expect.poll(() => shown.length).toBe(1);
+    // where the pointer was in the window: the frame's place plus the pointer's in the page
+    expect([shown[0].x, shown[0].y]).toEqual([520, 430]);
+    // the tab's title first, so it's plain which terminal was right-clicked, then the page's rows
+    const [heading, under, copy, separator, theme] = shown[0].items as Exclude<import("../ui/Menu.svelte").MenuItem, { separator: true }>[];
+    expect([heading.label, heading.heading, "separator" in under]).toEqual(["core-sw-01", true, true]);
+    expect([copy.label, copy.key, copy.disabled]).toEqual(["Copy", "⌘C", true]);
+    expect("separator" in separator).toBe(true);
+    const light = (theme.items as { label: string; checked?: boolean; action?: () => void }[])[1];
+    expect([light.label, light.checked]).toEqual(["Light", false]);
+    // choosing it tells the page which, by its place, and the page runs it
+    light.action!();
+    expect(posted.filter((m) => m.type === "menuChoose")).toEqual([{ type: "menuChoose", path: [2, 1] }]);
+  });
+});

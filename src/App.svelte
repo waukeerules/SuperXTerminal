@@ -114,8 +114,8 @@
   let naming = $state<{ title: string; value: string; onOk: (name: string) => void } | null>(null);
   /** The window's first tabs are open: the automatic layout may be saved from then on */
   let begun = false;
-  /** The menu showing: a tab's, a ▾ list of a split's tabs (tabList), ...; null for none */
-  let menu = $state<{ x: number; y: number; items: MenuItem[]; tabList?: boolean } | null>(null);
+  /** The menu showing: a tab's, a ▾ list of a split's tabs (tabList), a terminal's (takeFocus), ...; null for none */
+  let menu = $state<{ x: number; y: number; items: MenuItem[]; tabList?: boolean; takeFocus?: boolean } | null>(null);
 
   // the ▾ list gone (or another menu in its place): the next click on a ▾ opens a list again, rather than closing it
   $effect(() => {
@@ -278,6 +278,8 @@
       if (quick?.tabList) quick = null;
     };
     tabs.onTunnels = (id, x, y) => (tunnelsOf = { id, x, y });
+    // a terminal's right-click menu, over the whole window, not inside its tab (a small tile in Grid View)
+    tabs.onTerminalMenu = (x, y, items) => (menu = { x, y, items, takeFocus: true });
     tabs.onTabMenu = (id, x, y) => {
       if (!tabs || !tree) return;
       const t = tree;
@@ -1029,7 +1031,7 @@
 {/each}
 
 {#if menu}
-  <Menu items={menu.items} x={menu.x} y={menu.y} {customs} onClose={() => (menu = null)} />
+  <Menu items={menu.items} x={menu.x} y={menu.y} {customs} takeFocus={menu.takeFocus} onClose={() => (menu = null)} />
 {/if}
 
 {#if tunnelsOf && tunnelsHost}

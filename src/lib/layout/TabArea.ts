@@ -22,6 +22,7 @@ import {
 import { mount, unmount } from "svelte";
 import { invoke } from "@tauri-apps/api/core";
 import type { CustomIcon } from "../icons/custom";
+import type { MenuItem } from "../ui/Menu.svelte";
 import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
 import { OutputHost } from "../terminal/OutputHost";
 import { RdpHost } from "../terminal/RdpHost";
@@ -453,6 +454,8 @@ class TerminalPanel implements IContentRenderer {
         this.tabs.notify();
       },
     );
+    // the terminal's right-click menu, drawn by the window over every tab rather than cut off at this one's edges
+    this.host.onMenu = (x, y, items) => this.tabs.onTerminalMenu?.(x, y, items);
     if (adopt !== undefined) this.host.adopt(adopt);
     this.tabs.hosts.set(id, this.host);
     this.host.title = parameters.api.title ?? "";
@@ -501,6 +504,8 @@ export class TabArea {
   private tabListShowing: string | null = null;
   /** A tab was right-clicked: App shows its menu */
   onTabMenu: ((id: string, x: number, y: number) => void) | null = null;
+  /** A terminal's right-click menu, its items from the tab's page: App shows it at (x, y) in the window */
+  onTerminalMenu: ((x: number, y: number, items: MenuItem[]) => void) | null = null;
   /** A tab's tunnel icon was clicked: App shows its tunnels (TunnelsPanel), at the pointer */
   onTunnels: ((id: string, x: number, y: number) => void) | null = null;
   /** An output alert to show in the status bar (Watch for Activity and Silence) */

@@ -941,7 +941,8 @@ export class TabArea {
 
   /**
    * Open a layout: the tabs here close (their sessions end) and the layout's open, each starting its session again,
-   * as SuperXPuTTY's LoadLayout; with no tabs in it, a Local Shell
+   * as SuperXPuTTY's LoadLayout; with no tabs in it, a Local Shell. In Grid View they're tiled once they're all in, and
+   * the layout's own splits are what Grid View off puts back
    */
   loadLayout(state: SerializedDockview | null): void {
     for (const panel of [...this.api.panels]) panel.api.close();
@@ -960,6 +961,9 @@ export class TabArea {
     } else {
       this.openLocalShell();
     }
+    // in Grid View the layout's tabs are about to be tiled (regrid): its splits are the ones to put back when Grid
+    // View goes off, not those of the tabs it replaced
+    if (this.gridView) this.beforeGrid = { grid: this.api.toJSON().grid, active: this.api.activePanel?.id ?? null };
     this.reportSessions();
     this.changed();
   }

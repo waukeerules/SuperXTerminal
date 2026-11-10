@@ -427,6 +427,19 @@ describe("Grid View off, putting the splits back", () => {
     expect(splits()).toEqual([["sw1", "sw2", "sw3", "sw7"], [["sw4"], ["sw6"]]]);
   });
 
+  it("tiles a layout opened in Grid View, and puts back the layout's own splits when it goes off", async () => {
+    arranged();
+    const layout = tabs.layoutState();
+    const before = splits();
+    // a window starting in Grid View: one tab, then the saved layout opens over it
+    tabs.loadLayout(null);
+    tabs.setGridView(true, true);
+    tabs.loadLayout(layout);
+    await expect.poll(() => tabs.groupCount()).toBe(6);
+    tabs.setGridView(false, true);
+    expect(splits()).toEqual(before);
+  });
+
   it("joins the tabs instead after Join All Tabs, however it's set", () => {
     arranged();
     tabs.setGridView(true, true);

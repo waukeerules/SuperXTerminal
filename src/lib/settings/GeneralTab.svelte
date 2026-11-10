@@ -235,6 +235,12 @@
     </div>
     <p class="hint">A longer name is cut short with …, the whole of it shown when the pointer is on the tab. Shorter
       fits more tabs in the strip; 0 never cuts a name, however wide that makes its tab.</p>
+    <label class="check"><input type="checkbox" checked={settings.gridView}
+        onchange={(e) => void saveSettings({ gridView: e.currentTarget.checked })} />
+      Grid View: each tab in a tile of its own</label>
+    <p class="hint">The same as View > Grid View ({shortcutLabel("toggleGridView") || "Grid View"}), and it stays as it's
+      left: on, every window opens with its tabs tiled, a layout's too, and the grid is made again as tabs open and
+      close. Connect … in a Grid in the Sessions tree turns it on.</p>
     <div class="row">
       <label for="grid-view-off">Grid View off</label>
       <select id="grid-view-off" value={settings.gridViewOff}

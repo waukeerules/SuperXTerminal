@@ -28,8 +28,8 @@ position aren't read or changed. What it opens with:
   own count. One is a 1Password reference, and `{branch_user}` and `{field_user}` are used but deliberately unset.
 - **The Demo layout:** core-sw-01, dist-sw-01 and edge-srx-01 beside web-01, k8s-ctl-01 and stg-db-01, some with a
   command already run; the terminal unwrapped, with line numbers.
-- **Profiles:** eleven, from Network devices and Linux servers to a jump host, CyberArk, short-lived keys and a
-  light-coloured lab, used by the sessions.
+- **Profiles:** twelve, from Network devices, Linux servers and Web servers (the one with a tunnel, so only web-01's
+  tab asks for its port) to a jump host, CyberArk, short-lived keys and a light-coloured lab, used by the sessions.
 - **Saved scripts:** the Rhai and SPSL examples in `docs/`. cisco-tour.rhai runs against the demo's switches.
 - **File transfer:** a switch's flash over SCP (the device's own `dir`), beside the demo's own Downloads folder.
   Copies show their progress for about a minute and leave an empty file of the right size. Nothing on the device
@@ -49,6 +49,9 @@ SUPERXTERMINAL_DEMO=1 SUPERXTERMINAL_DEMO_RDP=admin@<test machine> npm run tauri
 
 ## Taking them
 
+Before each picture, make sure one terminal has the solid (focused) cursor, ideally the top left one: click into it.
+Turning on Grid View, for one, can leave the focus in another tab. Clear anything left at a prompt too.
+
 Capture a window (click it; no shadow):
 
 ```bash
@@ -58,6 +61,7 @@ screencapture -i -w -o docs/screenshots/<name>.png
 | File | What it shows |
 |---|---|
 | `main-window.png` | Demo mode as it opens: the sessions tree's roots (Favorites, Recent with its 10, Saved, Private, 3,247 Database sessions), a switch and a server side by side with line numbers, and the button bar |
+| `grid-view.png` | The same window after View > Grid View: the Demo layout's six tabs tiled three rows by two |
 | `split-panels.png` | The tab area of `main-window.png`: core-sw-01's `show ip interface brief` highlighted beside web-01 |
 | `right-click-menu.png` | The terminal's right-click menu: Wrap Lines off, Line Numbers on |
 | `edit-session.png` | Edit Session for dc2-core-01, a Database session, with its `{noc_user}` placeholder |

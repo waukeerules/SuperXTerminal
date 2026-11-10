@@ -144,6 +144,11 @@ and works the same on the Mac, Windows and Linux. It's built with [Tauri 2](http
 
 ## Screenshots
 
+![Grid View: six sessions tiled three rows by two, switches, a firewall and servers, each in its environment colour](docs/screenshots/grid-view.png)
+
+**Grid View.** View > Grid View tiles every tab, one split each, and keeps them tiled as tabs open and close. Turned
+off, the tabs go back to the splits they had, or join into one group, as Settings > General > Tabs says.
+
 | | |
 |---|---|
 | ![A Cisco switch and a Linux server side by side, the switch's output highlighted](docs/screenshots/split-panels.png) | ![The terminal's right-click menu](docs/screenshots/right-click-menu.png) |
@@ -194,7 +199,8 @@ and works the same on the Mac, Windows and Linux. It's built with [Tauri 2](http
 
 **Terminal**
 
-- Tabs, splits (side by side or stacked), more windows, and layouts that reopen a set of sessions.
+- Tabs, splits (side by side or stacked), Grid View to tile them all, more windows, and layouts that reopen a set of
+  sessions.
 - Highlighting rules for Cisco, Junos and generic output, chosen per tab, session or folder.
 - Wrap Lines on or off. With it off, long lines stay whole, a scroll bar pans along them, and the view follows the
   cursor as you type.

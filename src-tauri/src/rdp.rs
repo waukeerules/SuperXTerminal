@@ -90,7 +90,7 @@ struct Target {
 
 /// The session's address and login, as SuperXPuTTY gives them to its RDP control: the user's local overrides
 /// applied, placeholders filled, the username from [`login`], the folders' port where the session has none,
-/// "DOMAIN\\user" split, and the password from -pw or the profile
+/// "DOMAIN\\user" split, and the password from [`stored_password`]
 fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
     let overrides_on = state.settings.lock().unwrap().use_local_overrides;
     let sessions = state.sessions.lock().unwrap();
@@ -111,21 +111,38 @@ fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
         port = along.iter().map(|f| f.port).find(|p| *p != 0).unwrap_or(0);
     }
     let (domain, username) = split_user(&username);
-    let mut password = None;
-    crate::editing::replace_password(session.get("ExtraArgs"), |p| {
-        password = Some(p.to_string());
-        p.to_string()
-    });
-    let password = password
-        .filter(|p| !p.is_empty())
-        .or_else(|| crate::profiles::password(&profile))
-        .or_else(|| crate::profiles::password("Default Settings"))
+    let password = stored_password(&profiles, &session, &profile)
         // a 1Password reference (op://...) in its place: read from 1Password now (onepassword.rs)
         .map(|p| crate::onepassword::resolved(&p))
         .filter(|p| !p.is_empty());
     let defaults = state.settings.lock().unwrap().rdp_defaults.clone();
     let options = crate::rdp_options::RdpOptions::effective(&defaults, session.get("RdpOptions"));
     Ok(Target { host, port: if port == 0 { 3389 } else { port }, domain, username, password, options })
+}
+
+/// The password an RDP session logs in with, in the order SSH sessions use (launch.rs), before a 1Password reference
+/// is read: the session's own (Edit Session's Password, this computer's only), else its -pw, else its profile's (or
+/// the first along its Based on), else Default Settings'. A jump server profile (Log in here) gives none, as its
+/// password is the jump server's. One typed in the tab comes before all of these (`rdp_open`).
+fn stored_password(
+    profiles: &crate::profiles::Profiles,
+    session: &crate::sessions::StoredSession,
+    profile: &str,
+) -> Option<String> {
+    let mut from_args = None;
+    crate::editing::replace_password(session.get("ExtraArgs"), |p| {
+        from_args = Some(p.to_string());
+        p.to_string()
+    });
+    let jump_server = profiles.get(profile).is_some_and(|p| p.log_in_here);
+    Some(session.id())
+        .filter(|id| !id.is_empty())
+        .and_then(crate::session_passwords::get)
+        .or(from_args)
+        .filter(|p| !p.is_empty())
+        .or_else(|| if jump_server { None } else { profiles.password_along(profile) })
+        .or_else(|| crate::profiles::password(crate::profiles::DEFAULT_PROFILE))
+        .filter(|p| !p.is_empty())
 }
 
 /// Who an RDP session logs in as, and the profile its password comes from, in the order SSH sessions use
@@ -696,6 +713,37 @@ mod tests {
         assert_eq!(login(&none, &profiles, &[("PuttySession", "Bastion")]).0, "");
         // nothing anywhere: the tab asks
         assert_eq!(login(&none, &profiles, &[]).0, "");
+    }
+
+    #[test]
+    fn a_desktops_password_is_its_own_then_its_pw_then_its_profiles_along_based_on() {
+        use crate::profiles::{Profile, Profiles};
+        let profiles = Profiles {
+            profiles: vec![
+                Profile { name: crate::profiles::DEFAULT_PROFILE.into(), ..Profile::default() },
+                Profile { name: "RDP Base".into(), ..Profile::default() },
+                Profile { name: "RDP Child".into(), based_on: "RDP Base".into(), ..Profile::default() },
+                Profile { name: "RDP Bastion".into(), log_in_here: true, ..Profile::default() },
+            ],
+        };
+        crate::profiles::set_password("RDP Base", "from-base").unwrap();
+        crate::profiles::set_password("RDP Bastion", "jump-servers").unwrap();
+        let mut own = desktop(&[("ExtraArgs", "-pw from-args")]);
+        own.set("SessionId", "Lab/rdp-own-password");
+        let folder = std::env::temp_dir().join(format!("sxt-rdp-own-password-{}", std::process::id()));
+        // the session's own comes first
+        crate::session_passwords::set(&folder, "Lab/rdp-own-password", "its-own").unwrap();
+        assert_eq!(stored_password(&profiles, &own, "RDP Child").as_deref(), Some("its-own"));
+        // then its -pw
+        crate::session_passwords::set(&folder, "Lab/rdp-own-password", "").unwrap();
+        assert_eq!(stored_password(&profiles, &own, "RDP Child").as_deref(), Some("from-args"));
+        // then the profile's, found along Based on
+        let mut bare = desktop(&[]);
+        bare.set("SessionId", "Lab/rdp-bare");
+        assert_eq!(stored_password(&profiles, &bare, "RDP Child").as_deref(), Some("from-base"));
+        // a jump server's isn't the desktop's
+        assert_eq!(stored_password(&profiles, &bare, "RDP Bastion"), None);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

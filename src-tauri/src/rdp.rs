@@ -89,8 +89,8 @@ struct Target {
 }
 
 /// The session's address and login, as SuperXPuTTY gives them to its RDP control: the user's local overrides
-/// applied, placeholders filled, the folders' username and port where the session has none, "DOMAIN\\user" split,
-/// and the password from -pw or the profile
+/// applied, placeholders filled, the username from [`login`], the folders' port where the session has none,
+/// "DOMAIN\\user" split, and the password from -pw or the profile
 fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
     let overrides_on = state.settings.lock().unwrap().use_local_overrides;
     let sessions = state.sessions.lock().unwrap();
@@ -103,10 +103,9 @@ fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
     if host.is_empty() {
         return Err("This session has no host.".into());
     }
-    let mut username = fill(session.get("Username").trim());
-    if username.is_empty() {
-        username = along.iter().map(|f| f.username.clone()).find(|u| !u.is_empty()).map(|u| fill(&u)).unwrap_or_default();
-    }
+    let profiles = crate::profiles::Profiles::load(&state.user_folder);
+    let (username, profile) = login(&sessions, &profiles, store, &session);
+    let username = fill(username.trim());
     let mut port = session.port();
     if port == 0 {
         port = along.iter().map(|f| f.port).find(|p| *p != 0).unwrap_or(0);
@@ -117,10 +116,9 @@ fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
         password = Some(p.to_string());
         p.to_string()
     });
-    let profile = session.get("PuttySession");
     let password = password
         .filter(|p| !p.is_empty())
-        .or_else(|| crate::profiles::password(if profile.is_empty() { "Default Settings" } else { profile }))
+        .or_else(|| crate::profiles::password(&profile))
         .or_else(|| crate::profiles::password("Default Settings"))
         // a 1Password reference (op://...) in its place: read from 1Password now (onepassword.rs)
         .map(|p| crate::onepassword::resolved(&p))
@@ -128,6 +126,35 @@ fn target(state: &AppState, store: Store, id: &str) -> Result<Target, String> {
     let defaults = state.settings.lock().unwrap().rdp_defaults.clone();
     let options = crate::rdp_options::RdpOptions::effective(&defaults, session.get("RdpOptions"));
     Ok(Target { host, port: if port == 0 { 3389 } else { port }, domain, username, password, options })
+}
+
+/// Who an RDP session logs in as, and the profile its password comes from, in the order SSH sessions use
+/// (launch.rs): the session's username, else its folders' (nearest first), else its profile's (with what it's
+/// based on), else Default Settings'. The profile is the session's, else its folders', else Default Settings. A jump
+/// server profile (Log in here) gives no username, as its login is the jump server's, not the desktop's. Placeholders
+/// are left for the caller to fill.
+fn login(
+    sessions: &crate::sessions::Sessions,
+    profiles: &crate::profiles::Profiles,
+    store: Store,
+    session: &crate::sessions::StoredSession,
+) -> (String, String) {
+    let along = sessions.along(store, session.folder());
+    let mut profile_name = session.get("PuttySession").to_string();
+    if crate::profiles::is_default(&profile_name) {
+        profile_name = along.iter().map(|f| f.putty_profile.clone()).find(|p| !p.is_empty()).unwrap_or(profile_name);
+    }
+    let default = profiles.default_profile();
+    let resolved = if crate::profiles::is_default(&profile_name) { None } else { profiles.resolved(&profile_name) };
+    let profile = resolved.as_ref().unwrap_or(default);
+    let from_profile = if profile.log_in_here { String::new() } else { profile.username.clone() };
+    let username = [session.get("Username").to_string()]
+        .into_iter()
+        .chain(along.iter().map(|f| f.username.clone()))
+        .chain([from_profile, default.username.clone()])
+        .find(|u| !u.trim().is_empty())
+        .unwrap_or_default();
+    (username, profile.name.clone())
 }
 
 /// ".\\user" is a local account (no domain); "CORP\\user" a domain one; "user@domain" as it is
@@ -616,6 +643,60 @@ pub fn close_window(rdps: &Rdps, label: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Remote Desktop session in folder "Lab" with the given attributes
+    fn desktop(attributes: &[(&str, &str)]) -> crate::sessions::StoredSession {
+        let mut all = vec![("SessionId".to_string(), "Lab/ts1".to_string()), ("Host".to_string(), "10.0.0.9".to_string())];
+        all.extend(attributes.iter().map(|(n, v)| (n.to_string(), v.to_string())));
+        crate::sessions::StoredSession { attributes: all }
+    }
+
+    /// Default Settings with `default_user`, "Windows" with its own username, "Windows Old" based on it, and a jump
+    /// server profile (Log in here) with one
+    fn windows_profiles(default_user: &str) -> crate::profiles::Profiles {
+        use crate::profiles::Profile;
+        crate::profiles::Profiles {
+            profiles: vec![
+                Profile { name: crate::profiles::DEFAULT_PROFILE.into(), username: default_user.into(), ..Profile::default() },
+                Profile { name: "Windows".into(), username: "CORP\\admin".into(), ..Profile::default() },
+                Profile { name: "Windows Old".into(), based_on: "Windows".into(), ..Profile::default() },
+                Profile { name: "Bastion".into(), username: "jumper".into(), log_in_here: true, ..Profile::default() },
+            ],
+        }
+    }
+
+    #[test]
+    fn a_desktop_with_no_username_of_its_own_logs_in_as_its_profiles() {
+        use crate::sessions::{FolderSetting, Sessions};
+        let profiles = windows_profiles("");
+        let none = Sessions::default();
+        let login = |sessions: &Sessions, profiles: &crate::profiles::Profiles, attributes: &[(&str, &str)]| {
+            login(sessions, profiles, Store::Saved, &desktop(attributes))
+        };
+        // the profile's username, and its password's name
+        assert_eq!(login(&none, &profiles, &[("PuttySession", "Windows")]), ("CORP\\admin".into(), "Windows".into()));
+        // ... or the one it's based on
+        assert_eq!(login(&none, &profiles, &[("PuttySession", "Windows Old")]).0, "CORP\\admin");
+        // the session's own wins
+        assert_eq!(login(&none, &profiles, &[("PuttySession", "Windows"), ("Username", "me")]).0, "me");
+        // then its folder's
+        let mut lab = Sessions::default();
+        let folder = FolderSetting { path: "Lab".into(), username: "labuser".into(), ..FolderSetting::default() };
+        lab.folders.entry(Store::Saved).or_default().insert("lab".into(), folder);
+        assert_eq!(login(&lab, &profiles, &[("PuttySession", "Windows")]).0, "labuser");
+        // a folder's profile, when the session names none
+        let mut profiled = Sessions::default();
+        let folder = FolderSetting { path: "Lab".into(), putty_profile: "Windows".into(), ..FolderSetting::default() };
+        profiled.folders.entry(Store::Saved).or_default().insert("lab".into(), folder);
+        assert_eq!(login(&profiled, &profiles, &[]), ("CORP\\admin".into(), "Windows".into()));
+        // Default Settings' when the profile has none, or there's no profile
+        let defaulted = windows_profiles("fallback");
+        assert_eq!(login(&none, &defaulted, &[]), ("fallback".into(), crate::profiles::DEFAULT_PROFILE.into()));
+        // a jump server's login isn't the desktop's
+        assert_eq!(login(&none, &profiles, &[("PuttySession", "Bastion")]).0, "");
+        // nothing anywhere: the tab asks
+        assert_eq!(login(&none, &profiles, &[]).0, "");
+    }
 
     #[test]
     fn types_us_keys() {

@@ -46,6 +46,12 @@
 
   /** The buttons' icon size: smaller than the tree's, as SuperXPuTTY's toolbars */
   const size = $derived(Math.round(settings.iconSize * 0.85));
+  /**
+   * The height of each button and the bar picker, the same whatever a bar's buttons show: room for an icon, its
+   * padding and border, and never less than the picker's text needs. Sized by what was in it, a bar of session icons
+   * was taller than one of colour circles or of labels alone, so switching tabs moved the terminals above it.
+   */
+  const rowHeight = $derived(Math.max(size + 8, 24));
 
   /** Which bar shows, as ButtonBarStrip.CurrentBar, with the profile's bar (barFor) */
   const current = $derived(
@@ -320,7 +326,8 @@
   }
 </script>
 
-<div class="buttonbar" role="toolbar" aria-label="Button bar" tabindex="-1" oncontextmenu={(e) => void showMenu(e, null)}>
+<div class="buttonbar" role="toolbar" aria-label="Button bar" tabindex="-1" style:--row-height="{rowHeight}px"
+  oncontextmenu={(e) => void showMenu(e, null)}>
   <select title="Button bar" value={current.name} onchange={(e) => void pick((e.currentTarget as HTMLSelectElement).value)}>
     {#each bars as bar (bar.name)}<option value={bar.name}>{bar.name}</option>{/each}
   </select>
@@ -366,7 +373,11 @@
 <svelte:window onclick={() => (menu = null)} />
 
 <style>
+  /* one height for every bar (rowHeight), with its 3px padding and 1px border, whatever its buttons show */
   .buttonbar {
+    box-sizing: border-box;
+    height: calc(var(--row-height) + 7px);
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 2px;
@@ -377,6 +388,8 @@
   }
 
   select {
+    box-sizing: border-box;
+    height: var(--row-height);
     width: 140px;
     background: var(--bg-input);
     border: 1px solid var(--border);
@@ -392,6 +405,9 @@
   }
 
   .bar-button {
+    box-sizing: border-box;
+    height: var(--row-height);
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: 4px;

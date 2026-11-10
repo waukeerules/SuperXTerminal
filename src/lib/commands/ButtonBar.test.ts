@@ -7,6 +7,8 @@
 // a button whose Ask before it runs is unticked (Edit Button, kept in ButtonBars.xml) runs at once while the others ask;
 // a Rhai script button's script goes to the core (rhai_run) as written, its braces not taken for placeholders, once
 // the Environment Variables it reads (env.name) have values. A bar that can't be saved says why, with only an OK.
+// And every bar is one height, whatever its buttons show (jsdom lays nothing out, so the height the bar and its
+// buttons are given is what's checked).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -339,5 +341,33 @@ describe("a script button's colour", () => {
     (await screen.findByRole("button", { name: /clock/ })).click();
     await expect.poll(() => log).toEqual(["mark #E5534B", "type show clock\r"]);
     await new Promise((r) => setTimeout(r, 100));
+  });
+});
+
+describe("the bar's height", () => {
+  /** The height the bar and its buttons are given (--row-height) showing a bar of these buttons */
+  async function heightWith(buttons: BarButton[], iconSize = 24): Promise<string> {
+    mockIPC((cmd) => (cmd === "buttonbars_load" ? [{ name: "Default", buttons, tabIcons: [] }] : cmd === "profiles_list" ? profiles : null));
+    Object.assign(settings, { iconSize });
+    const { container, unmount } = render(ButtonBar, {});
+    if (buttons.length) await screen.findByText(buttons[0].label);
+    const height = (container.querySelector(".buttonbar") as HTMLElement).style.getPropertyValue("--row-height");
+    unmount();
+    Object.assign(settings, { iconSize: 24 });
+    return height;
+  }
+
+  it("is the same with session icons, colour circles, labels alone or no buttons, so the terminals above don't move", async () => {
+    const icons = await heightWith([{ ...button("Interfaces"), icon: "switch" }]);
+    expect(icons).toBe("28px");
+    expect(await heightWith([{ ...button("Interfaces"), color: "#2e7d32" }])).toBe(icons);
+    expect(await heightWith([button("Interfaces")])).toBe(icons);
+    expect(await heightWith([])).toBe(icons);
+  });
+
+  it("grows with Settings' icon size, with room for the icon", async () => {
+    expect(await heightWith([button("Uptime")], 48)).toBe(`${Math.round(48 * 0.85) + 8}px`);
+    // never too short for the picker's text
+    expect(await heightWith([button("Uptime")], 8)).toBe("24px");
   });
 });

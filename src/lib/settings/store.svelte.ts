@@ -71,6 +71,8 @@ export interface AppSettings {
   showSessionsPane: boolean;
   showStatusBar: boolean;
   alwaysOnTop: boolean;
+  /** View > Grid View: the tabs tiled in a grid, one split each, as tabs open and close (TabArea.setGridView) */
+  gridView: boolean;
   /** RDP sessions open in a tab with the built-in client; off, in Windows App */
   rdpBuiltIn: boolean;
   /** Settings > Remote Desktop: the defaults for RDP sessions, as SuperXPuTTY's RdpOptions */
@@ -158,6 +160,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   showSessionsPane: true,
   showStatusBar: true,
   alwaysOnTop: false,
+  gridView: false,
   rdpBuiltIn: true,
   rdpDefaults: "",
   filezillaPasswords: false,

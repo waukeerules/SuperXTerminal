@@ -1363,7 +1363,7 @@ fn window_changes(before: &AppSettings, after: &AppSettings) -> WindowChanges {
 /// View menu, and SuperXPuTTY's, tick the panes and bars on screen). Each is a setting, saved when the item is chosen,
 /// so the menu is made again then ([`window_changes`]) and the tick follows. Full Screen isn't among them: the Mac's
 /// own View menu doesn't tick it either. Nor is Layouts…, which opens Settings > Layouts.
-fn view_checks(settings: &AppSettings) -> [(&'static str, bool); 8] {
+fn view_checks(settings: &AppSettings) -> [(&'static str, bool); 9] {
     [
         ("toggleSessionsPane", settings.show_sessions_pane),
         ("toggleSendCommands", settings.show_send_commands),
@@ -1373,6 +1373,7 @@ fn view_checks(settings: &AppSettings) -> [(&'static str, bool); 8] {
         ("toggleSessionDetail", settings.show_session_detail),
         ("toggleLogViewer", settings.show_log_viewer),
         ("toggleAlwaysOnTop", settings.always_on_top),
+        ("toggleGridView", settings.grid_view),
     ]
 }
 
@@ -2489,6 +2490,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> tauri::Result
             &shown("toggleSessionDetail")?,
             &shown("toggleLogViewer")?,
             &PredefinedMenuItem::separator(app)?,
+            // SuperXTerminal's own: the tabs tiled, to watch many sessions at once
+            &shown("toggleGridView")?,
             &shown("toggleAlwaysOnTop")?,
             &action("fullScreen")?,
         ],
@@ -3447,6 +3450,7 @@ mod tests {
                 ("toggleSessionDetail", true),
                 ("toggleLogViewer", false),
                 ("toggleAlwaysOnTop", true),
+                ("toggleGridView", false),
             ]
         );
         // each shown or hidden makes the menu again, so its tick follows
@@ -3456,6 +3460,9 @@ mod tests {
         let mut top = settings.clone();
         top.always_on_top = false;
         assert_eq!(window_changes(&settings, &top), WindowChanges { menu: true, theme: false });
+        let mut grid = settings.clone();
+        grid.grid_view = true;
+        assert_eq!(window_changes(&settings, &grid), WindowChanges { menu: true, theme: false });
     }
 
     #[test]

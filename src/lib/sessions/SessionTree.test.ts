@@ -3,7 +3,7 @@
 // selection's menu moves them to a folder; a search hides the roots it leaves no matches in, and shows a folder made
 // during it, for a match to be dragged into; Show in Sessions tree opens a Recent session's folders and scrolls to it;
 // on a clean install, the first session saved shows; and a folder's menu edits and turns on or off the local
-// overrides of every session in it. The Rust side is stood in for by mockIPC; moves are
+// overrides of every session in it; Connect … in a Grid turns Grid View on and opens the sessions. The Rust side is stood in for by mockIPC; moves are
 // recorded. jsdom doesn't scroll, so scrollIntoView is stood in for, recording the rows it's asked to show.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
@@ -36,7 +36,7 @@ beforeEach(() => {
     calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
     if (cmd === "sessions_load")
       return { sessions: [session("Imported/Core/sw1"), session("Imported/Core/sw2"), session("Imported/r1"), session("Lab/x")], folders: [], problems: [] };
-    if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
+    if (cmd === "shortcuts_get" || cmd === "shortcuts_opened") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
     if (cmd === "overrides_get") return {};
     if (cmd === "icons_custom") return [];
     if (cmd === "plugin:dialog|ask") return true;
@@ -377,5 +377,41 @@ describe("a folder's local overrides", () => {
     await open();
     await user.pointer({ keys: "[MouseRight]", target: row(/^Lab \(/) });
     expect(within(screen.getByRole("menu")).queryByRole("menuitem", { name: /^Use Local Overrides/ })).toBeNull();
+  });
+});
+
+describe("Connect in a Grid", () => {
+  it("turns Grid View on, then opens each session selected", async () => {
+    const events: string[] = [];
+    render(SessionTree, {
+      openSessions: new Map(),
+      onOpen: (s: SessionView) => events.push(`open ${s.name}`),
+      onLook: () => {},
+      onOpenProfiles: () => {},
+      onGridView: () => events.push("grid view"),
+    });
+    await screen.findByText(/Imported/);
+    await user.click(screen.getByRole("button", { name: "Expand all" }));
+    await user.click(row("sw1"));
+    await user.keyboard("{Meta>}");
+    await user.click(row("sw2"));
+    await user.click(row("r1"));
+    await user.keyboard("{/Meta}");
+    await user.pointer({ keys: "[MouseRight]", target: row("r1") });
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Connect 3 sessions in a Grid" }));
+    expect(events[0]).toBe("grid view");
+    expect(events.slice(1).sort()).toEqual(["open r1", "open sw1", "open sw2"]);
+  });
+
+  it("is in a folder's menu too", async () => {
+    let grid = 0;
+    const opened: string[] = [];
+    render(SessionTree, { openSessions: new Map(), onOpen: (s: SessionView) => opened.push(s.name), onLook: () => {}, onOpenProfiles: () => {}, onGridView: () => grid++ });
+    await screen.findByText(/Imported/);
+    await user.click(screen.getByRole("button", { name: "Expand all" }));
+    await user.pointer({ keys: "[MouseRight]", target: row(/^Core \(/) });
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Connect all in a Grid" }));
+    expect(grid).toBe(1);
+    expect(opened.sort()).toEqual(["sw1", "sw2"]);
   });
 });

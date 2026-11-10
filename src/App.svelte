@@ -153,7 +153,11 @@
     else if (id === "splitRight" || id === "splitDown") {
       const id = tabs?.api.activePanel?.id;
       if (id) tabs?.split(id, id === "splitRight" ? "right" : "below");
-    } else if (id === "joinAll") tabs?.joinAll();
+    } else if (id === "joinAll") {
+      // joined, the tabs aren't a grid any more: Grid View goes off, which joins them in every window
+      if (settings.gridView) void saveSettings({ gridView: false });
+      else tabs?.joinAll();
+    } else if (id === "toggleGridView") void saveSettings({ gridView: !settings.gridView });
     else if (id === "saveLayout") {
       if (currentLayout && currentLayout !== AUTO_RESTORE) void saveLayoutAs(currentLayout);
       else askLayoutName();
@@ -284,6 +288,7 @@
             saveAs: (store, sessionId, title) => void t.saveSessionAs(store, sessionId, title),
             rename: (tabId, title) => (renaming = { id: tabId, title }),
             moveToNewWindow: (tabId) => void moveToNewWindow(tabId),
+            gridView: (on) => void saveSettings({ gridView: on }),
             serialSettings: (tabId) => {
               const host = tabs?.hosts.get(tabId);
               const target = tabs?.paramsOf(tabId)?.target;
@@ -608,6 +613,11 @@
     // as SuperXPuTTY at start: a newer release is mentioned, nothing else
     if (getCurrentWebviewWindow().label === "main" && settings.autoUpdateCheck) setTimeout(() => void checkForUpdates(false), 4000);
   }
+
+  // View > Grid View: every window's tabs tiled, or joined again, as the setting changes
+  $effect(() => {
+    tabs?.setGridView(settings.gridView);
+  });
 
   // View > Always on Top, as SuperXPuTTY's AlwaysOnTop: every window, as the setting changes
   $effect(() => {
@@ -953,7 +963,8 @@
         <SessionTree bind:this={tree} {openSessions} onOpen={openSession} onOpenProfiles={(name, field) => void openProfiles(name, field)} onDatabaseSettings={() => (databaseOpen = true)} onLook={(_, icons) => {
           customs = icons;
           if (tabs) tabs.customs = icons;
-        }} onSelected={(s) => (selectedSession = s)} onWantWidth={(w) => (searchWidth = w)} />
+        }} onSelected={(s) => (selectedSession = s)} onWantWidth={(w) => (searchWidth = w)}
+          onGridView={() => void saveSettings({ gridView: true })} />
         {#if settings.showSessionDetail}
           <SessionDetail session={selectedSession} {customs} onEdit={(s) => tree?.editSession(s)}
             onClose={() => void saveSettings({ showSessionDetail: false })} />

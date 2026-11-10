@@ -45,6 +45,7 @@ pub const ACTIONS: &[Action] = &[
     Action { id: "splitRight", label: "Split Right", default: "CmdOrCtrl+D" , other: "Ctrl+Shift+D" },
     Action { id: "splitDown", label: "Split Down", default: "CmdOrCtrl+Shift+D" , other: "Ctrl+Shift+E" },
     Action { id: "joinAll", label: "Join All Tabs", default: "" , other: "" },
+    Action { id: "toggleGridView", label: "Grid View", default: "CmdOrCtrl+Alt+G" , other: "Ctrl+Shift+G" },
     Action { id: "find", label: "Find…", default: "CmdOrCtrl+F" , other: "Ctrl+Shift+F" },
     Action { id: "clearScrollback", label: "Clear Scrollback", default: "CmdOrCtrl+K" , other: "Ctrl+Shift+K" },
     Action { id: "resetTerminal", label: "Reset Terminal", default: "" , other: "" },

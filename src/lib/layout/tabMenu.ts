@@ -36,6 +36,8 @@ export interface TabMenuHost {
   serialSettings: (id: string) => void;
   /** Move the tab, with its session running, to a new window */
   moveToNewWindow: (id: string) => void;
+  /** View > Grid View on or off (a setting: every window follows it) */
+  gridView: (on: boolean) => void;
   status: (text: string) => void;
   /** Show the tab's tunnels (TunnelsPanel), where the menu was */
   tunnels: (id: string) => void;
@@ -192,7 +194,8 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
       disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
       action: () => tabs.split(id, "below"),
     },
-    ...(tabs.groupCount() > 1 ? [{ label: "Join All Tabs", action: () => tabs.joinAll() } as MenuItem] : []),
+    ...(tabs.groupCount() > 1 && !tabs.inGridView() ? [{ label: "Join All Tabs", action: () => tabs.joinAll() } as MenuItem] : []),
+    { label: withKey("Grid View", "toggleGridView"), checked: tabs.inGridView(), action: () => host.gridView(!tabs.inGridView()) },
     { label: "Move to New Window", action: () => host.moveToNewWindow(id) },
     { separator: true },
     { label: "Close", action: () => tabs.command(id, "close") },
@@ -280,7 +283,8 @@ function rdpMenu(host: TabMenuHost, id: string, rdp: RdpHost): MenuItem[] {
       disabled: group.length < 2 && "The only tab here: drag one from another group, or open another",
       action: () => tabs.split(id, "below"),
     },
-    ...(tabs.groupCount() > 1 ? [{ label: "Join All Tabs", action: () => tabs.joinAll() } as MenuItem] : []),
+    ...(tabs.groupCount() > 1 && !tabs.inGridView() ? [{ label: "Join All Tabs", action: () => tabs.joinAll() } as MenuItem] : []),
+    { label: withKey("Grid View", "toggleGridView"), checked: tabs.inGridView(), action: () => host.gridView(!tabs.inGridView()) },
     { separator: true },
     { label: "Close", action: () => tabs.command(id, "close") },
     { label: "Close others", disabled: all.length < 2, action: () => tabs.command(id, "closeOthers") },

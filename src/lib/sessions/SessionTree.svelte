@@ -85,9 +85,11 @@
     onSelected?: (session: SessionView | null) => void;
     /** While searching, the width the matches' names need (null: none, back to the user's width) */
     onWantWidth?: (width: number | null) => void;
+    /** Connect … in a Grid: turn View > Grid View on, so the sessions opened are tiled */
+    onGridView?: () => void;
   }
 
-  let { openSessions, onOpen, onLook, onOpenProfiles, onDatabaseSettings = () => {}, onSelected = () => {}, onWantWidth = () => {} }: Props = $props();
+  let { openSessions, onOpen, onLook, onOpenProfiles, onDatabaseSettings = () => {}, onSelected = () => {}, onWantWidth = () => {}, onGridView = () => {} }: Props = $props();
 
   let selected = $state("");
 
@@ -112,7 +114,7 @@
    */
   let clip = $state<{ store: Store; sessions: SessionView[]; folder: { name: string; path: string } | null } | null>(null);
   /** Connect all with more than ten sessions: the picker's title and sessions */
-  let connecting = $state<{ title: string; sessions: SessionView[] } | null>(null);
+  let connecting = $state<{ title: string; sessions: SessionView[]; grid: boolean } | null>(null);
   /** File > Import Sessions open: which kind of file */
   let importing = $state<ImportKind | null>(null);
   /** The user's local overrides, by session id */
@@ -529,6 +531,7 @@
       const block = dbBlock(store, all.some((s) => s.locked));
       items = [
         { label: `Connect all (${runnable.length})`, bold: true, disabled: runnable.length === 0, action: () => connectMany("from the selection", runnable) },
+        { label: "Connect all in a Grid", disabled: runnable.length === 0, action: () => connectMany("from the selection", runnable, true) },
         { separator: true },
         { label: `Move ${n} items to folder…`, disabled: block, action: () => askMoveItems(store, folders, sessions) },
         { label: `Delete ${n} items…`, disabled: block, action: () => void removeItems(store, folders, sessions) },
@@ -544,6 +547,7 @@
       const [only] = stores;
       items = [
         { label: `Connect ${runnable.length} sessions`, bold: true, disabled: runnable.length === 0, action: () => connectMany("from the selection", runnable) },
+        { label: `Connect ${runnable.length} sessions in a Grid`, disabled: runnable.length === 0, action: () => connectMany("from the selection", runnable, true) },
         { separator: true },
         { label: `Edit ${list.length} sessions…`, action: () => void editSessions("for the selection", list) },
         { label: `Local overrides for ${list.length} sessions…`, action: () => (overriding = list) },
@@ -667,6 +671,7 @@
         },
         { separator: true },
         { label: `Connect all (${runnable.length})`, disabled: runnable.length === 0, action: () => connectMany(`in ${folder.name}`, runnable) },
+        { label: "Connect all in a Grid", disabled: runnable.length === 0, action: () => connectMany(`in ${folder.name}`, runnable, true) },
         { label: "Expand all", action: () => (expanded = new Set([...expanded, ...folderKeys(folder)])) },
         { label: "Collapse all", action: () => (expanded = new Set([...expanded].filter((k) => !folderKeys(folder).slice(1).includes(k)))) },
       ];
@@ -1344,9 +1349,18 @@
   }
 
   /** Connect all: up to ten open at once; more, and the user picks up to ten of them (ConnectSome) */
-  function connectMany(title: string, sessions: SessionView[]): void {
-    if (sessions.length > 10) connecting = { title, sessions };
-    else sessions.forEach(open);
+  function connectMany(title: string, sessions: SessionView[], grid = false): void {
+    if (sessions.length > 10) connecting = { title, sessions, grid };
+    else connectAll(sessions, grid);
+  }
+
+  /**
+   * Open these sessions, each in its tab; in a grid (Connect … in a Grid), Grid View goes on first, so they're tiled
+   * once they're all open
+   */
+  function connectAll(sessions: SessionView[], grid: boolean): void {
+    if (grid) onGridView();
+    sessions.forEach(open);
   }
 
   /** Whether Saved sessions are shown: a settings folder is chosen and Use Sessions.xml is on */
@@ -1643,7 +1657,7 @@
 
 {#if connecting}
   <ConnectSome title={connecting.title} sessions={connecting.sessions} {iconSize} {customs} environment={(s) => colors.forSession(s)}
-    onCancel={() => (connecting = null)} onConnect={(list) => { connecting = null; list.forEach(open); }} />
+    onCancel={() => (connecting = null)} onConnect={(list) => { const grid = connecting?.grid ?? false; connecting = null; connectAll(list, grid); }} />
 {/if}
 
 {#if importing}

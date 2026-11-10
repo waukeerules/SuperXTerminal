@@ -41,6 +41,38 @@ export function tabNameWidth(max: number): string {
   return max > 0 ? `${Math.floor(max)}ch` : "none";
 }
 
+/** A group of tabs (a split), as dockview makes them */
+type Group = ReturnType<DockviewApi["addGroup"]>;
+
+/**
+ * How much wider than high a tile in Grid View should be: an 80 × 24 terminal in a usual font is about 1.6 times as wide
+ * as it is high, so a grid that gives each tile room for that shape shows the most of each terminal
+ */
+const TILE_ASPECT = 1.6;
+
+/**
+ * Grid View's columns and rows for `count` tabs in an area `width` × `height` (points): the one whose tiles hold the
+ * largest terminal-shaped rectangle ([[TILE_ASPECT]]), so a wide monitor gets more columns than rows (6 tabs on a
+ * 2560 × 1300 window: 3 × 2), and a tall one more rows. Fewer columns wins a tie. With no size known (a window not
+ * laid out yet), it's as square as it can be.
+ * @param count how many tabs, at least 1
+ * @returns the columns and rows; the last row may have fewer tabs
+ */
+export function gridShape(count: number, width: number, height: number): { columns: number; rows: number } {
+  const n = Math.max(1, Math.floor(count));
+  if (!(width > 0 && height > 0)) {
+    const columns = Math.ceil(Math.sqrt(n));
+    return { columns, rows: Math.ceil(n / columns) };
+  }
+  let best = { columns: 1, rows: n, fits: -1 };
+  for (let columns = 1; columns <= n; columns += 1) {
+    const rows = Math.ceil(n / columns);
+    const fits = Math.min(width / columns / TILE_ASPECT, height / rows);
+    if (fits > best.fits) best = { columns, rows, fits };
+  }
+  return { columns: best.columns, rows: best.rows };
+}
+
 /** What a terminal tab is given when it's added: what to run, whether it's a local shell, and how its tab looks */
 /**
  * An open session's state, as the Sessions tree shows it: connecting (a yellow dot, as its tab shows, until the far end
@@ -473,6 +505,15 @@ export class TabArea {
   onTunnels: ((id: string, x: number, y: number) => void) | null = null;
   /** An output alert to show in the status bar (Watch for Activity and Silence) */
   onAlert: ((text: string, background: boolean) => void) | null = null;
+  /**
+   * View > Grid View is on: every tab has a tile of its own, and the grid is laid out again as tabs open and close
+   * (setGridView)
+   */
+  private gridView = false;
+  /** The tabs are being moved into a grid now, so the moves aren't taken for tabs opening or closing */
+  private tiling = false;
+  /** A new grid waiting for the tabs opening or closing together (a layout, Connect in a Grid) to be in */
+  private retile: ReturnType<typeof setTimeout> | undefined;
   /** Watched tabs, as ctlPuttyPanel's watches: activity on or off, silence in seconds (0 off) */
   private readonly watches = new Map<string, { activity: boolean; silence: number; length: number; lastOutput: number; silenceAlerted: boolean }>();
 
@@ -528,7 +569,11 @@ export class TabArea {
     document.addEventListener("pointerdown", (event) => this.activateHolder(event.target), true);
     // as SuperXPuTTY, the watched tabs are looked at about once a second
     setInterval(() => this.checkAlerts(), 1000);
-    this.api.onDidAddPanel(() => this.changed());
+    this.api.onDidAddPanel(() => {
+      this.changed();
+      this.regrid();
+    });
+    this.api.onDidRemovePanel(() => this.regrid());
   }
 
   /** Open a tab that runs a profile's key fetch on its own (Settings > Profiles > Log in & cache key) */
@@ -968,6 +1013,78 @@ export class TabArea {
     if (!first) return;
     for (const group of rest) for (const panel of [...group.panels]) panel.api.moveTo({ group: first });
     active?.api.setActive();
+  }
+
+  /**
+   * Tile the tabs in a grid: each tab (Highlighted Output too) in a split of its own, in the order they show, row by
+   * row, the columns and rows from [[gridShape]] for the tab area's size, the tiles the same size, and the active tab
+   * still in front. Each page stays where it is and only moves, as with a split, so every session carries on.
+   */
+  tile(): void {
+    const active = this.api.activePanel;
+    const panels = this.allTabs().map((t) => this.api.getPanel(t.id)).filter((p): p is NonNullable<typeof p> => !!p);
+    if (panels.length === 0) return;
+    const { columns, rows } = gridShape(panels.length, this.api.width, this.api.height);
+    this.tiling = true;
+    try {
+      this.joinAll();
+      // row by row: each row's first tile across the whole width under the rows before (a group added at the grid's
+      // edge, with no group to go beside), then its tiles to the right of it. Added beside a tile in a column of
+      // them, dockview put a "right" tile under it, as a row of its own
+      const rowStarts: Group[] = [];
+      const tiles: Group[] = [];
+      for (let r = 0; r < rows; r += 1) {
+        const start = r === 0 ? this.api.groups[0] : this.api.addGroup({ direction: "below" });
+        rowStarts.push(start);
+        tiles.push(start);
+        const inRow = Math.min(columns, panels.length - r * columns);
+        for (let c = 1; c < inRow; c += 1) tiles.push(this.api.addGroup({ referenceGroup: tiles[tiles.length - 1], direction: "right" }));
+      }
+      panels.forEach((panel, i) => {
+        if (panel.group !== tiles[i]) panel.api.moveTo({ group: tiles[i] });
+      });
+      // each new split took half of the one it came from: even them out, row by row and across each row (the last of
+      // each takes what's left)
+      const width = this.api.width;
+      const height = this.api.height;
+      if (width > 0 && height > 0) {
+        rowStarts.slice(0, -1).forEach((start) => start.api.setSize({ height: height / rows }));
+        rowStarts.forEach((_, r) => {
+          const row = tiles.slice(r * columns, (r + 1) * columns);
+          row.slice(0, -1).forEach((tile) => tile.api.setSize({ width: width / row.length }));
+        });
+      }
+    } finally {
+      this.tiling = false;
+    }
+    (active ?? panels[0]).api.setActive();
+  }
+
+  /** Whether View > Grid View is on in this window */
+  inGridView(): boolean {
+    return this.gridView;
+  }
+
+  /**
+   * View > Grid View on or off: on tiles the tabs ([[tile]]) and keeps them tiled as tabs open and close; off joins
+   * them back into one group, as Join All Tabs, the active tab in front
+   */
+  setGridView(on: boolean): void {
+    if (on === this.gridView) return;
+    this.gridView = on;
+    clearTimeout(this.retile);
+    if (on) this.tile();
+    else this.joinAll();
+  }
+
+  /**
+   * In Grid View, a tab opened or closed: the grid is made again for the tabs there are now, once the tabs opening
+   * together are all in (a layout, Connect in a Grid), not once for each
+   */
+  private regrid(): void {
+    if (!this.gridView || this.tiling) return;
+    clearTimeout(this.retile);
+    this.retile = setTimeout(() => this.tile(), 0);
   }
 
   /** Next Tab and Previous Tab, as SuperXPuTTY's: the tab after (or before) the active one, in the order shown, round */

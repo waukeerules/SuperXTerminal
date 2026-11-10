@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
-import { TabArea } from "./TabArea";
+import { gridShape, TabArea } from "./TabArea";
 import { DEFAULT_PROFILE, emptyProfile, PROFILES_CHANGED, type Profile } from "../settings/profiles";
 
 /** Have a tab's page say it's ready, so its session starts (set up in beforeEach) */
@@ -315,5 +315,76 @@ describe("what the Sessions tree is told", () => {
     expect(reported.get("saved:Lab/sw1")).toBe("connected");
     exit(second);
     await expect.poll(() => reported.get("saved:Lab/sw1")).toBe("disconnected");
+  });
+});
+
+describe("Grid View", () => {
+  /**
+   * The tabs as the grid shows them: rows top to bottom, each the tiles' tab titles left to right (a tile with
+   * several tabs lists them all). From dockview's own layout, as nothing is drawn in jsdom
+   */
+  function rows(): string[][] {
+    type Node = { type: "leaf" | "branch"; data: unknown };
+    const titles = (node: Node): string[] =>
+      node.type === "leaf"
+        ? (node.data as { views: string[] }).views.map((v) => tabs.api.getPanel(v)?.title ?? v)
+        : (node.data as Node[]).flatMap(titles);
+    const { root, orientation } = tabs.api.toJSON().grid;
+    const children = root.type === "branch" ? (root.data as Node[]) : [root as Node];
+    // a grid of one row is a horizontal branch of tiles; of several, a vertical one of rows
+    return orientation === "HORIZONTAL" ? [children.flatMap(titles)] : children.map(titles);
+  }
+
+  it("tiles every tab in a split of its own, row by row, the sessions carrying on in the same pages", () => {
+    const ids = ["sw1", "sw2", "sw3", "sw4", "sw5"].map((t) => open(t));
+    const frames = ids.map((id) => tabs.api.getPanel(id)!.view.content.element.querySelector("iframe"));
+    tabs.activate(ids[1]);
+    tabs.setGridView(true);
+    // jsdom's tab area is 100 × 100 points: 2 terminal-shaped tiles across, 3 rows
+    expect(rows()).toEqual([["sw1", "sw2"], ["sw3", "sw4"], ["sw5"]]);
+    expect(tabs.groupCount()).toBe(5);
+    // moved, not opened again: the same page in each, so its session goes on
+    expect(ids.map((id) => tabs.api.getPanel(id)!.view.content.element.querySelector("iframe"))).toEqual(frames);
+    expect(tabs.api.activePanel?.id).toBe(ids[1]);
+    expect(tabs.inGridView()).toBe(true);
+  });
+
+  it("makes the grid again as tabs open and close", async () => {
+    const ids = ["sw1", "sw2", "sw3", "sw4"].map((t) => open(t));
+    tabs.setGridView(true);
+    expect(rows()).toEqual([["sw1", "sw2"], ["sw3", "sw4"]]);
+    open("sw5");
+    await expect.poll(() => rows()).toEqual([["sw1", "sw2"], ["sw3", "sw4"], ["sw5"]]);
+    tabs.command(ids[0], "close");
+    await expect.poll(() => rows()).toEqual([["sw2", "sw3"], ["sw4", "sw5"]]);
+  });
+
+  it("joins the tabs back into one group when it's turned off, the active tab in front", () => {
+    const ids = ["sw1", "sw2", "sw3"].map((t) => open(t));
+    tabs.setGridView(true);
+    tabs.activate(ids[2]);
+    tabs.setGridView(false);
+    expect(tabs.groupCount()).toBe(1);
+    expect(rows()).toEqual([["sw1", "sw2", "sw3"]]);
+    expect(tabs.api.activePanel?.id).toBe(ids[2]);
+    // and a tab opened now goes in that group, not a tile of its own
+    open("sw4");
+    expect(tabs.groupCount()).toBe(1);
+  });
+});
+
+describe("gridShape", () => {
+  it("gives a wide monitor more columns than rows, and a tall one more rows", () => {
+    expect(gridShape(2, 2560, 1300)).toEqual({ columns: 2, rows: 1 });
+    expect(gridShape(4, 2560, 1300)).toEqual({ columns: 2, rows: 2 });
+    expect(gridShape(6, 2560, 1300)).toEqual({ columns: 3, rows: 2 });
+    expect(gridShape(9, 2560, 1300)).toEqual({ columns: 3, rows: 3 });
+    expect(gridShape(12, 3840, 2000)).toEqual({ columns: 4, rows: 3 });
+    expect(gridShape(4, 1080, 1800)).toEqual({ columns: 1, rows: 4 });
+  });
+
+  it("is as square as it can be before the window has a size, and one tile for one tab", () => {
+    expect(gridShape(5, 0, 0)).toEqual({ columns: 3, rows: 2 });
+    expect(gridShape(1, 2560, 1300)).toEqual({ columns: 1, rows: 1 });
   });
 });

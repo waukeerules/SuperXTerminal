@@ -298,6 +298,8 @@ passwords need a Secret Service (GNOME Keyring or KWallet), which a desktop sess
   licensing, the feature matrix, data compatibility and open questions.
 - **[docs/ROADMAP.md](docs/ROADMAP.md):** one line per feature, ticked as each is delivered.
 - **[docs/TESTING.md](docs/TESTING.md):** the test suites, what each covers, and capturing what a tab is sent.
+- **[docs/DEPENDENCIES.md](docs/DEPENDENCIES.md):** keeping the npm packages and Rust crates up to date, what watches
+  for vulnerabilities (Dependabot alerts, `npm audit`, `cargo deny`), and the advisories set aside.
 
 The short version, on a Mac with Rust and Node:
 

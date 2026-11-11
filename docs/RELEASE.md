@@ -32,7 +32,7 @@ Four npm commands do it, the same on both computers:
 | Command | What it does |
 |---|---|
 | `npm run release:version -- 0.3.0` | Sets the version in all five places it's written, and commits just those files (`scripts/set-version.mjs`) |
-| `npm run release:checks` | The type check, the front-end and browser tests, the licence check, the Rust tests and `cargo deny` |
+| `npm run release:checks` | The type check, the front-end and browser tests, the licence check, `npm audit` of the packages shipped, the Rust tests and `cargo deny` |
 | `npm run release` | Builds this computer's installers and copies them into `releases/<version>/` (`scripts/release.mjs`) |
 | `npm run release:publish` | Puts `releases/<version>/` into the version's GitHub release, with `NOTES.md` there as its notes; a draft until `-- --final` (`scripts/release-publish.mjs`) |
 
@@ -81,6 +81,12 @@ The steps to click through are in each build guide:
 
 `release:publish` needs GitHub's CLI, signed in once per computer: `brew install gh` or `winget install GitHub.cli`,
 then `gh auth login`. Keep it up to date: older versions can't find a draft by its tag. Nothing it does runs a GitHub Actions workflow.
+
+## Keeping dependencies up to date
+
+Take the dependency updates at the start of each release: [DEPENDENCIES.md](DEPENDENCIES.md) has the steps, what
+watches for vulnerabilities between releases, and the advisories set aside. `npm run release:checks` fails on a known
+vulnerability in anything shipped.
 
 ## Doing it by hand
 

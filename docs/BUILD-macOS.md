@@ -34,7 +34,7 @@ in (`brew install gh`, then `gh auth login`).
    git push
    ```
 
-3. Check it: the type check, the unit and browser tests, the licences, the Rust tests and `cargo deny`:
+3. Check it: the type check, the unit and browser tests, the licences, `npm audit`, the Rust tests and `cargo deny`:
 
    ```bash
    npm run release:checks
@@ -161,6 +161,10 @@ cd src-tauri && cargo deny check
 npm run licenses
 ```
 
+```bash
+npm run audit
+```
+
 - **`npm run check`:** Svelte and TypeScript.
 - **`npm test`:** the front end's unit and component tests (Vitest), a few seconds.
 - **`npm run test:browser`:** the terminal page in WebKit and Chromium (Playwright). The first time, install the
@@ -169,6 +173,8 @@ npm run licenses
 - **`cargo deny check`:** Rust licences against the allowed list in `src-tauri/deny.toml` (permissive only), known
   vulnerabilities and sources.
 - **`npm run licenses`:** the same licence rule for the npm packages the app ships.
+- **`npm run audit`:** known vulnerabilities in the npm packages the app ships (`npm audit --omit=dev`; the build
+  tools, which aren't shipped, are left out).
 
 ## 6. Make a release build
 

@@ -25,6 +25,7 @@ unused-allowed-license = "allow"
 [advisories]
 # unmaintained crates deep in Tauri's tree are reported, not failed; vulnerabilities still fail
 unmaintained = "none"
+# Each advisory let through is also in docs/DEPENDENCIES.md ("What's set aside"): keep the two the same.
 ignore = [
   # The Marvin attack: timing that leaks an RSA private key while it decrypts, in the rsa crate, which has no fixed
   # version. It comes in through IronRDP (picky, sspi, winscard). The Remote Desktop client only encrypts to the

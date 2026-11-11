@@ -4,6 +4,7 @@
  * at once.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { isMac } from "../shortcuts";
 import { applyUiTheme, loadUiThemes, themeColours, uiThemeNamed } from "./uiThemes.svelte";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import type { Dock } from "../layout/dock";
@@ -263,6 +264,14 @@ export const READ_ONLY_FOLDER =
 export async function chooseSettingsFolder(): Promise<boolean> {
   const path = await open({ directory: true, title: "Choose the settings folder (the folder holding Sessions.xml)" });
   if (typeof path !== "string") return false;
+  return takeSettingsFolder(path);
+}
+
+/**
+ * Use `path` as the settings folder and remember it, asking first when this account can't write there
+ * (READ_ONLY_FOLDER); false when the user says no to that
+ */
+async function takeSettingsFolder(path: string): Promise<boolean> {
   if (!(await invoke<boolean>("folder_writable", { path }))) {
     const use = await ask(READ_ONLY_FOLDER, { title: "Settings Folder", kind: "warning", okLabel: "Use It", cancelLabel: "Cancel" });
     if (!use) return false;
@@ -270,6 +279,40 @@ export async function chooseSettingsFolder(): Promise<boolean> {
   await invoke("settings_set_folder", { path });
   settings.settingsFolder = path;
   return true;
+}
+
+/**
+ * Use a settings folder typed or pasted in Settings > General, as one chosen with Choose…: a network folder's
+ * address is easier pasted than found in a folder dialog (\\server\share\folder on Windows). The quotes File
+ * Explorer's Copy as path puts round a path are left off. A folder that isn't there isn't used: the Saved sessions
+ * shown would go, for a slip of the keys.
+ * @returns "" when it's used, or the field was emptied or the user said no to a folder that can't be saved to (the
+ *   folder stays as it was); else why it isn't used, to show under the field
+ */
+export async function useSettingsFolder(typed: string): Promise<string> {
+  const path = typed.trim().replace(/^"(.*)"$/, "$1").trim();
+  if (!path || path === settings.settingsFolder) return "";
+  if (!(await invoke<boolean>("folder_exists", { path }))) return noFolderMessage(path, isMac);
+  await takeSettingsFolder(path);
+  return "";
+}
+
+/**
+ * What's said of a typed settings folder that isn't there. The Mac has no \\server\share paths, nor folders at an
+ * smb:// address: a network folder is used from where Finder connected it, under /Volumes. Someone with the team's
+ * Windows path, or the server's address, is told what to connect to and where it then is.
+ * @param path The folder as typed
+ * @param mac Whether this is a Mac (`isMac`; a parameter so it can be tested on any system)
+ */
+export function noFolderMessage(path: string, mac: boolean): string {
+  const none = `There's no folder at ${path}, or it can't be reached now.`;
+  if (!mac) return none;
+  // \\server\share\folder, //server/share/folder or smb://server/share/folder
+  const network = /^(?:smb:)?[\\/]{2}([^\\/]+)[\\/]+([^\\/]+)(.*)$/i.exec(path);
+  if (!network) return none;
+  const [, server, share, rest] = network;
+  const under = `/Volumes/${share}${rest.replace(/\\/g, "/").replace(/\/+$/, "")}`;
+  return `${none} On the Mac a network folder is used from where it's connected: in Finder, Go > Connect to Server, smb://${server}/${share}; it's then at ${under}.`;
 }
 
 /**

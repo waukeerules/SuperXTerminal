@@ -6,7 +6,7 @@
 <script lang="ts">
   import { SEARCH_FIELDS, searchFieldsOf, toggledSearchFields } from "../sessions/tree";
   import { FILE_MANAGER, ONEPASSWORD_INSTALL, SESSION_LOG_FOLDER, SYSTEM, THIS_COMPUTER } from "../platform";
-  import { chooseSettingsFolder, MIN_SESSIONS_CHECK_SECONDS, saveSettings, sessionsCheckSeconds, settings, type ScriptLanguage } from "./store.svelte";
+  import { chooseSettingsFolder, MIN_SESSIONS_CHECK_SECONDS, saveSettings, sessionsCheckSeconds, settings, useSettingsFolder, type ScriptLanguage } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { checkForUpdates } from "./updates";
@@ -41,6 +41,23 @@
     } catch (e) {
       fileMessage = String(e);
     }
+  }
+
+  /** Why a settings folder typed in its field isn't used (there's no folder there); "" when it is, or none was typed */
+  let folderProblem = $state("");
+
+  /**
+   * A settings folder typed or pasted in its field (Enter, or the field left): used as one chosen with Choose…. One
+   * that isn't there is left in the field, to be put right, with why under it; when the user says no to a folder
+   * that can't be saved to, or empties the field, it shows the folder in use again.
+   */
+  async function typedFolder(field: HTMLInputElement): Promise<void> {
+    try {
+      folderProblem = await useSettingsFolder(field.value);
+    } catch (e) {
+      folderProblem = String(e);
+    }
+    if (!folderProblem) field.value = settings.settingsFolder ?? "";
   }
 
   /** Make SuperXTerminal the app for ssh:// and telnet:// links (macOS asks the user to confirm) */
@@ -113,9 +130,13 @@
     <p class="hint">The folder with the team's Sessions.xml, Folders.xml, icons and highlighting rules: a shared or
       synced folder (OneDrive, SMB) works, as on Windows.</p>
     <div class="row">
-      <input readonly value={settings.settingsFolder ?? "Not chosen yet"} aria-label="Settings folder" />
-      <button onclick={chooseSettingsFolder}>Choose…</button>
+      <input value={settings.settingsFolder ?? ""} placeholder="Not chosen yet: type or paste a folder, or Choose…" aria-label="Settings folder"
+        spellcheck="false" autocapitalize="off" autocomplete="off"
+        title="The folder's path: type or paste it and press Enter, or pick it with Choose…"
+        onchange={(e) => void typedFolder(e.currentTarget)} />
+      <button onclick={async () => { folderProblem = ""; await chooseSettingsFolder(); }}>Choose…</button>
     </div>
+    {#if folderProblem}<p class="hint problem" role="alert">{folderProblem}</p>{/if}
     <div class="file">
       <label class="check" title="Untick to use only Private and Database sessions: Sessions.xml and Folders.xml are then neither read nor written (they're left as they are), and imports go to Private sessions">
         <input type="checkbox" checked={settings.useSessionsXml}

@@ -2409,6 +2409,13 @@ fn folder_writable(path: String) -> bool {
     saving::writable(std::path::Path::new(&path))
 }
 
+/// Whether there's a folder at `path` that can be reached now: asked of a settings folder typed in Settings > General
+/// before it's used, as one that isn't there (a slip of the keys, a drive that's away) would show no Saved sessions
+#[tauri::command]
+fn folder_exists(path: String) -> bool {
+    saved_cache::reachable(std::path::Path::new(&path))
+}
+
 /// Use another settings folder (chosen in the UI), and remember it
 #[tauri::command]
 fn settings_set_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<(), String> {
@@ -3194,6 +3201,7 @@ pub fn run() {
             settings_get,
             settings_set_folder,
             folder_writable,
+            folder_exists,
             settings_save,
             icons_custom,
             highlighting_load,

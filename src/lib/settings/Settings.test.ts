@@ -1,6 +1,6 @@
 // Settings' search: it finds a setting in any tab, not only the open one, and a result opens its tab with the
 // setting flashed. And General's Use PrivateSessions.xml, which can be turned off only while Saved sessions are in use,
-// and the Show in Finder / File Explorer beside each sessions file; choosing a settings folder that can't be saved to
+// and the Show in Finder / File Explorer beside each sessions file; choosing a settings folder, or typing one (which must be there), that can't be saved to
 // asks first; the seconds between checks of the session files; Look's themes of your own, and Tabs' Longest tab name, Grid View, Grid View off and Remote Desktop in Grid View.
 // The Rust side is stood in for by mockIPC, which saves the settings and notes the files asked to be shown.
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import Settings from "./Settings.svelte";
 import { emptyProfile, DEFAULT_PROFILE } from "./profiles";
-import { settings } from "./store.svelte";
+import { noFolderMessage, settings } from "./store.svelte";
 import { uiThemes } from "./uiThemes.svelte";
 import { FILE_MANAGER } from "../platform";
 
@@ -179,6 +179,71 @@ describe("Settings > General > Settings folder", () => {
     await choose(OWN, true, "Cancel");
     await expect.poll(() => used).toEqual([OWN]);
     expect(warned).toEqual([]);
+  });
+
+  /** Type `folder` in the Settings folder field and press Enter; `there` is whether the core finds a folder at it */
+  async function type(folder: string, there: boolean, canWrite = true, answer: "Use It" | "Cancel" = "Cancel"): Promise<void> {
+    used = [];
+    warned = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "folder_exists") return there;
+      if (cmd === "folder_writable") return canWrite;
+      if (cmd === "plugin:dialog|message") {
+        warned.push(args as { message: string; buttons?: unknown });
+        return answer;
+      }
+      if (cmd === "settings_set_folder") return void used.push((args as { path: string }).path);
+      if (cmd === "profiles_list") return [emptyProfile(DEFAULT_PROFILE)];
+      if (cmd === "shortcuts_keys" || cmd === "shortcuts_reserved") return [];
+      if (cmd === "highlighting_load") return { themes: [], ruleSets: [], problems: [] };
+      return null;
+    });
+    Object.assign(settings, { settingsFolder: TEAM });
+    render(Settings, { onClose: () => {} });
+    const field = screen.getByRole("textbox", { name: "Settings folder" }) as HTMLInputElement;
+    await fireEvent.input(field, { target: { value: folder } });
+    await fireEvent.change(field);
+  }
+
+  it("takes a folder typed or pasted, without the quotes Copy as path puts round it", async () => {
+    await type(`"${SHARE}" `, true);
+    await expect.poll(() => used).toEqual([SHARE]);
+    expect(warned).toEqual([]);
+    // the field shows the folder as it's used, without the quotes
+    await expect.poll(shown).toBe(SHARE);
+  });
+
+  it("doesn't use a typed folder that isn't there, and says so, the folder it had kept", async () => {
+    await type(String.raw`\\fileserver\team-setings`, false);
+    expect(await screen.findByText(/^There's no folder at \\\\fileserver\\team-setings, or it can't be reached now\./)).toBeTruthy();
+    expect(used).toEqual([]);
+    expect(settings.settingsFolder).toBe(TEAM);
+  });
+
+  it("asks before using a typed folder that can't be saved to, as one chosen", async () => {
+    await type(PROGRAM_FILES, true, false, "Use It");
+    await expect.poll(() => used).toEqual([PROGRAM_FILES]);
+    expect(warned).toHaveLength(1);
+  });
+
+  it("leaves the folder as it is when the field is emptied", async () => {
+    await type("  ", true);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(used).toEqual([]);
+    expect(shown()).toBe(TEAM);
+  });
+
+  it("says where a network folder is on the Mac, which has no \\\\server\\share paths", () => {
+    const windows = noFolderMessage(SHARE, false);
+    expect(windows).toBe(String.raw`There's no folder at \\fileserver\team-settings, or it can't be reached now.`);
+    // typed as on Windows, or as Finder's Connect to Server has it: connect to it, then it's under /Volumes
+    for (const typed of [String.raw`\\openmediavault.localdomain\public\SuperXTerminal`, "smb://openmediavault.localdomain/public/SuperXTerminal"]) {
+      const mac = noFolderMessage(typed, true);
+      expect(mac).toContain("smb://openmediavault.localdomain/public");
+      expect(mac).toContain("/Volumes/public/SuperXTerminal");
+    }
+    // a path of the Mac's own gets no such advice
+    expect(noFolderMessage("/Volumes/public/SuperXTerminal", true)).toBe("There's no folder at /Volumes/public/SuperXTerminal, or it can't be reached now.");
   });
 });
 

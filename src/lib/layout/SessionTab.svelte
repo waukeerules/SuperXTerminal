@@ -1,6 +1,7 @@
 <!--
   A document tab's label: the session's icon, its name, a tunnel icon when its ssh opened tunnels (a click shows
-  them, TunnelsPanel), and a close button. Its environment colour fills the tab
+  them, TunnelsPanel), and a close button. New output in a watched tab that isn't being looked at (Watch for
+  Activity) pulses the tab in its colour. Its environment colour fills the tab
   when it's selected and tints it, with a stripe along the top, when it isn't, as SuperXPuTTY's TabIcons. With no
   environment colour, its profile's tab colour does the same, but leaves the icon without a circle: the circle marks
   an environment, as in the Sessions tree.
@@ -46,13 +47,17 @@
    * (its page host reports connecting); a Remote Desktop or SFTP tab has no dot
    */
   const connected = $derived(tabStates[tabId]?.connecting === false && !disconnected);
-  /** Watch for Activity's orange dot, or Watch for Silence's grey pause */
+  /** Watch for Activity's alert (the tab pulses) or Watch for Silence's (a grey pause on the icon) */
   const alert = $derived(tabStates[tabId]?.alert ?? null);
+  /** New output in a watched tab not being looked at: the tab pulses in its colour until it's looked at */
+  const pulsing = $derived(alert === "activity");
   /** The tab's colour: the environment's, else its profile's (Settings > Profiles > Tab colour); null for none */
   const colour = $derived(environment ?? tabStates[tabId]?.tabColor ?? null);
 </script>
 
-<span class="tab" class:coloured={!!colour} style:--env={colour ?? "transparent"}>
+<!-- the pulse is in the tab's own colour, so it reads as that tab's; one with none pulses in the app's accent -->
+<span class="tab" class:coloured={!!colour} class:pulsing style:--env={colour ?? "transparent"} style:--pulse={colour ?? "var(--accent)"}
+  title={pulsing ? "New output" : undefined}>
   {#if scripting}
     <!-- the icon's cell, so the label doesn't move -->
     <span class="cell" style:width="{Math.round(Math.round(iconSize * 0.75) * 1.36)}px" style:height="{Math.round(Math.round(iconSize * 0.75) * 1.36)}px">
@@ -64,7 +69,6 @@
       <Icon key={icon} size={Math.round(iconSize * 0.75)} {environment} {customs} />
       {#if disconnected}<span class="badge" aria-label="Disconnected">✕</span>
       {:else if connecting}<span class="badge connecting" title="Connecting" aria-label="Connecting"></span>
-      {:else if alert === "activity"}<span class="badge activity" title="New output" aria-label="New output"></span>
       {:else if alert === "silence"}<span class="badge silence" title="Quiet" aria-label="Quiet">❚❚</span>
       {:else if connected}<span class="badge connected" title="Connected" aria-label="Connected"></span>{/if}
     </span>
@@ -132,7 +136,7 @@
 
   /*
    * The Sessions tree's dots, smaller than the cross (they hold no sign): yellow until the far end answers, green
-   * while connected. Watch for Activity's and Silence's alerts take the green's place while they show
+   * while connected. Watch for Silence's alert takes the green's place while it shows
    */
   .badge.connecting,
   .badge.connected {
@@ -149,11 +153,6 @@
 
   .badge.connected {
     background: #2e9e44;
-  }
-
-  .badge.activity {
-    background: #f0883e;
-    box-shadow: 0 0 0 1.5px #fff;
   }
 
   .badge.silence {
@@ -199,7 +198,7 @@
     opacity: 1;
   }
 
-  /* the profile's tunnels changed: a restart is needed, marked as Watch for Activity's alert is */
+  /* the profile's tunnels changed: a restart is needed, marked in orange */
   .tunnels.changed {
     color: #f0883e;
     opacity: 1;
@@ -231,6 +230,76 @@
 
   .tab.coloured {
     padding: 0 14px 0 12px;
+  }
+
+  /*
+   * Watch for Activity: new output in a tab that isn't being looked at. The tab's colour (or the accent, for a tab
+   * with none) comes and goes over the whole tab, behind its icon and name, where a dot on the icon was easy to
+   * miss among many tabs. The tab fills its place as a coloured one does, the same padding moved inside it, so
+   * nothing shifts when the pulse starts.
+   */
+  :global(.dv-tab:has(.pulsing)) {
+    padding: 0;
+  }
+
+  :global(.dv-tab:has(.pulsing) .session-tab) {
+    height: 100%;
+  }
+
+  .tab.pulsing {
+    position: relative;
+    isolation: isolate;
+    padding: 0 14px 0 12px;
+  }
+
+  .tab.pulsing::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--pulse);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 0.12;
+    }
+
+    50% {
+      opacity: 0.75;
+    }
+  }
+
+  /* the tab showing in a split, or in a window that isn't in front, is already filled with its colour, which more of
+     the same wouldn't show on: it pulses lighter instead */
+  :global(.dv-active-tab) .coloured.pulsing::before {
+    background: #fff;
+    animation-name: pulse-lighter;
+  }
+
+  @keyframes pulse-lighter {
+    0%,
+    100% {
+      opacity: 0;
+    }
+
+    50% {
+      opacity: 0.4;
+    }
+  }
+
+  /* with Reduce Motion on (the system's setting): the colour held, without the movement */
+  @media (prefers-reduced-motion: reduce) {
+    .tab.pulsing::before {
+      animation: none;
+      opacity: 0.6;
+    }
+
+    :global(.dv-active-tab) .coloured.pulsing::before {
+      opacity: 0.3;
+    }
   }
 
   /* SuperXPuTTY's TabIcons: the selected tab filled with the colour, the others tinted with a 3 px top stripe */

@@ -1,7 +1,7 @@
 // A tab's label: its name, cut short at Settings > General > Tabs' Longest tab name with the whole of it on hover;
 // its tunnel icon, shown when the session's ssh opened tunnels, marked when the profile's have changed
 // since, and clicked to show them. The tab's state is set in tabStates as PageHost reports it; the window's part is
-// stood in for by the onTunnels callback.
+// stood in for by the onTunnels callback. And Watch for Activity's alert: the tab pulsing in its own colour.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
@@ -57,5 +57,41 @@ describe("a tab's name", () => {
     expect(tabNameWidth(30)).toBe("30ch");
     expect(tabNameWidth(12.7)).toBe("12ch");
     expect(tabNameWidth(0)).toBe("none");
+  });
+});
+
+describe("new output in a watched tab (Watch for Activity)", () => {
+  /** The tab's label element, which carries its colour */
+  const tab = () => document.querySelector(".tab") as HTMLElement;
+
+  it("pulses the tab in its own colour, with no dot on its icon", () => {
+    tabStates.t1 = { connecting: false, alert: "activity", tabColor: "#2e7d32" };
+    label();
+    expect(tab().classList.contains("pulsing")).toBe(true);
+    expect(tab().style.getPropertyValue("--pulse")).toBe("#2e7d32");
+    // the green dot of a connected session stays: the pulse says there's new output, not a dot in its place
+    expect(document.querySelector(".badge.activity")).toBeNull();
+    expect(document.querySelector(".badge.connected")).not.toBeNull();
+    // said in words too, for a screen reader and for the pointer
+    expect(tab().title).toBe("New output");
+  });
+
+  it("pulses a tab with no colour of its own in the app's accent colour", () => {
+    tabStates.t1 = { connecting: false, alert: "activity" };
+    label();
+    expect(tab().classList.contains("pulsing")).toBe(true);
+    expect(tab().style.getPropertyValue("--pulse")).toBe("var(--accent)");
+  });
+
+  it("is still when there's none, and Watch for Silence keeps its badge", () => {
+    tabStates.t1 = { connecting: false };
+    label();
+    expect(tab().classList.contains("pulsing")).toBe(false);
+    expect(tab().title).toBe("");
+    cleanup();
+    tabStates.t1 = { connecting: false, alert: "silence" };
+    label();
+    expect(tab().classList.contains("pulsing")).toBe(false);
+    expect(document.querySelector(".badge.silence")).not.toBeNull();
   });
 });

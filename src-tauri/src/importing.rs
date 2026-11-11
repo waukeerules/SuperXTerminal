@@ -13,7 +13,7 @@
 //! Nothing is changed until the user has seen the plan's summary: [`Plan`] is worked out first, then [`apply`]
 //! writes each file once.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -1442,20 +1442,28 @@ pub fn apply(plan: &Plan, file_of: impl Fn(Store) -> Result<PathBuf, String>, id
         let path = file_of(store)?;
         let elsewhere = ids_elsewhere(store);
         sessions::update_file(&path, |list| {
+            // The ids taken (lowercase: ids differing in case are one), here and in the other store, and where the
+            // session with each id is: in the file, or among those this import adds, which go into the file together
+            // at the end. Looked up, not searched for: looking through the file for every row, and again to put each
+            // new session in its place, held the window up for many seconds on 10,000 rows
+            let mut taken: HashSet<String> = list.iter().map(|s| s.id()).chain(elsewhere.iter().map(String::as_str)).map(str::to_ascii_lowercase).collect();
+            let mut place: HashMap<String, (bool, usize)> = HashMap::new();
+            for (i, session) in list.iter().enumerate() {
+                place.entry(session.id().to_string()).or_insert((false, i));
+            }
+            let mut new: Vec<StoredSession> = Vec::new();
             for row in rows {
-                let taken = |list: &Vec<StoredSession>, id: &str| {
-                    list.iter().any(|s| s.id().eq_ignore_ascii_case(id)) || elsewhere.iter().any(|o| o.eq_ignore_ascii_case(id))
-                };
                 let mut id = row.id.clone();
                 if row.unique {
                     // as SuperXPuTTY's MakeUniqueSessionId: "name-1", "name-2", ...
                     let mut n = 1;
-                    while taken(list, &id) && n < 1000 {
+                    while taken.contains(&id.to_ascii_lowercase()) && n < 1000 {
                         id = format!("{}-{n}", row.id);
                         n += 1;
                     }
                 }
-                if let Some(session) = list.iter_mut().find(|s| s.id() == id) {
+                if let Some(&(added_now, i)) = place.get(&id) {
+                    let session = if added_now { &mut new[i] } else { &mut list[i] };
                     let current = session.get("ExtraArgs").to_string();
                     for (name, value) in &row.values {
                         let value = if name == "ExtraArgs" { keep_password(value, &current) } else { value.clone() };
@@ -1464,7 +1472,7 @@ pub fn apply(plan: &Plan, file_of: impl Fn(Store) -> Result<PathBuf, String>, id
                     updated += 1;
                     continue;
                 }
-                if taken(list, &id) {
+                if !taken.insert(id.to_ascii_lowercase()) {
                     continue;
                 }
                 let mut session = StoredSession::new(&id);
@@ -1481,9 +1489,11 @@ pub fn apply(plan: &Plan, file_of: impl Fn(Store) -> Result<PathBuf, String>, id
                     None => id.rsplit('/').next().unwrap_or(&id).to_string(),
                 };
                 session.set("SessionName", &name);
-                sessions::insert_sorted(list, session);
+                place.insert(id, (true, new.len()));
+                new.push(session);
                 added += 1;
             }
+            sessions::insert_all_sorted(list, new);
             Ok(())
         })?;
     }

@@ -239,6 +239,7 @@ fn op_program() -> Option<std::path::PathBuf> {
 fn op_command() -> Result<std::process::Command, String> {
     let program = op_program().ok_or_else(|| format!("1Password's CLI (op) isn't installed: {INSTALL}, then turn on Integrate with 1Password CLI in 1Password's Settings > Developer ({GET_STARTED})."))?;
     let mut command = std::process::Command::new(program);
+    crate::appimage::tidy(&mut command);
     command.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     #[cfg(windows)]
     {

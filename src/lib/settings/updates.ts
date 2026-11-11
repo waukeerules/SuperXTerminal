@@ -63,7 +63,7 @@ export async function checkForUpdates(asked: boolean): Promise<void> {
     log("INFO", `A newer version is available: ${tag}`);
     const open = await ask(`An updated version of SuperXTerminal (${tag}) is available; you have ${current}. Would you like to visit the download page?`,
       { title: "SuperXTerminal update found", okLabel: "Download Page", cancelLabel: "Not Now" });
-    if (open && latest.html_url) await invoke("plugin:opener|open_url", { url: latest.html_url }).catch(() => {});
+    if (open && latest.html_url) await invoke("open_link", { url: latest.html_url }).catch(() => {});
   } else {
     log("INFO", `No newer version (latest ${tag || "unknown"}, running ${current})`);
     if (asked) await message(`You are running the latest version of SuperXTerminal (${current}).`, { title: TITLE });

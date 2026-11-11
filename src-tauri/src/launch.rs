@@ -149,6 +149,7 @@ fn older_algorithm_args() -> Vec<String> {
 /// The algorithms of one kind this computer's ssh has (`ssh -Q kex`, `key`, `cipher`, `mac`); None if it can't say
 pub fn ssh_query(kind: &str) -> Option<Vec<String>> {
     let mut command = std::process::Command::new(openssh("ssh"));
+    crate::appimage::tidy(&mut command);
     command.args(["-Q", kind]);
     #[cfg(windows)]
     {

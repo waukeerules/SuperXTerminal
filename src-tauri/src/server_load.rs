@@ -223,6 +223,7 @@ pub fn separate_args(args: &[String]) -> Vec<String> {
 /// used: the master already has its own
 fn reading_command(path: &Path) -> Command {
     let mut command = Command::new(crate::launch::openssh("ssh"));
+    crate::appimage::tidy(&mut command);
     command
         .args(["-F", "none", "-T", "-o", "ControlMaster=no", "-o", "BatchMode=yes", "-o", "ProxyCommand=false"])
         .arg("-o")
@@ -393,6 +394,7 @@ fn follow(chunks: &std::sync::mpsc::Receiver<String>, stop: &AtomicBool, before:
 /// The second login's ssh (Windows), with no console window of its own
 fn separate_command(args: &[String]) -> Command {
     let mut command = Command::new(crate::launch::openssh("ssh"));
+    crate::appimage::tidy(&mut command);
     command.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
     #[cfg(windows)]
     {

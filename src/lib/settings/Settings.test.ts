@@ -33,7 +33,7 @@ beforeEach(() => {
   revealed = [];
   opened = [];
   mockIPC((cmd, args) => {
-    if (cmd === "plugin:opener|open_url") return void opened.push((args as { url: string }).url);
+    if (cmd === "open_link") return void opened.push((args as { url: string }).url);
     // 1Password's CLI as Check 1Password finds it: working, or what's wrong
     if (cmd === "onepassword_check") return opCheck ? Promise.resolve(opCheck) : Promise.reject(opProblem);
     if (cmd === "sessions_reveal") {

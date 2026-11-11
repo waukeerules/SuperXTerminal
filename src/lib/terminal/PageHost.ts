@@ -510,7 +510,7 @@ export class PageHost implements ScriptTarget {
       case "openLink":
         // Ctrl+click on a link: only http and https, in the default browser, as TerminalControl
         if (typeof message.uri === "string" && /^https?:\/\//i.test(message.uri)) {
-          await invoke("plugin:opener|open_url", { url: message.uri }).catch(() => {});
+          await invoke("open_link", { url: message.uri }).catch(() => {});
         }
         break;
       case "special":

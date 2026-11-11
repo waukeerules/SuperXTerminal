@@ -91,6 +91,7 @@ pub fn available() -> Vec<Available> {
 /// ssh's default lists (`ssh -G`, without the user's config so a Host block there doesn't change them), by line name
 fn ssh_defaults() -> Vec<(String, Vec<String>)> {
     let mut command = std::process::Command::new(crate::launch::openssh("ssh"));
+    crate::appimage::tidy(&mut command);
     command.args(["-F", if cfg!(windows) { "NUL" } else { "/dev/null" }, "-G", "example.invalid"]);
     #[cfg(windows)]
     {

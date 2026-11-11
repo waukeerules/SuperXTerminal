@@ -1037,7 +1037,7 @@
 {#if tunnelsOf && tunnelsHost}
   <TunnelsPanel title={tabs?.api.getPanel(tunnelsOf.id)?.title ?? ""} tunnels={tunnelsHost.tunnels} changed={tunnelsHost.tunnelsChanged} taken={tunnelsHost.tunnelsTaken}
     profile={tunnelsHost.profileName} x={tunnelsOf.x} y={tunnelsOf.y} onClose={() => (tunnelsOf = null)}
-    onOpenLink={(url) => void invoke("plugin:opener|open_url", { url }).catch(() => {})}
+    onOpenLink={(url) => void invoke("open_link", { url }).catch(() => {})}
     onEdit={() => void openProfiles(tunnelsHost.profileName, "forwards")}
     onRestart={() => void tunnelsHost.reconnect()} />
 {/if}

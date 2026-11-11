@@ -28,6 +28,8 @@ pub fn output(command: Command) -> std::io::Result<Output> {
 /// responsible process to disclaim off the Mac
 #[cfg(not(target_os = "macos"))]
 pub fn output(mut command: Command) -> std::io::Result<Output> {
+    // the system's environment, not an AppImage's (appimage.rs): a key's Fetch command runs the system's programs
+    crate::appimage::tidy(&mut command);
     command.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     command.output()
 }

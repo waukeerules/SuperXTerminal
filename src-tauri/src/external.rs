@@ -114,6 +114,7 @@ pub fn open_filezilla(host: &str, port: u16, username: &str, password: Option<&s
 /// for a session that names none; FileZilla otherwise asks for one
 pub fn ssh_username(host: &str, port: u16) -> Option<String> {
     let mut command = std::process::Command::new("ssh");
+    crate::appimage::tidy(&mut command);
     command.arg("-G");
     if port != 0 {
         command.args(["-p", &port.to_string()]);

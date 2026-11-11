@@ -2,6 +2,7 @@
 
 mod algorithms;
 mod applog;
+mod appimage;
 mod askpass;
 mod buttonbars;
 mod cli;
@@ -898,6 +899,8 @@ fn open_command(path: &std::path::Path, how: Opening) -> std::process::Command {
         command
     } else {
         let mut command = std::process::Command::new("xdg-open");
+        // the system's environment, not an AppImage's, or xdg-open and the app it opens fail on its libraries
+        crate::appimage::tidy(&mut command);
         match (how, path.parent()) {
             (Opening::InItsFolder, Some(folder)) if !folder.as_os_str().is_empty() => command.arg(folder),
             _ => command.arg(path),
@@ -920,6 +923,23 @@ fn open_in_app(path: &std::path::Path) -> Result<(), String> {
     {
         open_command(path, Opening::InItsApp).spawn().map(|_| ()).map_err(|e| e.to_string())
     }
+}
+
+/// Open a web link (http or https) in the default browser: a link Ctrl+clicked in a terminal, Settings' links, a new
+/// version's page. Through the opener plugin, except in an AppImage on Linux, where the plugin's xdg-open would
+/// inherit the AppImage's libraries and fail (appimage.rs); there it's the system's xdg-open, given the system's
+/// environment. Anything but http and https is refused, as TerminalControl's Ctrl+click is.
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!("Not a web link: {url}"));
+    }
+    if cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_some() {
+        let mut command = std::process::Command::new("xdg-open");
+        crate::appimage::tidy(&mut command);
+        return command.arg(&url).spawn().map(|_| ()).map_err(|e| format!("Couldn't open {url}: {e}"));
+    }
+    tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| format!("Couldn't open {url}: {e}"))
 }
 
 /// Notepad++, where its installer puts it, for editing the sessions file on Windows
@@ -3068,6 +3088,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             sessions_load,
+            open_link,
             settings_get,
             settings_set_folder,
             folder_writable,

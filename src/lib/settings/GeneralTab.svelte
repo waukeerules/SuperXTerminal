@@ -94,7 +94,7 @@
   function openLink(event: MouseEvent): void {
     event.preventDefault();
     const url = (event.currentTarget as HTMLAnchorElement).href;
-    void invoke("plugin:opener|open_url", { url }).catch(() => {});
+    void invoke("open_link", { url }).catch(() => {});
   }
 
   /** The environment colour rules, for the count beside Environment colours… */

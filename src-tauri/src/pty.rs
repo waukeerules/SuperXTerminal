@@ -384,6 +384,8 @@ pub fn pty_open(
             command.cwd(home);
         }
     }
+    // the system's environment, not an AppImage's: its libraries broke the shell's programs (appimage.rs)
+    crate::appimage::tidy(&mut command);
     let child = Arc::new(Mutex::new(pair.slave.spawn_command(command).map_err(|e| e.to_string())?));
     // the slave side belongs to the child now; keeping it open here would stop the reader seeing the end
     drop(pair.slave);

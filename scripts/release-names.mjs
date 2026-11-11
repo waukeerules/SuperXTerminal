@@ -2,7 +2,9 @@
 // SuperXTerminal-0.8.0-macOS-AppleSilicon.dmg rather than Tauri's SuperXTerminal_0.8.0_aarch64.dmg, which only
 // names the processor, and that differently on each system (aarch64, x64, amd64, x86_64). Tauri's own names stay in
 // its bundle folders and in releases/<version>/; scripts/release-publish.mjs renames the files there to these just
-// before uploading, so the Mac, Windows and the Linux build in Docker all end up named the same way.
+// before uploading, so the Mac, Windows and the Linux build in Docker all end up named the same way. The AppImage
+// alone is named as AppImages are (SuperXTerminal-0.8.0-x86_64.AppImage): every AppImage is for Linux, and the
+// AppImage catalog (appimage.github.io), which lists it, warns of one whose name says so.
 // Tested by scripts/release-names.test.ts.
 
 /** Tauri's processor words, as each system's packages spell them, to the one word the release names use */
@@ -14,6 +16,9 @@ const ARCH = {
   x86_64: "x64",
   universal: "Universal",
 };
+
+/** The processor as an AppImage's name gives it, AppImageKit's way (x86_64, aarch64), from the release names' word */
+const APPIMAGE_ARCH = { x64: "x86_64", arm64: "aarch64" };
 
 /** How a Mac's processor is put to the people downloading: Apple silicon and Intel, as Apple's own pages say */
 const MAC_ARCH = { arm64: "AppleSilicon", x64: "Intel", Universal: "Universal" };
@@ -38,10 +43,11 @@ export function releaseName(file, version) {
     [new RegExp(`^(.+)_${v}_(\\w+)\\.deb$`), (app, arch) => `${app}-${version}-Linux-${ARCH[arch] ?? arch}.deb`],
     // SuperXTerminal-0.8.0-1.x86_64.rpm: the 1 is the package's release number, always 1 here
     [new RegExp(`^(.+)-${v}-\\d+\\.(\\w+)\\.rpm$`), (app, arch) => `${app}-${version}-Linux-${ARCH[arch] ?? arch}.rpm`],
-    // SuperXTerminal_0.8.0_amd64.AppImage
-    [new RegExp(`^(.+)_${v}_(\\w+)\\.AppImage$`), (app, arch) => `${app}-${version}-Linux-${ARCH[arch] ?? arch}.AppImage`],
+    // SuperXTerminal_0.8.0_amd64.AppImage: SuperXTerminal-0.8.0-x86_64.AppImage, without "Linux" (see above)
+    [new RegExp(`^(.+)_${v}_(\\w+)\\.AppImage$`), (app, arch) => `${app}-${version}-${APPIMAGE_ARCH[ARCH[arch]] ?? arch}.AppImage`],
   ];
   if (new RegExp(`^.+-${v}-(macOS|Windows|Linux)-`).test(file)) return file;
+  if (new RegExp(`^.+-${v}-(x86_64|aarch64)\\.AppImage$`).test(file)) return file;
   for (const [pattern, name] of patterns) {
     const m = file.match(pattern);
     if (m) return name(m[1], m[2]);
@@ -61,6 +67,6 @@ export function expectedNames(version) {
     `SuperXTerminal-${version}-Windows-x64-setup.exe`,
     `SuperXTerminal-${version}-Linux-x64.deb`,
     `SuperXTerminal-${version}-Linux-x64.rpm`,
-    `SuperXTerminal-${version}-Linux-x64.AppImage`,
+    `SuperXTerminal-${version}-x86_64.AppImage`,
   ];
 }

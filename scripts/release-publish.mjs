@@ -5,7 +5,7 @@
 // and the Linux .deb, .rpm and AppImage (built in Docker on the Windows PC, scripts/build-linux.mjs) are all in.
 //
 // Before uploading, the installers in releases/<version>/ are renamed from Tauri's names to ones that say their system
-// (SuperXTerminal-0.8.0-macOS-AppleSilicon.dmg, -Windows-x64.msi, -Linux-x64.deb...): scripts/release-names.mjs.
+// (SuperXTerminal-0.8.0-macOS-AppleSilicon.dmg, -Windows-x64.msi, -Linux-x64.deb, -x86_64.AppImage...): scripts/release-names.mjs.
 //
 // The notes are releases/<version>/NOTES.md when it's there (what's new, the download table, how to get past
 // Gatekeeper and SmartScreen), put in whenever the script runs so they can be written or changed while it's a draft;

@@ -34,6 +34,7 @@ mod putty_reg;
 mod rdp;
 mod rdp_clipboard;
 mod rdp_options;
+mod remount;
 mod rhai_scripts;
 mod scripts;
 mod secrets;
@@ -260,6 +261,13 @@ fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
     applog::info(format!("Read the sessions: {} saved, {} private, {} from the database", counts.0, counts.1, counts.2));
     for problem in &problems {
         applog::warn(format!("Sessions: {problem}"));
+    }
+    // the Mac: the network share the settings folder is on is remembered while it's there, to be connected again
+    // when it has been away (remount.rs); Windows reaches a share by its address, so needs none of it
+    if cfg!(target_os = "macos") && !saved_offline {
+        if let Some(folder) = saved_folder(&state) {
+            remount::remember(&state.user_folder, &folder);
+        }
     }
     let read = FilesRead { problems, saved_offline, saved_cached_at };
     *state.files_read.lock().unwrap() = Some(read.clone());
@@ -1215,6 +1223,15 @@ fn session_files(state: &AppState) -> Vec<PathBuf> {
 // async: a network drive that's away can take many seconds to say so, which mustn't hold up the window each time
 #[tauri::command(async)]
 fn sessions_files_changed(state: State<'_, AppState>) -> bool {
+    // the Mac: a settings folder on a network share that went with the network isn't put back by macOS when the
+    // network returns. If its server answers again, the share is connected again here (once each time it comes
+    // back), and the check below then finds the folder there. It may wait on macOS asking for the share's password,
+    // which is one more reason this isn't on the window's thread
+    if cfg!(target_os = "macos") {
+        if let Some(folder) = saved_folder(&state).filter(|folder| !saved_cache::reachable(folder)) {
+            remount::reconnect(&state.user_folder, &folder);
+        }
+    }
     let files = session_files(&state);
     state.files_seen.lock().unwrap().changed(&files, std::time::Instant::now(), file_watch::read_or_nothing)
 }

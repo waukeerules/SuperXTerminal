@@ -315,6 +315,23 @@ pub fn user_folder() -> PathBuf {
 mod tests {
     use super::*;
 
+    #[test]
+    fn many_sessions_put_in_at_once_land_where_one_by_one_would() {
+        let with_id = |id: &str| StoredSession { attributes: vec![("SessionId".into(), id.to_string())] };
+        // a file not in order (edited by hand), which is left as it is around the new ones
+        let file = ["m", "b", "Zed/a", "c", "x"];
+        let new = ["y", "a", "n", "zed/B", "C2", "zz"];
+        let mut one_by_one: Vec<StoredSession> = file.iter().map(|id| with_id(id)).collect();
+        for id in new {
+            insert_sorted(&mut one_by_one, with_id(id));
+        }
+        let mut at_once: Vec<StoredSession> = file.iter().map(|id| with_id(id)).collect();
+        insert_all_sorted(&mut at_once, new.iter().map(|id| with_id(id)).collect());
+        let ids = |list: &[StoredSession]| list.iter().map(|s| s.id().to_string()).collect::<Vec<_>>();
+        assert_eq!(ids(&at_once), ids(&one_by_one));
+        assert_eq!(ids(&at_once), ["a", "C2", "m", "b", "n", "y", "Zed/a", "c", "x", "zed/B", "zz"]);
+    }
+
     /// A folder of its own for one test, empty
     fn empty_folder(name: &str) -> PathBuf {
         let folder = std::env::temp_dir().join(format!("sxt-sessions-{name}-{}", std::process::id()));
@@ -508,6 +525,37 @@ pub fn insert_sorted(sessions: &mut Vec<StoredSession>, session: StoredSession) 
     let key = session.id().to_lowercase();
     let at = sessions.iter().position(|s| s.id().to_lowercase() > key).unwrap_or(sessions.len());
     sessions.insert(at, session);
+}
+
+/// [`insert_sorted`] for many sessions at once, with the same result as putting them in one by one, in a single pass.
+/// One by one, each looks through the whole list, lowercasing every id on the way: with thousands moved among
+/// thousands (an import's folder moved to the top) that alone took seconds.
+pub fn insert_all_sorted(sessions: &mut Vec<StoredSession>, new: Vec<StoredSession>) {
+    let key = |s: &StoredSession| s.id().to_lowercase();
+    // highest[i] is the greatest key in sessions[..=i]. The file needn't be sorted (it may have been edited by hand),
+    // but these never go down, so "the first session with a greater key" is found by halving
+    let mut highest: Vec<String> = Vec::with_capacity(sessions.len());
+    for session in sessions.iter() {
+        let own = key(session);
+        let top = match highest.last() {
+            Some(before) if *before >= own => before.clone(),
+            _ => own,
+        };
+        highest.push(top);
+    }
+    let mut new: Vec<(String, StoredSession)> = new.into_iter().map(|s| (key(&s), s)).collect();
+    new.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut out = Vec::with_capacity(sessions.len() + new.len());
+    let mut old = std::mem::take(sessions).into_iter().enumerate().peekable();
+    for (own, session) in new {
+        let at = highest.partition_point(|top| *top <= own);
+        while let Some((_, before)) = old.next_if(|(i, _)| *i < at) {
+            out.push(before);
+        }
+        out.push(session);
+    }
+    out.extend(old.map(|(_, session)| session));
+    *sessions = out;
 }
 
 /// The file text, as .NET's XmlSerializer writes `List<SessionData>`: CRLF, two-space indent, one element per line

@@ -41,6 +41,15 @@ beforeEach(() => {
     if (cmd === "icons_custom") return [];
     if (cmd === "plugin:dialog|ask") return true;
     if (cmd === "folder_move" || cmd === "session_move") return "moved";
+    // a selection moved in one save: every folder and session asked for moves
+    if (cmd === "items_move") {
+      const { folders, sessions } = args as { folders: string[]; sessions: string[] };
+      return { folders, sessions: sessions.length, problems: [] };
+    }
+    // "Delete …?" answered with its Delete button (the dialog plugin's ask sends "message" and gets the button's label)
+    if (cmd === "plugin:dialog|message") return "Delete";
+    // a selection deleted in one save: nothing that couldn't be
+    if (cmd === "items_delete") return [];
     return null;
   });
   Object.assign(settings, { loaded: true, treeSearchFields: [], treeSearchCase: false, treeSearchRegex: false });
@@ -72,8 +81,60 @@ describe("selecting folders and sessions together", () => {
     const input = screen.getByRole("textbox", { name: "" }) as HTMLInputElement;
     await user.clear(input);
     await user.type(input, "Lab{Enter}");
-    expect(calls.find((c) => c.cmd === "folder_move")?.args).toMatchObject({ store: "saved", from: "Imported/Core", to: "Lab/Core" });
-    expect(calls.find((c) => c.cmd === "session_move")?.args).toMatchObject({ store: "saved", id: "Imported/r1", folder: "Lab" });
+    await expect.poll(() => calls.find((c) => c.cmd === "items_move")?.args).toMatchObject({ store: "saved", folders: ["Imported/Core"], sessions: ["Imported/r1"], to: "Lab" });
+  });
+
+  it("moves a selection of folders and sessions in one save, not one for each", async () => {
+    await open();
+    await user.click(row(/^Core \(/));
+    await user.keyboard("{Meta>}");
+    await user.click(row("r1"));
+    await user.click(row(/^Lab \(/));
+    await user.keyboard("{/Meta}");
+
+    await user.pointer({ keys: "[MouseRight]", target: row("r1") });
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Move 3 items to folder…" }));
+    const input = screen.getByRole("textbox", { name: "" }) as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, "Site A{Enter}");
+    await expect.poll(() => calls.filter((c) => c.cmd === "items_move").map((c) => c.args)).toEqual([
+      { store: "saved", folders: ["Imported/Core", "Lab"], sessions: ["Imported/r1"], to: "Site A" },
+    ]);
+    // each folder_move or session_move is a read, a backup and a write of Sessions.xml: slow with thousands of
+    // sessions, and slower still on a network drive
+    expect(calls.filter((c) => c.cmd === "folder_move" || c.cmd === "session_move")).toEqual([]);
+  });
+
+  it("deletes a selection of folders and sessions in one save, not one for each", async () => {
+    await open();
+    await user.click(row(/^Core \(/));
+    await user.keyboard("{Meta>}");
+    await user.click(row("r1"));
+    await user.click(row("x"));
+    await user.keyboard("{/Meta}");
+
+    await user.pointer({ keys: "[MouseRight]", target: row("r1") });
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Delete 3 items…" }));
+    await expect.poll(() => calls.filter((c) => c.cmd === "items_delete").map((c) => c.args)).toEqual([
+      { store: "saved", folders: ["Imported/Core"], sessions: ["Imported/r1", "Lab/x"] },
+    ]);
+    // each folder_delete or session_delete is a read, a backup and a write of Sessions.xml
+    expect(calls.filter((c) => c.cmd === "folder_delete" || c.cmd === "session_delete")).toEqual([]);
+  });
+
+  it("deletes several sessions in one save", async () => {
+    await open();
+    await user.click(row("r1"));
+    await user.keyboard("{Meta>}");
+    await user.click(row("x"));
+    await user.keyboard("{/Meta}");
+
+    await user.pointer({ keys: "[MouseRight]", target: row("r1") });
+    await user.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Delete 2 sessions" }));
+    await expect.poll(() => calls.filter((c) => c.cmd === "items_delete").map((c) => c.args)).toEqual([
+      { store: "saved", folders: [], sessions: ["Imported/r1", "Lab/x"] },
+    ]);
+    expect(calls.filter((c) => c.cmd === "session_delete")).toEqual([]);
   });
 
   it("Shift+click selects the folders and sessions shown between", async () => {

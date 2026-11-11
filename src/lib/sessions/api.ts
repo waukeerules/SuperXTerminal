@@ -187,6 +187,38 @@ export function moveSession(store: Store, id: string, folder: string, name: stri
   return invoke<string>("session_move", { store, id, folder, name });
 }
 
+/** What moving a selection did (the Rust side's `folders::Moved`) */
+export interface MovedItems {
+  /** The folders that moved, as they were asked for */
+  folders: string[];
+  /** How many sessions moved on their own, not with a folder */
+  sessions: number;
+  /** What didn't move and why, e.g. "Lab: There's already a session called Site A/Lab/sw1." */
+  problems: string[];
+}
+
+/**
+ * Move a selection of Saved or Private sessions into a folder of their store in one save: each of `folders` with all
+ * below it, each of `sessions` (ids) on its own, one whose name is taken there getting a free one ("sw1-1"). A
+ * `moveFolder` or `moveSession` for each reads, backs up and writes the whole file each time, which is slow with
+ * thousands of sessions and slower still with the file on a network drive. Database sessions go one by one, as the
+ * table checks each change.
+ * @param to The folder's path, "" for the top
+ */
+export function moveMany(store: Exclude<Store, "database">, folders: string[], sessions: string[], to: string): Promise<MovedItems> {
+  return invoke<MovedItems>("items_move", { store, folders, sessions, to });
+}
+
+/**
+ * Delete a selection of Saved or Private sessions in one save of their file: each of `folders` with every session in
+ * it, and each of `sessions` (ids). As `moveMany`, where a `deleteFolder` or `deleteSession` for each wrote the whole
+ * file over each time. Database sessions go one by one, as the table checks each change.
+ * @returns What couldn't be deleted and why, e.g. "sw1: The session is no longer in its file."
+ */
+export function deleteMany(store: Exclude<Store, "database">, folders: string[], sessions: string[]): Promise<string[]> {
+  return invoke<string[]>("items_delete", { store, folders, sessions });
+}
+
 /** How Database sessions stand: on or off, whether the user may change them, and why the last read failed */
 export interface DbState {
   enabled: boolean;

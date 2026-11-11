@@ -17,7 +17,9 @@
     loadSessions,
     saveSession,
     moveFolder,
+    moveMany,
     deleteFolder,
+    deleteMany,
     moveSession,
     saveFolderSettings,
     transferSessions,
@@ -757,34 +759,51 @@
   /**
    * Move a selection's folders and sessions into a folder of the same root: each folder with all below it, each
    * session on its own; a session whose name is taken there gets a free one ("sw1-1"), as a single move offers. A
-   * folder isn't moved into itself. One read of the sessions after.
+   * folder isn't moved into itself. Saved and Private sessions move in one save of their file however many there
+   * are (`moveMany`); Database sessions one by one, as the table checks each. One read of the sessions after.
    */
   async function moveItems(store: Store, folders: string[], sessions: SessionView[], to: string): Promise<void> {
     const target = to.replace(/^\/+|\/+$/g, "");
     const join = (a: string, b: string) => (a ? `${a}/${b}` : b);
+    const destOf = (from: string) => join(target, from.slice(from.lastIndexOf("/") + 1));
+    /** The folders made here and the ones open follow a folder that moved */
+    const follow = (from: string) => {
+      const dest = destOf(from);
+      const shift = (p: string) => (p === from || p.startsWith(from + "/") ? dest + p.slice(from.length) : p);
+      newFolders = { ...newFolders, [store]: newFolders[store].map(shift) };
+      expanded = new Set([...expanded].map((k) => (k.startsWith(`${store}:`) ? `${store}:${shift(k.slice(store.length + 1))}` : k)));
+    };
     const problems: string[] = [];
     let moved = 0;
-    for (const from of folders) {
-      const dest = join(target, from.slice(from.lastIndexOf("/") + 1));
-      if (folderUnder(target, from) !== null || dest.toLowerCase() === from.toLowerCase()) continue;
+    if (store !== "database") {
       try {
-        await moveFolder(store, from, dest);
-        const shift = (p: string) => (p === from || p.startsWith(from + "/") ? dest + p.slice(from.length) : p);
-        newFolders = { ...newFolders, [store]: newFolders[store].map(shift) };
-        expanded = new Set([...expanded].map((k) => (k.startsWith(`${store}:`) ? `${store}:${shift(k.slice(store.length + 1))}` : k)));
-        moved += 1;
+        const done = await moveMany(store, folders, sessions.map((s) => s.id), target);
+        done.folders.forEach(follow);
+        moved = done.folders.length + done.sessions;
+        problems.push(...done.problems);
       } catch (e) {
-        problems.push(`${from}: ${e}`);
+        problems.push(String(e));
       }
-    }
-    for (const s of sessions) {
-      if (s.folder.toLowerCase() === target.toLowerCase()) continue;
-      try {
-        const name = takenId(store, target, s.name, s.id) ? freeName(store, target, s.name, s.id) : null;
-        await moveSession(store, s.id, target, name);
-        moved += 1;
-      } catch (e) {
-        problems.push(`${s.name}: ${e}`);
+    } else {
+      for (const from of folders) {
+        if (folderUnder(target, from) !== null || destOf(from).toLowerCase() === from.toLowerCase()) continue;
+        try {
+          await moveFolder(store, from, destOf(from));
+          follow(from);
+          moved += 1;
+        } catch (e) {
+          problems.push(`${from}: ${e}`);
+        }
+      }
+      for (const s of sessions) {
+        if (s.folder.toLowerCase() === target.toLowerCase()) continue;
+        try {
+          const name = takenId(store, target, s.name, s.id) ? freeName(store, target, s.name, s.id) : null;
+          await moveSession(store, s.id, target, name);
+          moved += 1;
+        } catch (e) {
+          problems.push(`${s.name}: ${e}`);
+        }
       }
     }
     newFolders = { ...newFolders, [store]: newFolders[store].filter((p) => p !== target) };
@@ -795,7 +814,36 @@
     context.status(`Moved ${moved} item${moved === 1 ? "" : "s"} to ${target || "the top"}`);
   }
 
-  /** Delete a selection's folders (with all in them) and sessions, after one question */
+  /**
+   * Delete sessions that may be in different roots: Saved and Private ones in one save of each file however many
+   * there are (`deleteMany`), Database ones one by one, as the table checks each.
+   * @returns What couldn't be deleted and why
+   */
+  async function deleteSessions(list: SessionView[]): Promise<string[]> {
+    const problems: string[] = [];
+    for (const store of ["saved", "private"] as const) {
+      const ids = list.filter((s) => s.store === store).map((s) => s.id);
+      if (ids.length === 0) continue;
+      try {
+        problems.push(...(await deleteMany(store, [], ids)));
+      } catch (e) {
+        problems.push(String(e));
+      }
+    }
+    for (const s of list.filter((s) => s.store === "database")) {
+      try {
+        await deleteSession(s.store, s.id);
+      } catch (e) {
+        problems.push(`${s.name}: ${e}`);
+      }
+    }
+    return problems;
+  }
+
+  /**
+   * Delete a selection's folders (with all in them) and sessions, after one question: Saved and Private ones in one
+   * save of their file, Database ones one by one
+   */
   async function removeItems(store: Store, folders: string[], sessions: SessionView[]): Promise<void> {
     const inFolders = (loaded?.sessions ?? []).filter((s) => s.store === store && folders.some((f) => folderUnder(s.folder, f) !== null)).length;
     const what = [
@@ -804,20 +852,23 @@
     ].filter(Boolean).join(" and ");
     if (!(await ask(`Delete ${what}?`, { title: "Delete", kind: "warning", okLabel: "Delete" }))) return;
     const problems: string[] = [];
-    for (const f of folders) {
+    if (store !== "database") {
       try {
-        await deleteFolder(store, f);
-        newFolders = { ...newFolders, [store]: newFolders[store].filter((p) => folderUnder(p, f) === null) };
+        problems.push(...(await deleteMany(store, folders, sessions.map((s) => s.id))));
+        newFolders = { ...newFolders, [store]: newFolders[store].filter((p) => !folders.some((f) => folderUnder(p, f) !== null)) };
       } catch (e) {
-        problems.push(`${f}: ${e}`);
+        problems.push(String(e));
       }
-    }
-    for (const s of sessions) {
-      try {
-        await deleteSession(s.store, s.id);
-      } catch (e) {
-        problems.push(`${s.name}: ${e}`);
+    } else {
+      for (const f of folders) {
+        try {
+          await deleteFolder(store, f);
+          newFolders = { ...newFolders, [store]: newFolders[store].filter((p) => folderUnder(p, f) === null) };
+        } catch (e) {
+          problems.push(`${f}: ${e}`);
+        }
       }
+      problems.push(...(await deleteSessions(sessions)));
     }
     multi = new Set();
     await reload();
@@ -872,14 +923,7 @@
       { title: "Delete sessions", kind: "warning", okLabel: "Delete" });
     if (!sure) return;
     multi = new Set();
-    const problems: string[] = [];
-    for (const s of deletable) {
-      try {
-        await deleteSession(s.store, s.id);
-      } catch (e) {
-        problems.push(`${s.name}: ${e}`);
-      }
-    }
+    const problems = await deleteSessions(deletable);
     await reload();
     error = problems.join(" ");
   }

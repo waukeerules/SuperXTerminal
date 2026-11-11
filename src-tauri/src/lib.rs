@@ -509,6 +509,42 @@ fn session_move(state: State<'_, AppState>, store: sessions::Store, id: String, 
     Ok(new)
 }
 
+/// Move a selection of folders and sessions (ids) into the folder `to` of their store, "" for the top
+/// ([`folders::move_many`]): one read, one backup and one write of the sessions file however many are moved, where a
+/// folder_move or session_move for each wrote it over each time. Favorites, Recent, the local overrides and the
+/// sessions' own passwords follow in one pass too. Returns what moved and what couldn't; the caller reloads the tree.
+#[tauri::command]
+fn items_move(state: State<'_, AppState>, store: sessions::Store, folders: Vec<String>, sessions: Vec<String>, to: String) -> Result<folders::Moved, String> {
+    let file = store_file(&state, store)?;
+    let moved = folders::move_many(&file, &folders, &sessions, &to, &other_ids(&state, store))?;
+    if !moved.renamed.is_empty() {
+        let new_ids: std::collections::HashMap<&str, &str> = moved.renamed.iter().map(|(old, new)| (old.as_str(), new.as_str())).collect();
+        let rename = |id: &str| new_ids.get(id).map(|new| new.to_string());
+        shortcuts::follow(&state.user_folder, rename);
+        overrides::follow(&state.user_folder, rename);
+        session_passwords::follow(&state.user_folder, rename);
+    }
+    Ok(moved)
+}
+
+/// Delete a selection of folders (with every session in them) and sessions (ids) from their store
+/// ([`folders::delete_many`]): one read, one backup and one write of the sessions file however many there are, where
+/// a folder_delete or session_delete for each wrote it over each time. Favorites, Recent, the local overrides and the
+/// sessions' own passwords forget them in one pass too. Returns what couldn't be deleted and why; the caller reloads.
+#[tauri::command]
+fn items_delete(state: State<'_, AppState>, store: sessions::Store, folders: Vec<String>, sessions: Vec<String>) -> Result<Vec<String>, String> {
+    let file = store_file(&state, store)?;
+    let deleted = folders::delete_many(&file, &folders, &sessions)?;
+    let ids: std::collections::HashSet<&str> = deleted.gone.iter().map(String::as_str).collect();
+    // the sessions deleted, and, as forget_folder, any id below a deleted folder, in any spelling of it (a Favorite
+    // of a session that had already gone from the file)
+    let gone = |id: &str| ids.contains(id) || folders.iter().any(|f| folders::under(id, f.trim_matches('/')).is_some_and(|rest| !rest.is_empty()));
+    shortcuts::forget(&state.user_folder, gone);
+    overrides::forget(&state.user_folder, gone);
+    session_passwords::forget(&state.user_folder, gone);
+    Ok(deleted.problems)
+}
+
 /// Favorites, Recent, local overrides and the session's own password follow a session renamed or moved
 fn follow_id(state: &AppState, old: &str, new: &str) {
     if old != new {
@@ -3103,6 +3139,8 @@ pub fn run() {
             session_delete,
             session_move,
             folder_move,
+            items_move,
+            items_delete,
             folder_delete,
             folder_settings_save,
             variables_list,

@@ -79,10 +79,35 @@ test("a tab behind another gives up its WebGL context, and draws with WebGL agai
   await openTabs(page, 2);
   const webgl = (tab: number) => page.evaluate((tab) => (window as any).tabs.webgl(tab) as boolean, tab);
   test.skip(!(await webgl(0)), "this browser has no WebGL here, so every tab draws with the DOM renderer");
-  await expect.poll(() => webgl(1)).toBe(false);
+  // one opened behind another never takes a context: setting one up for a second, in each of a layout's hundred
+  // tabs, was a third of the time they took to open, and took the context of the tab in front
+  expect(await webgl(1)).toBe(false);
+  // and all the same it has the columns it will have in front, where WebGL's cells are a whole number of pixels wide
+  expect(await cols(page, 1)).toBe(await cols(page, 0));
   await show(page, 1);
   await expect.poll(() => webgl(1)).toBe(true);
   await expect.poll(() => webgl(0)).toBe(false);
+});
+
+test.describe("at a display scale of 125%", () => {
+  // Windows' own setting on many laptops: a character is then a fraction of a device pixel wide, which the WebGL
+  // renderer rounds down and the DOM renderer doesn't, so the two differ most
+  test.use({ deviceScaleFactor: 1.25 });
+
+  test("a tab opened behind another has the columns it has in front, and keeps them when shown", async ({ page }) => {
+    await openTabs(page, 2);
+    const webgl = (tab: number) => page.evaluate((tab) => (window as any).tabs.webgl(tab) as boolean, tab);
+    test.skip(!(await webgl(0)), "this browser has no WebGL here, so every tab draws with the DOM renderer");
+    const behindCols = await cols(page, 1);
+    expect(behindCols).toBe(await cols(page, 0));
+    const told = await sizes(page, 1);
+    await show(page, 1);
+    await expect.poll(() => webgl(1)).toBe(true);
+    // drawn with WebGL now, and the same size: its session isn't resized for being looked at
+    await page.waitForTimeout(300);
+    expect(await cols(page, 1)).toBe(behindCols);
+    expect(await sizes(page, 1)).toBe(told);
+  });
 });
 
 test("a tab with a long scrollback is resized once when the window stops being dragged, not at every step", async ({ page }) => {
@@ -145,23 +170,7 @@ test("measure: many tabs, some printing at once", async ({ page }) => {
   const grid = !!process.env.SXT_GRID;
   await page.setViewportSize({ width: 1400, height: 800 });
 
-  let started = Date.now();
-  await openTabs(page, count, {}, grid);
-  const opened = Date.now() - started;
-  // let the tabs settle: a tab behind gives up WebGL a moment after it has its size, and one in front whose context
-  // the others took as they opened (the browser keeps the newest 16) has asked for it again
-  await page.waitForTimeout(9000);
-  const tabsList = Array.from({ length: count }, (_, i) => i);
-  const onWebgl = async () => (await page.evaluate((tabs) => tabs.map((t) => (window as any).tabs.webgl(t) as boolean), tabsList)).filter(Boolean).length;
-  const webglAtStart = await onWebgl();
-
-  // the tab in front and the first few behind it print at once: a switch's log, one line in eight an error
-  const chunk = Array.from({ length: 40 }, (_, i) =>
-    i % 8 === 0 ? `Nov 11 09:41:${String(i).padStart(2, "0")} ERROR %LINK-3-UPDOWN: Interface GigabitEthernet1/0/${i}, changed state to down\r\n`
-      : `Nov 11 09:41:${String(i).padStart(2, "0")} %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet1/0/${i}, changed state to up\r\n`).join("");
-  const printing = tabsList.slice(process.env.SXT_SKIP_FRONT ? 1 : 0, busy);
-  const drawnBefore = await page.evaluate((tabs) => tabs.map((t) => (window as any).tabs.renders(t) as number), tabsList);
-  // SXT_PROFILE=1: where the window's thread spent its time while they printed, and in the resize (Chromium only)
+  // SXT_PROFILE=1: where the window's thread spent its time while the tabs opened, while they printed, and in the resize (Chromium only)
   const cdp = process.env.SXT_PROFILE ? await page.context().newCDPSession(page) : null;
   await cdp?.send("Profiler.enable");
   /** Run `work`, printing the functions the window's thread spent longest in meanwhile when profiling */
@@ -186,6 +195,25 @@ test("measure: many tabs, some printing at once", async ({ page }) => {
     console.log(`PROFILE ${what} (ms in each function itself)\n` + top.map(([name, ms]) => `${ms.toFixed(0).padStart(7)}  ${name}`).join("\n"));
     return result;
   }
+
+  // the page first, so the profile is of the tabs opening in it
+  await page.goto("/tests/browser/fixtures/tabs.html");
+  let started = Date.now();
+  await profiled("opening", () => openTabs(page, count, {}, grid));
+  const opened = Date.now() - started;
+  // let the tabs settle: a tab behind gives up WebGL a moment after it has its size, and one in front whose context
+  // the others took as they opened (the browser keeps the newest 16) has asked for it again
+  await page.waitForTimeout(9000);
+  const tabsList = Array.from({ length: count }, (_, i) => i);
+  const onWebgl = async () => (await page.evaluate((tabs) => tabs.map((t) => (window as any).tabs.webgl(t) as boolean), tabsList)).filter(Boolean).length;
+  const webglAtStart = await onWebgl();
+
+  // the tab in front and the first few behind it print at once: a switch's log, one line in eight an error
+  const chunk = Array.from({ length: 40 }, (_, i) =>
+    i % 8 === 0 ? `Nov 11 09:41:${String(i).padStart(2, "0")} ERROR %LINK-3-UPDOWN: Interface GigabitEthernet1/0/${i}, changed state to down\r\n`
+      : `Nov 11 09:41:${String(i).padStart(2, "0")} %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet1/0/${i}, changed state to up\r\n`).join("");
+  const printing = tabsList.slice(process.env.SXT_SKIP_FRONT ? 1 : 0, busy);
+  const drawnBefore = await page.evaluate((tabs) => tabs.map((t) => (window as any).tabs.renders(t) as number), tabsList);
   const flood = await profiled("printing", () => page.evaluate(([printing, chunk]) => (window as any).tabs.flood(printing, chunk, 150), [printing, chunk] as const));
   const drawnAfter = await page.evaluate((tabs) => tabs.map((t) => (window as any).tabs.renders(t) as number), tabsList);
   const drawnBehind = drawnAfter.slice(1).reduce((sum, n, i) => sum + n - drawnBefore[i + 1], 0);

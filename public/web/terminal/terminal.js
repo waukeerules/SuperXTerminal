@@ -75,7 +75,7 @@
     var shown = true;
     var owedHighlight = null;   // highlighting asked for while behind: 'all', or 'new' for the lines since
     var owedFocus = false;      // the keyboard was given to the tab while it was behind
-    var webglLost = false;      // the browser took this tab's WebGL context: not asked for again until it's next shown
+    var webglLost = false;      // the browser took this tab's WebGL context, or gave it none: not asked for again until it's next shown
     var webglTimer = null;      // asks again for a WebGL context the browser took from a tab in front
     var webglRetries = 0;       // how often a tab in front has asked again for a context taken from it, since shown
     /** How often a tab in front asks again for a WebGL context the browser took, and how long after (lostWebgl) */
@@ -145,13 +145,14 @@
         // before measuring: the side-to-side scroll bar takes its height from the rows
         document.body.classList.toggle('nowrap', wide());
         // a hidden tab has no size yet; wait for the ResizeObserver rather than start the session at 2x1
-        if (element.clientWidth < SCROLLBAR_WIDTH + dimensions.css.cell.width * 2 || element.clientHeight < dimensions.css.cell.height) {
+        var cellWide = fittedCellWidth(dimensions);
+        if (element.clientWidth < SCROLLBAR_WIDTH + cellWide * 2 || element.clientHeight < dimensions.css.cell.height) {
             return;
         }
-        var cols = Math.max(2, Math.floor((element.clientWidth - SCROLLBAR_WIDTH) / dimensions.css.cell.width));
+        var cols = Math.max(2, Math.floor((element.clientWidth - SCROLLBAR_WIDTH) / cellWide));
         var rows = Math.max(1, Math.floor(element.clientHeight / dimensions.css.cell.height));
         if (wide()) {
-            var widest = Math.floor(MAX_CANVAS / (dimensions.css.cell.width * (window.devicePixelRatio || 1)));
+            var widest = Math.floor(MAX_CANVAS / (cellWide * (window.devicePixelRatio || 1)));
             cols = Math.max(cols, Math.min(WIDE_COLS, widest));
         }
         if (cols !== term.cols || rows !== term.rows) {
@@ -165,6 +166,25 @@
             // a tab opened behind another has its size now, for its session to start with: it can stop drawing
             applyBehind();
         }
+    }
+
+    /**
+     * The width of a cell to fit the columns by: the one the terminal will be drawn with in front, whichever
+     * renderer it has now. The two differ: the WebGL renderer's cells are a whole number of device pixels wide (it
+     * rounds the character's width down), the DOM renderer's as wide as the character measures, so the same tab has
+     * more columns with WebGL (97 to 88 in one 700 pixels wide). A tab behind another has the DOM renderer, taking
+     * no WebGL context until it's shown (applyRenderer), and its session must start with the columns it will have
+     * then, not be resized to them the first time it's looked at. So for a terminal that will draw with WebGL the
+     * width is worked out as the WebGL renderer does (its _updateDimensions), from the measurements either renderer
+     * keeps; with WebGL drawing already, that is its own width.
+     */
+    function fittedCellWidth(dimensions) {
+        var device = dimensions.device;
+        if (loadPref('renderer') === 'dom' || webglLost || !window.WebglAddon || !device || !device.char.width) {
+            return dimensions.css.cell.width;
+        }
+        // the letter spacing, in whole pixels, is the cell's width less the character's in either renderer
+        return (Math.floor(device.char.width) + (device.cell.width - device.char.width)) / (window.devicePixelRatio || 1);
     }
 
     /**
@@ -1755,12 +1775,17 @@
     /**
      * Draw with xterm.js's WebGL renderer (the default; much faster with a lot of output) or its DOM renderer
      * (renderer "dom" in Options > Terminal). Without WebGL, or when the graphics driver drops its context, the DOM
-     * renderer takes over. A tab behind another has no WebGL context (applyBehind), and one whose context the browser
-     * took (more tabs showing at once, in a grid, than it keeps contexts for) doesn't ask again until it's next shown:
-     * asking with every change of a preference took another tab's context in turn, the tab in front's among them.
+     * renderer takes over. Only a tab that's showing takes a WebGL context: one opened behind another (Connect all,
+     * a layout's tabs) has none until it's brought forward (setting one up in each of a hundred tabs was a third of
+     * the time they took to open, and the browser, keeping the newest 16, took the tab in front's for them), and one
+     * that goes behind gives its up a moment later (applyBehind). It's sized as though it had one (fittedCellWidth).
+     * A tab whose context the browser took (more tabs showing at once, in a grid, than it keeps contexts for), or
+     * that couldn't have one, doesn't ask again until it's next shown: asking with every change of a preference
+     * took another tab's context in turn.
      */
     function applyRenderer() {
-        var wanted = loadPref('renderer') !== 'dom' && !behind() && !webglLost;
+        // kept, once had, until the tab has been behind a moment; taken only while it shows
+        var wanted = loadPref('renderer') !== 'dom' && !webglLost && (webgl ? !behind() : shown);
         if (wanted && !webgl && window.WebglAddon) {
             try {
                 var addon = new window.WebglAddon.WebglAddon();
@@ -1768,7 +1793,9 @@
                 term.loadAddon(addon);
                 webgl = addon;
             } catch (e) {
+                // no WebGL here: drawn, and so sized, with the DOM renderer
                 webgl = null;
+                webglLost = true;
             }
             fit();
         } else if (!wanted && webgl) {

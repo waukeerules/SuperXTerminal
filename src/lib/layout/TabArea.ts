@@ -459,6 +459,9 @@ class TerminalPanel implements IContentRenderer {
     this.host.onMenu = (x, y, items) => this.tabs.onTerminalMenu?.(x, y, items);
     if (adopt !== undefined) this.host.adopt(adopt);
     this.tabs.hosts.set(id, this.host);
+    // a tab behind another of its split keeps its page (renderer "always") but tells it, so it stops drawing unseen
+    this.host.setShown(parameters.api.isVisible);
+    parameters.api.onDidVisibilityChange((e) => this.host?.setShown(e.isVisible));
     this.host.title = parameters.api.title ?? "";
     parameters.api.onDidTitleChange((e) => {
       if (this.host) this.host.title = e.title;

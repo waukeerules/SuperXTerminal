@@ -26,6 +26,12 @@ html, body {
   background: var(--bg);
 }
 
+/* A tab behind another (terminal.js applyBehind): not laid out, so xterm.js stops drawing and nothing is fitted
+   until it's in front again */
+body.behind {
+  display: none;
+}
+
 #terminal {
   position: absolute;
   inset: 0 0 0 4px;

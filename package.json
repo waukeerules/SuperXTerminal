@@ -11,6 +11,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "test:browser": "playwright test",
+    "measure:tabs": "node scripts/measure-tabs.mjs",
     "licenses": "node scripts/check-licenses.mjs",
     "audit": "npm audit --omit=dev",
     "notices": "node scripts/notices.mjs",

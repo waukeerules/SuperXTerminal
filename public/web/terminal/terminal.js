@@ -11,7 +11,7 @@
  * a line is sent to TerminalControl ("log") once the cursor has left it, and the cursor's line is sent as "current",
  * so SPSL's WAITFOR can match a prompt before Enter is pressed.
  *
- * Messages from TerminalControl: config, data, notice, paste, focus, action, cursorColor. To it: ready, size, input,
+ * Messages from TerminalControl: config, data, notice, paste, focus, action, cursorColor, shown. To it: ready, size, input,
  * ack, log, copy, pasteRequest (every paste, so TerminalControl can ask first; with "text" for one not from the
  * clipboard), document, bell, tab, openInPutty (only while config.putty isn't false), special (a Special Command, when config.specials offers it), openLink (a link Ctrl+clicked), pref, cleared (the screen was cleared
  * here; Windows' pseudo console keeps its own copy, whose redraw after a resize the page drops: dropConptyRedraw).
@@ -69,6 +69,24 @@
     var selectionMatches = [];  // marks ({marker, decoration}) on the other places the selected text appears
     var flushMarker = null;     // the marker flushDecorations adds its throwaway decoration on
     var sized = false;
+    // Whether the tab is in front (SuperXTerminal's "shown"; SuperXPuTTY's tabs always are). A tab behind another
+    // still takes its session's output and logs it, but doesn't draw, highlight or resize until it's in front again
+    // (setShown): every tab's page runs on the window's one thread, so a hundred tabs drawing unseen cost the one seen
+    var shown = true;
+    var owedHighlight = null;   // highlighting asked for while behind: 'all', or 'new' for the lines since
+    var owedFocus = false;      // the keyboard was given to the tab while it was behind
+    var webglLost = false;      // the browser took this tab's WebGL context: not asked for again until it's next shown
+    var webglTimer = null;      // asks again for a WebGL context the browser took from a tab in front
+    var webglRetries = 0;       // how often a tab in front has asked again for a context taken from it, since shown
+    /** How often a tab in front asks again for a WebGL context the browser took, and how long after (lostWebgl) */
+    var MAX_WEBGL_RETRIES = 3;
+    var WEBGL_RETRY_MS = 2000;
+    var behindTimer = null;     // stops laying the page out once a tab behind has had its size for a moment
+    /**
+     * How long a tab behind keeps its layout and its WebGL context after its size last changed (applyBehind): long
+     * enough to settle on its size as it opens, and not to give them up for a moment's flick to another tab and back
+     */
+    var BEHIND_MS = 1000;
 
     /** Send a message to TerminalControl (ignored when the page is opened in a plain browser to test it) */
     function post(message) {
@@ -139,6 +157,99 @@
         if (!sized) {
             sized = true;
             post({ type: 'size', cols: term.cols, rows: term.rows });
+            // a tab opened behind another has its size now, for its session to start with: it can stop drawing
+            applyBehind();
+        }
+    }
+
+    // ---- behind another tab ---------------------------------------------------------------------------------------
+
+    /**
+     * Stop laying the page out while its tab is behind another (terminal.css's body.behind). xterm.js then stops
+     * drawing by itself (it watches whether its screen shows), nothing is fitted (the page has no size: fit waits, so
+     * the session isn't resized as the window is dragged), and it draws the screen afresh, and is fitted once, when
+     * the page is laid out again.
+     *
+     * Not until the tab has had its size and that has been still for BEHIND_MS: a tab opened behind another
+     * (Connect all, a layout's tabs) is sized twice as it starts, for the default font and then the theme's or the
+     * profile's, and its session must start with the second, not be resized to it when the tab is first looked at.
+     * It keeps its WebGL context until then too, and gives it up as it goes: the two renderers' cells differ in width
+     * (WebGL's are whole pixels), so a tab sized with the DOM renderer would have other columns in front.
+     */
+    function applyBehind() {
+        window.clearTimeout(behindTimer);
+        if (shown || !sized) {
+            document.body.classList.remove('behind');
+            return;
+        }
+        behindTimer = window.setTimeout(function () {
+            if (shown) { return; }
+            document.body.classList.add('behind');
+            dropWebgl();
+        }, BEHIND_MS);
+    }
+
+    /** Whether the page has stopped being laid out, its tab behind another (applyBehind) */
+    function behind() {
+        return document.body.classList.contains('behind');
+    }
+
+    /**
+     * Keep xterm.js from redrawing the selection while the page isn't laid out. It stops its ordinary drawing by
+     * itself then, but not this: every scroll asks for the selection to be redrawn, there being one or not, and its
+     * DOM renderer (which a tab behind another has, its WebGL context given up) answers by building every row of the
+     * screen again, measuring each character in a page with no layout to measure in. Five tabs printing behind
+     * another spent most of the window's time there. Held, the redraw is done when xterm.js next draws, once the
+     * tab is in front (it keeps what was asked for, as it does for a redraw asked for before its first drawing).
+     *
+     * Through xterm.js's own render service, as fit reads the cell size from it: if a later xterm.js names these
+     * differently, nothing is held and the page works as it did.
+     */
+    function holdSelectionRedraws() {
+        var service = term._core && term._core._renderService;
+        if (!service || typeof service.handleSelectionChanged !== 'function' || !service._selectionState) { return; }
+        var redraw = service.handleSelectionChanged.bind(service);
+        service.handleSelectionChanged = function (start, end, columnSelectMode) {
+            if (!behind()) {
+                redraw(start, end, columnSelectMode);
+                return;
+            }
+            service._selectionState.start = start;
+            service._selectionState.end = end;
+            service._selectionState.columnSelectMode = columnSelectMode;
+            service._needsSelectionRefresh = true;
+        };
+    }
+
+    /**
+     * The tab came to the front or went behind another ("shown", from SuperXTerminal's PageHost). Behind, the output
+     * still goes into the terminal and the log, but nothing is highlighted and, after a moment (applyBehind), nothing
+     * is drawn or fitted and the WebGL context is given up: a browser keeps about 16, so with more tabs than that
+     * the newest took the oldest's.
+     * In front again, it draws with WebGL again, is fitted to the tab as it is now, and the lines that came meanwhile
+     * are highlighted.
+     */
+    function setShown(visible) {
+        if (visible === shown) { return; }
+        shown = visible;
+        applyBehind();
+        window.clearTimeout(webglTimer);
+        if (!visible) { return; }
+        webglLost = false;
+        webglRetries = 0;
+        applyRenderer();
+        // the whole screen drawn once the page is laid out again, with what came and was selected meanwhile
+        term.refresh(0, term.rows - 1);
+        fit();
+        if (owedHighlight) {
+            var all = owedHighlight === 'all';
+            owedHighlight = null;
+            highlight(all);
+        }
+        drawNumbers();
+        if (owedFocus) {
+            owedFocus = false;
+            term.focus();
         }
     }
 
@@ -361,7 +472,8 @@
 
     /** Draw the numbers soon: once a frame however much output comes */
     function scheduleNumbers() {
-        if (numbersFrame) { return; }
+        // a tab behind another shows no numbers: they're drawn when it's in front again (setShown)
+        if (numbersFrame || !shown) { return; }
         numbersFrame = window.requestAnimationFrame(function () {
             numbersFrame = 0;
             drawNumbers();
@@ -718,6 +830,12 @@
      * lines that may have changed since last time (the screen, and lines that scrolled off it since)
      */
     function highlight(all) {
+        // behind another tab nothing shows: the lines are coloured when the tab is in front again (setShown), from
+        // where the last colouring stopped
+        if (!shown) {
+            owedHighlight = all || owedHighlight === 'all' ? 'all' : 'new';
+            return;
+        }
         var buffer = term.buffer.active;
         var set = currentSet();
         if (all) {
@@ -1615,14 +1733,16 @@
     /**
      * Draw with xterm.js's WebGL renderer (the default; much faster with a lot of output) or its DOM renderer
      * (renderer "dom" in Options > Terminal). Without WebGL, or when the graphics driver drops its context, the DOM
-     * renderer takes over.
+     * renderer takes over. A tab behind another has no WebGL context (applyBehind), and one whose context the browser
+     * took (more tabs showing at once, in a grid, than it keeps contexts for) doesn't ask again until it's next shown:
+     * asking with every change of a preference took another tab's context in turn, the tab in front's among them.
      */
     function applyRenderer() {
-        var wanted = loadPref('renderer') !== 'dom';
+        var wanted = loadPref('renderer') !== 'dom' && !behind() && !webglLost;
         if (wanted && !webgl && window.WebglAddon) {
             try {
                 var addon = new window.WebglAddon.WebglAddon();
-                addon.onContextLoss(dropWebgl);
+                addon.onContextLoss(lostWebgl);
                 term.loadAddon(addon);
                 webgl = addon;
             } catch (e) {
@@ -1632,6 +1752,26 @@
         } else if (!wanted && webgl) {
             dropWebgl();
         }
+    }
+
+    /**
+     * The browser took this tab's WebGL context (it keeps about 16, the newest): the DOM renderer draws meanwhile. A
+     * tab in front asks for one again a little later, by when the tabs behind have given theirs up (opening many at
+     * once, each takes one as it opens in front of the last); a few times only, as tabs side by side in a grid, more
+     * than the browser keeps contexts for, would take each other's in turn for ever.
+     */
+    function lostWebgl() {
+        webglLost = true;
+        dropWebgl();
+        if (!shown || webglRetries >= MAX_WEBGL_RETRIES) { return; }
+        webglRetries += 1;
+        window.clearTimeout(webglTimer);
+        webglTimer = window.setTimeout(function () {
+            if (shown && !webgl) {
+                webglLost = false;
+                applyRenderer();
+            }
+        }, WEBGL_RETRY_MS);
     }
 
     /** Stop using the WebGL renderer; xterm.js goes back to the DOM one */
@@ -1702,7 +1842,10 @@
             case 'data': write(decode(message.data)); break;
             case 'notice': notice(message.text, message.kind); break;
             case 'paste': if (message.text) { term.paste(message.text); } break;
-            case 'focus': term.focus(); break;
+            // behind another tab there's nothing to focus: it takes the keyboard when it's in front (setShown)
+            case 'focus': if (shown) { term.focus(); } else { owedFocus = true; } break;
+            // the tab came to the front or went behind another (SuperXTerminal)
+            case 'shown': setShown(message.visible !== false); break;
             case 'menuChoose': chooseFromHost(message.path); break;
             case 'action': runAction(message.name); break;
             case 'cursorColor': cursorColor = message.color || null; applyTheme(); break;
@@ -1813,6 +1956,7 @@
         });
         var element = document.getElementById('terminal');
         term.open(element);
+        holdSelectionRedraws();
         term.attachCustomKeyEventHandler(onKey);
         term.onData(function (data) {
             typedAt = Date.now();
@@ -1833,6 +1977,8 @@
         term.onResize(function (size) {
             conpty.resizedAt = Date.now();
             if (sized) { post({ type: 'size', cols: size.cols, rows: size.rows }); }
+            // a tab behind another that's still settling on its size keeps its layout a little longer
+            if (!shown && !behind()) { applyBehind(); }
         });
         // the dropped lines are counted from the start, not from the gutter's first drawing
         watchTrims();

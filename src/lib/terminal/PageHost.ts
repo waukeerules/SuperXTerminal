@@ -317,6 +317,8 @@ export class PageHost implements ScriptTarget {
   private queue: string[] = [];
   /** A chunk has been sent and not yet acknowledged */
   private waiting = false;
+  /** Whether the tab is in front (setShown); the page is told again once it has loaded */
+  private visible = true;
   /** Settles once the page has its settings; output is held until then */
   private configured: Promise<void> | null = null;
   /** Notices from outside the tab waiting to go before its first output (notice) */
@@ -442,6 +444,20 @@ export class PageHost implements ScriptTarget {
     this.post({ type: "look", dark });
   }
 
+  /**
+   * The tab came to the front or went behind another tab of its split (TabArea, from dockview). The page is told:
+   * behind, it still takes the session's output and logs it, but stops drawing, highlighting and fitting itself to
+   * the window, and gives up its WebGL context, until it's in front again (terminal.js setShown). Every tab's page
+   * runs on the window's one thread, and a browser keeps about 16 WebGL contexts, so with many tabs open the ones
+   * nobody is looking at mustn't work as though they were.
+   * @param visible Whether the tab is the one showing in its split
+   */
+  setShown(visible: boolean): void {
+    if (visible === this.visible) return;
+    this.visible = visible;
+    this.post({ type: "shown", visible });
+  }
+
   /** Send a message to the page */
   private post(message: PageMessage): void {
     this.frame.contentWindow?.postMessage({ channel: "sxt-host", tab: this.tab, message }, "/");
@@ -466,6 +482,8 @@ export class PageHost implements ScriptTarget {
   private async handle(message: PageMessage): Promise<void> {
     switch (message.type) {
       case "ready":
+        // a tab opened behind another (Connect all, a layout's tabs): the page loads after it was told, so again
+        this.post({ type: "shown", visible: this.visible });
         // the page gets its settings once the core says what's starting ("started"), with the profile's look
         await this.open();
         break;

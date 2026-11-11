@@ -10,7 +10,19 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:1421", viewport: { width: 700, height: 400 } },
   projects: [
     { name: "webkit", use: { ...devices["Desktop Safari"], viewport: { width: 700, height: 400 } } },
-    { name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 700, height: 400 } } },
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 700, height: 400 },
+        // The many-tabs measurement (npm run measure:tabs) draws with this computer's graphics card, as the app does:
+        // the headless browser otherwise draws WebGL in software, where a tab's drawing took most of the time measured
+        // and said nothing of the app. The tests themselves stay as they were.
+        ...(process.env.SXT_MEASURE
+          ? { channel: "chromium", launchOptions: { args: ["--enable-gpu", "--ignore-gpu-blocklist", "--use-angle=d3d11"] } }
+          : {}),
+      },
+    },
   ],
   webServer: {
     command: "npx vite --port 1421 --strictPort",

@@ -1,0 +1,10 @@
+<!doctype html>
+<!-- A stand-in for the app's tab area, for tests/browser/manyTabs.spec.ts: many terminal pages at once, each in its own
+  iframe as a tab's is, one in front and the rest hidden as dockview hides them. tabs.js opens and drives them. -->
+<html>
+  <head><meta charset="utf-8" /><title>Tabs</title></head>
+  <body style="margin: 0">
+    <div id="area" style="position: fixed; inset: 0"></div>
+    <script src="tabs.js"></script>
+  </body>
+</html>

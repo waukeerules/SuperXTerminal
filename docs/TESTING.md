@@ -41,6 +41,32 @@ the app's menus.
   npx playwright install webkit chromium
   ```
 
+### Many tabs at once
+
+`tests/browser/manyTabs.spec.ts` opens several terminal pages in one window, each in its own iframe as the app's tabs
+are (`tests/browser/fixtures/tabs.html` stands in for the tab area), and checks what a tab behind another does and
+doesn't do. Its last test measures instead of checking, and only runs when asked, with a script that works the same
+in PowerShell and a Unix shell:
+
+```
+npm run measure:tabs                          100 tabs, 10 printing at once (the one in front among them)
+npm run measure:tabs -- 100 10 behind         only tabs behind the front one print
+npm run measure:tabs -- 16 16 grid            16 tabs side by side, all showing and printing, as Grid View
+npm run measure:tabs -- 16 16 grid profile    and the functions the window's thread spent longest in
+```
+
+Each printing tab gets 6,000 lines. It then drags the window smaller in eight steps and brings a tab forward, and
+prints how long each took, how many frames the window drew meanwhile, how many tabs hold a WebGL context, how often
+sessions were told of a new size, and the memory used. Run it before and after a change to the terminal page or
+`PageHost.ts` (`git stash` the change for the before).
+
+It runs Chromium on this computer's graphics card, and says which ("WebGL drawn by"). If that names SwiftShader, the
+browser is drawing in software, where a showing tab's drawing takes nearly all the time and says nothing of the app;
+only the numbers for tabs behind another mean anything then.
+
+No device is needed: what costs is the output reaching the page, and it's the same bytes whoever sent them. To try
+many tabs in the app itself without a lab, use Demo mode (below) and Connect all on a folder.
+
 ## When something breaks again
 
 Every bug fix comes with a test that fails without the fix, and a bug that comes back (a regression) gets one before

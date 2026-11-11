@@ -1,7 +1,7 @@
 // A session's tab when ssh ends: what it says and whether it reconnects by itself, read from ssh's last words, and
 // the profile change it offers (F). The Rust side is stood in for by mockIPC: pty_open hands over the tab's channel,
 // which the test feeds ssh's output and its end. Also the tab's size reaching the pseudo terminal as the session starts,
-// Reconnect, connecting until the far end answers (not ConPTY's own output), the anti-idle string typed after a quiet spell, a paste taking the clipboard from the system, its log kept as its profile says, and Find
+// Reconnect, connecting until the far end answers (not ConPTY's own output), the anti-idle string typed after a quiet spell, a paste taking the clipboard from the system, its log kept as its profile says, the page told when its tab is behind another, and Find
 // (Ctrl+Shift+F) opening the page's find bar on Windows, where the app catches that key in the page itself.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -547,5 +547,23 @@ describe("the terminal's right-click menu", () => {
     // choosing it tells the page which, by its place, and the page runs it
     light.action!();
     expect(posted.filter((m) => m.type === "menuChoose")).toEqual([{ type: "menuChoose", path: [2, 1] }]);
+  });
+});
+
+describe("a tab behind another", () => {
+  it("tells its page when it goes behind and comes to the front, and again once the page has loaded", async () => {
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    const told = () => posted.filter((m) => m.type === "shown").map((m) => (m as { visible?: boolean }).visible);
+    // opened behind another tab (Connect all): said at once, though the page may not have loaded to hear it
+    host.setShown(false);
+    expect(told()).toEqual([false]);
+    // so said again when the page says it's ready
+    page({ type: "ready" });
+    await expect.poll(told).toEqual([false, false]);
+    // only a change is passed on
+    host.setShown(false);
+    host.setShown(true);
+    host.setShown(true);
+    expect(told()).toEqual([false, false, true]);
   });
 });

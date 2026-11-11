@@ -18,10 +18,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # - ALSA and Opus: Remote Desktop's sound (ironrdp-rdpsnd-native, through cpal and opus2)
 # - cmake: libopus_sys builds Opus itself when pkg-config can't find it
 # - rpm: the .rpm bundle; file, patchelf: the AppImage bundle
+# - appstream: appstreamcli, with which appimagetool checks the AppStream metainfo (src-tauri/linux/) as it makes
+#   the AppImage; without it the check is skipped
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git build-essential pkg-config file xdg-utils patchelf rpm cmake \
       libssl-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
       libsecret-1-dev libdbus-1-dev libasound2-dev libopus-dev \
+      appstream \
     && rm -rf /var/lib/apt/lists/*
 
 # Node's current LTS, as .nvmrc asks for (lts/*)

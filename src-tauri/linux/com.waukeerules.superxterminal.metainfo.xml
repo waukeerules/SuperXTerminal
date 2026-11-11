@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The app's AppStream metainfo, for Linux: what software centres (GNOME Software, KDE Discover) and the AppImage
+  catalog (appimage.github.io) show of it, a summary, a description and screenshots, instead of what they'd make up.
+  Tauri puts it in the .deb, the .rpm and the AppImage at usr/share/metainfo/ (tauri.conf.json, bundle > linux >
+  files); appimagetool checks it while making the AppImage, when appstreamcli is there (scripts/linux-build.Dockerfile).
+  The screenshots are web addresses, not files in the package: the README's own, taken in demo mode
+  (docs/screenshots/README.md). Checked by scripts/metainfo.test.ts; `appstreamcli validate` checks it on Linux.
+-->
+<component type="desktop-application">
+  <id>com.waukeerules.superxterminal</id>
+  <name>SuperXTerminal</name>
+  <summary>Terminal and session manager for teams looking after servers and network devices</summary>
+  <developer id="io.github.waukeerules">
+    <name>waukeerules</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      A Mac, Windows and Linux alternative to SuperPuTTY, for teams who look after a lot of servers and network
+      devices together. One shared set of sessions for the whole team, with each person's own login, settings and
+      exceptions kept on their own computer.
+    </p>
+    <ul>
+      <li>A tree of sessions, shared from a folder or a database, with icons and environment colours</li>
+      <li>SSH through the system's own OpenSSH, Telnet, serial and Remote Desktop, in tabs, splits or Grid View</li>
+      <li>Cisco and Junos output highlighted as it arrives</li>
+      <li>A button bar of commands, and scripts in SPSL or Rhai sent to the tabs you pick</li>
+      <li>Profiles for logins, keys, jump hosts, SSH gateways and tunnels, and passwords from 1Password</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">SuperXTerminal.desktop</launchable>
+  <provides>
+    <binary>superxterminal</binary>
+  </provides>
+  <url type="homepage">https://github.com/waukeerules/SuperXTerminal</url>
+  <url type="bugtracker">https://github.com/waukeerules/SuperXTerminal/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The sessions tree, a switch and a server side by side, and the button bar</caption>
+      <image>https://raw.githubusercontent.com/waukeerules/SuperXTerminal/main/docs/screenshots/main-window.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Grid View: every tab tiled</caption>
+      <image>https://raw.githubusercontent.com/waukeerules/SuperXTerminal/main/docs/screenshots/grid-view.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Settings, Profiles</caption>
+      <image>https://raw.githubusercontent.com/waukeerules/SuperXTerminal/main/docs/screenshots/settings-profiles.png</image>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Development</category>
+    <category>Network</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>

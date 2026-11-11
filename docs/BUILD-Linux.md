@@ -76,6 +76,10 @@ up Ubuntu's updates and the latest Node LTS and Rust.
 
 ## Install and try it
 
+The packages are built on Ubuntu 22.04 and use the system's own C library (glibc 2.35 or later), as every Tauri app
+does: they run on Ubuntu 22.04, Debian 12, Fedora 36, RHEL 10 and later, not on older ones. The AppImage too: it
+carries the app's other libraries, but not glibc. (The AppImage catalog's test says so as "not self-contained".)
+
 Copy the package to the Linux machine, then on Ubuntu or Debian:
 
 ```bash
@@ -109,7 +113,8 @@ On Fedora or RHEL, install the `.rpm` instead:
 sudo dnf install ./SuperXTerminal-0.7.0-1.x86_64.rpm
 ```
 
-The AppImage needs no install, just permission to run:
+The AppImage needs no install, just permission to run. Tauri names it `SuperXTerminal_<version>_amd64.AppImage`;
+in a release it's `SuperXTerminal-<version>-x86_64.AppImage`, as AppImages are named (`scripts/release-names.mjs`):
 
 ```bash
 chmod +x SuperXTerminal_0.7.0_amd64.AppImage && ./SuperXTerminal_0.7.0_amd64.AppImage
@@ -154,3 +159,13 @@ Things that differ from the Mac and Windows, worth checking first:
 | Volume | `sxt-linux-target-<arch>` | `src-tauri/target`: the compiled crates, so the next build is quick |
 | Volume | `sxt-linux-cargo-registry-<arch>` | Cargo's downloaded crates |
 | Folder | `releases/linux/<version>/` | The packages, on the Mac (not in git) |
+| File | `src-tauri/linux/com.waukeerules.superxterminal.metainfo.xml` | The AppStream metainfo: the summary, description and screenshots that GNOME Software, KDE Discover and the AppImage catalog show. Every package installs it in `/usr/share/metainfo/` (`tauri.conf.json`, `bundle > linux`); appimagetool checks it with `appstreamcli` as it makes the AppImage |
+
+The metainfo can be checked on its own, without a build, in a container like the image's:
+
+```bash
+docker run --rm -v "$PWD/src-tauri/linux:/m:ro" ubuntu:22.04 bash -c 'apt-get update -qq && apt-get install -y -qq appstream >/dev/null && appstreamcli validate --no-net /m/com.waukeerules.superxterminal.metainfo.xml'
+```
+
+The image installs `appstream` for that check. An image made before it was added skips the check; make it again once
+with `npm run build:linux -- --new-image`.

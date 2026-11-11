@@ -1,7 +1,7 @@
 {
   "name": "superxterminal",
   "version": "0.8.5",
-  "description": "A macOS counterpart of SuperXPuTTY: its sessions tree, Database sessions, icons, colours and tabs, with SSH through OpenSSH",
+  "description": "Terminal and session manager for teams looking after servers and network devices: a Mac, Windows and Linux alternative to SuperPuTTY",
   "private": true,
   "license": "MIT",
   "type": "module",

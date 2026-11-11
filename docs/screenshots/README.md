@@ -1,6 +1,9 @@
 # Screenshots
 
-The pictures in the main [README](../../README.md). Take them in **demo mode**, so no real session, host, address,
+The pictures in the main [README](../../README.md). Three are also what Linux software centres and the AppImage catalog
+show of the app (`main-window.png`, `grid-view.png`, `settings-profiles.png`): the AppStream metainfo,
+`src-tauri/linux/com.waukeerules.superxterminal.metainfo.xml`, links to them on GitHub, so keep their names, or
+change the links with them (`scripts/metainfo.test.ts` fails on a link to a file that isn't there). Take them in **demo mode**, so no real session, host, address,
 username or prompt is in them.
 
 ## Demo mode

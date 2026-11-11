@@ -47,6 +47,11 @@
         }
       }
     },
+    "linux": {
+      "deb": { "files": { "/usr/share/metainfo/com.waukeerules.superxterminal.metainfo.xml": "linux/com.waukeerules.superxterminal.metainfo.xml" } },
+      "rpm": { "files": { "/usr/share/metainfo/com.waukeerules.superxterminal.metainfo.xml": "linux/com.waukeerules.superxterminal.metainfo.xml" } },
+      "appimage": { "files": { "/usr/share/metainfo/com.waukeerules.superxterminal.metainfo.xml": "linux/com.waukeerules.superxterminal.metainfo.xml" } }
+    },
     "windows": {
       "wix": {
         "template": "windows/main.wxs"

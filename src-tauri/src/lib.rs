@@ -19,6 +19,7 @@ mod demo;
 mod demo_device;
 mod editing;
 mod external;
+mod file_watch;
 mod folders;
 mod highlighting;
 mod importing;
@@ -75,7 +76,7 @@ pub struct AppState {
     /// The Database sessions as last read from the table (or its cache), before queued changes are applied on top
     db_server: Mutex<Vec<sessions::StoredSession>>,
     /// The session files' contents when last read, so a change made elsewhere can be noticed
-    files_seen: Mutex<u64>,
+    files_seen: Mutex<file_watch::Seen>,
     /// What the last read of the session files said; None until they've been read ([`sessions_shown`])
     files_read: Mutex<Option<FilesRead>>,
 }
@@ -227,12 +228,17 @@ struct FilesRead {
 #[tauri::command]
 fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
     let private_off = private_off(&state);
-    *state.files_seen.lock().unwrap() = files_fingerprint(&state);
+    // what the files are known by from now on: their sizes and times as they are before they're read (a change made
+    // meanwhile then shows at the next check), and the hash of the very bytes read here, not of a second reading
+    let files = session_files(&state);
+    let stamps = file_watch::stamps(&files);
+    let reading = file_watch::Reading::default();
     let mut problems = Vec::new();
     // Saved sessions are the copy kept on this computer while the settings folder can't be reached (a network drive
     // that's away), rather than none
     let saved_cache::Loaded { sessions: mut loaded, saved_offline, saved_cached_at } =
-        saved_cache::load(saved_folder(&state).as_deref(), &state.user_folder, &mut problems);
+        saved_cache::load_with(saved_folder(&state).as_deref(), &state.user_folder, &mut problems, &|path| reading.text(path));
+    *state.files_seen.lock().unwrap() = file_watch::Seen::read(reading.fingerprint(&files), stamps, std::time::Instant::now());
     if saved_offline {
         applog::warn(format!("The settings folder can't be reached: Saved sessions are {}", if saved_cached_at.is_empty() { "not shown".into() } else { format!("shown as read {saved_cached_at}") }));
     }
@@ -1190,29 +1196,27 @@ fn session_external(state: State<'_, AppState>, store: sessions::Store, id: Stri
     }
 }
 
-/// The session files' contents, hashed: Sessions.xml and Folders.xml in the settings folder, the private ones in the
-/// user's folder, as SuperXPuTTY's SessionsFileWatcher compares (a file rewritten unchanged doesn't count)
-fn files_fingerprint(state: &AppState) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+/// The session files, in the order they're known by ([`file_watch`]): the private two in the user's folder, then
+/// Sessions.xml and Folders.xml in the settings folder when Saved sessions are in use
+fn session_files(state: &AppState) -> Vec<PathBuf> {
     let mut files = vec![state.user_folder.join("PrivateSessions.xml"), state.user_folder.join("PrivateFolders.xml")];
     if let Some(folder) = saved_folder(state) {
         files.push(folder.join("Sessions.xml"));
         files.push(folder.join("Folders.xml"));
     }
-    for file in files {
-        std::fs::read(&file).unwrap_or_default().hash(&mut hasher);
-    }
-    hasher.finish()
+    files
 }
 
 /// Whether a session file changed since it was last read (a teammate saving to the shared folder, SuperXPuTTY, an
 /// editor); the tree then reads them again. A settings folder going away or coming back counts, so Saved sessions
-/// change to the copy kept on this computer and back ([`saved_cache`]).
+/// change to the copy kept on this computer and back ([`saved_cache`]). The files are only read when their sizes or
+/// times differ, or once a minute ([`file_watch::Seen::changed`]): this is asked every few seconds, and with the
+/// settings folder on a network drive it used to fetch every file whole each time.
 // async: a network drive that's away can take many seconds to say so, which mustn't hold up the window each time
 #[tauri::command(async)]
 fn sessions_files_changed(state: State<'_, AppState>) -> bool {
-    files_fingerprint(&state) != *state.files_seen.lock().unwrap()
+    let files = session_files(&state);
+    state.files_seen.lock().unwrap().changed(&files, std::time::Instant::now(), file_watch::read_or_nothing)
 }
 
 /// The serial devices on this Mac, for choosing which one a COM name is
@@ -3180,7 +3184,7 @@ pub fn run() {
             profiles: Mutex::new(profiles),
             database: Mutex::new(DbState::default()),
             db_server: Mutex::new(Vec::new()),
-            files_seen: Mutex::new(0),
+            files_seen: Mutex::new(file_watch::Seen::nothing()),
             files_read: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
@@ -3417,7 +3421,7 @@ mod tests {
             profiles: Mutex::new(Default::default()),
             database: Mutex::new(Default::default()),
             db_server: Mutex::new(Vec::new()),
-            files_seen: Mutex::new(0),
+            files_seen: Mutex::new(crate::file_watch::Seen::nothing()),
             files_read: Mutex::new(None),
         }
     }

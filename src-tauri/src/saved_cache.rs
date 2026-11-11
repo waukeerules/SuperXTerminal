@@ -56,15 +56,23 @@ pub fn reachable(settings_folder: &Path) -> bool {
     std::fs::metadata(settings_folder).is_ok_and(|m| m.is_dir())
 }
 
-/// Read the session files, as [`Sessions::load`], keeping a copy of the Saved ones; when the settings folder can't
-/// be reached, its Saved sessions and folder settings are the copy's. A Sessions.xml or Folders.xml that's there but
-/// doesn't read (it's in `problems`) leaves the copy as it was, so the last good one is kept.
+/// [`load_with`] reading the files straight from the disk, for the tests
+#[cfg(test)]
 pub fn load(settings_folder: Option<&Path>, user_folder: &Path, problems: &mut Vec<String>) -> Loaded {
+    load_with(settings_folder, user_folder, problems, &sessions::read_text)
+}
+
+/// Read the session files, as [`Sessions::load_with`], keeping a copy of the Saved ones; when the settings folder
+/// can't be reached, its Saved sessions and folder settings are the copy's. A Sessions.xml or Folders.xml that's
+/// there but doesn't read (it's in `problems`) leaves the copy as it was, so the last good one is kept. The session
+/// files' text is got with `read_text`, which the tree's reading uses to keep each file's hash
+/// ([`crate::file_watch::Reading`]); the copy itself, when it's what's shown, is read from this computer as ever.
+pub fn load_with(settings_folder: Option<&Path>, user_folder: &Path, problems: &mut Vec<String>, read_text: sessions::ReadText) -> Loaded {
     let Some(folder) = settings_folder else {
-        return Loaded { sessions: Sessions::load(None, user_folder, problems), saved_offline: false, saved_cached_at: String::new() };
+        return Loaded { sessions: Sessions::load_with(None, user_folder, problems, read_text), saved_offline: false, saved_cached_at: String::new() };
     };
     if reachable(folder) {
-        let sessions = Sessions::load(Some(folder), user_folder, problems);
+        let sessions = Sessions::load_with(Some(folder), user_folder, problems, read_text);
         // the files' problems start with their paths
         let within = folder.display().to_string();
         if !problems.iter().any(|p| p.starts_with(&within)) {
@@ -75,7 +83,7 @@ pub fn load(settings_folder: Option<&Path>, user_folder: &Path, problems: &mut V
         }
         return Loaded { sessions, saved_offline: false, saved_cached_at: String::new() };
     }
-    let mut sessions = Sessions::load(None, user_folder, problems);
+    let mut sessions = Sessions::load_with(None, user_folder, problems, read_text);
     let mut saved_cached_at = String::new();
     if let Some(kept) = read(user_folder, folder) {
         sessions.saved = kept.sessions;
@@ -247,6 +255,24 @@ mod tests {
         assert_eq!(problems.len(), 1, "{problems:?}");
         std::fs::remove_dir_all(&team).unwrap();
         assert_eq!(saved_ids(&load(Some(&team), &user, &mut Vec::new())), ["Lab/sw1"]);
+        std::fs::remove_dir_all(team.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn each_session_file_is_read_once_for_the_tree() {
+        let (team, user) = folders("once");
+        std::fs::write(team.join("Sessions.xml"), sessions_xml(&["Lab/sw1"])).unwrap();
+        std::fs::write(user.join("PrivateSessions.xml"), sessions_xml(&["Home/nas"])).unwrap();
+        let read = std::cell::RefCell::new(Vec::new());
+        let noting = |path: &Path| {
+            read.borrow_mut().push(path.file_name().unwrap().to_string_lossy().into_owned());
+            sessions::read_text(path)
+        };
+        let loaded = load_with(Some(&team), &user, &mut Vec::new(), &noting);
+        assert_eq!((saved_ids(&loaded), loaded.sessions.private.len()), (vec!["Lab/sw1"], 1));
+        let mut names = read.into_inner();
+        names.sort();
+        assert_eq!(names, ["Folders.xml", "PrivateFolders.xml", "PrivateSessions.xml", "Sessions.xml"]);
         std::fs::remove_dir_all(team.parent().unwrap()).unwrap();
     }
 

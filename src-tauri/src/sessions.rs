@@ -133,15 +133,23 @@ pub struct SessionsLoaded {
 }
 
 impl Sessions {
-    /// Read both session files and both folder files; a missing file is no sessions, an unreadable one a problem
+    /// [`Sessions::load_with`] reading the files straight from the disk, for the tests
+    #[cfg(test)]
     pub fn load(settings_folder: Option<&Path>, user_folder: &Path, problems: &mut Vec<String>) -> Sessions {
+        Sessions::load_with(settings_folder, user_folder, problems, &read_text)
+    }
+
+    /// Read both session files and both folder files; a missing file is no sessions, an unreadable one a problem.
+    /// Each file's text is got with `read`: the tree's reading keeps each file's hash as it goes
+    /// ([`crate::file_watch::Reading`]), rather than read the files a second time to know them by
+    pub fn load_with(settings_folder: Option<&Path>, user_folder: &Path, problems: &mut Vec<String>, read: ReadText) -> Sessions {
         let mut sessions = Sessions::default();
         if let Some(folder) = settings_folder {
-            sessions.saved = read_sessions(&folder.join("Sessions.xml"), problems);
-            sessions.folders.insert(Store::Saved, read_folders(&folder.join("Folders.xml"), problems));
+            sessions.saved = read_sessions_with(&folder.join("Sessions.xml"), problems, read);
+            sessions.folders.insert(Store::Saved, read_folders(&folder.join("Folders.xml"), problems, read));
         }
-        sessions.private = read_sessions(&user_folder.join("PrivateSessions.xml"), problems);
-        sessions.folders.insert(Store::Private, read_folders(&user_folder.join("PrivateFolders.xml"), problems));
+        sessions.private = read_sessions_with(&user_folder.join("PrivateSessions.xml"), problems, read);
+        sessions.folders.insert(Store::Private, read_folders(&user_folder.join("PrivateFolders.xml"), problems, read));
         sessions
     }
 
@@ -220,6 +228,14 @@ fn masked_password(extra: &str) -> String {
     out.join(" ")
 }
 
+/// How a file's text is got: [`read_text`], or a reader that also notes what it read
+pub type ReadText<'a> = &'a dyn Fn(&Path) -> std::io::Result<String>;
+
+/// A file's text, from the disk
+pub fn read_text(path: &Path) -> std::io::Result<String> {
+    std::fs::read_to_string(path)
+}
+
 /// Read the sessions of a file with `<SessionData>` elements (Sessions.xml, the Database cache)
 pub fn read_sessions_file(path: &Path, problems: &mut Vec<String>) -> Vec<StoredSession> {
     read_sessions(path, problems)
@@ -227,12 +243,17 @@ pub fn read_sessions_file(path: &Path, problems: &mut Vec<String>) -> Vec<Stored
 
 /// Read the folder settings of a file with `<FolderSetting>` elements (Folders.xml, the Database cache)
 pub fn read_folder_settings(path: &Path, problems: &mut Vec<String>) -> Vec<FolderSetting> {
-    read_folders(path, problems).into_values().collect()
+    read_folders(path, problems, &read_text).into_values().collect()
 }
 
 /// Read an `ArrayOfSessionData` file; no file means no sessions
 fn read_sessions(path: &Path, problems: &mut Vec<String>) -> Vec<StoredSession> {
-    match read_elements(path, "SessionData") {
+    read_sessions_with(path, problems, &read_text)
+}
+
+/// [`read_sessions`], the file's text got with `read`
+fn read_sessions_with(path: &Path, problems: &mut Vec<String>, read: ReadText) -> Vec<StoredSession> {
+    match read_elements_with(path, "SessionData", read) {
         Ok(elements) => elements.into_iter().map(|attributes| StoredSession { attributes }).collect(),
         Err(problem) => {
             problems.extend(problem);
@@ -241,9 +262,10 @@ fn read_sessions(path: &Path, problems: &mut Vec<String>) -> Vec<StoredSession> 
     }
 }
 
-/// Read a `Folders` file (`<Folders><FolderSetting Path=... />...`) into settings by folder path
-fn read_folders(path: &Path, problems: &mut Vec<String>) -> HashMap<String, FolderSetting> {
-    let elements = match read_elements(path, "FolderSetting") {
+/// Read a `Folders` file (`<Folders><FolderSetting Path=... />...`), its text got with `read`, into settings by
+/// folder path
+fn read_folders(path: &Path, problems: &mut Vec<String>, read: ReadText) -> HashMap<String, FolderSetting> {
+    let elements = match read_elements_with(path, "FolderSetting", read) {
         Ok(elements) => elements,
         Err(problem) => {
             problems.extend(problem);
@@ -274,7 +296,12 @@ fn read_folders(path: &Path, problems: &mut Vec<String>) -> HashMap<String, Fold
 ///
 /// Returns no elements when the file doesn't exist, and `Err` with a message when it can't be read or parsed.
 pub(crate) fn read_elements(path: &Path, element: &str) -> Result<Vec<Vec<(String, String)>>, Option<String>> {
-    let text = match std::fs::read_to_string(path) {
+    read_elements_with(path, element, &read_text)
+}
+
+/// [`read_elements`], the file's text got with `read`
+fn read_elements_with(path: &Path, element: &str, read: ReadText) -> Result<Vec<Vec<(String, String)>>, Option<String>> {
+    let text = match read(path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(Some(format!("{}: {e}", path.display()))),

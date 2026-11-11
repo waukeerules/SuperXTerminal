@@ -5,7 +5,7 @@
 // on a clean install, the first session saved shows; and a folder's menu edits and turns on or off the local
 // overrides of every session in it; Connect … in a Grid turns Grid View on and opens the sessions. The Rust side is stood in for by mockIPC; moves are
 // recorded. jsdom doesn't scroll, so scrollIntoView is stood in for, recording the rows it's asked to show.
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -155,6 +155,41 @@ describe("starting", () => {
     // parses every session again, and with the settings folder on a network drive fetches the files again too)
     await expect.poll(() => calls.filter((c) => c.cmd === "sessions_shown").length).toBeGreaterThanOrEqual(2);
     expect(calls.filter((c) => c.cmd === "sessions_load").length).toBe(1);
+  });
+});
+
+describe("the check of the session files for changes", () => {
+  /** How many times the tree has asked whether the session files changed */
+  const checks = () => calls.filter((c) => c.cmd === "sessions_files_changed").length;
+
+  afterEach(() => {
+    vi.useRealTimers();
+    settings.sessionsCheckSeconds = 10;
+  });
+
+  it("is every 10 seconds unless Settings > General says otherwise, and never oftener", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    settings.sessionsCheckSeconds = 30;
+    render(SessionTree, { openSessions: new Map(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    await screen.findByText(/Imported/);
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(checks()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(checks()).toBe(1);
+
+    // changed in Settings while the tree shows: the new time from then on
+    settings.sessionsCheckSeconds = 10;
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(checks()).toBe(2);
+
+    // a settings file edited by hand to less: 10 seconds all the same
+    settings.sessionsCheckSeconds = 1;
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(checks()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(checks()).toBe(3);
   });
 });
 

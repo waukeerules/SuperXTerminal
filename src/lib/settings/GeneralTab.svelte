@@ -6,7 +6,7 @@
 <script lang="ts">
   import { SEARCH_FIELDS, searchFieldsOf, toggledSearchFields } from "../sessions/tree";
   import { FILE_MANAGER, ONEPASSWORD_INSTALL, SESSION_LOG_FOLDER, SYSTEM, THIS_COMPUTER } from "../platform";
-  import { chooseSettingsFolder, saveSettings, settings, type ScriptLanguage } from "./store.svelte";
+  import { chooseSettingsFolder, MIN_SESSIONS_CHECK_SECONDS, saveSettings, sessionsCheckSeconds, settings, type ScriptLanguage } from "./store.svelte";
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { checkForUpdates } from "./updates";
@@ -140,6 +140,12 @@
           title="PrivateSessions.xml, in your own folder on {THIS_COMPUTER}">Show in {FILE_MANAGER}</button>
       </span>
     </div>
+    <label title="How often the Sessions tree looks whether the session files were changed elsewhere (a teammate saving to the shared folder, an editor), and whether the settings folder can be reached. Each look reads the files whole, so {MIN_SESSIONS_CHECK_SECONDS} seconds is the least">Seconds between checks
+      <input type="number" min={MIN_SESSIONS_CHECK_SECONDS} max="3600" value={sessionsCheckSeconds()}
+        onchange={(e) => void saveSettings({ sessionsCheckSeconds: sessionsCheckSeconds(e.currentTarget.value) })} />
+    </label>
+    <p class="hint">The session files are checked for changes made elsewhere this often, {MIN_SESSIONS_CHECK_SECONDS} seconds
+      at the least; more suits a slow network drive.</p>
     {#if fileMessage}<p class="hint">{fileMessage}</p>{/if}
     {#if !settings.usePrivateSessions || !savedInUse}
       <!-- sessions need somewhere to go: one of the two stays on -->

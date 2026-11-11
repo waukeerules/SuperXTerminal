@@ -68,7 +68,7 @@
   import { ask } from "@tauri-apps/plugin-dialog";
   import { loadCustomIcons, type CustomIcon } from "../icons/custom";
   import { EnvironmentColors, parseRules } from "../icons/environment";
-  import { chooseSettingsFolder, databaseCheckSeconds, saveSettings, settings } from "../settings/store.svelte";
+  import { chooseSettingsFolder, databaseCheckSeconds, saveSettings, sessionsCheckSeconds, settings } from "../settings/store.svelte";
   import { DATABASE_SAVED, editSessionsExternally, exportCsv, exportXml as exportSessionsXml, type ImportKind } from "./api";
   import { commandLabel } from "../shortcuts";
 
@@ -1273,16 +1273,18 @@
 
   // a session file changed elsewhere (a teammate saving to the shared folder, SuperXPuTTY, an editor), or the settings
   // folder went away or came back: read it again, but not while a window is open, so nothing being edited is lost.
-  // Every 10 seconds: each check reads the files whole, over the network when the settings folder is a network drive
+  // Every 10 seconds, or as many more as Settings > General says: each check reads the files whole, over the network
+  // when the settings folder is a network drive
   $effect(() => {
     if (!settings.loaded) return;
+    const seconds = sessionsCheckSeconds();
     const timer = setInterval(async () => {
       if (editing || bulk || overriding || folderSettings || prompt || menu || showPending || connecting || importing) return;
       if (await invoke<boolean>("sessions_files_changed")) {
         await reload();
         context.status("The sessions changed on disk; read them again");
       }
-    }, 10_000);
+    }, seconds * 1000);
     return () => clearInterval(timer);
   });
 

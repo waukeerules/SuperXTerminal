@@ -61,6 +61,10 @@ pub struct AppSettings {
     /// Private sessions (PrivateSessions.xml in the user's own folder) are read and written; off, only Saved and
     /// Database sessions are used and the file is left as it is. One of the two stays on (Settings > General)
     pub use_private_sessions: bool,
+    /// Seconds between the Sessions tree's checks of the session files for changes made elsewhere (a teammate saving
+    /// to the shared folder, SuperXPuTTY, an editor), and of whether the settings folder can be reached (Settings >
+    /// General). 10 unless changed; the tree takes anything less as 10, as each check reads the files whole
+    pub sessions_check_seconds: u32,
     /// The Sessions pane's width in points, as dragged at its edge, while it's docked at the left or right
     pub sessions_pane_width: u32,
     /// Where the Sessions pane is docked, its title dragged there as DockPanelSuite's in SuperXPuTTY: "left" (the
@@ -168,6 +172,7 @@ impl Default for AppSettings {
             serial_devices: std::collections::BTreeMap::new(),
             use_sessions_xml: true,
             use_private_sessions: true,
+            sessions_check_seconds: 10,
             sessions_pane_width: 280,
             sessions_dock: "left".into(),
             sessions_pane_height: 260,

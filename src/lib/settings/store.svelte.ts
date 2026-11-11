@@ -46,6 +46,8 @@ export interface AppSettings {
   useSessionsXml: boolean;
   /** Private sessions (PrivateSessions.xml, only yours) are used; one of the two stays on */
   usePrivateSessions: boolean;
+  /** Seconds between checks of the session files for changes made elsewhere (Settings > General); 10 at the least */
+  sessionsCheckSeconds: number;
   /** The Sessions pane's width in points, as dragged at its edge, while it's docked at the left or right */
   sessionsPaneWidth: number;
   /** Where the Sessions pane is docked: its title dragged to the window's left, right or bottom (layout/dock.ts) */
@@ -156,6 +158,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   sessionLogFolder: "",
   useSessionsXml: true,
   usePrivateSessions: true,
+  sessionsCheckSeconds: 10,
   sessionsPaneWidth: 280,
   sessionsDock: "left",
   sessionsPaneHeight: 260,
@@ -188,6 +191,22 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   scriptLanguage: "rhai",
   commandHistoryDays: 0,
 });
+
+/**
+ * The fewest seconds between checks of the session files, and how many there are unless Settings > General says
+ * more: each check reads the files whole to see whether they changed, over the network when the settings folder is
+ * a network drive, so oftener isn't offered
+ */
+export const MIN_SESSIONS_CHECK_SECONDS = 10;
+
+/**
+ * Seconds between the Sessions tree's checks of the session files, from a value as typed or as the settings file
+ * has it: never less than MIN_SESSIONS_CHECK_SECONDS, which also stands for one that isn't a number (a settings
+ * file from before the setting, or edited by hand)
+ */
+export function sessionsCheckSeconds(value: unknown = settings.sessionsCheckSeconds): number {
+  return Math.max(MIN_SESSIONS_CHECK_SECONDS, Math.round(Number(value)) || MIN_SESSIONS_CHECK_SECONDS);
+}
 
 /** Database sessions' "Check every", in seconds; 0 when they're off or never checked */
 export function databaseCheckSeconds(): number {

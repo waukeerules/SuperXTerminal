@@ -1,7 +1,7 @@
 // Settings' search: it finds a setting in any tab, not only the open one, and a result opens its tab with the
 // setting flashed. And General's Use PrivateSessions.xml, which can be turned off only while Saved sessions are in use,
 // and the Show in Finder / File Explorer beside each sessions file; choosing a settings folder that can't be saved to
-// asks first; Look's themes of your own, and Tabs' Longest tab name, Grid View, Grid View off and Remote Desktop in Grid View.
+// asks first; the seconds between checks of the session files; Look's themes of your own, and Tabs' Longest tab name, Grid View, Grid View off and Remote Desktop in Grid View.
 // The Rust side is stood in for by mockIPC, which saves the settings and notes the files asked to be shown.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
@@ -300,6 +300,23 @@ describe("Look's Theme", () => {
     expect(screen.queryByRole("dialog", { name: "Edit Themes" })).toBeNull();
     expect(closed).toBe(0);
     uiThemes.list = [];
+  });
+});
+
+describe("General's check of the session files", () => {
+  it("saves the seconds between checks, 10 at the least", async () => {
+    settings.sessionsCheckSeconds = 10;
+    render(Settings, { onClose: () => {} });
+    const field = screen.getByLabelText("Seconds between checks") as HTMLInputElement;
+    expect(field.value).toBe("10");
+    await fireEvent.change(field, { target: { value: "30" } });
+    await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ sessionsCheckSeconds: 30 }));
+    // oftener than every 10 seconds isn't offered: each check reads the files whole
+    await fireEvent.change(field, { target: { value: "3" } });
+    await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ sessionsCheckSeconds: 10 }));
+    await fireEvent.change(field, { target: { value: "" } });
+    await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ sessionsCheckSeconds: 10 }));
+    settings.sessionsCheckSeconds = 10;
   });
 });
 

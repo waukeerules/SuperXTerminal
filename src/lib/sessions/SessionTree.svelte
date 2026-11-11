@@ -1271,7 +1271,8 @@
   }
 
   // a session file changed elsewhere (a teammate saving to the shared folder, SuperXPuTTY, an editor), or the settings
-  // folder went away or came back: read it again, but not while a window is open, so nothing being edited is lost
+  // folder went away or came back: read it again, but not while a window is open, so nothing being edited is lost.
+  // Every 10 seconds: each check reads the files whole, over the network when the settings folder is a network drive
   $effect(() => {
     if (!settings.loaded) return;
     const timer = setInterval(async () => {
@@ -1280,7 +1281,7 @@
         await reload();
         context.status("The sessions changed on disk; read them again");
       }
-    }, 3000);
+    }, 10_000);
     return () => clearInterval(timer);
   });
 

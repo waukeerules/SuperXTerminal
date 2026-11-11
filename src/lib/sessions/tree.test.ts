@@ -1,10 +1,10 @@
 /**
- * Tests for the Sessions tree's search and building the tree from sessions: pure functions, given sessions made
- * here, so nothing is stood in.
+ * Tests for the Sessions tree's search, building the tree from sessions, and the rows it's drawn as: pure functions,
+ * given sessions made here, so nothing is stood in.
  */
 import { describe, expect, it } from "vitest";
 import type { SessionView } from "./api";
-import { ALL_SEARCH_FIELDS, DEFAULT_SEARCH_FIELDS, buildTree, searchFieldsOf, searchProblem, searchTest, toggledSearchFields } from "./tree";
+import { ALL_SEARCH_FIELDS, DEFAULT_SEARCH_FIELDS, buildTree, searchFieldsOf, searchProblem, searchTest, toggledSearchFields, treeRows } from "./tree";
 
 /** A Saved SSH session in Lab, with any fields given */
 function session(name: string, extra: Partial<SessionView> = {}): SessionView {
@@ -107,5 +107,52 @@ describe("building the tree", () => {
     expect(tree.folders[0].sessions.map((s) => s.name)).toEqual(["SW2", "sw10"]);
     expect(tree.folders[0].folders[0].sessions.map((s) => s.name)).toEqual(["sw1"]);
     expect(tree.count).toBe(3);
+  });
+});
+
+describe("the tree's rows, top to bottom as drawn", () => {
+  /** A Saved session with this id */
+  const at = (id: string) => session(id.slice(id.lastIndexOf("/") + 1), { id, folder: id.includes("/") ? id.slice(0, id.lastIndexOf("/")) : "" });
+  const root = buildTree("saved", "Saved sessions", [at("Lab/Core/sw1"), at("Lab/Core/sw2"), at("Lab/r1"), at("Office/ap1"), at("top")], "", [], false);
+  /** A row as a test reads it: its name, how deep, and its tree lines */
+  const shape = (rows: ReturnType<typeof treeRows>) =>
+    rows.map((r) => `${"  ".repeat(r.kind === "folder" ? r.depth : r.depth + 1)}${r.kind === "folder" ? r.node.name + (r.open ? " v" : " >") : r.session.name}${r.last ? " (last)" : ""}`);
+
+  it("shows only the roots while nothing is open", () => {
+    const rows = treeRows([root], new Set());
+    expect(shape(rows)).toEqual(["Saved sessions > (last)"]);
+    expect(rows[0]).toMatchObject({ kind: "folder", first: true, last: true, depth: 0, guides: [] });
+  });
+
+  it("puts an open folder's folders, then its sessions, under it, each knowing whether it's the last there", () => {
+    const rows = treeRows([root], new Set(["saved:", "saved:Lab", "saved:Lab/Core"]));
+    expect(shape(rows)).toEqual([
+      "Saved sessions v (last)",
+      "  Lab v",
+      "    Core v",
+      "      sw1",
+      "      sw2 (last)",
+      "    r1 (last)",
+      "  Office >",
+      "  top (last)",
+    ]);
+    // Lab isn't the last in Saved sessions, so its line carries on down beside everything in it; the root's doesn't
+    const sw1 = rows.find((r) => r.kind === "session" && r.session.name === "sw1")!;
+    expect(sw1.guides).toEqual([false, true, true]);
+    // Core is followed by r1 in Lab, so it isn't Lab's last; a folder with no sessions after it would be
+    expect(rows.find((r) => r.kind === "folder" && r.node.name === "Core")).toMatchObject({ last: false, depth: 2 });
+  });
+
+  it("tells the first root from the last, and a shortcut in Favorites from the session itself", () => {
+    const favorites = { ...buildTree("saved", "Favorites", [at("Lab/r1")], "", [], false), key: "favorites:", group: "favorites" as const };
+    favorites.sessions = [at("Lab/r1")];
+    favorites.folders = [];
+    const rows = treeRows([favorites, root], new Set(["favorites:", "saved:", "saved:Lab"]));
+    expect(rows[0]).toMatchObject({ first: true, last: false });
+    expect(rows.find((r) => r.kind === "folder" && r.node === root)).toMatchObject({ first: false, last: true });
+    const picked = rows.filter((r) => r.kind === "session" && r.session.id === "Lab/r1").map((r) => (r.kind === "session" ? r.select : ""));
+    expect(picked).toEqual(["favorites:saved:Lab/r1", "saved:Lab/r1"]);
+    // every row's key is its own, a folder's unlike a session's of the same name
+    expect(new Set(rows.map((r) => r.key)).size).toBe(rows.length);
   });
 });

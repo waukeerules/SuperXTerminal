@@ -244,3 +244,65 @@ export type Dragged =
   | { kind: "folder"; store: Store; path: string }
   /** A selection of several: its keys ("saved:Lab/sw1", "saved:folder:Lab/Core"), all in one root */
   | { kind: "many"; store: Store; keys: string[] };
+
+/**
+ * One row of the tree as it's drawn: a folder, or a session in a folder that's open. The tree is drawn from a flat
+ * list of these (`treeRows`), top to bottom, so that only the rows in view need be in the page (TreeRows.svelte):
+ * with every folder's rows in it, opening a folder of 10,000 sessions took seconds, as did every reading of the
+ * sessions after.
+ */
+export type TreeRow =
+  | {
+      kind: "folder";
+      /** Unlike any other row's: "F" and the folder's key (a session may be named as a folder beside it) */
+      key: string;
+      node: FolderNode;
+      /** How deep it is (0 for a root), for its indent */
+      depth: number;
+      /** Tree lines: for each level above, whether its line carries on down past this row */
+      guides: boolean[];
+      /** The last item in its folder (or the last root): its line stops at it */
+      last: boolean;
+      /** The first root: its line starts at it */
+      first: boolean;
+      /** Whether it's open, its folders and sessions the rows after it */
+      open: boolean;
+    }
+  | {
+      kind: "session";
+      /** Unlike any other row's: "S" and what the session is selected by */
+      key: string;
+      /** What the session is selected by: "store:id", or "favorites:store:id" for a shortcut in Favorites or Recent */
+      select: string;
+      session: SessionView;
+      /** The folder it's shown in (Favorites or Recent, for a shortcut) */
+      parent: FolderNode;
+      /** Its folder's depth: the session is one level in from it */
+      depth: number;
+      /** Tree lines for the levels above it, its folder's included */
+      guides: boolean[];
+      /** The last session in its folder: its line stops at it */
+      last: boolean;
+    };
+
+/**
+ * The tree's rows, top to bottom as drawn: each root, and under every folder that's open its folders, then its
+ * sessions. `roots` are those shown, in order; the first's tree line starts at it and the last's stops at it.
+ */
+export function treeRows(roots: FolderNode[], expanded: ReadonlySet<string>): TreeRow[] {
+  const rows: TreeRow[] = [];
+  const add = (node: FolderNode, depth: number, guides: boolean[], last: boolean, first: boolean) => {
+    const open = expanded.has(node.key);
+    rows.push({ kind: "folder", key: `F${node.key}`, node, depth, guides, last, first, open });
+    if (!open) return;
+    // this folder's line carries on for its children's rows when it isn't the last in its own folder
+    const below = [...guides, !last];
+    node.folders.forEach((child, i) => add(child, depth + 1, below, i === node.folders.length - 1 && node.sessions.length === 0, false));
+    node.sessions.forEach((session, i) => {
+      const select = node.group ? `${node.group}:${session.store}:${session.id}` : `${session.store}:${session.id}`;
+      rows.push({ kind: "session", key: `S${select}`, select, session, parent: node, depth, guides: below, last: i === node.sessions.length - 1 });
+    });
+  };
+  roots.forEach((root, i) => add(root, 0, [], i === roots.length - 1, i === 0));
+  return rows;
+}

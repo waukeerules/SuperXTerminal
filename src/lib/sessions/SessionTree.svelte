@@ -10,7 +10,7 @@
   import type { SessionStates } from "../layout/TabArea";
   import { tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import TreeFolder from "./TreeFolder.svelte";
+  import TreeRows from "./TreeRows.svelte";
   import {
     deleteSession,
     getSession,
@@ -61,7 +61,7 @@
   import { PALETTE } from "../icons/palette";
   import {
     ALL_SEARCH_FIELDS, DEFAULT_SEARCH_FIELDS, SEARCH_FIELDS, buildGroup, buildTree, folderKeys, searchFieldsOf, searchProblem,
-    sessionsIn, toggledSearchFields, type Dragged, type FolderNode, type Group, type SearchField,
+    sessionsIn, toggledSearchFields, treeRows, type Dragged, type FolderNode, type Group, type SearchField,
   } from "./tree";
   import Icon from "../icons/Icon.svelte";
   import { context } from "../commands/sending.svelte";
@@ -244,8 +244,6 @@
   const shownRoots = $derived(
     [favorites, recent, loaded && !loaded.savedOff && loaded.savedFile !== null ? saved : null, privateRoot, databaseRoot].filter((r) => r !== null),
   );
-  /** Where a root is among those shown: first or last, for its tree line */
-  const rootPlace = (node: FolderNode) => ({ first: shownRoots[0] === node, last: shownRoots.at(-1) === node });
 
   let treeElement = $state<HTMLElement | undefined>();
   // while searching, the width the matches' names need, for App to widen the pane (Settings > General)
@@ -286,6 +284,14 @@
         ? new Set([...roots.map((r) => r.key), ...openedInSearch])
         : new Set(roots.flatMap(folderKeys).filter((k) => !closedInSearch.has(k))),
   );
+
+  /**
+   * The tree's rows, top to bottom as drawn: the roots shown, and what's under every folder that's open. TreeRows
+   * draws the ones in view
+   */
+  const rows = $derived(treeRows(shownRoots, shownExpanded));
+  /** The rows' component, asked to bring a session's row into view (Show in Sessions tree) */
+  let rowsShown = $state<TreeRows | undefined>();
 
   // a new search starts with everything open again
   $effect(() => {
@@ -970,11 +976,9 @@
     }
     expanded = new Set([...expanded, ...keys]);
     selected = `${session.store}:${session.id}`;
-    // once the opened folders have drawn its row
+    // once the opened folders' rows are among the tree's
     await tick();
-    const key = selected;
-    // compared rather than put in a selector: a session's id can hold quotes
-    [...(treeElement?.querySelectorAll<HTMLElement>(".row.session") ?? [])].find((r) => r.dataset.key === key)?.scrollIntoView({ block: "nearest" });
+    await rowsShown?.reveal(selected);
   }
 
   /** The roots' names, for Move to / Copy to */
@@ -1656,33 +1660,13 @@
     {#each loaded.problems as problem}
       <p class="message">Skipped: {problem}</p>
     {/each}
-    {#if favorites}
-      <TreeFolder node={favorites} depth={0} {...rootPlace(favorites)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
-        onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
-    {/if}
-    {#if recent}
-      <TreeFolder node={recent} depth={0} {...rootPlace(recent)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
-        onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
-    {/if}
-    {#if loaded.savedOff}
-      <!-- Saved sessions turned off (Settings > General): only Private and Database sessions -->
-    {:else if loaded.savedFile === null}
+    {#if !loaded.savedOff && loaded.savedFile === null}
       <p class="message">Choose the settings folder: the folder that holds the team's Sessions.xml.</p>
       <button onclick={choose}>Choose Settings Folder...</button>
-    {:else if saved}
-      <TreeFolder node={saved} depth={0} {...rootPlace(saved)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
-        onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
     {/if}
-    {#if privateRoot}
-      <TreeFolder node={privateRoot} depth={0} {...rootPlace(privateRoot)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
-        onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
-    {/if}
-    {#if databaseRoot}
-      <div class="db-root" title={db?.error ? `Showing the last read: ${db.error}` : `${db?.source}${db?.writable ? "" : " (read only)"}`}>
-        <TreeFolder node={databaseRoot} depth={0} {...rootPlace(databaseRoot)} expanded={shownExpanded} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
-          onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
-      </div>
-    {/if}
+    <TreeRows bind:this={rowsShown} {rows} scroller={treeElement} {colors} {iconSize} {customs} {openSessions} {selected} {multi} {overrides}
+      databaseTitle={db?.error ? `Showing the last read: ${db.error}` : `${db?.source}${db?.writable ? "" : " (read only)"}`}
+      onToggle={toggle} onOpen={open} onSelect={select} onMenu={showMenu} onDrop={dropped} />
   {/if}
 </div>
 

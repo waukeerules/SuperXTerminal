@@ -67,6 +67,22 @@ only the numbers for tabs behind another mean anything then.
 No device is needed: what costs is the output reaching the page, and it's the same bytes whoever sent them. To try
 many tabs in the app itself without a lab, use Demo mode (below) and Connect all on a folder.
 
+### The Sessions tree with thousands of sessions
+
+`tests/browser/tree.spec.ts` mounts the Sessions tree on a page of its own (`tests/browser/fixtures/tree.svelte.ts`,
+the Rust side stood in for) with thousands of sessions, and checks that only the rows in view are in the page and
+that scrolling, selecting and Show in Sessions tree still reach the rest. It measures too, when asked:
+
+```
+npm run measure:tree                    10,000 sessions in one folder: every one a row when it's open
+npm run measure:tree -- 10000 100       10,000 sessions, 100 to a folder
+```
+
+It prints how long the tree takes to show, to read its sessions again with its folders shut and open, to Expand all
+(and how many rows and elements are then in the page), to mark a tab connecting, to scroll and to search. The page is
+served by Vite as in development, so the first showing includes compiling it; compare the rest before and after a
+change.
+
 ## When something breaks again
 
 Every bug fix comes with a test that fails without the fix, and a bug that comes back (a regression) gets one before

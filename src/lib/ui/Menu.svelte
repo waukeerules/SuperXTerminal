@@ -85,6 +85,26 @@
     if (scrolls) element.querySelector("[data-checked]")?.scrollIntoView?.({ block: "nearest" });
   });
 
+  /** Where the pointer last was over the menu, in the window, for scrolled */
+  let pointer: { x: number; y: number } | null = null;
+
+  /**
+   * The menu scrolled under a pointer that stayed still: the item now under it is highlighted (CSS hover follows the
+   * scrolling), but the browser tells it the pointer arrived only once the pointer moves. So the submenu shown is
+   * the one of the item under the pointer now, beside it where it is now: Font scrolled under the pointer showed
+   * highlighted with no submenu
+   */
+  function scrolled(): void {
+    const under = pointer && document.elementFromPoint(pointer.x, pointer.y)?.closest("[data-index]");
+    const row = under && under.parentElement === element ? under : element.querySelector(`:scope > [data-index="${open}"]`);
+    if (!row) return;
+    const index = Number(row.getAttribute("data-index"));
+    const item = items[index];
+    const hasSubmenu = !("separator" in item) && !!item.items;
+    open = hasSubmenu ? index : null;
+    anchor = hasSubmenu ? row.getBoundingClientRect() : null;
+  }
+
   /** Run an item's action and close */
   function choose(item: MenuItem): void {
     if ("separator" in item || item.disabled || item.items || item.heading) return;
@@ -98,7 +118,8 @@
 <svelte:window onkeydown={(e) => e.key === "Escape" && onClose()} onblur={() => !nested && onClose()} />
 
 <div class="menu" class:scrolls role="menu" tabindex="-1" bind:this={element} onclick={(e) => e.stopPropagation()}
-  onkeydown={() => {}} onscroll={() => (open = null)} style:left={`${left}px`} style:top={`${top}px`}>
+  onkeydown={() => {}} onscroll={scrolled}
+  onmousemove={(e) => (pointer = { x: e.clientX, y: e.clientY })} style:left={`${left}px`} style:top={`${top}px`}>
   {#each items as item, index}
     {#if "separator" in item}
       <div class="separator" role="separator"></div>
@@ -106,7 +127,7 @@
       <div class="heading" role="presentation" title={item.label}>{item.label}</div>
     {:else}
       <div class="item" class:bold={item.bold} class:disabled={!!item.disabled} role="menuitem" tabindex="-1"
-        data-checked={item.checked ? "" : undefined}
+        data-checked={item.checked ? "" : undefined} data-index={index}
         aria-disabled={!!item.disabled} title={typeof item.disabled === "string" ? item.disabled : ""}
         onmouseenter={(e) => {
           anchor = item.items ? e.currentTarget.getBoundingClientRect() : null;
@@ -149,12 +170,35 @@
    * fixed beside their item, so the scrolling doesn't cut them off
    */
   .menu {
+    /* its padding and border inside the height, whatever the page around it says (app.css does too) */
+    box-sizing: border-box;
     max-height: calc(100vh - 8px);
     overflow-y: auto;
   }
 
   .menu:focus {
     outline: none;
+  }
+
+  /*
+   * a menu that scrolls shows its scroll bar all the time: the Mac otherwise hides it until the menu is scrolled, so
+   * nothing says there are more rows below, in a window too short for a terminal's menu. A styled scroll bar is always
+   * drawn (WebKit, WebView2 and WebKitGTK alike), and only when the menu doesn't fit; as the terminal page's own menu
+   * draws it (terminal.css)
+   */
+  .menu::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .menu::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .menu::-webkit-scrollbar-thumb {
+    background: var(--text-muted);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
 
   .item {

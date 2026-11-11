@@ -6,7 +6,7 @@ Three kinds, each beside what it tests. All run on this computer; nothing runs o
 |---|---|---|
 | `cd src-tauri && cargo test` | The Rust side: launching sessions (ssh's arguments, profiles, gateways), reading and writing the session files, imports, file transfer parsing | A `#[cfg(test)] mod tests` at the end of each file in `src-tauri/src/` |
 | `npm test` | The front end's logic and its dialogs, with the Rust side stood in for | `*.test.ts` beside the file, in `src/` |
-| `npm run test:browser` | The terminal page in real browsers: WebKit (the Mac app's engine) and Chromium (Windows') | `tests/browser/` |
+| `npm run test:browser` | The terminal page, and components where layout matters, in real browsers: WebKit (the Mac app's engine) and Chromium (Windows') | `tests/browser/` |
 
 ## Front end (`npm test`)
 
@@ -27,6 +27,11 @@ Three kinds, each beside what it tests. All run on this computer; nothing runs o
 run beside it) and drives it through the page's own test hooks, `window.terminalDev`: `message` sends it what a tab
 would (config, prefs), `feedText` writes output as if a session sent it, and `term` is xterm.js itself. See
 `tests/browser/terminal.spec.ts`.
+
+The app's own components can be checked there too, where only a real engine shows the problem (scroll bars, layout):
+a page in `tests/browser/fixtures/` imports the component through the same Vite server, which compiles it as the app's
+does, and mounts it on a blank page, away from the terminal page's styles. `tests/browser/menu.spec.ts` does so for
+the app's menus.
 
 - Wait for what's expected with `expect.poll` (or Playwright's own `expect(locator)`), not fixed pauses: WebKit draws
   later than Chromium, and a pause long enough for one is wasted on the other.

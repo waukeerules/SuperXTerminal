@@ -9,6 +9,7 @@ import {
   type IHeaderActionsRenderer,
   type IGroupHeaderProps,
   type IDockviewGroupPanel,
+  type IDockviewPanel,
   themeDark,
   themeLight,
   type DockviewApi,
@@ -1395,6 +1396,18 @@ export class TabArea {
     for (const host of this.hosts.values()) host.setDark(dark);
   }
 
+  /**
+   * The tabs a tab's Close others, Close others to the right and Close all go by, in order: its own group's, or in
+   * Grid View, where every tab is a tile of its own, the whole window's, row by row (closing only its group's would
+   * close nothing there)
+   * @param id The tab whose menu it is
+   */
+  closeScope(id: string): IDockviewPanel[] {
+    const panel = this.api.getPanel(id);
+    if (!panel) return [];
+    return this.gridView ? this.api.groups.flatMap((group) => group.panels) : [...panel.group.panels];
+  }
+
   /** The tab menu's commands, from a tab's page: close it, the others, those to its right, or all (the keyboard then in the tab left in front) */
   command(id: string, command: string): void {
     const panel = this.api.getPanel(id);
@@ -1403,7 +1416,7 @@ export class TabArea {
       this.openOutput(id);
       return;
     }
-    const siblings = panel.group.panels;
+    const siblings = this.closeScope(id);
     const index = siblings.indexOf(panel);
     const closing =
       command === "close" ? [panel]

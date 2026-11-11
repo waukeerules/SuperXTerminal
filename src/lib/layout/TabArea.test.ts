@@ -359,6 +359,20 @@ describe("Grid View", () => {
     await expect.poll(() => rows()).toEqual([["sw2", "sw3"], ["sw4", "sw5"]]);
   });
 
+  it("closes every other tab in the window with Close others, each being a tile of its own, and all with Close all", async () => {
+    const ids = ["sw1", "sw2", "sw3", "sw4", "sw5"].map((t) => open(t));
+    tabs.setGridView(true);
+    // to the right: the tiles after it, row by row, as the grid reads
+    tabs.command(ids[2], "closeRight");
+    await expect.poll(() => rows()).toEqual([["sw1", "sw2"], ["sw3"]]);
+    tabs.command(ids[1], "closeOthers");
+    await expect.poll(() => rows()).toEqual([["sw2"]]);
+    open("sw6");
+    await expect.poll(() => tabs.allTabs().length).toBe(2);
+    tabs.command(ids[1], "closeAll");
+    await expect.poll(() => tabs.allTabs().length).toBe(0);
+  });
+
   it("joins the tabs back into one group when it's turned off, the active tab in front", () => {
     const ids = ["sw1", "sw2", "sw3"].map((t) => open(t));
     tabs.setGridView(true);

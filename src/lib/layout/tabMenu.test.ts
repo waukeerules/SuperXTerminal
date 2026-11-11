@@ -1,5 +1,5 @@
 // A tab's right-click menu: its Tunnels... item, which shows the session's tunnels, or is greyed saying where to add
-// them; and Grid View, ticked while it's on. The tab area is stood in for by an object with what the menu reads of it, the window by the menu's host.
+// them; Grid View, ticked while it's on; and the Close items, greyed by the tabs they'd close. The tab area is stood in for by an object with what the menu reads of it, the window by the menu's host.
 import { describe, expect, it, vi } from "vitest";
 import { tabMenu, type TabMenuHost } from "./tabMenu";
 import type { TabArea } from "./TabArea";
@@ -23,6 +23,8 @@ function menuWith(tunnels: { kind: string; listen: string; to: string }[], grid 
     watchOf: () => ({ activity: false, silence: 0 }),
     groupCount: () => (grid ? 3 : 1),
     inGridView: () => grid,
+    // the tab alone in its group; in Grid View, one of the window's three tiles
+    closeScope: () => (grid ? [{ id: "t0" }, { id: "t1" }, { id: "t2" }] : [{ id: "t1" }]),
   } as unknown as TabArea;
   const host = { tabs, sessions: [], tunnels: vi.fn(), gridView: vi.fn() } as unknown as TabMenuHost;
   const items = tabMenu(host, "t1");
@@ -58,5 +60,17 @@ describe("a tab's Grid View item", () => {
     expect(off.named("Grid View")?.checked).toBe(false);
     off.named("Grid View")!.action!();
     expect(off.gridView).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("a tab's Close items", () => {
+  it("in Grid View, where each tab is a tile of its own, close the window's other tabs, so they aren't greyed", () => {
+    const { named } = menuWith([], true);
+    expect(["Close others", "Close others to the right", "Close all"].map((label) => named(label)?.disabled)).toEqual([false, false, false]);
+  });
+
+  it("out of Grid View go by the tab's own group: greyed for a tab alone in it", () => {
+    const { named } = menuWith([], false);
+    expect(["Close others", "Close others to the right", "Close all"].map((label) => named(label)?.disabled)).toEqual([true, true, true]);
   });
 });

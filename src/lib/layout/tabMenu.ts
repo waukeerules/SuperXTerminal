@@ -84,6 +84,22 @@ function specialItems(protocol: string, send: (command: string) => void): MenuIt
   return specials.map(({ label, command }) => ({ label, action: () => send(command) }));
 }
 
+/**
+ * Close others, Close others to the right and Close all, greyed by the tabs they close: the tab's own group's, or in
+ * Grid View the whole window's (TabArea.closeScope), as the commands go by
+ * @param tabs The window's tab area
+ * @param id The tab whose menu it is
+ */
+function closeItems(tabs: TabArea, id: string): MenuItem[] {
+  const scope = tabs.closeScope(id);
+  const index = scope.findIndex((p) => p.id === id);
+  return [
+    { label: "Close others", disabled: scope.length < 2, action: () => tabs.command(id, "closeOthers") },
+    { label: "Close others to the right", disabled: index === scope.length - 1, action: () => tabs.command(id, "closeRight") },
+    { label: "Close all", disabled: scope.length < 2, action: () => tabs.command(id, "closeAll") },
+  ];
+}
+
 /** The menu for the tab `id` */
 export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
   const rdp = host.tabs.rdpHosts.get(id);
@@ -99,7 +115,6 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
   const address = target.kind === "quickConnect" ? target.host : session?.host ?? "";
   const port = session?.port ?? 0;
   const group = tabs.api.getPanel(id)?.group.panels ?? [];
-  const index = group.findIndex((p) => p.id === id);
   const watch = tabs.watchOf(id);
   const protocol = (target.kind === "quickConnect" ? target.protocol : session?.protocol ?? "").toUpperCase();
   const noLog = "The session hasn't started yet";
@@ -199,9 +214,7 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
     { label: "Move to New Window", action: () => host.moveToNewWindow(id) },
     { separator: true },
     { label: "Close", action: () => tabs.command(id, "close") },
-    { label: "Close others", disabled: list.length < 2, action: () => tabs.command(id, "closeOthers") },
-    { label: "Close others to the right", disabled: index === group.length - 1, action: () => tabs.command(id, "closeRight") },
-    { label: "Close all", disabled: list.length < 2, action: () => tabs.command(id, "closeAll") },
+    ...closeItems(tabs, id),
   ];
 }
 
@@ -227,8 +240,6 @@ function rdpMenu(host: TabMenuHost, id: string, rdp: RdpHost): MenuItem[] {
   const target = params?.target;
   const session = target?.kind === "session" ? host.sessions.find((s) => s.store === target.store && s.id === target.id) : undefined;
   const group = tabs.api.getPanel(id)?.group.panels ?? [];
-  const index = group.findIndex((p) => p.id === id);
-  const all = tabs.allTabs();
   const offline = !rdp.canReceiveCommands && "Not connected";
   const send = (codes: string[]) => {
     void rdp.sendCombo(codes);
@@ -287,8 +298,6 @@ function rdpMenu(host: TabMenuHost, id: string, rdp: RdpHost): MenuItem[] {
     { label: withKey("Grid View", "toggleGridView"), checked: tabs.inGridView(), action: () => host.gridView(!tabs.inGridView()) },
     { separator: true },
     { label: "Close", action: () => tabs.command(id, "close") },
-    { label: "Close others", disabled: all.length < 2, action: () => tabs.command(id, "closeOthers") },
-    { label: "Close others to the right", disabled: index === group.length - 1, action: () => tabs.command(id, "closeRight") },
-    { label: "Close all", disabled: all.length < 2, action: () => tabs.command(id, "closeAll") },
+    ...closeItems(tabs, id),
   ];
 }

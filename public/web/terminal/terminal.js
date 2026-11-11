@@ -81,6 +81,11 @@
     /** How often a tab in front asks again for a WebGL context the browser took, and how long after (lostWebgl) */
     var MAX_WEBGL_RETRIES = 3;
     var WEBGL_RETRY_MS = 2000;
+    var fitTimer = null;        // fits the terminal to its tab once the tab's size has stopped changing (fitWhenStill)
+    /** How long a tab's size is still before a terminal with a long scrollback is fitted to it */
+    var FIT_STILL_MS = 100;
+    /** Lines in the terminal, the screen's included, up to which it's fitted at once: wrapping so few again is nothing */
+    var FIT_NOW_LINES = 200;
     var behindTimer = null;     // stops laying the page out once a tab behind has had its size for a moment
     /**
      * How long a tab behind keeps its layout and its WebGL context after its size last changed (applyBehind): long
@@ -160,6 +165,23 @@
             // a tab opened behind another has its size now, for its session to start with: it can stop drawing
             applyBehind();
         }
+    }
+
+    /**
+     * The tab's size changed (the window or a split dragged, Grid View laid out again): fit to it. At once while there
+     * is little above the screen; with more, once the size has been still for FIT_STILL_MS. A change of columns wraps
+     * every line kept again, and moves each highlight with its line: a sixth of a second for a tab with 6,000 lines,
+     * at every step of a drag, in every tab showing (sixteen in a grid took four seconds for one drag of the window's
+     * corner). The session is resized as often, which on Windows makes its pseudo console draw the screen again each
+     * time. So the terminal keeps its size while the edge moves, and takes the new one when it stops.
+     */
+    function fitWhenStill() {
+        window.clearTimeout(fitTimer);
+        if (!sized || term.buffer.active.length < FIT_NOW_LINES) {
+            fit();
+            return;
+        }
+        fitTimer = window.setTimeout(fit, FIT_STILL_MS);
     }
 
     // ---- behind another tab ---------------------------------------------------------------------------------------
@@ -2058,7 +2080,7 @@
             if (e.target.scrollLeft) { e.target.scrollLeft = 0; }
         }, true);
 
-        new ResizeObserver(function () { fit(); }).observe(element);
+        new ResizeObserver(fitWhenStill).observe(element);
         if (host) {
             host.addEventListener('message', function (event) { onMessage(event.data); });
         }

@@ -85,6 +85,27 @@ test("a tab behind another gives up its WebGL context, and draws with WebGL agai
   await expect.poll(() => webgl(0)).toBe(false);
 });
 
+test("a tab with a long scrollback is resized once when the window stops being dragged, not at every step", async ({ page }) => {
+  await openTabs(page, 1);
+  // more than a screenful or two: every resize wraps all of it again
+  await page.evaluate(() => (window as any).tabs.feed(0, Array.from({ length: 400 }, (_, i) => `line ${i} of a long listing\r\n`).join("")));
+  const before = await cols(page, 0);
+  const told = await sizes(page, 0);
+  // the window's edge dragged in: a narrower tab area at each frame
+  await page.evaluate(async () => {
+    const area = document.getElementById("area")!;
+    for (let step = 1; step <= 6; step++) {
+      area.style.right = `${step * 30}px`;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+  });
+  await expect.poll(() => cols(page, 0)).toBeLessThan(before - 20);
+  await expect.poll(() => sizes(page, 0)).toBe(told + 1);
+  // and no more follow
+  await page.waitForTimeout(300);
+  expect(await sizes(page, 0)).toBe(told + 1);
+});
+
 test("a font size chosen while a tab is behind is the tab's once it's in front", async ({ page }) => {
   await openTabs(page, 2);
   const before = await cols(page, 1);

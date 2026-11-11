@@ -76,6 +76,8 @@ pub struct AppState {
     db_server: Mutex<Vec<sessions::StoredSession>>,
     /// The session files' contents when last read, so a change made elsewhere can be noticed
     files_seen: Mutex<u64>,
+    /// What the last read of the session files said; None until they've been read ([`sessions_shown`])
+    files_read: Mutex<Option<FilesRead>>,
 }
 
 /// How Database sessions stand, for the tree's root
@@ -209,11 +211,21 @@ fn profiles_read_file(path: String) -> Result<Vec<Profile>, String> {
     profiles::import_text(&std::fs::read_to_string(&path).map_err(|e| e.to_string())?)
 }
 
+/// What the last read of the session files said besides the sessions themselves, kept so they can be shown again
+/// without reading the files ([`sessions_shown`])
+#[derive(Clone)]
+struct FilesRead {
+    /// The files that couldn't be read, and why
+    problems: Vec<String>,
+    /// The settings folder couldn't be reached: Saved sessions are the copy kept on this computer ([`saved_cache`])
+    saved_offline: bool,
+    /// When that copy was read; "" when not offline, or there's none
+    saved_cached_at: String,
+}
+
 /// Read (or read again) the session and folder files, and give the UI what it shows
 #[tauri::command]
 fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
-    let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
-    let saved_off = !state.settings.lock().unwrap().use_sessions_xml;
     let private_off = private_off(&state);
     *state.files_seen.lock().unwrap() = files_fingerprint(&state);
     let mut problems = Vec::new();
@@ -237,29 +249,57 @@ fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
             loaded.folders.insert(sessions::Store::Database, folders);
         }
     }
-    let result = SessionsLoaded {
-        sessions: loaded.views(),
-        folders: loaded
+    let counts = (loaded.saved.len(), loaded.private.len(), loaded.database.len());
+    *state.sessions.lock().unwrap() = loaded;
+    applog::info(format!("Read the sessions: {} saved, {} private, {} from the database", counts.0, counts.1, counts.2));
+    for problem in &problems {
+        applog::warn(format!("Sessions: {problem}"));
+    }
+    let read = FilesRead { problems, saved_offline, saved_cached_at };
+    *state.files_read.lock().unwrap() = Some(read.clone());
+    tray::refresh(&app);
+    shown(&state, read)
+}
+
+/// The sessions as they stand, for the UI to show again, without reading the files: after the Database sessions
+/// changed (their cache shown at start, the table read, a pending change sent or dropped), which the files have no
+/// part in. Reading them for that parsed every Saved and Private session again, three times as the app started, and
+/// fetched the files again each time when the settings folder is a network drive. Before the files have been read
+/// at all, it reads them.
+#[tauri::command]
+fn sessions_shown(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
+    let read = state.files_read.lock().unwrap().clone();
+    match read {
+        Some(read) => {
+            tray::refresh(&app);
+            shown(&state, read)
+        }
+        None => sessions_load(app, state),
+    }
+}
+
+/// What the UI shows of the sessions as they stand, with what the last read of the files said
+fn shown(state: &AppState, read: FilesRead) -> SessionsLoaded {
+    // the settings read, and their lock let go, before the sessions' is taken (see private_off)
+    let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
+    let saved_off = !state.settings.lock().unwrap().use_sessions_xml;
+    let private_off = private_off(state);
+    let sessions = state.sessions.lock().unwrap();
+    SessionsLoaded {
+        sessions: sessions.views(),
+        folders: sessions
             .folders
             .iter()
             .flat_map(|(store, settings)| settings.values().map(move |setting| (*store, setting.clone())))
             .collect(),
-        problems,
+        problems: read.problems,
         saved_file: settings_folder.map(|f| f.join("Sessions.xml").display().to_string()),
         private_file: state.user_folder.join("PrivateSessions.xml").display().to_string(),
         saved_off,
         private_off,
-        saved_offline,
-        saved_cached_at,
-    };
-    let counts = (loaded.saved.len(), loaded.private.len(), loaded.database.len());
-    *state.sessions.lock().unwrap() = loaded;
-    applog::info(format!("Read the sessions: {} saved, {} private, {} from the database", counts.0, counts.1, counts.2));
-    for problem in &result.problems {
-        applog::warn(format!("Sessions: {problem}"));
+        saved_offline: read.saved_offline,
+        saved_cached_at: read.saved_cached_at,
     }
-    tray::refresh(&app);
-    result
 }
 
 /// The app's settings, for the UI
@@ -3141,9 +3181,11 @@ pub fn run() {
             database: Mutex::new(DbState::default()),
             db_server: Mutex::new(Vec::new()),
             files_seen: Mutex::new(0),
+            files_read: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             sessions_load,
+            sessions_shown,
             open_link,
             settings_get,
             settings_set_folder,
@@ -3376,6 +3418,7 @@ mod tests {
             database: Mutex::new(Default::default()),
             db_server: Mutex::new(Vec::new()),
             files_seen: Mutex::new(0),
+            files_read: Mutex::new(None),
         }
     }
 

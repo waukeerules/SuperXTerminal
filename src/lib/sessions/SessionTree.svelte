@@ -22,6 +22,7 @@
     deleteMany,
     moveSession,
     saveFolderSettings,
+    shownSessions,
     transferSessions,
     unavailableReason,
     refreshDatabase,
@@ -345,7 +346,7 @@
   async function startDatabase(): Promise<void> {
     try {
       db = await cachedDatabase();
-      loaded = await loadSessions();
+      loaded = await shownSessions();
     } catch (e) {
       error = String(e);
     }
@@ -358,7 +359,7 @@
     dbLoading = true;
     try {
       db = await refreshDatabase();
-      loaded = await loadSessions();
+      loaded = await shownSessions();
     } catch (e) {
       error = String(e);
     } finally {
@@ -1730,7 +1731,7 @@
 {/if}
 
 {#if showPending}
-  <PendingChanges onChanged={async (state) => { db = state; loaded = await loadSessions(); }} onClose={() => (showPending = false)} />
+  <PendingChanges onChanged={async (state) => { db = state; loaded = await shownSessions(); }} onClose={() => (showPending = false)} />
 {/if}
 
 {#if prompt}

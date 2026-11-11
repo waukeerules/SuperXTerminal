@@ -74,6 +74,15 @@ export function loadSessions(): Promise<SessionsLoaded> {
   return invoke<SessionsLoaded>("sessions_load");
 }
 
+/**
+ * The sessions as they stand, without reading the session files again: for showing them after only the Database
+ * sessions changed. Reading the files parses every Saved and Private session, and fetches them when the settings
+ * folder is a network drive
+ */
+export function shownSessions(): Promise<SessionsLoaded> {
+  return invoke<SessionsLoaded>("sessions_shown");
+}
+
 /** Protocols this Mac can open now, and why the others can't (shown dimmed, with the reason, in the tree) */
 export function unavailableReason(protocol: string): string | null {
   switch (protocol.toUpperCase()) {

@@ -34,7 +34,7 @@ beforeEach(() => {
   calls = [];
   mockIPC((cmd, args) => {
     calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-    if (cmd === "sessions_load")
+    if (cmd === "sessions_load" || cmd === "sessions_shown")
       return { sessions: [session("Imported/Core/sw1"), session("Imported/Core/sw2"), session("Imported/r1"), session("Lab/x")], folders: [], problems: [] };
     if (cmd === "shortcuts_get" || cmd === "shortcuts_opened") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
     if (cmd === "overrides_get") return {};
@@ -148,10 +148,20 @@ describe("selecting folders and sessions together", () => {
   });
 });
 
+describe("starting", () => {
+  it("reads the session files once, however often the Database sessions are shown again", async () => {
+    await open();
+    // the tree, then the Database sessions' cache, then the table: three showings, one read of the files (each read
+    // parses every session again, and with the settings folder on a network drive fetches the files again too)
+    await expect.poll(() => calls.filter((c) => c.cmd === "sessions_shown").length).toBeGreaterThanOrEqual(2);
+    expect(calls.filter((c) => c.cmd === "sessions_load").length).toBe(1);
+  });
+});
+
 describe("the settings folder away", () => {
   it("shows Saved sessions from the copy kept, saying they're offline and when they were read", async () => {
     mockIPC((cmd) => {
-      if (cmd === "sessions_load")
+      if (cmd === "sessions_load" || cmd === "sessions_shown")
         return { sessions: [session("Lab/sw1")], folders: [], problems: [], savedFile: "/team/Sessions.xml", privateFile: "/me/PrivateSessions.xml", savedOff: false, savedOffline: true, savedCachedAt: "09:41" };
       if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
       if (cmd === "overrides_get") return {};
@@ -172,7 +182,7 @@ describe("searching", () => {
 
   it("shows only the roots with matches, and none at all when nothing matches", async () => {
     mockIPC((cmd) => {
-      if (cmd === "sessions_load") return { sessions: [session("Imported/r1"), { ...session("Home/nas"), store: "private" }], folders: [], problems: [] };
+      if (cmd === "sessions_load" || cmd === "sessions_shown") return { sessions: [session("Imported/r1"), { ...session("Home/nas"), store: "private" }], folders: [], problems: [] };
       if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
       if (cmd === "overrides_get") return {};
       if (cmd === "icons_custom" || cmd === "profiles_list") return [];
@@ -232,7 +242,7 @@ describe("with Private sessions turned off", () => {
   it("shows no Private sessions, offers none to copy to, and makes new sessions in Saved sessions", async () => {
     let made: string | null = null;
     mockIPC((cmd, args) => {
-      if (cmd === "sessions_load") return { sessions: [session("Lab/sw1")], folders: [], problems: [], savedFile: "/team/Sessions.xml", privateFile: "/me/PrivateSessions.xml", savedOff: false, privateOff: true };
+      if (cmd === "sessions_load" || cmd === "sessions_shown") return { sessions: [session("Lab/sw1")], folders: [], problems: [], savedFile: "/team/Sessions.xml", privateFile: "/me/PrivateSessions.xml", savedOff: false, privateOff: true };
       if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
       if (cmd === "overrides_get") return {};
       if (cmd === "icons_custom" || cmd === "profiles_list" || cmd === "variables_list" || cmd === "variables_built_in" || cmd === "buttonbars_load") return [];
@@ -268,7 +278,7 @@ describe("turning Private sessions off and on", () => {
     /** Whether Private sessions are on, as the core answers sessions_load */
     let privateOn = true;
     mockIPC((cmd) => {
-      if (cmd === "sessions_load") {
+      if (cmd === "sessions_load" || cmd === "sessions_shown") {
         return {
           sessions: [session("Lab/sw1"), { ...session("Home/nas"), store: "private" }], folders: [], problems: [],
           savedFile: "/team/Sessions.xml", privateFile: "/me/PrivateSessions.xml", savedOff: false, privateOff: !privateOn,
@@ -307,7 +317,7 @@ describe("Show in Sessions tree", () => {
 
   it("opens a Recent session's folders, selects it there and scrolls it into view", async () => {
     mockIPC((cmd) => {
-      if (cmd === "sessions_load") return { sessions: [session("Imported/Core/sw1"), session("Imported/r1"), session("Lab/x")], folders: [], problems: [] };
+      if (cmd === "sessions_load" || cmd === "sessions_shown") return { sessions: [session("Imported/Core/sw1"), session("Imported/r1"), session("Lab/x")], folders: [], problems: [] };
       if (cmd === "shortcuts_get") return { Favorites: [], Recent: ["Imported/Core/sw1"], FavoritesExpanded: false, RecentExpanded: true };
       if (cmd === "overrides_get") return {};
       if (cmd === "icons_custom" || cmd === "profiles_list") return [];
@@ -333,7 +343,7 @@ describe("the first session on a clean install", () => {
     const stored: SessionView[] = [];
     mockIPC((cmd, args) => {
       const a = (args ?? {}) as { store?: "saved" | "private"; fields?: { name: string; folder: string } };
-      if (cmd === "sessions_load")
+      if (cmd === "sessions_load" || cmd === "sessions_shown")
         return { sessions: [...stored], folders: [], problems: [], savedFile: settingsFolder ? "/team/Sessions.xml" : null, privateFile: "/me/PrivateSessions.xml", savedOff: false };
       if (cmd === "session_save") {
         const id = a.fields!.folder ? `${a.fields!.folder}/${a.fields!.name}` : a.fields!.name;
@@ -408,7 +418,7 @@ describe("a folder's local overrides", () => {
     stored = { "Imported/Core/sw1": { Port: 0, Username: "tim" }, "Imported/Core/sw2": { Port: 2222, Disabled: true } };
     mockIPC((cmd, args) => {
       calls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
-      if (cmd === "sessions_load")
+      if (cmd === "sessions_load" || cmd === "sessions_shown")
         return { sessions: [session("Imported/Core/sw1"), session("Imported/Core/sw2"), session("Imported/r1"), session("Lab/x")], folders: [], problems: [] };
       if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
       if (cmd === "overrides_get") return stored;

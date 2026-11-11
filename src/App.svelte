@@ -630,6 +630,15 @@
 
   // View > Grid View: every window's tabs tiled, or put back (their old splits, or one group, as Settings > General >
   // Tabs says), as the setting changes
+  /** Whether tabs were watched for activity when last looked, to tell the setting being changed from its first reading */
+  let watchedActivity: boolean | null = null;
+  // Settings > General > Tabs > Watch tabs for activity turned on or off: the tabs open now follow it (a tab opening
+  // takes it by itself, TabArea)
+  $effect(() => {
+    const on = settings.watchActivity;
+    if (watchedActivity !== null && watchedActivity !== on) tabs?.watchEvery(on);
+    watchedActivity = on;
+  });
   $effect(() => {
     if (tabs) tabs.desktopsApart = settings.gridViewRdp === "window";
     tabs?.setGridView(settings.gridView, settings.gridViewOff === "restore");

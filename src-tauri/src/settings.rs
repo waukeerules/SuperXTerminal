@@ -126,6 +126,10 @@ pub struct AppSettings {
     pub tab_list_switch_session: bool,
     /// The longest a tab's name is shown, in characters, before it's cut short with …; 0 shows the whole name
     pub tab_name_max: u32,
+    /// Every terminal tab is watched for activity as it opens (Settings > General > Tabs): new output in a tab that
+    /// isn't being looked at pulses the tab in its colour. Off, a tab is watched when its menu's Watch for Activity
+    /// says, as SuperXPuTTY's
+    pub watch_activity: bool,
     /// The Sessions tree's dotted lines, as SuperXPuTTY's (its TreeView's ShowLines)
     pub tree_lines: bool,
     /// While searching, the Sessions pane widens (up to a limit) so the matches' names fit
@@ -197,6 +201,7 @@ impl Default for AppSettings {
             tab_close: "tab".into(),
             tab_list_switch_session: false,
             tab_name_max: 30,
+            watch_activity: false,
             tree_lines: true,
             search_widens_pane: true,
             tree_search_case: false,

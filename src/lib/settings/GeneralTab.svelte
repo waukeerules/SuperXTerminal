@@ -262,6 +262,12 @@
     </div>
     <p class="hint">A longer name is cut short with …, the whole of it shown when the pointer is on the tab. Shorter
       fits more tabs in the strip; 0 never cuts a name, however wide that makes its tab.</p>
+    <label class="check"><input type="checkbox" checked={settings.watchActivity}
+        onchange={(e) => void saveSettings({ watchActivity: e.currentTarget.checked })} />
+      Watch tabs for activity</label>
+    <p class="hint">Every terminal tab is watched as it opens, and the tabs open now with it: new output in a tab
+      you're not looking at pulses the tab in its colour until you look at it. Off, a tab is watched when its
+      right-click menu's Watch for Activity is ticked, which also turns it off for one tab.</p>
     <label class="check"><input type="checkbox" checked={settings.gridView}
         onchange={(e) => void saveSettings({ gridView: e.currentTarget.checked })} />
       Grid View: each tab in a tile of its own</label>

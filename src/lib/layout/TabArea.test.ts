@@ -9,6 +9,7 @@ import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import { gridShape, TabArea } from "./TabArea";
 import { DEFAULT_PROFILE, emptyProfile, PROFILES_CHANGED, type Profile } from "../settings/profiles";
+import { settings } from "../settings/store.svelte";
 
 /** Have a tab's page say it's ready, so its session starts (set up in beforeEach) */
 let ready: (id: string) => void;
@@ -508,5 +509,35 @@ describe("gridShape", () => {
   it("is as square as it can be before the window has a size, and one tile for one tab", () => {
     expect(gridShape(5, 0, 0)).toEqual({ columns: 3, rows: 2 });
     expect(gridShape(1, 2560, 1300)).toEqual({ columns: 1, rows: 1 });
+  });
+});
+
+describe("Watch tabs for activity (Settings > General > Tabs)", () => {
+  afterEach(() => {
+    settings.watchActivity = false;
+  });
+
+  it("watches a tab as it opens when it's on, and not when it's off", () => {
+    settings.watchActivity = false;
+    const plain = open("sw1");
+    expect(tabs.watchOf(plain).activity).toBe(false);
+    settings.watchActivity = true;
+    const watched = open("sw2");
+    expect(tabs.watchOf(watched).activity).toBe(true);
+    // the one opened before is as it was
+    expect(tabs.watchOf(plain).activity).toBe(false);
+    // and the tab's own menu still turns it off for one tab
+    tabs.setWatch(watched, { activity: false });
+    expect(tabs.watchOf(watched).activity).toBe(false);
+  });
+
+  it("turned on or off in Settings, watches or stops watching the tabs already open, their Watch for Silence kept", () => {
+    const first = open("sw1");
+    const second = open("sw2");
+    tabs.setWatch(second, { silence: 30 });
+    tabs.watchEvery(true);
+    expect([tabs.watchOf(first), tabs.watchOf(second)]).toEqual([{ activity: true, silence: 0 }, { activity: true, silence: 30 }]);
+    tabs.watchEvery(false);
+    expect([tabs.watchOf(first), tabs.watchOf(second)]).toEqual([{ activity: false, silence: 0 }, { activity: false, silence: 30 }]);
   });
 });

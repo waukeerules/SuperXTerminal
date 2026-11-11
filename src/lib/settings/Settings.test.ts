@@ -385,6 +385,18 @@ describe("General's check of the session files", () => {
   });
 });
 
+describe("Tabs' Watch tabs for activity", () => {
+  it("saves whether every tab is watched for new output as it opens", async () => {
+    settings.watchActivity = false;
+    render(Settings, { onClose: () => {} });
+    const box = screen.getByRole("checkbox", { name: /Watch tabs for activity/ }) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    await userEvent.click(box);
+    await vi.waitFor(() => expect(saved.at(-1)).toMatchObject({ watchActivity: true }));
+    settings.watchActivity = false;
+  });
+});
+
 describe("Tabs' Longest tab name", () => {
   it("saves the characters a tab's name may take, 0 for the whole name", async () => {
     render(Settings, { onClose: () => {} });

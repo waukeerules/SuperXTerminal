@@ -104,6 +104,11 @@ export interface AppSettings {
   tabListSwitchSession: boolean;
   /** The longest a tab's name is shown, in characters, before it's cut short with …; 0 shows the whole name */
   tabNameMax: number;
+  /**
+   * Every terminal tab is watched for activity as it opens: new output in a tab that isn't being looked at pulses
+   * the tab in its colour. Off, a tab is watched when its menu's Watch for Activity says
+   */
+  watchActivity: boolean;
   /** The Sessions tree's dotted lines, as SuperXPuTTY's */
   treeLines: boolean;
   /** While searching, the Sessions pane widens (up to a limit) so the matches' names fit */
@@ -184,6 +189,7 @@ export const settings = $state<AppSettings & { loaded: boolean }>({
   tabClose: "tab",
   tabListSwitchSession: false,
   tabNameMax: 30,
+  watchActivity: false,
   treeLines: true,
   searchWidensPane: true,
   treeSearchCase: false,

@@ -33,6 +33,7 @@ import SessionTab from "./SessionTab.svelte";
 import FileTransfer from "../transfer/FileTransfer.svelte";
 import { isDark } from "../settings/store.svelte";
 import { tabStates } from "./tabStates.svelte";
+import { settings } from "../settings/store.svelte";
 
 /**
  * How wide a tab's name may be, for the tabs' --tab-name-max (SessionTab.svelte): Settings > General > Tabs' Longest
@@ -459,6 +460,8 @@ class TerminalPanel implements IContentRenderer {
     this.host.onMenu = (x, y, items) => this.tabs.onTerminalMenu?.(x, y, items);
     if (adopt !== undefined) this.host.adopt(adopt);
     this.tabs.hosts.set(id, this.host);
+    // Settings > General > Tabs > Watch tabs for activity: watched from the start, as its menu's Watch for Activity
+    if (settings.watchActivity) this.tabs.setWatch(id, { activity: true });
     // a tab behind another of its split keeps its page (renderer "always") but tells it, so it stops drawing unseen
     this.host.setShown(parameters.api.isVisible);
     parameters.api.onDidVisibilityChange((e) => this.host?.setShown(e.isVisible));
@@ -848,7 +851,17 @@ export class TabArea {
     this.setAlert(id, null);
   }
 
-  /** Show or clear a tab's alert badge */
+  /**
+   * Watch every terminal tab open now for activity, or stop watching them all (Settings > General > Tabs > Watch
+   * tabs for activity, as it's turned on or off); each tab's Watch for Silence stays as it is
+   */
+  watchEvery(activity: boolean): void {
+    for (const id of this.hosts.keys()) {
+      if (this.watchOf(id).activity !== activity) this.setWatch(id, { activity });
+    }
+  }
+
+  /** Show or clear a tab's alert: Watch for Activity's pulse, Watch for Silence's badge */
   private setAlert(id: string, alert: "activity" | "silence" | null): void {
     if ((tabStates[id]?.alert ?? null) === alert) return;
     tabStates[id] = { ...tabStates[id], alert };

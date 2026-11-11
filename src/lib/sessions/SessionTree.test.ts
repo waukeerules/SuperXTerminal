@@ -148,6 +148,24 @@ describe("selecting folders and sessions together", () => {
   });
 });
 
+describe("the settings folder away", () => {
+  it("shows Saved sessions from the copy kept, saying they're offline and when they were read", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "sessions_load")
+        return { sessions: [session("Lab/sw1")], folders: [], problems: [], savedFile: "/team/Sessions.xml", privateFile: "/me/PrivateSessions.xml", savedOff: false, savedOffline: true, savedCachedAt: "09:41" };
+      if (cmd === "shortcuts_get") return { Favorites: [], Recent: [], FavoritesExpanded: false, RecentExpanded: false };
+      if (cmd === "overrides_get") return {};
+      if (cmd === "icons_custom") return [];
+      return null;
+    });
+    render(SessionTree, { openSessions: new Map(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    expect(await screen.findByText(/^Saved sessions \(offline, cached 09:41\)/)).toBeTruthy();
+    // and its sessions are there to open
+    await user.click(screen.getByRole("button", { name: "Expand all" }));
+    expect(screen.getByText("sw1")).toBeTruthy();
+  });
+});
+
 describe("searching", () => {
   /** The roots' rows the tree shows, by their names */
   const rootsShown = () => [...document.querySelectorAll(".row.folder.root .label")].map((l) => l.textContent?.replace(/\s*\(.*$/, ""));

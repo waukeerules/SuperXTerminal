@@ -125,6 +125,11 @@ pub struct SessionsLoaded {
     pub saved_off: bool,
     /// Private sessions are turned off (Settings > General > Use PrivateSessions.xml)
     pub private_off: bool,
+    /// The settings folder can't be reached (a network drive that's away): Saved sessions are the copy kept on this
+    /// computer ([`crate::saved_cache`]), and can't be changed until it's back
+    pub saved_offline: bool,
+    /// When that copy was read, "09:41" today or with its date before; "" when not offline, or there's no copy
+    pub saved_cached_at: String,
 }
 
 impl Sessions {

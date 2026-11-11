@@ -220,7 +220,7 @@
     return root && query.trim() !== "" && root.count === 0 && root.folders.length === 0 ? null : root;
   }
   /** The Saved sessions root, as the search leaves it */
-  const saved = $derived(unlessEmptySearch(loaded ? buildTree("saved", "Saved sessions", shown, query, newFolders.saved, descending, searchOptions) : null));
+  const saved = $derived(unlessEmptySearch(loaded ? buildTree("saved", savedLabel(loaded), shown, query, newFolders.saved, descending, searchOptions) : null));
   /** The Private sessions root, as the search leaves it */
   const privateRoot = $derived(
     unlessEmptySearch(loaded && !loaded.privateOff ? buildTree("private", "Private sessions", shown, query, newFolders.private, descending, searchOptions) : null),
@@ -386,6 +386,15 @@
     if (state.pending) parts.push(`${state.pending} pending`);
     if (state.failed) parts.push(`${state.failed} not saved`);
     return parts.length ? `Database sessions (${parts.join(", ")})` : "Database sessions";
+  }
+
+  /**
+   * The Saved sessions root's label: while the settings folder can't be reached (a network drive that's away), that
+   * they're the copy kept on this computer and when it was read, as Database sessions' "(offline, cached 09:41)"
+   */
+  function savedLabel(read: SessionsLoaded): string {
+    if (!read.savedOffline) return "Saved sessions";
+    return `Saved sessions (${read.savedCachedAt ? `offline, cached ${read.savedCachedAt}` : "offline"})`;
   }
 
   /** The reload running, and whether another was asked for meanwhile */
@@ -1261,8 +1270,8 @@
     }
   }
 
-  // a session file changed elsewhere (a teammate saving to the shared folder, SuperXPuTTY, an editor): read it again,
-  // but not while a window is open, so nothing being edited is lost
+  // a session file changed elsewhere (a teammate saving to the shared folder, SuperXPuTTY, an editor), or the settings
+  // folder went away or came back: read it again, but not while a window is open, so nothing being edited is lost
   $effect(() => {
     if (!settings.loaded) return;
     const timer = setInterval(async () => {

@@ -42,6 +42,7 @@ mod overrides;
 // taskbar pins exist on Windows alone
 #[cfg(windows)]
 mod pins;
+mod saved_cache;
 mod sessions;
 mod session_passwords;
 mod shortcuts;
@@ -216,7 +217,13 @@ fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
     let private_off = private_off(&state);
     *state.files_seen.lock().unwrap() = files_fingerprint(&state);
     let mut problems = Vec::new();
-    let mut loaded = Sessions::load(saved_folder(&state).as_deref(), &state.user_folder, &mut problems);
+    // Saved sessions are the copy kept on this computer while the settings folder can't be reached (a network drive
+    // that's away), rather than none
+    let saved_cache::Loaded { sessions: mut loaded, saved_offline, saved_cached_at } =
+        saved_cache::load(saved_folder(&state).as_deref(), &state.user_folder, &mut problems);
+    if saved_offline {
+        applog::warn(format!("The settings folder can't be reached: Saved sessions are {}", if saved_cached_at.is_empty() { "not shown".into() } else { format!("shown as read {saved_cached_at}") }));
+    }
     // Private sessions turned off: not shown or used (PrivateSessions.xml is left as it is)
     if private_off {
         loaded.private.clear();
@@ -242,6 +249,8 @@ fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> SessionsLoaded {
         private_file: state.user_folder.join("PrivateSessions.xml").display().to_string(),
         saved_off,
         private_off,
+        saved_offline,
+        saved_cached_at,
     };
     let counts = (loaded.saved.len(), loaded.private.len(), loaded.database.len());
     *state.sessions.lock().unwrap() = loaded;
@@ -303,8 +312,17 @@ fn store_file(state: &AppState, store: sessions::Store) -> Result<PathBuf, Strin
         return Err("Private sessions are turned off (Settings > General > Use PrivateSessions.xml).".into());
     }
     let settings_folder = state.settings.lock().unwrap().settings_folder.clone();
+    // The settings folder away (a network drive that dropped): Saved sessions are shown from the copy on this computer
+    // and can't be changed. A save reads the file first and takes one it can't find for a team with no sessions yet,
+    // so a drive that came back between the read and the write would have its sessions replaced by the one saved
+    if store == sessions::Store::Saved && settings_folder.as_deref().is_some_and(|folder| !saved_cache::reachable(folder)) {
+        return Err(SAVED_OFFLINE.into());
+    }
     sessions::file_of(store, settings_folder.as_deref(), &state.user_folder).ok_or_else(|| "Choose the settings folder first.".into())
 }
+
+/// Why Saved sessions can't be changed while the settings folder can't be reached
+const SAVED_OFFLINE: &str = "The settings folder can't be reached, so Saved sessions can't be changed now. They're shown as last read, and can be changed once it's back.";
 
 /// Whether Private sessions are turned off: Use PrivateSessions.xml unticked, and Saved sessions in use (without them,
 /// Private sessions stay on whatever the setting says, so sessions always have somewhere to be, as when the settings
@@ -1149,8 +1167,10 @@ fn files_fingerprint(state: &AppState) -> u64 {
 }
 
 /// Whether a session file changed since it was last read (a teammate saving to the shared folder, SuperXPuTTY, an
-/// editor); the tree then reads them again
-#[tauri::command]
+/// editor); the tree then reads them again. A settings folder going away or coming back counts, so Saved sessions
+/// change to the copy kept on this computer and back ([`saved_cache`]).
+// async: a network drive that's away can take many seconds to say so, which mustn't hold up the window each time
+#[tauri::command(async)]
 fn sessions_files_changed(state: State<'_, AppState>) -> bool {
     files_fingerprint(&state) != *state.files_seen.lock().unwrap()
 }

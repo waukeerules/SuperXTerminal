@@ -60,6 +60,13 @@ export interface SessionsLoaded {
   savedOff: boolean;
   /** Private sessions are turned off (Settings > General > Use PrivateSessions.xml) */
   privateOff?: boolean;
+  /**
+   * The settings folder can't be reached (a network drive that's away): Saved sessions are the copy kept on this
+   * computer, and can't be changed until it's back
+   */
+  savedOffline?: boolean;
+  /** When that copy was read, "09:41" today or with its date before; "" when not offline, or there's no copy */
+  savedCachedAt?: string;
 }
 
 /** Read the session files (again) */

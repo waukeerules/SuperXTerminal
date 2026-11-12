@@ -617,10 +617,24 @@ fn read_at(file: &std::fs::File, buffer: &mut [u8], offset: u64) -> std::io::Res
     }
 }
 
-/// Download one file, several reads in flight, into place
+/// What a download is written to until it has finished: the file's own name with this added, beside where it goes
+const PART: &str = ".sxt-part";
+
+/// Download one file, several reads in flight. It's written beside where it goes ([`PART`]) and put in place only
+/// once it's whole: a file of that name already here is the user's copy, and a download that fails (the file gone
+/// from the server, no permission, the connection lost) or is cancelled must leave it as it was, not emptied or
+/// half replaced. The unfinished file is removed
 async fn download_file(raw: &RawSftpSession, item: &Item, cancel: &AtomicBool, report: &impl Fn(u64)) -> Result<(), String> {
-    let local = std::fs::File::create(&item.to).map_err(|e| format!("{}: {e}", item.to))?;
+    // the server asked first: a file it won't open makes nothing here
     let handle = raw.open(item.from.as_str(), OpenFlags::READ, FileAttributes::empty()).await.map_err(|e| format!("{}: {}", item.from, plain(e)))?.handle;
+    let part = format!("{}{PART}", item.to);
+    let local = match std::fs::File::create(&part) {
+        Ok(local) => local,
+        Err(e) => {
+            let _ = raw.close(handle).await;
+            return Err(format!("{}: {e}", item.to));
+        }
+    };
     let offsets: Vec<u64> = (0..item.size.div_ceil(CHUNK as u64)).map(|i| i * CHUNK as u64).collect();
     let mut reads = stream::iter(offsets).map(|offset| {
         let handle = handle.clone();
@@ -657,11 +671,16 @@ async fn download_file(raw: &RawSftpSession, item: &Item, cancel: &AtomicBool, r
     }
     drop(reads);
     let _ = raw.close(handle).await;
-    result?;
-    if item.modified != 0 {
+    if result.is_ok() && item.modified != 0 {
         let _ = local.set_modified(UNIX_EPOCH + Duration::from_secs(item.modified));
     }
-    Ok(())
+    // closed before it's moved or removed: Windows moves an open file only when every program holding it allows
+    drop(local);
+    let result = result.and_then(|()| std::fs::rename(&part, &item.to).map_err(|e| format!("{}: {e}", item.to)));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    result
 }
 
 /// Upload one file, several writes in flight
@@ -1292,5 +1311,92 @@ mod tests {
         assert_eq!((image.size, image.dir), (1_301_418_244, false));
         assert!(flash.entries.iter().any(|e| e.name == "tracelogs" && e.dir));
         assert!(demo_list(&device, "flash:/tracelogs").entries.is_empty());
+    }
+
+    /// A stand-in for a server's SFTP, spoken to over a pipe in place of ssh: it has `/config.txt` (which reads whole),
+    /// `/breaks.bin` (whose first read answers and whose later ones fail, as a connection lost part way) and nothing
+    /// else, so opening any other file is refused
+    struct Device;
+
+    /// What `/config.txt` holds
+    const CONFIG: &[u8] = b"hostname core-sw1\n";
+
+    impl russh_sftp::server::Handler for Device {
+        type Error = StatusCode;
+
+        /// What the device says to a request it doesn't take
+        fn unimplemented(&self) -> StatusCode {
+            StatusCode::OpUnsupported
+        }
+
+        /// Open one of the two files, the handle its path; any other isn't there
+        async fn open(&mut self, id: u32, filename: String, _pflags: OpenFlags, _attrs: FileAttributes) -> Result<russh_sftp::protocol::Handle, StatusCode> {
+            if filename == "/config.txt" || filename == "/breaks.bin" { Ok(russh_sftp::protocol::Handle { id, handle: filename }) } else { Err(StatusCode::NoSuchFile) }
+        }
+
+        /// The bytes asked for: `/config.txt`'s own, or zeroes from `/breaks.bin` until its second chunk, which fails
+        async fn read(&mut self, id: u32, handle: String, offset: u64, len: u32) -> Result<russh_sftp::protocol::Data, StatusCode> {
+            if handle == "/breaks.bin" {
+                return if offset == 0 { Ok(russh_sftp::protocol::Data { id, data: vec![0; len as usize] }) } else { Err(StatusCode::Failure) };
+            }
+            let from = (offset as usize).min(CONFIG.len());
+            let to = (from + len as usize).min(CONFIG.len());
+            if from == to { Err(StatusCode::Eof) } else { Ok(russh_sftp::protocol::Data { id, data: CONFIG[from..to].to_vec() }) }
+        }
+
+        /// Closing a file always works
+        async fn close(&mut self, id: u32, _handle: String) -> Result<russh_sftp::protocol::Status, StatusCode> {
+            Ok(russh_sftp::protocol::Status { id, status_code: StatusCode::Ok, error_message: "Ok".into(), language_tag: "en-US".into() })
+        }
+    }
+
+    /// A download replaces the file of the same name on this computer. It used to empty that file before asking the
+    /// server for anything, so a download that failed (the file gone from the server, no permission, the connection
+    /// lost part way) left an empty or half-written file where the good copy had been. Now the copy here is only
+    /// replaced by a download that finished
+    #[test]
+    fn a_download_that_fails_leaves_the_file_already_here_as_it_was() {
+        let folder = std::env::temp_dir().join(format!("sxt-sftp-download-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let here = folder.join("config.txt");
+        let to = here.to_string_lossy().to_string();
+        let files_here = || std::fs::read_dir(&folder).unwrap().count();
+
+        tauri::async_runtime::block_on(async {
+            let (ours, theirs) = tokio::io::duplex(256 * 1024);
+            russh_sftp::server::run(theirs, Device).await;
+            let raw = RawSftpSession::new(ours);
+            raw.init().await.unwrap();
+            let cancel = AtomicBool::new(false);
+            let download = |from: &str, size: u64| Item { from: from.into(), to: to.clone(), size, modified: 0 };
+
+            std::fs::write(&here, "the copy kept here").unwrap();
+            // a file that isn't on the server (deleted there since the folder was listed)
+            let gone = download_file(&raw, &download("/gone.txt", 10), &cancel, &|_| {}).await;
+            assert!(gone.is_err());
+            assert_eq!(std::fs::read_to_string(&here).unwrap(), "the copy kept here");
+            assert_eq!(files_here(), 1, "and nothing half-made is left beside it");
+
+            // a download that stops part way
+            let broken = download_file(&raw, &download("/breaks.bin", 3 * CHUNK as u64), &cancel, &|_| {}).await;
+            assert!(broken.is_err());
+            assert_eq!(std::fs::read_to_string(&here).unwrap(), "the copy kept here");
+            assert_eq!(files_here(), 1);
+
+            // one the user stops
+            cancel.store(true, Ordering::Relaxed);
+            let stopped = download_file(&raw, &download("/config.txt", CONFIG.len() as u64), &cancel, &|_| {}).await;
+            assert_eq!(stopped, Err("Cancelled".to_string()));
+            assert_eq!(std::fs::read_to_string(&here).unwrap(), "the copy kept here");
+            assert_eq!(files_here(), 1);
+
+            // and one that finishes takes its place
+            cancel.store(false, Ordering::Relaxed);
+            download_file(&raw, &download("/config.txt", CONFIG.len() as u64), &cancel, &|_| {}).await.unwrap();
+            assert_eq!(std::fs::read(&here).unwrap(), CONFIG);
+            assert_eq!(files_here(), 1);
+        });
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 }

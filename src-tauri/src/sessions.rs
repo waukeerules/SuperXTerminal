@@ -416,6 +416,38 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
     }
 
+    /// Backups are named as SuperXPuTTY names them, with .NET's 12-hour "hh": one made at 1 in the afternoon is
+    /// "…_01…", and by name looks older than that morning's. The twenty kept were chosen by name, so an afternoon's
+    /// saves pushed out the afternoon's own backups and kept the morning's. They're chosen by when each was made
+    #[test]
+    fn the_twenty_backups_kept_are_the_last_made_whatever_hour_their_names_have() {
+        let folder = empty_folder("prune");
+        let file = folder.join("Sessions.xml");
+        std::fs::write(&file, sessions_file(&["Lab/sw1"])).unwrap();
+        // one backup an hour through 1 January 2020, from 02:02 to 22:22: twenty-one of them
+        let name_at = |hour: u32| format!("Sessions.20200101_{:02}{hour:02}{hour:02}.xml", if hour % 12 == 0 { 12 } else { hour % 12 });
+        let midnight = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_577_836_800);
+        for hour in 2..=22u32 {
+            let path = folder.join(name_at(hour));
+            std::fs::write(&path, sessions_file(&["Lab/sw1"])).unwrap();
+            let made = midnight + std::time::Duration::from_secs(u64::from(hour) * 3660);
+            std::fs::File::options().write(true).open(&path).unwrap().set_modified(made).unwrap();
+        }
+
+        // a save now makes one more: twenty-two, of which the two made first go
+        back_up(&file);
+
+        let kept: Vec<String> = backups(&file).into_iter().map(|b| b.name).collect();
+        assert_eq!(kept.len(), 20);
+        for hour in [2, 3] {
+            assert!(!kept.contains(&name_at(hour)), "the backup made at {hour}:00 is one of the two oldest: {kept:?}");
+        }
+        for hour in 4..=22 {
+            assert!(kept.contains(&name_at(hour)), "the backup made at {hour}:00 is among the last twenty: {kept:?}");
+        }
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
     /// Every change to a sessions file reads it first ([`update_file`]). One that can't be read (cut short by a full
     /// disk or a sync that stopped half way, or mangled by hand) must stop the change: read as "no sessions", the
     /// save would write the one session being saved over all the others.
@@ -664,6 +696,9 @@ pub(crate) fn escape(value: &str) -> String {
 
 /// Keep a copy of the file before it's written, as SuperXPuTTY does: "Sessions.yyyyMMdd_hhmmss.xml" beside it (with
 /// .NET's 12-hour "hh"), keeping the newest 20. A failed backup doesn't stop the save.
+///
+/// The newest are told by when each file was made, not by its name: with a 12-hour stamp, a backup made at 1 in
+/// the afternoon ("…_01…") sorts before that morning's ("…_11…"), and by name the afternoon's were the ones removed.
 pub(crate) fn back_up(path: &Path) {
     let (Some(folder), Some(base)) = (path.parent(), path.file_stem().and_then(|s| s.to_str())) else { return };
     if !path.exists() {
@@ -674,14 +709,14 @@ pub(crate) fn back_up(path: &Path) {
         return;
     }
     let Ok(entries) = std::fs::read_dir(folder) else { return };
-    let mut old: Vec<PathBuf> = entries
+    let mut old: Vec<(std::time::SystemTime, PathBuf)> = entries
         .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| is_backup_of(base, n)))
+        .filter(|e| e.file_name().to_str().is_some_and(|n| is_backup_of(base, n)))
+        .map(|e| (e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH), e.path()))
         .collect();
-    old.sort();
-    old.reverse();
-    for extra in old.iter().skip(20) {
+    // newest first, as [`backups`] lists them; two made in the same moment, by name
+    old.sort_by(|a, b| b.cmp(a));
+    for (_, extra) in old.iter().skip(20) {
         let _ = std::fs::remove_file(extra);
     }
 }

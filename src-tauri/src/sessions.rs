@@ -416,6 +416,40 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
     }
 
+    /// Every change to a sessions file reads it first ([`update_file`]). One that can't be read (cut short by a full
+    /// disk or a sync that stopped half way, or mangled by hand) must stop the change: read as "no sessions", the
+    /// save would write the one session being saved over all the others.
+    #[test]
+    fn a_sessions_file_that_cant_be_read_is_left_as_it_is_by_every_change() {
+        use crate::editing::SessionFields;
+        let folder = empty_folder("damaged");
+        let file = folder.join("Sessions.xml");
+        // a whole file, cut off in the middle of its second session
+        let whole = sessions_file(&["Lab/sw1", "Lab/sw2", "Lab/sw3"]);
+        let damaged = &whole[..whole.find("Lab/sw2").unwrap() + 3];
+        std::fs::write(&file, damaged).unwrap();
+        let mut problems = Vec::new();
+        assert!(read_sessions(&file, &mut problems).is_empty());
+        assert_eq!(problems.len(), 1, "the tree says the file couldn't be read");
+
+        let new = SessionFields { name: "new".into(), folder: "Lab".into(), host: "h".into(), ..Default::default() };
+        let changes: [(&str, Result<(), String>); 6] = [
+            ("a new session", crate::editing::save(&file, None, &new, &[]).map(|_| ())),
+            ("an edited one", crate::editing::save(&file, Some("Lab/sw1"), &new, &[]).map(|_| ())),
+            ("a deleted one", crate::editing::delete(&file, "Lab/sw1")),
+            ("a moved one", crate::folders::move_session(&file, "Lab/sw1", "Core", &[], None).map(|_| ())),
+            ("a renamed folder", crate::folders::move_folder(&file, "Lab", "Labs", &[])),
+            ("a deleted folder", crate::folders::delete_folder(&file, "Lab")),
+        ];
+        for (what, result) in changes {
+            let error = result.expect_err(what);
+            assert!(error.starts_with("Couldn't read it to save"), "{what}: {error}");
+        }
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), damaged, "the file is as it was, for the user to mend or restore");
+        assert!(backups(&file).is_empty(), "and no backup of the damaged file pushed a good one out");
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
     #[test]
     fn a_session_shown_to_the_search_has_its_password_masked() {
         assert_eq!(super::masked_password("-l admin -pw cisco -L 80:x:80"), "-l admin -pw ******** -L 80:x:80");

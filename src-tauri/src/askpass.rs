@@ -339,3 +339,88 @@ fn ask_in_terminal(prompt: &str, secret: bool) -> Option<String> {
     read.ok()?;
     Some(line.trim_end_matches(['\r', '\n']).to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    //! Who gets a session's password: [`answer`], which every request on the socket comes to. The tokens are put in
+    //! the list directly rather than with [`register`], which would start listening, and on the Mac take the socket
+    //! of a SuperXTerminal that's running beside the tests.
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// Put an entry in the list under a token of its own, as [`add`] does without listening; returns the token
+    fn token_for(password: Option<&str>, asker: Option<Asker>, made: Instant) -> String {
+        /// Tokens made by the tests so far, so each has its own
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let token = format!("test-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+        let entry = Entry { password: password.map(str::to_string), given: Default::default(), asker, made };
+        TOKENS.lock().unwrap().get_or_insert_with(HashMap::new).insert(token.clone(), entry);
+        token
+    }
+
+    #[test]
+    fn a_token_that_was_never_given_out_is_told_nothing() {
+        let real = token_for(Some("hunter2"), None, Instant::now());
+        assert_eq!(answer("not-a-token", "password", 100, "admin@sw1's password: "), "");
+        assert_eq!(answer("", "password", 100, "admin@sw1's password: "), "");
+        // and asking with the wrong one used nothing up
+        assert_eq!(answer(&real, "password", 100, "admin@sw1's password: "), "hunter2");
+    }
+
+    #[test]
+    fn connect_externals_password_is_given_once_and_has_nobody_to_ask_after() {
+        let token = token_for(Some("hunter2"), None, Instant::now());
+        assert_eq!(answer(&token, "password", 100, "admin@sw1's password: "), "hunter2");
+        // asked again (a wrong password, or anyone else with the token): nothing, from the same ssh or another
+        assert_eq!(answer(&token, "password", 100, "admin@sw1's password: "), "");
+        assert_eq!(answer(&token, "password", 200, "admin@sw1's password: "), "");
+        // its other questions are asked in the terminal, not by the app
+        assert_eq!(answer(&token, "ask", 100, "Enter passphrase for key: "), "");
+    }
+
+    #[test]
+    fn connect_externals_password_isnt_given_after_two_minutes() {
+        let old = Instant::now().checked_sub(LIFETIME).expect("a clock that has run two minutes");
+        let token = token_for(Some("hunter2"), None, old);
+        assert_eq!(answer(&token, "password", 100, "admin@sw1's password: "), "");
+    }
+
+    #[test]
+    fn a_file_transfers_password_goes_once_to_each_ssh_and_its_other_questions_to_the_user() {
+        let asked: Arc<Mutex<Vec<(String, bool)>>> = Arc::default();
+        let seen = Arc::clone(&asked);
+        let asker: Asker = Arc::new(move |prompt, secret| {
+            seen.lock().unwrap().push((prompt.to_string(), secret));
+            (!prompt.contains("cancel")).then(|| "typed".to_string())
+        });
+        // made long ago: a token that can ask lasts as long as its connection, SCP running ssh again for each file
+        let old = Instant::now().checked_sub(LIFETIME).expect("a clock that has run two minutes");
+        let token = token_for(Some("hunter2"), Some(asker), old);
+
+        assert_eq!(answer(&token, "password", 100, "admin@sw1's password: "), "hunter2");
+        // the same ssh asking again was refused the password: it isn't given the same one twice
+        assert_eq!(answer(&token, "password", 100, "admin@sw1's password: "), "");
+        // the next file's ssh gets it once too
+        assert_eq!(answer(&token, "password", 200, "admin@sw1's password: "), "hunter2");
+        assert!(asked.lock().unwrap().is_empty(), "the password is never asked of the user while it's known");
+
+        // anything else is asked of the user: typing hidden, but not for a yes or no
+        assert_eq!(answer(&token, "ask", 100, "Enter passphrase for key '/k':\nagain"), "typed");
+        assert_eq!(answer(&token, "ask", 100, "Are you sure you want to continue connecting (yes/no/[fingerprint])? "), "typed");
+        assert_eq!(answer(&token, "ask", 100, "cancel this one"), "", "a question the user cancels is answered with nothing");
+        assert_eq!(
+            *asked.lock().unwrap(),
+            [
+                ("Enter passphrase for key '/k':\nagain".to_string(), true),
+                ("Are you sure you want to continue connecting (yes/no/[fingerprint])? ".to_string(), false),
+                ("cancel this one".to_string(), true),
+            ]
+        );
+
+        // the connection closed: its token answers nothing more
+        forget(&token);
+        assert_eq!(answer(&token, "password", 300, "admin@sw1's password: "), "");
+        assert_eq!(answer(&token, "ask", 300, "Enter passphrase: "), "");
+        assert_eq!(asked.lock().unwrap().len(), 3);
+    }
+}

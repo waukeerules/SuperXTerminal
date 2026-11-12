@@ -9,7 +9,7 @@
  * with TerminalControl, so a flood of output can't outrun the page.
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { highlighting } from "./highlighting";
+import { builtInRulesOn, highlighting, pageRuleSets } from "./highlighting";
 import { isDark, settings } from "../settings/store.svelte";
 import { keySequence, parseSendKey } from "../scripting/keys";
 import type { ScriptTarget } from "../scripting/spsl";
@@ -349,7 +349,10 @@ export class PageHost implements ScriptTarget {
     private readonly onState: () => void = () => {},
   ) {
     window.addEventListener("message", this.onWindowMessage);
-    this.stopPrefs = onPrefsChanged((prefs) => this.post({ type: "prefs", prefs }));
+    this.stopPrefs = onPrefsChanged((prefs) => {
+      this.post({ type: "prefs", prefs });
+      void this.sendRuleSets();
+    });
     // Settings > Shortcuts changed: the terminal's menu shows the new keys
     const stopKeys = listen("settings-changed", async () => {
       await loadShortcuts();
@@ -360,6 +363,23 @@ export class PageHost implements ScriptTarget {
   }
 
   private readonly stopPrefs: () => void;
+
+  /**
+   * Whether the page's rule sets, as last sent, had the built-in ones in use (Settings > Terminal > Built-in
+   * highlighting rules); null until its config has gone, which carries them itself
+   */
+  private builtInRulesSent: boolean | null = null;
+
+  /**
+   * The built-in rule sets were turned off or on: the open tab gets its rule sets again, and colours what's on
+   * screen by them, as every other preference in Settings > Terminal changes open tabs at once. Any other
+   * preference changing sends nothing here
+   */
+  private async sendRuleSets(): Promise<void> {
+    if (this.builtInRulesSent === null || this.builtInRulesSent === builtInRulesOn()) return;
+    this.builtInRulesSent = builtInRulesOn();
+    this.post({ type: "ruleSets", ruleSets: pageRuleSets(await highlighting()) });
+  }
   /** Stop following Settings > Shortcuts for the menu's keys */
   private readonly stopKeys: () => void;
 
@@ -937,10 +957,11 @@ export class PageHost implements ScriptTarget {
     this.startAntiIdle(look.antiIdle ?? "", look.antiIdleSeconds ?? 0);
     const dark = isDark();
     const files = await highlighting();
+    if (!early) this.builtInRulesSent = builtInRulesOn();
     this.post({
       type: "config",
       // none yet when it's only for the page to measure itself (settledSize): its skipped rules are said once, after
-      ruleSets: early ? [] : files.ruleSets,
+      ruleSets: early ? [] : pageRuleSets(files),
       themes: files.themes.length ? files.themes : STAND_IN_THEMES,
       dark,
       bell: look.bell,

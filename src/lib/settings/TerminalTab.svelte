@@ -29,7 +29,13 @@
     return allPrefs();
   });
 
-  onMount(async () => {
+  onMount(readFiles);
+
+  /**
+   * Read the themes and the rule sets Highlighting offers: as the tab opens, and again when the built-in rule sets
+   * are turned off or on, which changes the list
+   */
+  async function readFiles(): Promise<void> {
     const files = await highlighting();
     themes = files.themes.map((t) => String((t as { name?: string }).name ?? "")).filter(Boolean);
     themeColours = Object.fromEntries(files.themes.map((t) => {
@@ -40,7 +46,17 @@
       const set = r as { id?: string; name?: string };
       return { id: String(set.id ?? ""), name: String(set.name ?? set.id ?? "") };
     }).filter((r) => r.id);
-  });
+  }
+
+  /**
+   * Turn the rule sets that come with the app on or off. Highlighting's list then has only what's left, and a
+   * built-in set it was on goes back to Automatic rather than name a set that's no longer there
+   */
+  async function setBuiltInRules(on: boolean): Promise<void> {
+    await setPrefs({ builtInRules: String(on) });
+    await readFiles();
+    if (!["auto", "none"].includes(prefs.ruleSet) && !ruleSets.some((r) => r.id === prefs.ruleSet)) await setPrefs({ ruleSet: "auto" });
+  }
 
   /** The colours of the theme the terminal draws with: PuTTY's when none is chosen, Light or Dark when following the app */
   const shownTheme = $derived.by(() => {
@@ -153,6 +169,9 @@
         {#each ruleSets as set}<option value={set.id}>{set.name}</option>{/each}
       </select>
     </label>
+    <label class="check"><input type="checkbox" checked={prefs.builtInRules !== "false"}
+      onchange={(e) => void setBuiltInRules(e.currentTarget.checked)} /> Built-in highlighting rules
+      <span class="hint">(the rule sets that come with the app; off: only those in your own and your team's highlighting folders are used)</span></label>
     <label class="check"><input type="checkbox" checked={prefs.markMatches === "true"}
       onchange={(e) => set("markMatches", String(e.currentTarget.checked))} /> Mark matches of the selected text</label>
     <label class="check"><input type="checkbox" checked={prefs.copyOnSelect === "true"}

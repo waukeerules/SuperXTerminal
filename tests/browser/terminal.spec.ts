@@ -839,3 +839,50 @@ test("with the host drawing the menu, a right-click sends it the menu, draws non
   await page.evaluate((index) => (window as any).terminalDev.message({ type: "menuChoose", path: [index] }), selectAll);
   await expect.poll(() => page.evaluate(() => (window as any).terminalDev.term.getSelection())).toContain("show version");
 });
+
+test.describe("The rule sets changing while a tab is open", () => {
+  /** The app's own rule set and the user's, both detecting the same prompt: the app's comes first, as the app loads them */
+  const BUILT_IN = { id: "cisco", name: "Cisco IOS", detect: ["^\\S+#"], rules: [{ match: "down", style: "error" }] };
+  const OWN = { id: "ours", name: "Our switches", detect: ["^\\S+#"], rules: [{ match: "err-disabled", style: "error" }, { match: "down", style: "error" }] };
+  const dev = <T>(page: Page, what: string) => page.evaluate((what) => (window as any).terminalDev[what]() as T, what);
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    await page.evaluate((ruleSets) => (window as any).terminalDev.message({
+      type: "config",
+      prefs: { ruleSet: "auto" },
+      ruleSets,
+      themes: [{ name: "PuTTY", colors: {}, styles: { error: { background: "#ff0000" } } }],
+    }), [BUILT_IN, OWN]);
+    await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+  });
+
+  test("with the built-in ones turned off, Automatic picks the user's own for the output already there, and colours it again", async ({ page }) => {
+    await feed(page, "sw1#show int status\r\nGi0/1 err-disabled\r\nGi0/2 down\r\n");
+    // the app's set detects the prompt first, and knows nothing of err-disabled
+    await expect.poll(() => dev<string>(page, "currentRuleSet")).toBe("cisco");
+    await expect.poll(async () => (await dev<unknown[]>(page, "highlights")).length).toBe(1);
+
+    // Settings > Terminal > Built-in highlighting rules off: the app's set comes hidden
+    await page.evaluate((ruleSets) => (window as any).terminalDev.message({ type: "ruleSets", ruleSets }), [OWN, { ...BUILT_IN, hidden: true }]);
+    expect(await dev<string[]>(page, "ruleSetIds")).toEqual(["ours"]);
+    // no new output: the pick is made from what's on screen
+    await expect.poll(() => dev<string>(page, "currentRuleSet")).toBe("ours");
+    await expect.poll(async () => (await dev<unknown[]>(page, "highlights")).length).toBe(2);
+
+    // and on again, the app's is back and first
+    await page.evaluate((ruleSets) => (window as any).terminalDev.message({ type: "ruleSets", ruleSets }), [BUILT_IN, OWN]);
+    await expect.poll(() => dev<string>(page, "currentRuleSet")).toBe("cisco");
+    await expect.poll(async () => (await dev<unknown[]>(page, "highlights")).length).toBe(1);
+  });
+
+  test("a tab set to a built-in rule set by name colours nothing once they're turned off", async ({ page }) => {
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs", prefs: { ruleSet: "cisco" } }));
+    await feed(page, "Gi0/2 down\r\n");
+    await expect.poll(async () => (await dev<unknown[]>(page, "highlights")).length).toBe(1);
+    await page.evaluate((ruleSets) => (window as any).terminalDev.message({ type: "ruleSets", ruleSets }), [OWN, { ...BUILT_IN, hidden: true }]);
+    await expect.poll(async () => (await dev<unknown[]>(page, "highlights")).length).toBe(0);
+    expect(await dev<string>(page, "currentRuleSet")).toBe("");
+  });
+});

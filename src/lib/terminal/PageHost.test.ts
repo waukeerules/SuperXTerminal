@@ -106,6 +106,24 @@ function page(message: Record<string, unknown>): void {
   window.dispatchEvent(new MessageEvent("message", { data: { channel: "sxt-page", tab: "t1", message }, source: frame.contentWindow, origin: location.origin }));
 }
 
+/** Have settings_save keep what it's given, as the Rust side does, beside what the tests' mockIPC already answers */
+function mockIPCSettingsSave(): void {
+  mockIPC(async (cmd, args) => {
+    const payload = (args ?? {}) as Record<string, unknown>;
+    if (cmd === "settings_save") return payload.settings;
+    if (cmd === "pty_open") {
+      opened++;
+      channel = payload.onEvent as Channel<unknown>;
+      return opened;
+    }
+    if (cmd === "shortcuts_keys") return [];
+    if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
+    if (cmd === "profiles_list") return profiles;
+    if (cmd === "log_open") return { id: 1, path: "/tmp/sw1.log", temporary: true };
+    return null;
+  });
+}
+
 /** Open a session's tab, have ssh print `output`, then end with 255 as it does on any failure of its own */
 async function sshEnds(output: string): Promise<void> {
   host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
@@ -565,5 +583,36 @@ describe("a tab behind another", () => {
     host.setShown(true);
     host.setShown(true);
     expect(told()).toEqual([false, false, true]);
+  });
+});
+
+describe("the built-in highlighting rules", () => {
+  /** How long to wait for the tab: it reads the rule sets before it sends them, which takes longer while other tests run */
+  const WAIT = { timeout: 5000 };
+  /** The rule set messages the page was sent since it was configured */
+  const ruleSetMessages = () => posted.filter((m) => m.type === "ruleSets");
+
+  afterEach(() => {
+    settings.terminalPrefs = {};
+  });
+
+  it("turned off or on in Settings > Terminal reach an open tab at once, and no other preference sends its rule sets again", async () => {
+    const { setPrefs } = await import("./prefs");
+    mockIPCSettingsSave();
+    await sshEnds("");
+    await vi.waitFor(() => {
+      if (!posted.some((m) => m.type === "config")) throw new Error("no config yet");
+    }, WAIT);
+    expect(ruleSetMessages()).toEqual([]);
+
+    // another preference: the tab is told the preferences, and keeps the rule sets it has
+    await setPrefs({ lineNumbers: "true" });
+    expect(posted.some((m) => m.type === "prefs")).toBe(true);
+    expect(ruleSetMessages()).toEqual([]);
+
+    await setPrefs({ builtInRules: "false" });
+    await vi.waitFor(() => expect(ruleSetMessages()).toHaveLength(1), WAIT);
+    await setPrefs({ builtInRules: "true" });
+    await vi.waitFor(() => expect(ruleSetMessages()).toHaveLength(2), WAIT);
   });
 });

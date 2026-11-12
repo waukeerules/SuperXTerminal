@@ -7,7 +7,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { highlighting } from "./highlighting";
+import { highlighting, pageRuleSets } from "./highlighting";
 import { isDark } from "../settings/store.svelte";
 
 /** A message to or from the output page: its type, and what goes with it */
@@ -99,7 +99,7 @@ export class OutputHost {
   /** The rules and themes, the look, and the title */
   private async sendConfig(): Promise<void> {
     const files = await highlighting();
-    this.post({ type: "config", ruleSets: files.ruleSets, themes: files.themes, dark: isDark(), title: this.title });
+    this.post({ type: "config", ruleSets: pageRuleSets(files), themes: files.themes, dark: isDark(), title: this.title });
   }
 
   /** Send what's new in the file, if the last chunk has been drawn */

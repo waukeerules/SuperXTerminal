@@ -11,7 +11,7 @@
  * a line is sent to TerminalControl ("log") once the cursor has left it, and the cursor's line is sent as "current",
  * so SPSL's WAITFOR can match a prompt before Enter is pressed.
  *
- * Messages from TerminalControl: config, data, notice, paste, focus, action, cursorColor, shown. To it: ready, size, input,
+ * Messages from TerminalControl: config, data, notice, paste, focus, action, cursorColor, shown, ruleSets. To it: ready, size, input,
  * ack, log, copy, pasteRequest (every paste, so TerminalControl can ask first; with "text" for one not from the
  * clipboard), document, bell, tab, openInPutty (only while config.putty isn't false), special (a Special Command, when config.specials offers it), openLink (a link Ctrl+clicked), pref, cleared (the screen was cleared
  * here; Windows' pseudo console keeps its own copy, whose redraw after a resize the page drops: dropConptyRedraw).
@@ -1858,16 +1858,40 @@
         profileColours = config.colors || {};
         profileTheme = config.profileTheme || null;
         themes = config.themes || [];
-        var compiled = SpRules.compile(config.ruleSets || []);
-        ruleSets = compiled.sets;
-        autoSet = null;
+        var problems = compileRuleSets(config.ruleSets);
         applyScrollback();
         applyRenderer();
         applyTheme();
         fit();
-        if (compiled.problems.length) {
-            notice('Some highlighting rules were skipped: ' + compiled.problems.join('; '), 'info');
+        if (problems.length) {
+            notice('Some highlighting rules were skipped: ' + problems.join('; '), 'info');
         }
+    }
+
+    /** Take the rule sets as the files have them, forgetting Auto's pick, which was one of the old ones; returns the rules skipped */
+    function compileRuleSets(raw) {
+        var compiled = SpRules.compile(raw || []);
+        ruleSets = compiled.sets;
+        autoSet = null;
+        return compiled.problems;
+    }
+
+    /**
+     * The rule sets changed while the tab is open (SuperXTerminal: the built-in ones turned off or on in Settings >
+     * Terminal): what's on screen is coloured again by the sets there are now. Auto picks again from the output
+     * already here, newest line first, rather than wait for the next line; a set chosen by name that has gone
+     * colours nothing. The rules skipped were said when the tab opened, and aren't said again.
+     */
+    function changeRuleSets(raw) {
+        compileRuleSets(raw);
+        if (chosenRules() === 'auto') {
+            var buffer = term.buffer.active;
+            var lines = readLines(0, buffer.baseY + buffer.cursorY + 1);
+            for (var i = lines.length - 1; i >= 0 && !autoSet; i--) {
+                autoSet = SpRules.detect(ruleSets, lines[i]);
+            }
+        }
+        highlight(true);
     }
 
     /** Show a message from SuperPuTTY in the terminal, on its own line, in red (errors), yellow (warnings) or cyan */
@@ -1901,6 +1925,8 @@
             // the app went light or dark (SuperXTerminal): a theme that follows it changes with it
             case 'look': darkDefault = !!message.dark; applyTheme(); break;
             case 'prefs': applyPrefs(message.prefs); break;
+            // the built-in rule sets were turned off or on (SuperXTerminal)
+            case 'ruleSets': changeRuleSets(message.ruleSets); break;
             // Settings > Shortcuts changed: the menu shows the new keys (SuperXTerminal)
             case 'keyLabels': keyLabels = message.keyLabels || {}; titleFindButton(); break;
             // a button's command (SuperXTerminal): its lines' numbers in the button's colour
@@ -2118,6 +2144,9 @@
             term: term,
             posted: [],
             matchCount: function (text) { return SpRules.matches(currentSet(), text, MAX_MATCH_LENGTH).length; },
+            // the rule sets the tab's menu offers, by id, and the one colouring the output now ('' for none)
+            ruleSetIds: function () { return ruleSets.map(function (set) { return set.id; }); },
+            currentRuleSet: function () { var set = currentSet(); return set ? set.id : ''; },
             // where the highlights and find's marks are drawn: each decoration's row, column and width in cells
             highlights: function () {
                 var out = [];

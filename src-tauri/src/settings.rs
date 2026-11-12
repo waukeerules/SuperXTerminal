@@ -214,25 +214,62 @@ impl Default for AppSettings {
 }
 
 impl AppSettings {
-    /// Read the settings from the user's folder; missing or unreadable settings are the defaults
+    /// Read the settings from the user's folder; missing or unreadable settings are the defaults, so the app always
+    /// starts. A file that's there but isn't settings (cut short, mangled by hand) is kept beside it first
+    /// ([`crate::saving::set_aside`]): the defaults are saved over it the first time anything changes, and with it
+    /// would go the settings folder, the Database connection and everything else chosen
     pub fn load(user_folder: &Path) -> AppSettings {
-        std::fs::read_to_string(user_folder.join("settings.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+        let path = user_folder.join("settings.json");
+        let Ok(text) = std::fs::read_to_string(&path) else { return AppSettings::default() };
+        serde_json::from_str(&text).unwrap_or_else(|_| {
+            crate::saving::set_aside(&path);
+            AppSettings::default()
+        })
     }
 
-    /// Write the settings to the user's folder, creating it when needed
+    /// Write the settings to the user's folder, creating it when needed; whole ([`crate::saving::save`]), so a
+    /// save cut short (the computer turned off, the disk full) leaves the settings as they were, not half a file
     pub fn save(&self, user_folder: &Path) -> Result<(), String> {
         std::fs::create_dir_all(user_folder).map_err(|e| e.to_string())?;
         let text = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(user_folder.join("settings.json"), text).map_err(|e| e.to_string())
+        crate::saving::save(&user_folder.join("settings.json"), "json.saving", text)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A settings file that can't be read (cut short, or mangled by hand) starts the app on the defaults, and the
+    /// first thing saved then, a pane's width or the window's place, was written over it: the settings folder, the
+    /// Database connection and everything else chosen were gone for good. Now the file is kept beside the new one
+    #[test]
+    fn settings_that_cant_be_read_are_kept_aside_before_the_defaults_are_saved_over_them() {
+        let folder = std::env::temp_dir().join(format!("sxt-settings-damaged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        // no file yet: the defaults, and nothing to keep
+        AppSettings::load(&folder).save(&folder).unwrap();
+        assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 1);
+
+        let chosen = AppSettings { settings_folder: Some("/Volumes/Team/SuperXTerminal".into()), ..Default::default() };
+        chosen.save(&folder).unwrap();
+        assert_eq!(AppSettings::load(&folder).settings_folder, chosen.settings_folder);
+        assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 1, "settings that read are never set aside");
+        let whole = std::fs::read_to_string(folder.join("settings.json")).unwrap();
+        let damaged = &whole[..whole.len() / 2];
+        std::fs::write(folder.join("settings.json"), damaged).unwrap();
+
+        let started = AppSettings::load(&folder);
+        assert_eq!(started.settings_folder, None, "the app starts on the defaults");
+        started.save(&folder).unwrap();
+
+        let aside: Vec<_> = std::fs::read_dir(&folder).unwrap().flatten().map(|e| e.path()).filter(|p| !p.ends_with("settings.json")).collect();
+        assert_eq!(aside.len(), 1, "the settings that couldn't be read are still there, under another name: {aside:?}");
+        assert!(aside[0].file_name().unwrap().to_string_lossy().starts_with("settings.damaged-"), "{aside:?}");
+        assert_eq!(std::fs::read_to_string(&aside[0]).unwrap(), damaged);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
 
     /// A settings file from before docking reads with the Sessions pane on the left, at its usual height for the
     /// bottom; one docked since keeps its place. One that still has the Layouts pane's showLayouts reads without it.

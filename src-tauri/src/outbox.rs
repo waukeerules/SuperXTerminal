@@ -124,9 +124,25 @@ fn save(user_folder: &Path, mut outbox: OutboxFile) -> Result<(), String> {
     crate::saving::save(&path, "json.tmp", serde_json::to_string_pretty(&outbox).map_err(|e| e.to_string())?)
 }
 
+/// The changes waiting, to be changed and saved again: as [`load`], but a file that's there and can't be read isn't
+/// taken for an empty one and saved over. One that can't be opened stops the change, saying why; one that opens
+/// but isn't the outbox's JSON (cut short, mangled) is kept beside the new file first ([`crate::saving::set_aside`])
+fn load_to_change(user_folder: &Path) -> Result<OutboxFile, String> {
+    let path = file(user_folder);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(OutboxFile::default()),
+        Err(e) => return Err(format!("Couldn't read the changes waiting for the database ({}): {e}", path.display())),
+    };
+    Ok(serde_json::from_str(&text).unwrap_or_else(|_| {
+        crate::saving::set_aside(&path);
+        OutboxFile::default()
+    }))
+}
+
 /// Change one connection's list and save it
 fn edit(user_folder: &Path, source: &str, change: impl FnOnce(&mut Vec<PendingChange>)) -> Result<(), String> {
-    let mut outbox = load(user_folder);
+    let mut outbox = load_to_change(user_folder)?;
     let index = match outbox.outboxes.iter().position(|o| o.source == source) {
         Some(i) => i,
         None => {
@@ -257,6 +273,42 @@ mod tests {
     /// A database row for an SSH session in a folder
     fn row(folder: &str, name: &str, host: &str) -> Row {
         Row { folder: folder.into(), name: name.into(), host: host.into(), protocol: "SSH".into(), ..Row::default() }
+    }
+
+    /// The changes waiting are the only copy of work done while the table couldn't be reached. A file of them that
+    /// can't be read (cut short as it was written by an older version, or by a sync) used to read as "nothing waiting",
+    /// and the next change queued was saved over it: now it's kept beside the new file, for the changes to be got back
+    #[test]
+    fn a_file_of_waiting_changes_that_cant_be_read_is_kept_aside_when_the_next_change_is_saved() {
+        let folder = std::env::temp_dir().join(format!("sxt-outbox-damaged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        let source = "u@h:5432/db/s.t";
+        let mut insert = PendingChange::new(Kind::Insert);
+        insert.row = Some(row("Lab", "sw1", "10.0.0.1"));
+        add(&folder, source, insert).unwrap();
+        // the file, cut off part way
+        let whole = std::fs::read_to_string(file(&folder)).unwrap();
+        let damaged = &whole[..whole.len() / 2];
+        std::fs::write(file(&folder), damaged).unwrap();
+        assert!(changes(&folder, source).is_empty(), "nothing can be read from it");
+
+        let mut next = PendingChange::new(Kind::Insert);
+        next.row = Some(row("Lab", "sw2", "10.0.0.2"));
+        add(&folder, source, next).unwrap();
+
+        assert_eq!(changes(&folder, source).len(), 1, "the new change is queued");
+        let aside: Vec<_> = std::fs::read_dir(&folder).unwrap().flatten().map(|e| e.path()).filter(|p| p != &file(&folder)).collect();
+        assert_eq!(aside.len(), 1, "the file that couldn't be read is still there, under another name: {aside:?}");
+        assert!(aside[0].file_name().unwrap().to_string_lossy().starts_with("DatabaseSessions.outbox.damaged-"), "{aside:?}");
+        assert_eq!(std::fs::read_to_string(&aside[0]).unwrap(), damaged);
+
+        // a file that reads is never set aside, nor one that isn't there
+        let mut third = PendingChange::new(Kind::Insert);
+        third.row = Some(row("Lab", "sw3", "10.0.0.3"));
+        add(&folder, source, third).unwrap();
+        assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 2);
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]

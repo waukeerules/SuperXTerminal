@@ -10,14 +10,35 @@
 //!
 //! A folder that won't take the new file at all (Program Files, where only administrators write) is another matter:
 //! no wait mends it, so its error says the folder is read-only and to choose a settings folder the user can write to.
+//!
+//! A file the app keeps that it can no longer read (cut short, or mangled) is about to be saved over with whatever
+//! the app starts from instead; [`set_aside`] keeps it beside the new one first, so what it held can be got back.
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// How many times the replace is tried, and how long apart: about a second in all, enough for a sync or scan to let go
 const TRIES: u32 = 10;
 const PAUSE: Duration = Duration::from_millis(100);
+
+/// Keep a copy of a file that couldn't be read before it's saved over: "settings.json" as
+/// "settings.damaged-20261111_140312.json" beside it, the time being now. The settings file and the Database
+/// sessions' waiting changes read as empty when they can't be parsed, so the app still starts; without the copy,
+/// the next save would leave nothing of what they held. Returns the copy's path, or None when it couldn't be made
+/// (the save goes ahead either way, as it did)
+pub fn set_aside(path: &Path) -> Option<PathBuf> {
+    let stem = path.file_stem()?.to_str()?;
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("txt");
+    let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let copy = path.with_file_name(format!("{stem}.damaged-{stamp}.{extension}"));
+    std::fs::copy(path, &copy).ok()?;
+    // the tests' files aren't the user's: nothing about them goes in the app's log
+    if !cfg!(test) {
+        crate::applog::warn(format!("{} couldn't be read, so it starts empty; what it held is kept as {}", path.display(), copy.display()));
+    }
+    Some(copy)
+}
 
 /// Write `contents` to `path` whole: to `path` with `temp_extension` first ("xml.saving"), then in its place, tried
 /// again while another program holds the file, else written in place; an error names the file and the likely reason

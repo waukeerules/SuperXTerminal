@@ -132,6 +132,56 @@ describe("switching tabs", () => {
     tabs.command(sw2, "close");
     await expect.poll(() => focused).toEqual([sw1]);
   });
+
+  it("puts the keyboard in the tab left in front when a tab's ✕ closes it, a file transfer's too", async () => {
+    mockWindows("main");
+    const sw1 = open("sw1");
+    const sw2 = open("sw2");
+    tabs.openSftp("saved", "Lab/sw1", "files", "switch", null);
+    focused = [];
+    label("files").querySelector<HTMLElement>(".close")!.click();
+    await expect.poll(() => focused).toEqual([sw2]);
+    label("sw2").querySelector<HTMLElement>(".close")!.click();
+    await expect.poll(() => focused).toEqual([sw2, sw1]);
+  });
+
+  it("puts the keyboard in the tab left in front when the ✕ beside the tab list closes one, a file transfer's too", async () => {
+    mockWindows("main");
+    const sw1 = open("sw1");
+    const sw2 = open("sw2");
+    tabs.openSftp("saved", "Lab/sw1", "files", "switch", null);
+    focused = [];
+    const close = () => element.querySelector<HTMLElement>(".tab-close-button")!.click();
+    close();
+    expect(tabs.api.panels.map((p) => p.id)).toEqual([sw1, sw2]);
+    await expect.poll(() => focused).toEqual([sw2]);
+    close();
+    await expect.poll(() => focused).toEqual([sw2, sw1]);
+  });
+
+  it("puts the keyboard in the tab left in front when a tab closes by itself with the keyboard in it", async () => {
+    const sw1 = open("sw1");
+    const sw2 = open("sw2");
+    focused = [];
+    // as when its shell ends: nothing was clicked, and no Close Tab asked for it
+    tabs.api.getPanel(sw2)!.api.close();
+    await expect.poll(() => focused).toEqual([sw1]);
+  });
+
+  it("leaves the keyboard where it is when a tab closes while it's in a box outside the tabs", async () => {
+    const sw1 = open("sw1");
+    open("sw2");
+    const search = document.createElement("input");
+    document.body.append(search);
+    search.focus();
+    focused = [];
+    // the tab behind closes by itself, as when its shell ends
+    tabs.api.getPanel(sw1)!.api.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(focused).toEqual([]);
+    expect(document.activeElement).toBe(search);
+    search.remove();
+  });
 });
 
 describe("a right-click in the terminal", () => {

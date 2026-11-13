@@ -141,7 +141,10 @@ class TabLabel implements ITabRenderer {
     // put it in the tab's terminal, as SuperXPuTTY does. A drag ends without a click, so moving a tab doesn't.
     // Dockview switches tabs in the animation frame after the press, which a quick click can come before; a frame
     // asked for now runs after dockview's, with the clicked tab active.
-    this.element.addEventListener("click", () => requestAnimationFrame(() => this.tabs.focusActive()));
+    // Not for a click that closed the tab (its ✕): the tab area moves the keyboard itself when a tab closes.
+    this.element.addEventListener("click", () => requestAnimationFrame(() => {
+      if (this.tabs.api.getPanel(parameters.api.id)) this.tabs.focusActive();
+    }));
     // the tab's own menu, as SuperXPuTTY's (App builds it)
     this.element.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -618,6 +621,35 @@ export class TabArea {
       this.regrid();
     });
     this.api.onDidRemovePanel(() => this.regrid());
+    // a tab closed, however it was (its ✕, the ✕ beside the tab list, its session ending): the keyboard may have
+    // been in it, or on the button that closed it, and typing then went nowhere
+    this.api.onDidRemovePanel(() => this.focusSoon(element, false));
+    this.root = element;
+  }
+
+  /** The element the tab area is drawn in, to tell the keyboard being in the tabs from being in a box outside them */
+  private readonly root: HTMLElement;
+  /** The wait before the keyboard is put in the tab in front after tabs close, and whether it's put there wherever it is */
+  private focusTimer: ReturnType<typeof setTimeout> | undefined;
+  private focusWherever = false;
+
+  /**
+   * Put the keyboard in the tab in front once the closing of tabs is done (dockview picks the tab in front as it
+   * removes the other; several closing at once ask once).
+   * @param root The tab area's element
+   * @param wherever True when the user asked for the close here (Close Tab, the tab's menu), so the keyboard goes to
+   *   the tab left wherever it was. False for a tab that closed some other way: then only when the keyboard is
+   *   nowhere or in the tabs, not when it's in a box outside them (the Sessions search, a dialog), where the user
+   *   is typing
+   */
+  private focusSoon(root: HTMLElement, wherever: boolean): void {
+    this.focusWherever ||= wherever;
+    clearTimeout(this.focusTimer);
+    this.focusTimer = setTimeout(() => {
+      const at = document.activeElement;
+      if (this.focusWherever || !at || at === document.body || root.contains(at)) this.focusActive();
+      this.focusWherever = false;
+    }, 0);
   }
 
   /** Open a tab that runs a profile's key fetch on its own (Settings > Profiles > Log in & cache key) */
@@ -856,7 +888,7 @@ export class TabArea {
    */
   closeActive(): void {
     this.api.activePanel?.api.close();
-    setTimeout(() => this.focusActive(), 0);
+    this.focusSoon(this.root, true);
   }
 
   /** A tab's watches */
@@ -1468,7 +1500,7 @@ export class TabArea {
       : [];
     closing.forEach((p) => p.api.close());
     // the keyboard may have been in a tab just closed: put it in the one left in front, as Close Tab does
-    if (closing.length) setTimeout(() => this.focusActive(), 0);
+    if (closing.length) this.focusSoon(this.root, true);
   }
 
   /** Free the tab area when the window goes */

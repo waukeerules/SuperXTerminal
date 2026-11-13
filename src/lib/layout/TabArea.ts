@@ -286,8 +286,10 @@ class RdpPanel implements IContentRenderer {
 class SftpPanel implements IContentRenderer {
   readonly element: HTMLElement;
   private view: ReturnType<typeof mount> | null = null;
+  /** The tab's id, once it has one, for taking its state away when it closes */
+  private id: string | null = null;
 
-  constructor() {
+  constructor(private readonly tabs: TabArea) {
     this.element = document.createElement("div");
     this.element.className = "terminal-panel";
   }
@@ -300,13 +302,27 @@ class SftpPanel implements IContentRenderer {
       this.element.style.padding = "3px";
       this.element.style.background = environment;
     }
-    this.view = mount(FileTransfer, { target: this.element, props: { store: target.store, id: target.id } });
+    const id = (this.id = parameters.api.id);
+    this.view = mount(FileTransfer, {
+      target: this.element,
+      props: {
+        store: target.store,
+        id: target.id,
+        // the tab's dot (yellow, green, or the red cross), and the Sessions tree's, as a terminal tab's
+        onState: (state: SessionState) => {
+          this.tabs.transferStates.set(id, state);
+          tabStates[id] = { ...tabStates[id], ended: state === "disconnected", connecting: state === "connecting" };
+          this.tabs.notify();
+        },
+      },
+    });
   }
 
   /** The tab closed: take the file transfer away, which closes its connection */
   dispose(): void {
     if (this.view) void unmount(this.view);
     this.view = null;
+    if (this.id) this.tabs.transferStates.delete(this.id);
   }
 }
 
@@ -557,7 +573,7 @@ export class TabArea {
         options.name === "output" ? new OutputPanel(this)
         : options.name === "compare" ? new ComparePanel(this)
         : options.name === "rdp" ? new RdpPanel(this)
-        : options.name === "sftp" ? new SftpPanel()
+        : options.name === "sftp" ? new SftpPanel(this)
         : new TerminalPanel(this),
       // dockview only uses createTabComponent for a named tab component, so make ours the default
       defaultTabComponent: "session",
@@ -631,6 +647,9 @@ export class TabArea {
 
   /** Remote Desktop tabs' hosts, by panel id */
   readonly rdpHosts = new Map<string, RdpHost>();
+
+  /** File transfer (SFTP) tabs' connections, by panel id, as each tab's FileTransfer last said it was */
+  readonly transferStates = new Map<string, SessionState>();
 
   /** Open a Remote Desktop session in a tab (the built-in client), as SuperXPuTTY shows RDP in a tab */
   openRdp(store: "saved" | "private" | "database", id: string, title: string, icon: string, environment: string | null): string {
@@ -716,16 +735,17 @@ export class TabArea {
    * enough: a second tab on a dropped device shows its own cross), else "connecting" if any tab is, else
    * "disconnected" (every tab shows the red cross), as each tab's page host has it: connecting until the far end
    * answers (PageHost.isConnecting), ended once the session has. A Remote Desktop tab's host says the same
-   * (RdpHost: connecting until the desktop is seen). An SFTP tab has neither host: its session is connected here,
-   * as its tab shows no dot.
+   * (RdpHost: connecting until the desktop is seen), and a file transfer tab says how its ssh is (transferStates).
    */
   private sessionStates(): Map<string, SessionState> {
     const rank: Record<SessionState, number> = { disconnected: 0, connecting: 1, connected: 2 };
     const states = new Map<string, SessionState>();
     for (const [panelId, key] of this.sessions) {
-      // a terminal tab's page host or a Remote Desktop's; none for an SFTP tab
+      // a terminal tab's page host or a Remote Desktop's; a file transfer tab has neither, and says its own
       const host = this.hosts.get(panelId) ?? this.rdpHosts.get(panelId);
-      const state: SessionState = host?.isEnded ? "disconnected" : host?.isConnecting ? "connecting" : "connected";
+      const state: SessionState = host
+        ? host.isEnded ? "disconnected" : host.isConnecting ? "connecting" : "connected"
+        : this.transferStates.get(panelId) ?? "connected";
       const before = states.get(key);
       if (!before || rank[state] > rank[before]) states.set(key, state);
     }

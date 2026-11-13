@@ -18,11 +18,16 @@
     remoteDelete, remoteMkdir, remoteRename, revealLocal, transfer, type Entry, type Listing, type Opened,
   } from "./api";
 
-  let { store, id }: {
+  let { store, id, onState }: {
     /** Which sessions the session is in: Saved, Private or Database */
     store: Store;
     /** The session whose files are shown */
     id: string;
+    /**
+     * Told how the connection is, for the tab's dot and the Sessions tree: connecting as ssh logs in (and again on
+     * Try again), connected once it's in, disconnected when it couldn't connect
+     */
+    onState?: (state: "connecting" | "connected" | "disconnected") => void;
   } = $props();
 
   let conn = $state<Opened | null>(null);
@@ -61,12 +66,16 @@
   async function connect(): Promise<void> {
     failed = "";
     conn = null;
+    onState?.("connecting");
     try {
       conn = await openTransfer(store, id);
+      onState?.("connected");
       localHome = conn.local;
       await Promise.all([load("local", conn.local), load("remote", conn.remote)]);
     } catch (e) {
       failed = String(e);
+      // only a connection that never was: a folder that wouldn't list keeps the tab connected, with its own message
+      if (!conn) onState?.("disconnected");
     }
   }
 

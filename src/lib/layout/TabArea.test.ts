@@ -23,6 +23,8 @@ let focused: string[];
 let channels: Map<string, Channel<unknown>>;
 /** Each Remote Desktop connection's channel, in the order they were opened (rdp_open) */
 let desktops: Channel<unknown>[];
+/** How the next file transfer's connection goes (sftp_open): what it opens with, or the error it fails with */
+let transfer: () => Promise<unknown>;
 /** The profiles stored, as profiles_list gives them */
 let profiles: Profile[];
 /** What the tab area last told the Sessions tree: each open session's state */
@@ -37,12 +39,15 @@ beforeEach(() => {
   } as unknown as typeof ResizeObserver;
   channels = new Map();
   desktops = [];
+  transfer = async () => ({ id: 1, address: "admin@sw1", home: "/home/admin", local: "/Users/me", remote: "/home/admin", scp: false });
   profiles =[emptyProfile(DEFAULT_PROFILE)];
   let opening: string | null = null;
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (cmd === "pty_open" && opening) channels.set(opening, payload.onEvent as Channel<unknown>);
     if (cmd === "pty_open") return channels.size;
+    if (cmd === "sftp_open") return transfer();
+    if (cmd === "local_list" || cmd === "sftp_list") return { path: payload.path, entries: [] };
     if (cmd === "rdp_open") {
       desktops.push(payload.onEvent as Channel<unknown>);
       return { id: desktops.length, width: 800, height: 600, fixed: false, smartSizing: true, scale: 100, keyboard: 0 };
@@ -368,6 +373,34 @@ describe("a Remote Desktop tab", () => {
     expect(reported.get("saved:Servers/ts1")).toBe("disconnected");
     tabs.api.getPanel(id)!.api.close();
     expect(reported.has("saved:Servers/ts1")).toBe(false);
+  });
+});
+
+// A file transfer tab (FileTransfer.svelte) connects as it opens: the core's sftp_open is stood in for by a promise
+// the test settles, as ssh logging in or being refused, and both sides' listings by empty folders.
+describe("a file transfer (SFTP) tab", () => {
+  // the tab listens for files dropped on its window: a stand-in window for it
+  beforeEach(() => mockWindows("main"));
+
+  it("shows connecting until ssh is in, connected once it is, as the Sessions tree is told", async () => {
+    let connected: (opened: unknown) => void = () => {};
+    transfer = () => new Promise((resolve) => (connected = resolve));
+    const id = tabs.openSftp("saved", "Lab/sw1", "sw1", "switch", null);
+    await expect.poll(() => label("sw1").querySelector('[aria-label="Connecting"]')).not.toBeNull();
+    expect(reported.get("saved:Lab/sw1")).toBe("connecting");
+    connected({ id: 1, address: "admin@sw1", home: "/home/admin", local: "/Users/me", remote: "/home/admin", scp: false });
+    await expect.poll(() => label("sw1").querySelector('[aria-label="Connected"]')).not.toBeNull();
+    expect(label("sw1").querySelector('[aria-label="Connecting"]')).toBeNull();
+    expect(reported.get("saved:Lab/sw1")).toBe("connected");
+    tabs.api.getPanel(id)!.api.close();
+    expect(reported.has("saved:Lab/sw1")).toBe(false);
+  });
+
+  it("shows disconnected when the connection fails", async () => {
+    transfer = () => Promise.reject("ssh: connect to host 10.0.0.9 port 22: Connection refused");
+    tabs.openSftp("saved", "Lab/sw9", "sw9", "switch", null);
+    await expect.poll(() => label("sw9").querySelector('[aria-label="Disconnected"]')).not.toBeNull();
+    expect(reported.get("saved:Lab/sw9")).toBe("disconnected");
   });
 });
 

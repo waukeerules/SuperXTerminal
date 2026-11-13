@@ -224,6 +224,7 @@ pub fn separate_args(args: &[String]) -> Vec<String> {
 fn reading_command(path: &Path) -> Command {
     let mut command = Command::new(crate::launch::openssh("ssh"));
     crate::appimage::tidy(&mut command);
+    crate::launch::no_window(&mut command);
     command
         .args(["-F", "none", "-T", "-o", "ControlMaster=no", "-o", "BatchMode=yes", "-o", "ProxyCommand=false"])
         .arg("-o")

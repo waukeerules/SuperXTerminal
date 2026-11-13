@@ -1034,6 +1034,25 @@ pub fn openssh(program: &str) -> std::ffi::OsString {
     program.into()
 }
 
+/// Start `command` with no console window of its own, on Windows. The installed app has no console (it's a
+/// windowed program), so Windows opens one for each console program it starts, ssh.exe among them: a black window
+/// titled C:\WINDOWS\System32\OpenSSH\ssh.exe over the app, and closing it ends that ssh, and the file transfer
+/// tab with it. Under `tauri dev` the app has the terminal it was started from, ssh uses that, and no window shows.
+/// Nothing to do on the Mac and Linux, where a program started this way has no window.
+///
+/// For tokio's Command, pass its `as_std_mut()`.
+pub fn no_window(command: &mut std::process::Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        /// CREATE_NO_WINDOW: a console program is given a console with no window
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = command;
+}
+
 /// The jump host as a `ProxyCommand=` option that logs in there with the key file too, or None to leave it to ssh's
 /// own `-J` (no key file, or a chain "a,b" that -J alone follows). ssh's -J starts the jump host's connection with
 /// only -l, -p and -W, so a key given with -i reached the target alone: the jump host was offered ssh's own keys and
@@ -1872,6 +1891,51 @@ mod tests {
         );
         let telnet = QuickConnect { host: "telnet://10.0.0.1".into(), ..quick };
         assert_eq!(telnet.session().unwrap().get("Proto"), "TELNET");
+    }
+
+    /// Windows only: a console window for a program started is Windows' alone. The installed app has no console,
+    /// which these tests have (a terminal's, or their runner's hidden one, which a program started from them would
+    /// just share). So a copy of these tests is started with none (DETACHED_PROCESS), standing in for the app, and
+    /// it starts another copy the way ssh is started, which says whether it was given a console window
+    /// ([`answer_console_window`]). Without [`no_window`] it is: the window that showed over the app.
+    #[cfg(windows)]
+    #[test]
+    fn a_program_the_app_starts_with_no_window_has_no_console_window_on_windows() {
+        use std::os::windows::process::CommandExt;
+        /// DETACHED_PROCESS: the program started has no console at all, as a windowed app has none
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        let mut app = std::process::Command::new(std::env::current_exe().unwrap());
+        app.args(["--exact", "launch::tests::answer_console_window", "--nocapture", "--include-ignored"]);
+        app.env("SXT_ANSWER_CONSOLE_WINDOW", "app").stdin(std::process::Stdio::null()).creation_flags(DETACHED_PROCESS);
+        let said = String::from_utf8_lossy(&app.output().unwrap().stdout).to_string();
+        assert!(said.contains("console window: false"), "a program started with no_window had a console window: {said}");
+    }
+
+    /// Not a test of its own: run by [`a_program_the_app_starts_with_no_window_has_no_console_window_on_windows`]
+    /// in copies of the tests. As "app" (the copy with no console) it starts another copy with [`no_window`] and
+    /// passes on what that says; as "program" it says whether it has a console window
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn answer_console_window() {
+        match std::env::var("SXT_ANSWER_CONSOLE_WINDOW").as_deref() {
+            Ok("app") => {
+                let mut program = std::process::Command::new(std::env::current_exe().unwrap());
+                program.args(["--exact", "launch::tests::answer_console_window", "--nocapture", "--include-ignored"]);
+                program.env("SXT_ANSWER_CONSOLE_WINDOW", "program").stdin(std::process::Stdio::null());
+                no_window(&mut program);
+                print!("{}", String::from_utf8_lossy(&program.output().unwrap().stdout));
+            }
+            Ok("program") => {
+                #[link(name = "kernel32")]
+                unsafe extern "system" {
+                    fn GetConsoleWindow() -> *mut std::ffi::c_void;
+                }
+                // SAFETY: takes nothing, and returns the console's window or null
+                println!("console window: {}", !unsafe { GetConsoleWindow() }.is_null());
+            }
+            _ => {}
+        }
     }
 
     #[test]

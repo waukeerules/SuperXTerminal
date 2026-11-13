@@ -165,6 +165,8 @@ impl Link {
                 };
                 let mut ssh = std::process::Command::new(crate::launch::openssh("ssh"));
                 crate::appimage::tidy(&mut ssh);
+                // no console window for the jump host's ssh in the installed app on Windows
+                crate::launch::no_window(&mut ssh);
                 let mut child = ssh
                     .args(family.ssh_flag())
                     .args(["-o", "BatchMode=yes", "-p", &jump_port, "-W", &format!("{host}:{port}"), &jump_host])

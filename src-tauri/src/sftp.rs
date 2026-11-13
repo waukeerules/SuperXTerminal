@@ -207,6 +207,8 @@ pub async fn sftp_open(
     let program = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut ssh = tokio::process::Command::new(crate::launch::openssh("ssh"));
     crate::appimage::tidy(&mut ssh);
+    // no console window for it in the installed app on Windows: closing that window ended the file transfer
+    crate::launch::no_window(ssh.as_std_mut());
     let mut child = ssh
         .args(&args)
         .env("SSH_ASKPASS", &program)
@@ -752,11 +754,14 @@ fn with_keepalive(mut base: Vec<String>) -> Vec<String> {
     base
 }
 
-/// ssh or scp with the connection's login (askpass.rs): the password, and the user asked anything else
+/// ssh or scp with the connection's login (askpass.rs): the password, and the user asked anything else; with no
+/// console window of its own on Windows ([`crate::launch::no_window`])
 fn with_login(program: &str, token: &str) -> Result<tokio::process::Command, String> {
     let helper = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut command = tokio::process::Command::new(crate::launch::openssh(program));
     crate::appimage::tidy(&mut command);
+    // no console window for each listing or copy in the installed app on Windows
+    crate::launch::no_window(command.as_std_mut());
     command
         .env("SSH_ASKPASS", helper)
         .env("SSH_ASKPASS_REQUIRE", "force")

@@ -33,6 +33,11 @@ static LOG: Mutex<(u64, VecDeque<Entry>)> = Mutex::new((0, VecDeque::new()));
 /// The log file: in ~/Library/Logs on the Mac, %LOCALAPPDATA%\SuperXTerminal\logs on Windows, and on Linux
 /// ~/.local/share/SuperXTerminal/logs (its XDG data folder, which data_local_dir gives there)
 pub fn file() -> PathBuf {
+    // the tests log as the app does (a drive left out, a request refused): into a file of their own in the temporary
+    // folder, not among the user's own app's lines
+    if cfg!(test) {
+        return std::env::temp_dir().join("SuperXTerminal-tests.log");
+    }
     if cfg!(target_os = "macos") {
         dirs::home_dir().unwrap_or_default().join("Library/Logs/SuperXTerminal/SuperXTerminal.log")
     } else {

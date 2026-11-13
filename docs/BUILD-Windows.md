@@ -196,9 +196,13 @@ The Mac's shortcuts are ⌘ keys, which a terminal never needs. On Windows the s
 
 Windows keeps Alt+F4, and the terminal page keeps Ctrl+Shift+C/V and Ctrl/Shift+Insert for copy and paste; Settings >
 Shortcuts won't give them to an action. On Windows a menu's keys don't fire while the page has the keyboard, so
-`src/lib/shortcuts.ts` catches them in the window and in each tab's page. In RDP tabs the Windows key goes to the
-remote computer as itself, and Ctrl+Alt+End is Ctrl+Alt+Delete (Windows keeps that one), as in Remote Desktop
-Connection. While the session's Windows key combinations go to the remote computer, so do Ctrl and Alt keys without
+`src/lib/shortcuts.ts` catches them in the window and in each tab's page. In RDP tabs Ctrl+Alt+End is
+Ctrl+Alt+Delete (Windows keeps that one), as in Remote Desktop Connection. While the session's Windows key
+combinations go to the remote computer and the tab has the keyboard, the Windows key and what's pressed with it
+(Win+R, Win+E, Start) are taken before Windows acts on them, by a low-level keyboard hook
+(`src-tauri/src/rdp_win_keys.rs`), and sent there; the hook is only in place while such a tab has the keyboard, and
+only acts while a SuperXTerminal window is in front. It needs the app built without raw device events
+(`device_event_filter` in `lib.rs`): Windows doesn't call the keyboard hook of a program registered for raw input. Windows keeps Win+L for itself (the tab's Send Keys has it). So do Ctrl and Alt keys without
 Shift, even ones that are shortcuts here (Ctrl+W, Ctrl+Tab, Ctrl+,); the Ctrl+Shift ones stay SuperXTerminal's, and
 Ctrl+Alt+Home takes the keyboard back from the tab, after which every shortcut is SuperXTerminal's again.
 
@@ -220,10 +224,9 @@ Known from the code, not tried yet:
 - **Saved passwords:** the `keyring` crate is already built with its Windows backend (Credential Manager).
 - **RDP clipboard:** IronRDP's own Windows clipboard backend (`ironrdp-cliprdr-native`) in place of
   `src-tauri/src/rdp_clipboard.rs`'s Mac pasteboard.
-- **RDP keys:** a low-level keyboard hook so Windows key combinations (Win+L, Win+R) reach the remote desktop instead of
-  the local PC, following the session's "Windows key combinations" option. The ⌘-to-Ctrl and ⌘-as-Windows-key mapping
-  in `src/lib/terminal/RdpHost.ts` is for the Mac only, and the ⌘ tap watcher (`src-tauri/src/command_tap.rs`) already
-  builds to nothing elsewhere.
+- **RDP keys:** Alt+Tab still switches windows on this PC whatever the session's "Windows key combinations" option
+  says (Remote Desktop Connection sends it to the remote desktop with the Windows key); the keyboard hook
+  (`src-tauri/src/rdp_win_keys.rs`) takes the Windows key's combinations only.
 - **ssh:// and telnet:// links:** handed over by macOS only (`RunEvent::Opened`, `links_make_default`); Windows needs
   the schemes registered (Tauri's deep-link plugin) and the URL read from the command line.
 - **The tray:** the menu bar icon becomes a notification area icon; check its menu and "keep running" behaviour.

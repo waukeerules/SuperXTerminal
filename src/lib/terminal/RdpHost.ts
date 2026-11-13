@@ -5,6 +5,10 @@
  * The desktop is the tab's size (Fit the tab, as SuperXPuTTY's default) in points, and follows the tab when it changes
  * size. ⌘ shortcuts stay SuperXTerminal's (⌘W closes the tab, ⌘T opens a shell);
  * Control and Option are Windows' Ctrl and Alt.
+ *
+ * On Windows the Windows key never reaches the page in time: Windows acts on Win+R itself. So while the tab has the
+ * keyboard and its Windows key combinations go to the remote computer, the core takes the Windows key and what's
+ * pressed with it before Windows does (grabKeys; src-tauri/src/rdp_win_keys.rs), as Remote Desktop Connection does.
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -91,6 +95,10 @@ export class RdpHost {
   private unlistenTap: (() => void) | null = null;
   /** The window is full screen (kept up to date as the tab resizes) */
   private fullScreen = false;
+  /** The desktop has the keyboard (the canvas is focused in a window that's in front) */
+  private hasKeyboard = false;
+  /** The connection the core is taking the Windows key for, on Windows; null when it isn't */
+  private grabbed: number | null = null;
   /** Caps Lock as last sent */
   private capsLock: boolean | null = null;
   /** Reconnecting after a drop (Settings > General > Dropped sessions): the attempt and its timer */
@@ -149,6 +157,7 @@ export class RdpHost {
       });
       this.id = opened.id;
       this.keyboard = opened.keyboard;
+      this.grabKeys();
       // SmartSizing off: the desktop at its own size (in points), scrolled when bigger than the tab, as SuperXPuTTY's
       this.element.classList.toggle("actual-size", !opened.smartSizing);
       this.canvas.style.width = opened.smartSizing ? "" : `${(opened.width * 100) / opened.scale}px`;
@@ -237,6 +246,7 @@ export class RdpHost {
     this.ended = true;
     this.id = null;
     this.releaseKeys();
+    this.grabKeys();
     this.show(text);
     // dropped (it had been showing, or this was a try at reconnecting): again in a while, as a terminal tab does
     const max = settings.autoReconnectAttempts || 6;
@@ -318,6 +328,9 @@ export class RdpHost {
 
     const key = (e: KeyboardEvent, down: boolean) => {
       if (this.id === null) return;
+      // on Windows, with Windows key combinations kept on this computer, the Windows key is this computer's alone:
+      // sent as well, Start opened on both. (When they go to the remote computer the core has taken it: grabKeys.)
+      if (!isMac && e.key === "Meta" && !this.windowsKeys()) return;
       // on Windows the Meta key is the Windows key itself, and goes to the remote computer as it is (below)
       if (isMac && (e.metaKey || e.key === "Meta")) {
         // ⌘ tapped on its own comes from the app (command-tap), as the page never sees it
@@ -381,7 +394,11 @@ export class RdpHost {
       key(e, true);
     });
     c.addEventListener("keyup", (e) => key(e, false));
-    c.addEventListener("blur", () => this.releaseKeys());
+    c.addEventListener("blur", () => {
+      this.releaseKeys();
+      this.hasKeyboard = false;
+      this.grabKeys();
+    });
     // ⌘ tapped on its own (watched by the app: the page never sees a lone modifier) is the Windows key, Start
     void getCurrentWebviewWindow()
       .listen("command-tap", () => {
@@ -393,8 +410,25 @@ export class RdpHost {
       });
     // back in the tab: what was copied on this computer meanwhile is offered to the remote desktop's clipboard
     c.addEventListener("focus", () => {
+      this.hasKeyboard = true;
+      this.grabKeys();
       if (this.id !== null) void invoke("rdp_clipboard_announce", { id: this.id }).catch(() => {});
     });
+  }
+
+  /**
+   * On Windows, have the core take the Windows key and what's pressed with it for the remote desktop (Win+R, Win+E,
+   * Start) while this tab has the keyboard, is connected and its Windows key combinations go there; and give them
+   * back to Windows as soon as any of that stops being so. Called whenever one of them may have changed. The Mac's
+   * ⌘ is sorted out in the key handler instead.
+   */
+  private grabKeys(): void {
+    if (isMac) return;
+    const wanted = this.hasKeyboard && !this.ended && this.windowsKeys() ? this.id : null;
+    if (wanted === this.grabbed) return;
+    if (this.grabbed !== null) void invoke("rdp_grab_keys", { id: this.grabbed, on: false }).catch(() => {});
+    if (wanted !== null) void invoke("rdp_grab_keys", { id: wanted, on: true }).catch(() => {});
+    this.grabbed = wanted;
   }
 
   /** Ctrl, Shift and Option as the key's event says they are: one pressed before the tab had the keyboard (or by
@@ -474,7 +508,11 @@ export class RdpHost {
 
   /** The tab changed size: the remote desktop follows, once the resizing settles */
   private sizeChanged(): void {
-    void getCurrentWindow().isFullscreen().then((on) => (this.fullScreen = on)).catch(() => {});
+    void getCurrentWindow().isFullscreen().then((on) => {
+      this.fullScreen = on;
+      // "only when using the full screen": the Windows key is taken as full screen starts and given back as it ends
+      this.grabKeys();
+    }).catch(() => {});
     clearTimeout(this.resizeTimer);
     this.resizeTimer = setTimeout(() => {
       if (this.id === null) return;
@@ -588,6 +626,7 @@ export class RdpHost {
     this.generation++;
     if (this.id !== null) void invoke("rdp_close", { id: this.id }).catch(() => {});
     this.id = null;
+    this.grabKeys();
   }
 
   /** The remote desktop as a picture on the Mac's clipboard */
@@ -611,5 +650,6 @@ export class RdpHost {
     clearTimeout(this.resizeTimer);
     if (this.id !== null) void invoke("rdp_close", { id: this.id }).catch(() => {});
     this.id = null;
+    this.grabKeys();
   }
 }

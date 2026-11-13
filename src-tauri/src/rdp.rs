@@ -475,6 +475,12 @@ fn send(rdps: &Rdps, id: u32, event: RdpInputEvent) -> Result<(), String> {
 /// A key pressed or let go, as its PC scancode (`extended` for the E0 keys: arrows, right Ctrl and Alt, ...)
 #[tauri::command]
 pub fn rdp_key(rdps: State<'_, Rdps>, id: u32, scancode: u8, extended: bool, down: bool) -> Result<(), String> {
+    send(&rdps, id, RdpInputEvent::FastPath(smallvec![key_event(scancode, extended, down)]))
+}
+
+/// A key pressed or let go as the session's engine takes it: its PC scancode, with the flags for an extended (E0)
+/// key and for a key let go
+pub(crate) fn key_event(scancode: u8, extended: bool, down: bool) -> FastPathInputEvent {
     let mut flags = KeyboardFlags::empty();
     if extended {
         flags |= KeyboardFlags::EXTENDED;
@@ -482,26 +488,26 @@ pub fn rdp_key(rdps: State<'_, Rdps>, id: u32, scancode: u8, extended: bool, dow
     if !down {
         flags |= KeyboardFlags::RELEASE;
     }
-    send(&rdps, id, RdpInputEvent::FastPath(smallvec![FastPathInputEvent::KeyboardEvent(flags, scancode)]))
+    FastPathInputEvent::KeyboardEvent(flags, scancode)
+}
+
+/// The tab got the keyboard (`on`) or lost it, on Windows: while it has it and its Windows key combinations go to
+/// the remote computer, the Windows key and what's pressed with it are taken from this computer and sent there
+/// (rdp_win_keys.rs). Nothing to do on the Mac and Linux.
+#[tauri::command]
+pub fn rdp_grab_keys(rdps: State<'_, Rdps>, id: u32, on: bool) {
+    let input = rdps.sessions.lock().unwrap().get(&id).map(|s| s.input.clone());
+    match input {
+        Some(input) if on => crate::rdp_win_keys::grab(id, input),
+        _ => crate::rdp_win_keys::let_go(id),
+    }
 }
 
 /// Several keys in one go, each (scancode, extended, down), so a combination arrives whole: Ctrl+Alt+Del from the
 /// tab's menu, ⌘C as Ctrl+C
 #[tauri::command]
 pub fn rdp_keys(rdps: State<'_, Rdps>, id: u32, keys: Vec<(u8, bool, bool)>) -> Result<(), String> {
-    let events = keys
-        .into_iter()
-        .map(|(scancode, extended, down)| {
-            let mut flags = KeyboardFlags::empty();
-            if extended {
-                flags |= KeyboardFlags::EXTENDED;
-            }
-            if !down {
-                flags |= KeyboardFlags::RELEASE;
-            }
-            FastPathInputEvent::KeyboardEvent(flags, scancode)
-        })
-        .collect();
+    let events = keys.into_iter().map(|(scancode, extended, down)| key_event(scancode, extended, down)).collect();
     send(&rdps, id, RdpInputEvent::FastPath(events))
 }
 
@@ -656,6 +662,7 @@ pub fn rdp_clipboard_announce(rdps: State<'_, Rdps>, id: u32) -> bool {
 /// The tab closed: disconnect
 #[tauri::command]
 pub fn rdp_close(rdps: State<'_, Rdps>, id: u32) {
+    crate::rdp_win_keys::let_go(id);
     if let Some(session) = rdps.sessions.lock().unwrap().remove(&id) {
         let _ = session.input.send(RdpInputEvent::Close);
     }
@@ -663,8 +670,9 @@ pub fn rdp_close(rdps: State<'_, Rdps>, id: u32) {
 
 /// A window closed: its Remote Desktops disconnect
 pub fn close_window(rdps: &Rdps, label: &str) {
-    rdps.sessions.lock().unwrap().retain(|_, s| {
+    rdps.sessions.lock().unwrap().retain(|id, s| {
         if s.window == label {
+            crate::rdp_win_keys::let_go(*id);
             let _ = s.input.send(RdpInputEvent::Close);
             false
         } else {

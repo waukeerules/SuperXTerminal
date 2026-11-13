@@ -35,6 +35,7 @@ mod rdp;
 mod rdp_clipboard;
 mod rdp_drives;
 mod rdp_options;
+mod rdp_win_keys;
 mod remount;
 mod rhai_scripts;
 mod scripts;
@@ -3141,7 +3142,11 @@ pub fn run() {
     if let Some(request) = cli::from_args(&args) {
         PENDING.lock().unwrap().push(request);
     }
-    let builder = tauri::Builder::default();
+    // No raw device events (Windows; the setting does nothing elsewhere): the window toolkit (tao) otherwise registers
+    // the app for raw keyboard and mouse input, to report device events nothing here listens to, and Windows doesn't
+    // call a low-level keyboard hook of a program registered so. A Remote Desktop tab's hook for the Windows key
+    // (rdp_win_keys.rs) then went in without an error and never heard a key: Win+R stayed on this computer.
+    let builder = tauri::Builder::default().device_event_filter(tauri::DeviceEventFilter::Always);
     // one SuperXTerminal: started again (from a script, a terminal), the first one opens what it was given. Not for a
     // demo, which would otherwise only bring a SuperXTerminal already running to the front
     let builder = if demo::on() {
@@ -3387,6 +3392,7 @@ pub fn run() {
             rdp::rdp_open,
             rdp::rdp_key,
             rdp::rdp_keys,
+            rdp::rdp_grab_keys,
             rdp::rdp_text,
             rdp::rdp_sync,
             rdp::rdp_mouse,

@@ -60,7 +60,7 @@ rhai = { version = "1.27.0", features = ["internals"] }
 # Ctrl+C for local shells (console.rs), the login helper finding ssh (askpass.rs), COM ports (streams.rs), the menus' theme (lib.rs),
 # and the clipboard for a paste (clipboard.rs)
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_Devices_Communication", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_Devices_Communication", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse"] }
 # the login helper's tokens (askpass.rs)
 getrandom = "0.3"
 # the taskbar pins' shortcuts, read and written through the shell's COM objects (pins.rs). The version Tauri already uses

@@ -698,7 +698,7 @@ fn attributes(meta: &Metadata, name: &str) -> FileAttributes {
 const FILETIME_EPOCH: i64 = 116_444_736_000_000_000;
 
 /// A time as Windows counts it (100-nanosecond ticks since 1601); 0 when the file system has none
-fn filetime(time: io::Result<SystemTime>) -> i64 {
+pub(crate) fn filetime(time: io::Result<SystemTime>) -> i64 {
     time.ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .and_then(|since| i64::try_from(since.as_nanos() / 100).ok())

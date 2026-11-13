@@ -66,8 +66,11 @@ rhai = { version = "1.27.0", features = ["internals"] }
 windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_Devices_Communication", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse"] }
 # the login helper's tokens (askpass.rs)
 getrandom = "0.3"
-# the taskbar pins' shortcuts, read and written through the shell's COM objects (pins.rs). The version Tauri already uses
-windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell"] }
+# the taskbar pins' shortcuts, read and written through the shell's COM objects (pins.rs), and the OLE clipboard's data
+# object for files copied in a remote desktop (clipboard_files.rs). The version Tauri already uses
+windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_System_Ole", "Win32_System_Com_StructuredStorage", "Win32_Graphics_Gdi"] }
+# the macro that makes clipboard_files.rs's data object names this crate itself (the windows crate's own core, and its version)
+windows-core = "0.62"
 
 # Linux's clipboard (X11, or Wayland's data-control where the desktop has it), for a paste and for Remote Desktop's
 # clipboard (clipboard.rs). Text only: its picture support would bring an image library along

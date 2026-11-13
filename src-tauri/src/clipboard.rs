@@ -21,6 +21,15 @@ pub(crate) fn read() -> Option<String> {
     crate::rdp_clipboard::mac::read()
 }
 
+/// One use of Windows' clipboard at a time in this program, held while it's open. Windows keeps other programs
+/// out of an open clipboard, but not this program's other threads (two Remote Desktop tabs, a tab and a paste):
+/// both open it, and one empties it or closes it while the other is reading memory the clipboard then frees.
+#[cfg(windows)]
+pub(crate) fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+    static OPEN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    OPEN.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// The text on Windows' clipboard, if any
 #[cfg(windows)]
 pub(crate) fn read() -> Option<String> {
@@ -28,6 +37,7 @@ pub(crate) fn read() -> Option<String> {
     use windows_sys::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
     use windows_sys::Win32::System::Ole::CF_UNICODETEXT;
 
+    let _one = one_at_a_time();
     if !open() {
         return None;
     }
@@ -121,8 +131,11 @@ pub(crate) fn write(text: &str) {
 }
 
 /// Put text on Windows' clipboard (`CF_UNICODETEXT`), in place of what it held. Left as it was when the clipboard
-/// can't be opened (another program has it) or there's no memory for the text
+/// can't be opened (another program has it) or there's no memory for the text. Only the tests use it now, as a copy
+/// made in another program: Remote Desktop's clipboard writes through [`crate::clipboard_contents`], which also
+/// marks what it wrote as this app's.
 #[cfg(windows)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn write(text: &str) {
     use windows_sys::Win32::Foundation::GlobalFree;
     use windows_sys::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, SetClipboardData};
@@ -130,6 +143,7 @@ pub(crate) fn write(text: &str) {
     use windows_sys::Win32::System::Ole::CF_UNICODETEXT;
 
     let units: Vec<u16> = text.encode_utf16().chain([0]).collect();
+    let _one = one_at_a_time();
     if !open() {
         return;
     }

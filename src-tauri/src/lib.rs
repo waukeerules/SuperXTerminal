@@ -11,6 +11,8 @@ mod onepassword;
 mod own_process;
 mod ui_themes;
 mod clipboard;
+mod clipboard_contents;
+mod clipboard_files;
 mod command_history;
 mod command_tap;
 mod console;

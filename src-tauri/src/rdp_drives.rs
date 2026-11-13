@@ -177,6 +177,13 @@ pub fn channel(drives: &[Drive]) -> Channel {
     Channel(Rdpdr::new(Box::new(Backend::new(drives)), computer_name()).with_drives(Some(announced)))
 }
 
+/// The device channel for a connection that offers no device. Windows sends the remote computer's sound only to a
+/// client that has this channel too (`channels` in rdp.rs), so a session that plays sound and shares no drives has
+/// this one.
+pub fn no_devices() -> Channel {
+    Channel(Rdpdr::new(Box::new(Backend::new(&[])), computer_name()))
+}
+
 /// IronRDP's device channel, kept from ending the session: a message it can't read (a request it doesn't know, as
 /// Windows' flush or security ones) would be an error, and the engine drops the connection on a channel's error.
 /// Here it's logged, and a request is answered "not supported" so Windows isn't left waiting for it.

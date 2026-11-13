@@ -261,26 +261,30 @@ pub fn rdp_open(
             Some(ironrdp_cliprdr::CliprdrClient::new(crate::rdp_clipboard::Factory(shared.clone()).build_cliprdr_backend()))
         });
     }
-    // sound played here goes through our handler: the engine's own never starts its stream, so nothing was heard on
-    // Windows. A channel attached here takes the place of the engine's of the same kind (they're attached after its)
-    let plays_here = options.audio.unwrap_or(0) == 0;
-    if plays_here {
-        builder = builder.with_static_channel(|_| Some(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(crate::rdp_sound::Backend::new()))));
-    }
-    // this computer's drives in the remote desktop's File Explorer (rdp_drives.rs), with the Drives option
-    if options.drives == Some(true) {
-        let drives = crate::rdp_drives::local_drives();
-        let names: Vec<&str> = drives.iter().map(|drive| drive.name.as_str()).collect();
-        crate::applog::info(format!("Remote Desktop to {address} is offered this computer's drives: {}", names.join(", ")));
-        builder = builder.with_static_channel(move |_| Some(crate::rdp_drives::channel(&drives)));
-        // Windows says nothing on the device channel unless the sound channel is there as well (MS-RDPEFS, Appendix
-        // A <1>); when sound isn't played here, one that takes no sound stands in for it
-        if !plays_here {
-            builder = builder.with_static_channel(|_| {
-                Some(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(ironrdp_rdpsnd::client::NoopRdpsndBackend)))
-            });
+    // sound and this computer's drives: each is a channel, and Windows wants the two together ([`channels`])
+    let (sound, devices) = channels(options);
+    builder = match sound {
+        // our handler in place of the engine's own (rdp_sound.rs says why). A channel attached here takes the place
+        // of the engine's of the same kind (they're attached after its)
+        Some(Sound::Played) => {
+            builder.with_static_channel(|_| Some(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(crate::rdp_sound::Backend::new()))))
         }
-    }
+        Some(Sound::Unheard) => builder.with_static_channel(|_| {
+            Some(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(ironrdp_rdpsnd::client::NoopRdpsndBackend)))
+        }),
+        None => builder,
+    };
+    builder = match devices {
+        // this computer's drives in the remote desktop's File Explorer (rdp_drives.rs), with the Drives option
+        Some(Devices::Drives) => {
+            let drives = crate::rdp_drives::local_drives();
+            let names: Vec<&str> = drives.iter().map(|drive| drive.name.as_str()).collect();
+            crate::applog::info(format!("Remote Desktop to {address} is offered this computer's drives: {}", names.join(", ")));
+            builder.with_static_channel(move |_| Some(crate::rdp_drives::channel(&drives)))
+        }
+        Some(Devices::Nothing) => builder.with_static_channel(|_| Some(crate::rdp_drives::no_devices())),
+        None => builder,
+    };
     // RD Gateway, as SuperXPuTTY's: the session's own login is the gateway's too
     if let Some(gateway) = options.gateway.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
         let endpoint = if gateway.contains(':') { gateway.to_string() } else { format!("{gateway}:443") };
@@ -379,6 +383,39 @@ pub fn rdp_open(
         }
     });
     Ok(Opened { id: rdp_id, width, height, fixed, smart_sizing: options.smart_sizing != Some(false), scale, keyboard: options.keyboard.unwrap_or(1) })
+}
+
+/// What the sound channel (RDPSND) of a session does with the remote computer's sound
+#[derive(Debug, PartialEq)]
+enum Sound {
+    /// Played on this computer's speakers (rdp_sound.rs)
+    Played,
+    /// Taken and not played: the channel is only there for the device channel's sake
+    Unheard,
+}
+
+/// What the device channel (RDPDR) of a session offers the remote computer
+#[derive(Debug, PartialEq)]
+enum Devices {
+    /// This computer's drives (rdp_drives.rs)
+    Drives,
+    /// No device at all: the channel is only there for the sound channel's sake
+    Nothing,
+}
+
+/// The sound and device channels a session with these options has. Windows uses neither without the other: it says
+/// nothing on the device channel unless the sound channel is there (MS-RDPEFS, Appendix A <1>), and it sends no
+/// sound unless the device channel is there, though it shows "Remote Audio" as its output all the same (FreeRDP
+/// loads the two together for this). So sound played here (Remote audio: Play on this computer) brings a device
+/// channel that offers nothing when the Drives option is off, and the Drives option brings a sound channel that
+/// plays nothing when sound isn't played here. With neither wanted, there's neither.
+fn channels(options: &crate::rdp_options::RdpOptions) -> (Option<Sound>, Option<Devices>) {
+    // Audio=0 plays here; 1 (on the remote computer) and 2 (don't play) send none here
+    let plays_here = options.audio.unwrap_or(0) == 0;
+    let drives = options.drives == Some(true);
+    let sound = if plays_here { Some(Sound::Played) } else { drives.then_some(Sound::Unheard) };
+    let devices = if drives { Some(Devices::Drives) } else { plays_here.then_some(Devices::Nothing) };
+    (sound, devices)
 }
 
 /// The desktop's size and scale: the options' fixed size, else the tab's in points at 100%, or in Retina pixels at
@@ -792,6 +829,26 @@ mod tests {
         // a jump server's isn't the desktop's
         assert_eq!(stored_password(&profiles, &bare, "RDP Bastion"), None);
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn sound_played_here_has_the_device_channel_windows_sends_no_sound_without() {
+        use crate::rdp_options::RdpOptions;
+        // a session as it's made, nothing chosen: sound plays here and no drives are shared. Without a device channel
+        // Windows showed "Remote Audio" and sent nothing, so nothing was heard
+        assert_eq!(channels(&RdpOptions::default()), (Some(Sound::Played), Some(Devices::Nothing)));
+        // with the Drives option it's the drives' own channel, and the sound still plays
+        assert_eq!(channels(&RdpOptions { drives: Some(true), ..Default::default() }), (Some(Sound::Played), Some(Devices::Drives)));
+        // drives and no sound here: a sound channel that plays nothing, which the device channel needs in its turn
+        for audio in [1, 2] {
+            let options = RdpOptions { drives: Some(true), audio: Some(audio), ..Default::default() };
+            assert_eq!(channels(&options), (Some(Sound::Unheard), Some(Devices::Drives)));
+            // neither wanted: neither channel
+            assert_eq!(channels(&RdpOptions { audio: Some(audio), ..Default::default() }), (None, None));
+        }
+        // the channel that stands in offers no device, and is the device channel by name
+        use ironrdp_svc::SvcProcessor as _;
+        assert_eq!(crate::rdp_drives::no_devices().channel_name().as_str(), Some("rdpdr"));
     }
 
     #[test]

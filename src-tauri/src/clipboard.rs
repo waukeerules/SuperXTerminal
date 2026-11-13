@@ -3,8 +3,11 @@
 //!
 //! The page's own `navigator.clipboard.readText` made WebView2 ask "localhost wants to see text and images copied to
 //! the clipboard", as it does for a website; a program reading the clipboard isn't asked. On Windows it's the Win32
-//! clipboard (`CF_UNICODETEXT`), on the Mac the general pasteboard, read as Remote Desktop's clipboard reads it
-//! ([`crate::rdp_clipboard`]). Writing stays with the page, which WebView2 allows without asking.
+//! clipboard (`CF_UNICODETEXT`), on the Mac the general pasteboard. Writing stays with the page, which WebView2
+//! allows without asking.
+//!
+//! Remote Desktop's clipboard ([`crate::rdp_clipboard`]) reads and writes this computer's clipboard here too
+//! ([`read`], [`write`]), on both systems.
 
 /// The text on the clipboard; empty when there's none (nothing copied, or a picture)
 #[tauri::command]
@@ -14,13 +17,13 @@ pub fn clipboard_text() -> String {
 
 /// The text on the Mac's clipboard, if any
 #[cfg(target_os = "macos")]
-fn read() -> Option<String> {
+pub(crate) fn read() -> Option<String> {
     crate::rdp_clipboard::mac::read()
 }
 
 /// The text on Windows' clipboard, if any
 #[cfg(windows)]
-fn read() -> Option<String> {
+pub(crate) fn read() -> Option<String> {
     use windows_sys::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, IsClipboardFormatAvailable};
     use windows_sys::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
     use windows_sys::Win32::System::Ole::CF_UNICODETEXT;
@@ -64,59 +67,89 @@ fn open() -> bool {
 
 /// No clipboard to read on other systems (the app ships for the Mac and Windows)
 #[cfg(not(any(windows, target_os = "macos")))]
-fn read() -> Option<String> {
+pub(crate) fn read() -> Option<String> {
     None
+}
+
+/// Put text on the Mac's clipboard, in place of what it held
+#[cfg(target_os = "macos")]
+pub(crate) fn write(text: &str) {
+    crate::rdp_clipboard::mac::write(text);
+}
+
+/// Put text on Windows' clipboard (`CF_UNICODETEXT`), in place of what it held. Left as it was when the clipboard
+/// can't be opened (another program has it) or there's no memory for the text
+#[cfg(windows)]
+pub(crate) fn write(text: &str) {
+    use windows_sys::Win32::Foundation::GlobalFree;
+    use windows_sys::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, SetClipboardData};
+    use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows_sys::Win32::System::Ole::CF_UNICODETEXT;
+
+    let units: Vec<u16> = text.encode_utf16().chain([0]).collect();
+    if !open() {
+        return;
+    }
+    // SAFETY: the clipboard is open (closed below on every path); the memory is sized for the text and its NUL, and
+    // is the clipboard's once set, or freed here when it wasn't taken
+    unsafe {
+        let handle = GlobalAlloc(GMEM_MOVEABLE, units.len() * 2);
+        let data = if handle.is_null() { std::ptr::null_mut() } else { GlobalLock(handle) } as *mut u16;
+        if !data.is_null() {
+            std::ptr::copy_nonoverlapping(units.as_ptr(), data, units.len());
+            GlobalUnlock(handle);
+            EmptyClipboard();
+            if SetClipboardData(CF_UNICODETEXT as u32, handle).is_null() {
+                GlobalFree(handle);
+            }
+        } else if !handle.is_null() {
+            GlobalFree(handle);
+        }
+        CloseClipboard();
+    }
+}
+
+/// No clipboard to write on other systems (the app ships for the Mac and Windows)
+#[cfg(not(any(windows, target_os = "macos")))]
+pub(crate) fn write(_text: &str) {}
+
+/// The system's clipboard is one for every test: a test that copies holds this while it does, so another's copy
+/// doesn't land in between
+#[cfg(test)]
+pub(crate) fn hold_for_test() -> std::sync::MutexGuard<'static, ()> {
+    static HELD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    HELD.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The clipboard's text once it's `text`, for a test: right after a copy, Windows 11 had the clipboard without text
+/// for an instant (a clipboard watcher, such as clipboard history, taking the new copy), so it's read for up to a second
+#[cfg(test)]
+pub(crate) fn read_for_test(text: &str) -> String {
+    let mut read = read().unwrap_or_default();
+    for _ in 0..50 {
+        if read == text {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        read = self::read().unwrap_or_default();
+    }
+    read
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Put text on the system's clipboard, as copying it in another app does
-    #[cfg(target_os = "macos")]
-    fn copy(text: &str) {
-        crate::rdp_clipboard::mac::write(text);
-    }
-
-    /// Put text on the system's clipboard, as copying it in another app does
-    #[cfg(windows)]
-    fn copy(text: &str) {
-        use windows_sys::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, SetClipboardData};
-        use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
-        use windows_sys::Win32::System::Ole::CF_UNICODETEXT;
-
-        let units: Vec<u16> = text.encode_utf16().chain([0]).collect();
-        assert!(open(), "the clipboard could be opened");
-        // SAFETY: the clipboard is open; the memory is sized for the text and its NUL, and the clipboard owns it once set
-        unsafe {
-            EmptyClipboard();
-            let handle = GlobalAlloc(GMEM_MOVEABLE, units.len() * 2);
-            let data = GlobalLock(handle) as *mut u16;
-            std::ptr::copy_nonoverlapping(units.as_ptr(), data, units.len());
-            GlobalUnlock(handle);
-            SetClipboardData(CF_UNICODETEXT as u32, handle);
-            CloseClipboard();
-        }
-    }
-
     /// The system's clipboard is the developer's too: what was on it is put back after the test. Only where there's a
     /// clipboard to read: the Mac and Windows
     #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn a_paste_gets_the_text_copied_in_another_app() {
+        let _held = hold_for_test();
         let before = clipboard_text();
-        copy("FastEthernet0/5 – ünïcode");
-        // read as a paste is, a moment after the copy: right after it, Windows 11 had the clipboard without text for an
-        // instant (a clipboard watcher, such as clipboard history, taking the new copy)
-        let mut read = clipboard_text();
-        for _ in 0..50 {
-            if !read.is_empty() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-            read = clipboard_text();
-        }
-        copy(&before);
+        write("FastEthernet0/5 – ünïcode");
+        let read = read_for_test("FastEthernet0/5 – ünïcode");
+        write(&before);
         assert_eq!(read, "FastEthernet0/5 – ünïcode");
     }
 }

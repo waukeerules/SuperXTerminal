@@ -391,7 +391,7 @@ export class RdpHost {
         if (this.disposed) unlisten();
         else this.unlistenTap = unlisten;
       });
-    // back in the tab: what was copied on the Mac meanwhile is offered to Windows' clipboard
+    // back in the tab: what was copied on this computer meanwhile is offered to the remote desktop's clipboard
     c.addEventListener("focus", () => {
       if (this.id !== null) void invoke("rdp_clipboard_announce", { id: this.id }).catch(() => {});
     });

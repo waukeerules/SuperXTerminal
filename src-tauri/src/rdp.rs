@@ -250,7 +250,7 @@ pub fn rdp_open(
     if let Some(domain) = &target.domain {
         builder = builder.with_domain(domain.clone());
     }
-    // the Mac's clipboard, as this channel's own backend (IronRDP's engine has one only for Windows)
+    // this computer's clipboard, as this channel's own backend in place of the engine's (rdp_clipboard.rs says why)
     let clipboard = (options.clipboard != Some(false)).then(crate::rdp_clipboard::Shared::default);
     builder = builder.with_clipboard(ironrdp_client::config::ClipboardType::Disable);
     if let Some(shared) = clipboard.clone() {
@@ -632,7 +632,7 @@ pub fn rdp_resize(rdps: State<'_, Rdps>, id: u32, width: u16, height: u16, scale
     send(&rdps, id, RdpInputEvent::Resize { width, height, scale_factor, physical_size: None })
 }
 
-/// The tab got the keyboard: text copied on the Mac meanwhile is offered to the remote desktop's clipboard
+/// The tab got the keyboard: text copied on this computer meanwhile is offered to the remote desktop's clipboard
 #[tauri::command]
 pub fn rdp_clipboard_announce(rdps: State<'_, Rdps>, id: u32) -> bool {
     let clipboard = rdps.sessions.lock().unwrap().get(&id).and_then(|s| s.clipboard.clone());

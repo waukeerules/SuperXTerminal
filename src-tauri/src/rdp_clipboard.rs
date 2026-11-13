@@ -1,7 +1,7 @@
 //! Remote Desktop's clipboard, as SuperXPuTTY's Clipboard option (RedirectClipboard): what's copied in the remote
 //! desktop is on this computer's clipboard, and what's copied here pastes in the remote desktop. Text on every
-//! system; on Windows also pictures, formatted text (HTML and RTF) and files, both ways. The Mac and Linux pass text
-//! alone so far ([`crate::clipboard_contents`] says why).
+//! system; on Windows and the Mac also pictures, formatted text (HTML and RTF) and files, both ways. Linux passes
+//! text alone so far ([`crate::clipboard_contents`] says why).
 //!
 //! IronRDP's clipboard channel (CLIPRDR) takes a backend. Its client engine has one only for Windows, which wants a
 //! window's message loop of its own, and a do-nothing stub elsewhere; so the engine's is turned off and this one is
@@ -15,9 +15,10 @@
 //!   (`on_format_data_request`). Files are offered as a list of names and sizes, folders walked; their contents are
 //!   asked for a piece at a time (`on_file_contents_request`).
 //! - **Copied there.** Windows tells the kinds (`on_remote_copy`). Text, a picture and formatted text are fetched at
-//!   once, one after another, and put on this computer's clipboard together. Files aren't fetched: their names are
-//!   asked for and put on the clipboard as a promise ([`crate::clipboard_files`]), and each file comes over as the
-//!   paste here reads it.
+//!   once, one after another, and put on this computer's clipboard together. Of files, their names are asked for.
+//!   On Windows they go on the clipboard as a promise and each file comes over as the paste here reads it; on the
+//!   Mac, whose Finder pastes only files on a disk, they're brought over first and then put on the clipboard
+//!   ([`crate::clipboard_files`]).
 //!
 //! The engine ends the whole session when the channel refuses a message (one sent before the channel is ready, a
 //! file request past a file's end, files offered to a server that doesn't take them). So nothing is sent that the
@@ -69,6 +70,10 @@ const HUGE: u64 = 0x8000_0000;
 /// time
 const MOST_WAITING: usize = 8;
 
+/// Whether this system's clipboard passes more than text (pictures, formatted text, and files copied here): Windows
+/// and the Mac ([`crate::clipboard_contents`]). Linux passes text alone so far.
+const MORE_THAN_TEXT: bool = cfg!(any(windows, target_os = "macos"));
+
 /// What a session's clipboard keeps between calls: what the two sides agreed, what was last passed, and the files
 /// in play either way
 #[derive(Debug, Default)]
@@ -79,10 +84,10 @@ struct State {
     files: bool,
     /// ... and files over 2 GB
     huge: bool,
-    /// The text last passed either way, where the clipboard has no number that changes with it (the Mac and Linux):
+    /// The text last passed either way, where the clipboard has no number that changes with it (Linux):
     /// the same text isn't offered back and forth
     last: String,
-    /// The clipboard's number when it was last offered to the remote desktop, or written from it (Windows)
+    /// The clipboard's number when it was last offered to the remote desktop, or written from it (Windows, the Mac)
     announced: Option<u32>,
     /// The files offered to the remote desktop, in the order of the list it was given: a request names one by its
     /// place
@@ -312,14 +317,14 @@ impl CliprdrBackend for Backend {
         &self.folder
     }
 
-    /// Long format names, as Windows' own clients ask for; and on Windows files, as streams of their contents (no
+    /// Long format names, as Windows' own clients ask for; and on Windows and the Mac files, as streams of their contents (no
     /// paths), over 2 GB too, kept for a paste that's still running when something else is copied
     fn client_capabilities(&self) -> ClipboardGeneralCapabilityFlags {
         let files = ClipboardGeneralCapabilityFlags::STREAM_FILECLIP_ENABLED
             | ClipboardGeneralCapabilityFlags::FILECLIP_NO_FILE_PATHS
             | ClipboardGeneralCapabilityFlags::HUGE_FILE_SUPPORT_ENABLED
             | ClipboardGeneralCapabilityFlags::CAN_LOCK_CLIPDATA;
-        if cfg!(windows) {
+        if MORE_THAN_TEXT {
             ClipboardGeneralCapabilityFlags::USE_LONG_FORMAT_NAMES | files
         } else {
             ClipboardGeneralCapabilityFlags::USE_LONG_FORMAT_NAMES
@@ -348,7 +353,7 @@ impl CliprdrBackend for Backend {
     /// What the two sides agreed: whether files pass, and files over 2 GB
     fn on_process_negotiated_capabilities(&mut self, capabilities: ClipboardGeneralCapabilityFlags) {
         let mut state = self.shared.state();
-        state.files = cfg!(windows) && capabilities.contains(ClipboardGeneralCapabilityFlags::STREAM_FILECLIP_ENABLED);
+        state.files = MORE_THAN_TEXT && capabilities.contains(ClipboardGeneralCapabilityFlags::STREAM_FILECLIP_ENABLED);
         state.huge = capabilities.contains(ClipboardGeneralCapabilityFlags::HUGE_FILE_SUPPORT_ENABLED);
     }
 
@@ -373,8 +378,8 @@ impl CliprdrBackend for Backend {
                 if has(ClipboardFormatId::CF_UNICODETEXT.value()) {
                     self.fetching.push_back((Kind::Text, ClipboardFormatId::CF_UNICODETEXT));
                 }
-                // only Windows' clipboard takes the rest so far
-                if cfg!(windows) {
+                // Linux's clipboard takes text alone so far
+                if MORE_THAN_TEXT {
                     // a bitmap copied in any of Windows' forms can be had as a DIB, listed or not
                     if [ClipboardFormatId::CF_DIB.value(), ClipboardFormatId::CF_DIBV5.value(), CF_BITMAP].into_iter().any(has) {
                         self.fetching.push_back((Kind::Image, ClipboardFormatId::CF_DIB));
@@ -423,7 +428,8 @@ impl CliprdrBackend for Backend {
     }
 
     /// The list of files copied in the remote desktop: put on this computer's clipboard as a promise, each file
-    /// fetched as a paste here reads it ([`Remote`])
+    /// fetched as a paste here reads it, or on the Mac brought over now and put there when they've come; either
+    /// way read through [`Remote`]
     fn on_remote_file_list(&mut self, files: &[FileDescriptor], clip_data_id: Option<u32>) {
         self.fetching.clear();
         let promised: Vec<Promised> = files
@@ -553,7 +559,8 @@ impl Source for Remote {
     }
 }
 
-/// The Mac's general pasteboard, as text. Windows' clipboard is in [`crate::clipboard`], which both systems go through
+/// The Mac's general pasteboard, as text, used by one thread at a time ([`crate::clipboard::one_at_a_time`]).
+/// Windows' clipboard is in [`crate::clipboard`], which both systems go through
 #[cfg(target_os = "macos")]
 pub(crate) mod mac {
     use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
@@ -561,13 +568,16 @@ pub(crate) mod mac {
 
     /// The text on the Mac's clipboard, if any
     pub fn read() -> Option<String> {
+        let _one = crate::clipboard::one_at_a_time();
         let board = NSPasteboard::generalPasteboard();
         let text = unsafe { board.stringForType(NSPasteboardTypeString) }?;
         Some(text.to_string())
     }
 
-    /// Put text on the Mac's clipboard, in place of what it held
+    /// Put text on the Mac's clipboard, in place of what it held (for the tests: [`crate::clipboard::write`])
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn write(text: &str) {
+        let _one = crate::clipboard::one_at_a_time();
         let board = NSPasteboard::generalPasteboard();
         board.clearContents();
         let _ = unsafe { board.setString_forType(&NSString::from_str(text), NSPasteboardTypeString) };
@@ -577,8 +587,9 @@ pub(crate) mod mac {
 #[cfg(test)]
 mod tests {
     //! The backend driven as IronRDP's clipboard channel drives it, against this computer's real clipboard (put back
-    //! after each test); the session's input channel is a channel the test reads. Text is tested on the Mac and
-    //! Windows; pictures, formatted text and files on Windows alone, the one system that passes them so far.
+    //! after each test); the session's input channel is a channel the test reads. On the Mac and Windows, the two
+    //! systems with a clipboard to test against; formatted text is compared as the HTML in it, since the Mac writes
+    //! its header again.
     use super::*;
 
     /// A backend for a connection made `age` ago, set up and agreed on files, and where its messages for the remote
@@ -656,14 +667,14 @@ mod tests {
         assert!(receiver.try_recv().is_err(), "a message went to a channel that wasn't ready");
     }
 
-    /// What Windows' clipboard holds now, to put back
-    #[cfg(windows)]
+    /// What this computer's clipboard holds now, to put back
+    #[cfg(any(windows, target_os = "macos"))]
     fn snapshot() -> Contents {
         Contents { text: contents::text(), html: contents::html(), rtf: contents::rtf(), image: contents::image(), files: contents::files() }
     }
 
     /// A one-pixel picture as a DIB: a 40-byte header (1 × 1, 32 bits) and its pixel
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn dib() -> Vec<u8> {
         let mut header = Vec::new();
         for (value, size) in [(40u32, 4), (1, 4), (1, 4), (1, 2), (32, 2), (0, 4), (4, 4), (0, 4), (0, 4), (0, 4), (0, 4)] {
@@ -673,12 +684,12 @@ mod tests {
         header
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn a_picture_and_formatted_text_copied_here_paste_in_the_remote_desktop() {
         let _held = crate::clipboard::hold_for_test();
         let before = snapshot();
-        let html = b"Version:0.9\r\nStartHTML:0000000000\r\n<b>bold</b>".to_vec();
+        let html = crate::clipboard_forms::html_format("<b>bold</b>");
         let rtf = b"{\\rtf1 {\\b bold}}".to_vec();
         let (mut backend, mut receiver) = backend(Duration::ZERO);
         contents::put(&Contents { text: Some("bold".into()), html: Some(html.clone()), rtf: Some(rtf.clone()), image: Some(dib()), files: Vec::new() });
@@ -699,16 +710,16 @@ mod tests {
         assert_eq!(names, [None, None, Some("HTML Format"), Some("Rich Text Format")]);
         assert_eq!((offered[0].id, offered[1].id), (ClipboardFormatId::CF_UNICODETEXT, ClipboardFormatId::CF_DIB));
         assert!(pasted[1].starts_with(&dib()), "the picture as it was copied");
-        assert!(pasted[2].starts_with(&html), "the HTML as it was copied");
+        assert_eq!(crate::clipboard_forms::html_from_format(&pasted[2]).as_deref(), Some("<b>bold</b>"), "the HTML as it was copied");
         assert!(pasted[3].starts_with(&rtf), "the RTF as it was copied");
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn a_picture_and_formatted_text_copied_in_the_remote_desktop_are_on_this_computers_clipboard() {
         let _held = crate::clipboard::hold_for_test();
         let before = snapshot();
-        let html = b"Version:0.9\r\nStartHTML:0000000000\r\n<i>italic</i>".to_vec();
+        let html = crate::clipboard_forms::html_format("<i>italic</i>");
         let (mut backend, mut receiver) = backend(Duration::from_secs(10));
         // as Windows lists a copy from a browser: its own numbers for the named formats, and a bitmap with no DIB
         let remote_html = ClipboardFormatId::new(0xC0A1);
@@ -733,11 +744,11 @@ mod tests {
         assert_eq!(found, Kinds { text: true, html: true, rtf: false, image: true, files: false });
         assert_eq!(text.as_deref(), Some("italic"));
         assert!(picture.is_some_and(|picture| picture.starts_with(&dib())));
-        assert!(formatted.is_some_and(|formatted| formatted.starts_with(&html)));
+        assert_eq!(formatted.and_then(|formatted| crate::clipboard_forms::html_from_format(&formatted)).as_deref(), Some("<i>italic</i>"));
         assert!(ours && !offered_back, "what came from the remote desktop isn't offered back to it");
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     #[test]
     fn files_copied_here_are_listed_for_the_remote_desktop_and_read_by_it_piece_by_piece() {
         let _held = crate::clipboard::hold_for_test();

@@ -21,10 +21,11 @@ pub(crate) fn read() -> Option<String> {
     crate::rdp_clipboard::mac::read()
 }
 
-/// One use of Windows' clipboard at a time in this program, held while it's open. Windows keeps other programs
-/// out of an open clipboard, but not this program's other threads (two Remote Desktop tabs, a tab and a paste):
-/// both open it, and one empties it or closes it while the other is reading memory the clipboard then frees.
-#[cfg(windows)]
+/// One use of the clipboard at a time in this program, held while it's used. Windows keeps other programs out of
+/// an open clipboard, but not this program's other threads (two Remote Desktop tabs, a tab and a paste): both open
+/// it, and one empties it or closes it while the other is reading memory the clipboard then frees. The Mac's
+/// pasteboard is likewise for one thread at a time: two reading and writing it at once crashed the tests.
+#[cfg(any(windows, target_os = "macos"))]
 pub(crate) fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
     static OPEN: std::sync::Mutex<()> = std::sync::Mutex::new(());
     OPEN.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -124,8 +125,11 @@ mod desktop {
     }
 }
 
-/// Put text on the Mac's clipboard, in place of what it held
+/// Put text on the Mac's clipboard, in place of what it held. Only the tests use it now, as a copy made in another
+/// program: Remote Desktop's clipboard writes through [`crate::clipboard_contents`], which also marks what it wrote
+/// as this app's.
 #[cfg(target_os = "macos")]
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn write(text: &str) {
     crate::rdp_clipboard::mac::write(text);
 }

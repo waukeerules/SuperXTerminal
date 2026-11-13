@@ -6078,6 +6078,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "objc2-web-kit",
+ "png",
  "portable-pty",
  "postgres-native-tls",
  "quick-xml 0.42.0",

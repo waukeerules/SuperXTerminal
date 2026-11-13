@@ -80,10 +80,13 @@ arboard = { version = "3.7", default-features = false, features = ["wayland-data
 # the main window's WebKit settings (Writing Tools off), as Tauri itself uses them
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSValue", "NSKeyValueCoding"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSValue", "NSKeyValueCoding", "NSData", "NSArray", "NSDictionary", "NSURL"] }
 objc2-web-kit = { version = "0.3", features = ["WKWebViewConfiguration"] }
-# the Mac clipboard, for Remote Desktop's clipboard (rdp_clipboard.rs) and a paste (clipboard.rs)
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard", "NSEvent", "block2"] }
+# the Mac clipboard, for Remote Desktop's clipboard (rdp_clipboard.rs, clipboard_contents.rs) and a paste
+# (clipboard.rs); the bitmap classes turn a picture copied in Windows into the PNG and TIFF the Mac pastes
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem", "NSEvent", "NSImageRep", "NSBitmapImageRep", "block2"] }
+# a picture copied on the Mac, read as the bitmap Windows pastes (clipboard_forms.rs); already built, for Tauri's icons
+png = "0.18"
 block2 = "0.6"
 
 
@@ -110,3 +113,7 @@ opt-level = 3
 # connector with the fix.
 [patch.crates-io]
 ironrdp-connector = { path = "patches/ironrdp-connector" }
+
+# the tests of clipboard_forms.rs make and read a PNG on every system, though only the Mac's build uses it
+[dev-dependencies]
+png = "0.18"

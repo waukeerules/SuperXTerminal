@@ -706,7 +706,7 @@ pub(crate) fn filetime(time: io::Result<SystemTime>) -> i64 {
 }
 
 /// A Windows time as this computer's; None for 0 and -1 (Windows' "leave it as it is") and anything before 1970
-fn system_time(filetime: i64) -> Option<SystemTime> {
+pub(crate) fn system_time(filetime: i64) -> Option<SystemTime> {
     let ticks = u64::try_from(filetime.checked_sub(FILETIME_EPOCH)?).ok()?;
     UNIX_EPOCH.checked_add(Duration::from_nanos(ticks.checked_mul(100)?))
 }

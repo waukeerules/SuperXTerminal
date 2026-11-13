@@ -1,25 +1,31 @@
-//! Files copied in a remote desktop, on this computer's clipboard as a promise: their names are there to paste, and
-//! each file's contents are fetched from the remote desktop only as the paste reads them.
+//! Files copied in a remote desktop, on this computer's clipboard to paste.
 //!
-//! A list of paths (CF_HDROP, [`crate::clipboard_contents`]) can't be a promise: File Explorer asks for it the
-//! moment the clipboard changes, so every copy of a large file in the remote desktop would fetch it at once, pasted
-//! or not. Remote Desktop Connection puts the files' names on the clipboard instead (FileGroupDescriptorW) with
-//! their contents as streams (FileContents), which Windows only reads when something pastes them; File Explorer
-//! then shows its own progress and can be cancelled. That takes Windows' OLE clipboard and a data object
-//! ([`ole`]), which is what this is.
+//! **On Windows, as a promise**: their names are there to paste, and each file's contents are fetched from the
+//! remote desktop only as the paste reads them. A list of paths (CF_HDROP, [`crate::clipboard_contents`]) can't be a
+//! promise: File Explorer asks for it the moment the clipboard changes, so every copy of a large file in the remote
+//! desktop would fetch it at once, pasted or not. Remote Desktop Connection puts the files' names on the clipboard
+//! instead (FileGroupDescriptorW) with their contents as streams (FileContents), which Windows only reads when
+//! something pastes them; File Explorer then shows its own progress and can be cancelled. That takes Windows' OLE
+//! clipboard and a data object ([`ole`]).
 //!
 //! OLE calls a data object on the thread that made it, through that thread's messages. So the object is made, and
 //! lives, on a thread of this module's own, which does nothing but pass messages on: a paste here waits there for
 //! each piece of a file to come from the remote desktop, and holds up nothing else.
 //!
-//! Windows only so far. On the Mac and Linux [`offer`] says no, and files copied in the remote desktop aren't put
-//! on the clipboard (text, and on Windows pictures and formatted text, still are).
+//! **On the Mac, brought over first** ([`brought`]). Finder pastes files that are on a disk; it takes no promise
+//! from the clipboard (a promise is for a drag). So the files are fetched as they're copied, into a folder of
+//! their own among the temporary files, on a thread that holds up nothing, and are put on the clipboard once they're
+//! all there. The cost is the one Windows avoids: a copy in the remote desktop is fetched whether it's pasted here
+//! or not. So a copy over [`brought::MOST`] isn't brought over (the log says so; the Drives option is for those),
+//! and a newer copy, there or here, ends the fetching of the one before.
+//!
+//! On Linux [`offer`] says no, and files copied in the remote desktop aren't put on the clipboard.
 
-#[cfg(any(not(windows), test))]
+#[cfg(any(not(any(windows, target_os = "macos")), test))]
 use std::sync::Arc;
 
-/// A file or folder promised: where it goes under the place it's pasted, and what's known of it
-#[cfg_attr(not(windows), allow(dead_code))]
+/// A file or folder copied in the remote desktop: where it goes under the place it's pasted, and what's known of it
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Promised {
     /// Its path among the files copied, with `\` between folders ("Reports\2026\q3.xlsx")
@@ -32,20 +38,145 @@ pub struct Promised {
     pub modified: Option<u64>,
 }
 
-/// Where promised files' contents come from: the remote desktop, asked a piece at a time. (Nothing asks yet on the
-/// Mac and Linux, where files can't be promised.)
-#[cfg_attr(not(windows), allow(dead_code))]
+/// Where the files' contents come from: the remote desktop, asked a piece at a time. (Nothing asks on Linux, where
+/// files aren't passed.)
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub trait Source: Send + Sync {
     /// `length` bytes of the file at `index` in the list promised, from `offset`; fewer at its end, and None when
     /// they can't be had (the session ended, the remote desktop's clipboard moved on). May wait on the network.
     fn read(&self, index: usize, offset: u64, length: u32) -> Option<Vec<u8>>;
 }
 
-/// Put a promise of `files` on the clipboard in place of what it held. Nothing is fetched until something pastes
-/// them, when `source` is read. False when it can't be done (and always on the Mac and Linux, for now).
-#[cfg(not(windows))]
+/// Put `files` on the clipboard in place of what it held, to paste: on Windows a promise, nothing fetched until
+/// something pastes them, when `source` is read; on the Mac they're fetched from `source` now, on a thread of
+/// their own, and are on the clipboard when they've come. False when it can't be done (and always on Linux, for now).
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn offer(_files: Vec<Promised>, _source: Arc<dyn Source>) -> bool {
     false
+}
+
+#[cfg(target_os = "macos")]
+pub use brought::offer;
+
+/// Files copied in the remote desktop, brought over to this computer and then put on its clipboard as files on
+/// disk: the Mac's way (the header says why). Built for the Mac, and for the tests on every system: but for the
+/// clipboard at the end, it's files and folders.
+#[cfg(any(target_os = "macos", test))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod brought {
+    use std::fs::File;
+    use std::io::Write as _;
+    use std::path::{Path, PathBuf};
+
+    use super::{Promised, Source};
+
+    /// The most brought over for one copy, in bytes: 2 GB. More than that is a long wait and a lot of disk for
+    /// something that may never be pasted here
+    pub const MOST: u64 = 2 * 1024 * 1024 * 1024;
+    /// How much of a file is asked of the remote desktop at a time, as Windows' paste asks
+    const PIECE: u32 = 512 * 1024;
+    /// Counts the copies brought over: each has a folder of its own by this number, and one that's no longer the
+    /// newest stops
+    #[cfg(target_os = "macos")]
+    static NEWEST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    /// Where a file copied goes under `folder`: its path there, each `\` a folder. None for a path that would
+    /// leave the folder or isn't a name ("..", an empty part, a `/` or a NUL in a name): the list comes from the
+    /// remote computer, and isn't trusted to stay where it's put.
+    fn place(folder: &Path, path: &str) -> Option<PathBuf> {
+        let mut place = folder.to_path_buf();
+        for part in path.split('\\') {
+            if part.is_empty() || part == "." || part == ".." || part.contains(['/', '\0']) {
+                return None;
+            }
+            place.push(part);
+        }
+        Some(place)
+    }
+
+    /// Bring `files` over into `folder`, each read from `source` a piece at a time until its size is there (or, its
+    /// size unknown, until the remote desktop has no more). Stops when `ended` says so (asked before each piece).
+    /// @returns what was copied, as it's pasted: the files and folders that are in no folder of the list. None when
+    /// it stopped, a piece couldn't be had, or a file couldn't be written; what was written is left to the caller.
+    pub fn bring(files: &[Promised], source: &dyn Source, folder: &Path, ended: &dyn Fn() -> bool) -> Option<Vec<PathBuf>> {
+        let mut copied = Vec::new();
+        for (index, file) in files.iter().enumerate() {
+            let place = place(folder, &file.path)?;
+            if !file.path.contains('\\') {
+                copied.push(place.clone());
+            }
+            if file.folder {
+                std::fs::create_dir_all(&place).ok()?;
+                continue;
+            }
+            std::fs::create_dir_all(place.parent()?).ok()?;
+            let mut written = File::create(&place).ok()?;
+            let mut at = 0u64;
+            loop {
+                if ended() {
+                    return None;
+                }
+                let piece = source.read(index, at, PIECE)?;
+                if piece.is_empty() {
+                    break;
+                }
+                written.write_all(&piece).ok()?;
+                at += piece.len() as u64;
+            }
+            // the remote desktop said how long it is: shorter is a file that wasn't all had
+            if at < file.size {
+                return None;
+            }
+            // dated as it is there, as a file copied in Finder keeps its date
+            let modified = file.modified.and_then(|ticks| i64::try_from(ticks).ok()).and_then(crate::rdp_drives::system_time);
+            if let Some(modified) = modified {
+                let _ = written.set_modified(modified);
+            }
+        }
+        Some(copied)
+    }
+
+    /// Bring `files` over from `source` on a thread of their own and put them on the clipboard when they've all
+    /// come. True when that's begun; false, and nothing done, for a copy over [`MOST`] (the log says so). A newer
+    /// copy in the remote desktop, or anything copied on this computer meanwhile, ends it, and what had come is
+    /// deleted. The copy before this one is deleted too: its files were pasted or they weren't.
+    #[cfg(target_os = "macos")]
+    pub fn offer(files: Vec<Promised>, source: std::sync::Arc<dyn Source>) -> bool {
+        use std::sync::atomic::Ordering;
+
+        use crate::clipboard_contents as contents;
+
+        let size: u64 = files.iter().map(|file| file.size).sum();
+        if size > MOST {
+            crate::applog::warn(format!(
+                "The files copied in the remote desktop ({} MB) are too large to bring over by the clipboard; the Drives option is for those",
+                size / (1024 * 1024)
+            ));
+            return false;
+        }
+        let number = NEWEST.fetch_add(1, Ordering::SeqCst) + 1;
+        let folders = std::env::temp_dir().join(format!("SuperXTerminal-clipboard-{}", std::process::id()));
+        let folder = folders.join(number.to_string());
+        let copied_here = contents::stamp();
+        let begun = std::thread::Builder::new().name("rdp-clipboard-files".into()).spawn(move || {
+            let _ = std::fs::remove_dir_all(folders.join((number - 1).to_string()));
+            let ended = || NEWEST.load(Ordering::SeqCst) != number || contents::stamp() != copied_here;
+            let count = files.iter().filter(|file| !file.folder).count();
+            match bring(&files, source.as_ref(), &folder, &ended) {
+                Some(copied) if !ended() => {
+                    contents::put(&contents::Contents { files: copied, ..contents::Contents::default() });
+                    crate::applog::info(format!("{count} file(s) copied in the remote desktop are on this computer's clipboard"));
+                }
+                _ => {
+                    let _ = std::fs::remove_dir_all(&folder);
+                    if !ended() {
+                        crate::applog::warn("The files copied in the remote desktop couldn't be brought over");
+                    }
+                }
+            }
+        });
+        begun.is_ok()
+    }
 }
 
 #[cfg(windows)]
@@ -468,10 +599,127 @@ mod ole {
     }
 }
 
+// Files brought over, as the Mac pastes them: the remote desktop is stood in for by bytes in memory, and the files
+// land in a folder of the test's own. No clipboard, so the same on Windows, the Mac and Linux; the Mac's clipboard at
+// the end is the test after.
+#[cfg(test)]
+mod brought_tests {
+    use std::sync::Mutex;
+
+    use super::brought::bring;
+    use super::*;
+
+    /// A remote desktop's files, and what was asked of them: (index, offset, length)
+    struct Files(Vec<Vec<u8>>, Mutex<Vec<(usize, u64, u32)>>);
+
+    impl Source for Files {
+        fn read(&self, index: usize, offset: u64, length: u32) -> Option<Vec<u8>> {
+            self.1.lock().unwrap().push((index, offset, length));
+            let file = self.0.get(index)?;
+            let from = (offset as usize).min(file.len());
+            Some(file[from..(from + length as usize).min(file.len())].to_vec())
+        }
+    }
+
+    /// A file in the list, `size` bytes long
+    fn file(path: &str, size: u64) -> Promised {
+        Promised { path: path.into(), folder: false, size, modified: None }
+    }
+
+    /// An empty folder of the test's own among the temporary files
+    fn folder(name: &str) -> std::path::PathBuf {
+        let folder = std::env::temp_dir().join(format!("sxt-brought-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        folder
+    }
+
+    #[test]
+    fn files_copied_in_the_remote_desktop_are_brought_over_whole_in_their_folders() {
+        let into = folder("whole");
+        // a file longer than one piece, a folder, a file two folders down, and an empty file
+        let long: Vec<u8> = (0..700_000u32).map(|n| (n % 251) as u8).collect();
+        let source = Files(vec![long.clone(), Vec::new(), Vec::new(), b"a,b\n1,2\n".to_vec(), Vec::new()], Mutex::new(Vec::new()));
+        let list = [
+            Promised { modified: Some(133_000_000_000_000_000), ..file("notes.bin", 700_000) },
+            Promised { path: "Reports".into(), folder: true, size: 0, modified: None },
+            Promised { path: "Reports\\2026".into(), folder: true, size: 0, modified: None },
+            file("Reports\\2026\\q3.csv", 8),
+            file("empty.txt", 0),
+        ];
+        let copied = bring(&list, &source, &into, &|| false);
+        let read = |path: &str| std::fs::read(into.join(path)).ok();
+        let (notes, nested, empty) = (read("notes.bin"), read("Reports/2026/q3.csv"), read("empty.txt"));
+        let dated = std::fs::metadata(into.join("notes.bin")).and_then(|meta| meta.modified()).ok();
+        let _ = std::fs::remove_dir_all(&into);
+
+        // what's pasted is what was copied: the two files and the folder, not what's inside it
+        assert_eq!(copied, Some(vec![into.join("notes.bin"), into.join("Reports"), into.join("empty.txt")]));
+        assert_eq!(notes, Some(long));
+        assert_eq!(nested.as_deref(), Some(&b"a,b\n1,2\n"[..]));
+        assert_eq!(empty.as_deref(), Some(&b""[..]));
+        // dated as in the remote desktop (June 2022, as Windows counts it)
+        assert_eq!(dated, crate::rdp_drives::system_time(133_000_000_000_000_000));
+    }
+
+    #[test]
+    fn a_file_that_doesnt_all_come_or_would_leave_its_folder_isnt_put_on_the_clipboard() {
+        let into = folder("short");
+        // the remote desktop has less of the file than it said
+        let source = Files(vec![b"half".to_vec()], Mutex::new(Vec::new()));
+        let short = bring(&[file("big.iso", 4096)], &source, &into, &|| false);
+        // a newer copy ends it before anything is asked
+        let ended = bring(&[file("big.iso", 4)], &source, &into, &|| true);
+        let asked = source.1.lock().unwrap().len();
+        // a list from the remote computer that names somewhere else
+        let outside: Vec<Option<Vec<std::path::PathBuf>>> =
+            ["..\\..\\evil.txt", "a\\..\\..\\evil.txt", "a/b.txt", "\\evil.txt"].iter().map(|path| bring(&[file(path, 4)], &source, &into, &|| false)).collect();
+        let left = std::fs::read_dir(into.parent().unwrap()).unwrap().flatten().any(|entry| entry.file_name() == "evil.txt");
+        let _ = std::fs::remove_dir_all(&into);
+
+        assert_eq!((short, ended), (None, None));
+        assert_eq!(asked, 2, "the short file was read to its end, and nothing after a newer copy");
+        assert!(outside.iter().all(Option::is_none) && !left, "nothing is written outside the folder");
+    }
+
+    /// The Mac's clipboard at the end, the real one (put back as it was after): Finder's paste finds the files
+    /// there, on disk. The Mac alone brings files over; Windows promises them (the test below).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn files_copied_in_the_remote_desktop_are_on_the_macs_clipboard_once_brought_over() {
+        use crate::clipboard_contents as contents;
+        let _held = crate::clipboard::hold_for_test();
+        let before = contents::Contents { text: contents::text(), html: contents::html(), rtf: contents::rtf(), image: contents::image(), files: contents::files() };
+        let source = Arc::new(Files(vec![b"hello from the remote desktop".to_vec()], Mutex::new(Vec::new())));
+        let offered = offer(vec![file("sxt-hello.txt", 29)], source);
+        let mut pasted = Vec::new();
+        for _ in 0..100 {
+            pasted = contents::files();
+            if pasted.iter().any(|path| path.ends_with("sxt-hello.txt")) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let read = pasted.first().and_then(|path| std::fs::read(path).ok());
+        let ours = contents::is_ours();
+        // too much to bring over: nothing is begun
+        let too_large = offer(vec![file("huge.iso", brought::MOST + 1)], Arc::new(Files(Vec::new(), Mutex::new(Vec::new()))));
+        contents::put(&before);
+        if let Some(folder) = pasted.first().and_then(|path| path.parent()) {
+            let _ = std::fs::remove_dir_all(folder);
+        }
+
+        assert!(offered && !too_large);
+        assert_eq!(pasted.len(), 1, "the file is on the clipboard: {pasted:?}");
+        assert_eq!(read.as_deref(), Some(&b"hello from the remote desktop"[..]));
+        assert!(ours, "what came from the remote desktop isn't offered back to it");
+    }
+}
+
 // The promise as a paste sees it: it's put on Windows' real clipboard (put back as it was after), and the test,
 // as the program pasting, takes the clipboard's data object, reads the list of files from it, and reads a file's
 // contents through its stream. The remote desktop is stood in for by bytes in memory that count how often they're
-// asked for. Windows only: there's no such clipboard on the Mac and Linux.
+// asked for. Windows only: the promise is Windows' own (the Mac brings the files over, tested above).
 #[cfg(all(test, windows))]
 mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};

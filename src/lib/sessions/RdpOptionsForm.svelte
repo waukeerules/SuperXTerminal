@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { FlagKey, NumberKey, RdpOptions } from "./rdpOptions";
   import { isMac } from "../shortcuts";
-  import { isWindows } from "../platform";
+  import { isLinux } from "../platform";
 
   interface Props {
     /** The options shown; changed in place */
@@ -29,8 +29,8 @@
   const AUDIO = ["Play on this computer", "Play on the remote computer", "Don't play"];
   /** Where Windows key combinations go, as Remote Desktop Connection's */
   const KEYBOARD = ["On this computer", "On the remote computer", "Only when using the full screen"];
-  /** What the built-in client's clipboard passes on this system: everything on Windows, text elsewhere so far */
-  const CLIPBOARD = isWindows ? "Clipboard (text, pictures, formatted text, files)" : "Clipboard (text)";
+  /** What the built-in client's clipboard passes on this system: everything on Windows and the Mac, text on Linux so far */
+  const CLIPBOARD = isLinux ? "Clipboard (text)" : "Clipboard (text, pictures, formatted text, files)";
   /** What to do when the server's identity can't be checked, as Remote Desktop Connection's */
   const AUTHENTICATION = ["Connect and don't warn me", "Don't connect", "Warn me"];
 

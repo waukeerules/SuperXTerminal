@@ -13,6 +13,8 @@ mod ui_themes;
 mod clipboard;
 mod clipboard_contents;
 mod clipboard_files;
+#[cfg(any(target_os = "macos", test))]
+mod clipboard_forms;
 mod command_history;
 mod command_tap;
 mod console;

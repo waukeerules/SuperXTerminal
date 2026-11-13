@@ -3,7 +3,7 @@
 //!
 //! IronRDP's clipboard channel (CLIPRDR) takes a backend. Its client engine has one only for Windows, which wants a
 //! window's message loop of its own, and a do-nothing stub elsewhere; so the engine's is turned off and this one is
-//! attached as the session's own channel (`with_static_channel`), on the Mac and Windows alike. Its messages go back
+//! attached as the session's own channel (`with_static_channel`), on the Mac, Windows and Linux alike. Its messages go back
 //! through the engine's input channel, as the engine's own backend's do. This computer's clipboard
 //! ([`crate::clipboard`]) is read when the tab gets the keyboard (`announce`), so a copy made in another app is
 //! offered to the remote desktop as you go back.

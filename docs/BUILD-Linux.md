@@ -128,6 +128,11 @@ Things that differ from the Mac and Windows, worth checking first:
   falls back to drawing with the DOM.
 - **Serial ports** are `/dev/ttyUSB*` and `/dev/ttyACM*`, and need your user in the `dialout` group.
 - **Remote Desktop's sound** goes through ALSA (or PulseAudio and PipeWire's ALSA layer).
+- **The clipboard** (a paste, and Remote Desktop's clipboard) is read and written through the arboard crate
+  (`src-tauri/src/clipboard.rs`): X11's, or Wayland's where the desktop has the data-control protocol (KDE, Sway and
+  other wlroots desktops), else through XWayland. Not yet tried on a Linux desktop. Windows key combinations in a
+  Remote Desktop tab aren't taken from the desktop on Linux: the key goes to the remote computer and to the Linux
+  desktop both.
 
 ## When something goes wrong
 

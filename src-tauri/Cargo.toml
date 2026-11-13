@@ -70,6 +70,11 @@ getrandom = "0.3"
 # the taskbar pins' shortcuts, read and written through the shell's COM objects (pins.rs). The version Tauri already uses
 windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell"] }
 
+# Linux's clipboard (X11, or Wayland's data-control where the desktop has it), for a paste and for Remote Desktop's
+# clipboard (clipboard.rs). Text only: its picture support would bring an image library along
+[target.'cfg(target_os = "linux")'.dependencies]
+arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
+
 # the main window's WebKit settings (Writing Tools off), as Tauri itself uses them
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

@@ -22,6 +22,18 @@ confidence-threshold = 0.9
 # the list is shared with the npm check, so not every licence appears on the Rust side
 unused-allowed-license = "allow"
 
+# Boost-licensed, and never built into SuperXTerminal: arboard (Linux's clipboard, clipboard.rs) is a dependency on
+# Linux alone, and these two are arboard's on Windows alone. They're only in Cargo.lock, which lists every system's
+# crates, and this check can't tell that the two conditions never hold together. Not a licence added to the list
+# above: any other Boost-licensed crate still fails.
+[[licenses.exceptions]]
+allow = ["BSL-1.0"]
+crate = "clipboard-win"
+
+[[licenses.exceptions]]
+allow = ["BSL-1.0"]
+crate = "error-code"
+
 [advisories]
 # unmaintained crates deep in Tauri's tree are reported, not failed; vulnerabilities still fail
 unmaintained = "none"

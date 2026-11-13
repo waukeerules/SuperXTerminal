@@ -3,11 +3,11 @@
 //!
 //! The page's own `navigator.clipboard.readText` made WebView2 ask "localhost wants to see text and images copied to
 //! the clipboard", as it does for a website; a program reading the clipboard isn't asked. On Windows it's the Win32
-//! clipboard (`CF_UNICODETEXT`), on the Mac the general pasteboard. Writing stays with the page, which WebView2
-//! allows without asking.
+//! clipboard (`CF_UNICODETEXT`), on the Mac the general pasteboard, and on Linux the desktop's (X11's, or Wayland's)
+//! through the arboard crate ([`desktop`]). Writing stays with the page, which WebView2 allows without asking.
 //!
 //! Remote Desktop's clipboard ([`crate::rdp_clipboard`]) reads and writes this computer's clipboard here too
-//! ([`read`], [`write`]), on both systems.
+//! ([`read`], [`write`]), on every system.
 
 /// The text on the clipboard; empty when there's none (nothing copied, or a picture)
 #[tauri::command]
@@ -65,10 +65,53 @@ fn open() -> bool {
     false
 }
 
-/// No clipboard to read on other systems (the app ships for the Mac and Windows)
-#[cfg(not(any(windows, target_os = "macos")))]
+/// The text on Linux's clipboard, if any
+#[cfg(target_os = "linux")]
+pub(crate) fn read() -> Option<String> {
+    desktop::read()
+}
+
+/// No clipboard to read on other systems (the app is built for the Mac, Windows and Linux)
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub(crate) fn read() -> Option<String> {
     None
+}
+
+/// Linux's clipboard, through arboard: X11's, or Wayland's where the desktop lets a program at it without a window
+/// in front (the data-control protocol; elsewhere arboard goes through XWayland).
+///
+/// On Linux a copy isn't handed to the system: the program that copied keeps the text and gives it to whoever
+/// pastes. So arboard's clipboard is made once and kept for as long as the app runs ([`CLIPBOARD`]); let go after
+/// each copy, the text would be gone before anything pasted it.
+///
+/// Linux only: arboard's Windows side brings a Boost-licensed crate (clipboard-win), which the licence check
+/// (deny.toml) doesn't allow, and Windows and the Mac have their own code above.
+#[cfg(target_os = "linux")]
+mod desktop {
+    use std::sync::Mutex;
+
+    /// arboard's clipboard, made at the first read or copy and kept; None until then, and while there's no desktop
+    /// to ask (no display: tried again next time)
+    static CLIPBOARD: Mutex<Option<arboard::Clipboard>> = Mutex::new(None);
+
+    /// Do something with the clipboard; None when there's none to ask, or it failed (no text on it, for a read)
+    fn with<T>(act: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>) -> Option<T> {
+        let mut kept = CLIPBOARD.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if kept.is_none() {
+            *kept = arboard::Clipboard::new().ok();
+        }
+        act(kept.as_mut()?).ok()
+    }
+
+    /// The text on the clipboard, if any
+    pub fn read() -> Option<String> {
+        with(|clipboard| clipboard.get_text())
+    }
+
+    /// Put text on the clipboard, in place of what it held; left as it was when there's no desktop to ask
+    pub fn write(text: &str) {
+        with(|clipboard| clipboard.set_text(text.to_owned()));
+    }
 }
 
 /// Put text on the Mac's clipboard, in place of what it held
@@ -109,8 +152,14 @@ pub(crate) fn write(text: &str) {
     }
 }
 
-/// No clipboard to write on other systems (the app ships for the Mac and Windows)
-#[cfg(not(any(windows, target_os = "macos")))]
+/// Put text on Linux's clipboard, in place of what it held
+#[cfg(target_os = "linux")]
+pub(crate) fn write(text: &str) {
+    desktop::write(text);
+}
+
+/// No clipboard to write on other systems (the app is built for the Mac, Windows and Linux)
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub(crate) fn write(_text: &str) {}
 
 /// The system's clipboard is one for every test: a test that copies holds this while it does, so another's copy
@@ -151,5 +200,22 @@ mod tests {
         let read = read_for_test("FastEthernet0/5 – ünïcode");
         write(&before);
         assert_eq!(read, "FastEthernet0/5 – ünïcode");
+    }
+
+    /// Linux's clipboard, on Linux alone (the Mac and Windows have the test above for theirs): text put on it is
+    /// read back, as a copy in the remote desktop is pasted here and a copy here is offered there. It needs a
+    /// desktop: a build machine has no display, and the test then has nothing to check.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_linux_clipboard_gives_back_the_text_it_was_given() {
+        if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
+            return;
+        }
+        let _held = hold_for_test();
+        let before = clipboard_text();
+        write("GigabitEthernet1/0/1 – ünïcode");
+        let read = read_for_test("GigabitEthernet1/0/1 – ünïcode");
+        write(&before);
+        assert_eq!(read, "GigabitEthernet1/0/1 – ünïcode");
     }
 }

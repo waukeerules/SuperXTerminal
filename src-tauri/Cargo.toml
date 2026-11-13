@@ -48,6 +48,10 @@ ironrdp-core = "0.2"
 ironrdp-rdpdr = "0.7"
 ironrdp-svc = "0.8"
 ironrdp-rdpsnd = "0.9"
+# Remote Desktop's sound (rdp_sound.rs): IronRDP's decoding and its stream to the speakers, and cpal to start that
+# stream, which IronRDP's own handler doesn't (the versions ironrdp-client itself uses)
+ironrdp-rdpsnd-native = "0.7"
+cpal = "0.17"
 # the connection sequence itself, which rdp.rs's tests drive with a terminal server's PDUs (licensing, probes)
 ironrdp-connector = "0.10"
 russh-sftp = "3.0.1"

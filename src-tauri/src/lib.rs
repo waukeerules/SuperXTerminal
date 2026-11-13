@@ -35,6 +35,7 @@ mod rdp;
 mod rdp_clipboard;
 mod rdp_drives;
 mod rdp_options;
+mod rdp_sound;
 mod rdp_win_keys;
 mod remount;
 mod rhai_scripts;

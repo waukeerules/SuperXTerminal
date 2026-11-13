@@ -242,7 +242,9 @@ pub fn rdp_open(
         // IronRDP draws 16 or 32 bits; SuperXPuTTY's 15 and 24 are the nearest
         .with_color_depth(if options.color_depth.unwrap_or(32) <= 16 { 16 } else { 32 })
         .with_credssp(true)
-        // Audio=0 plays here; 1 (on the remote computer) and 2 (don't play) send none here
+        // Audio=0 plays here; 1 (on the remote computer) and 2 (don't play) send none here. This is also what tells
+        // the remote computer there's somewhere to play (off, it has no audio device at all), so it stays on though
+        // the engine's own handler, which it attaches, is replaced below by ours (rdp_sound.rs)
         .with_sound(options.audio.unwrap_or(0) == 0)
         // no bulk compression: IronRDP drops its decompressor when Windows re-activates the session (after the
         // desktop is resized, e.g. going full screen) while Windows keeps compressing, and every update after is garbage
@@ -259,6 +261,12 @@ pub fn rdp_open(
             Some(ironrdp_cliprdr::CliprdrClient::new(crate::rdp_clipboard::Factory(shared.clone()).build_cliprdr_backend()))
         });
     }
+    // sound played here goes through our handler: the engine's own never starts its stream, so nothing was heard on
+    // Windows. A channel attached here takes the place of the engine's of the same kind (they're attached after its)
+    let plays_here = options.audio.unwrap_or(0) == 0;
+    if plays_here {
+        builder = builder.with_static_channel(|_| Some(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(crate::rdp_sound::Backend::new()))));
+    }
     // this computer's drives in the remote desktop's File Explorer (rdp_drives.rs), with the Drives option
     if options.drives == Some(true) {
         let drives = crate::rdp_drives::local_drives();
@@ -267,7 +275,7 @@ pub fn rdp_open(
         builder = builder.with_static_channel(move |_| Some(crate::rdp_drives::channel(&drives)));
         // Windows says nothing on the device channel unless the sound channel is there as well (MS-RDPEFS, Appendix
         // A <1>); when sound isn't played here, one that takes no sound stands in for it
-        if options.audio.unwrap_or(0) != 0 {
+        if !plays_here {
             builder = builder.with_static_channel(|_| {
                 Some(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(ironrdp_rdpsnd::client::NoopRdpsndBackend)))
             });

@@ -509,6 +509,7 @@
       const { session, group } = target;
       items = [
         { label: "Connect", bold: true, action: () => open(session) },
+        sftpItem(session),
         { label: "Show in Sessions tree", action: () => void showInTree(session) },
         { separator: true },
         ...(group === "recent" ? [favoriteItem(session)] : []),
@@ -625,11 +626,7 @@
         { label: "Delete", disabled: block, action: () => void remove(session) },
         ...transferItems([session], session.store, session.locked),
         { separator: true },
-        {
-          label: "File transfer (SFTP)",
-          disabled: (session.protocol || "SSH").toUpperCase() !== "SSH" && "File transfer is for SSH sessions",
-          action: () => context.tabs?.openSftp(session.store, session.id, session.name, session.icon, colors.forSession(session)),
-        },
+        sftpItem(session),
         { label: "FileZilla (external)", action: () => void external(session, "filezilla") },
       ];
     } else {
@@ -942,6 +939,15 @@
     const problems = await deleteSessions(deletable);
     await reload();
     error = problems.join(" ");
+  }
+
+  /** File transfer (SFTP): the session's files in a tab, for an SSH session; in its own menu and a shortcut's */
+  function sftpItem(session: SessionView): MenuItem {
+    return {
+      label: "File transfer (SFTP)",
+      disabled: (session.protocol || "SSH").toUpperCase() !== "SSH" && "File transfer is for SSH sessions",
+      action: () => context.tabs?.openSftp(session.store, session.id, session.name, session.icon, colors.forSession(session)),
+    };
   }
 
   /** Add to Favorites, or Remove from Favorites when it's there */

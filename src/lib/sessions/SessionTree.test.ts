@@ -12,7 +12,8 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import SessionTree from "./SessionTree.svelte";
 import { settings } from "../settings/store.svelte";
 import type { SessionView } from "./api";
-import type { SessionState } from "../layout/TabArea";
+import type { SessionState, TabArea } from "../layout/TabArea";
+import { context } from "../commands/sending.svelte";
 
 /** A Saved SSH session with this id, its name and folder taken from it */
 function session(id: string): SessionView {
@@ -366,6 +367,50 @@ describe("Show in Sessions tree", () => {
     const inFolder = document.querySelector<HTMLElement>('.row.session[data-key="saved:Imported/Core/sw1"]');
     expect(inFolder?.classList.contains("selected")).toBe(true);
     await expect.poll(() => scrolled).toEqual([inFolder]);
+  });
+});
+
+describe("a session in Recent or Favorites", () => {
+  /** The file transfers the menu opened: the session and the tab's title. The tab area is stood in for by this alone */
+  let transfers: string[];
+  beforeEach(() => {
+    transfers = [];
+    context.tabs = { openSftp: (store: string, id: string, title: string) => transfers.push(`${store}:${id} as ${title}`) } as unknown as TabArea;
+  });
+  afterEach(() => {
+    context.tabs = null;
+  });
+
+  /** Show the tree with these in Recent and Favorites (both open), and right-click the first entry named `name` */
+  async function menuOf(name: string, shortcuts: { Recent?: string[]; Favorites?: string[] }, sessions = [session("Imported/Core/sw1")]) {
+    mockIPC((cmd) => {
+      if (cmd === "sessions_load" || cmd === "sessions_shown") return { sessions, folders: [], problems: [] };
+      if (cmd === "shortcuts_get") return { Favorites: shortcuts.Favorites ?? [], Recent: shortcuts.Recent ?? [], FavoritesExpanded: true, RecentExpanded: true };
+      if (cmd === "overrides_get") return {};
+      if (cmd === "icons_custom" || cmd === "profiles_list") return [];
+      return null;
+    });
+    render(SessionTree, { openSessions: new Map(), onOpen: () => {}, onLook: () => {}, onOpenProfiles: () => {} });
+    await user.pointer({ keys: "[MouseRight]", target: (await screen.findAllByText(name))[0] });
+    return within(screen.getByRole("menu"));
+  }
+
+  it("opens its file transfer from Recent's menu, as from the session's own", async () => {
+    const menu = await menuOf("sw1", { Recent: ["Imported/Core/sw1"] });
+    await user.click(menu.getByRole("menuitem", { name: "File transfer (SFTP)" }));
+    expect(transfers).toEqual(["saved:Imported/Core/sw1 as sw1"]);
+  });
+
+  it("opens its file transfer from Favorites' menu too", async () => {
+    const menu = await menuOf("sw1", { Favorites: ["Imported/Core/sw1"] });
+    await user.click(menu.getByRole("menuitem", { name: "File transfer (SFTP)" }));
+    expect(transfers).toEqual(["saved:Imported/Core/sw1 as sw1"]);
+  });
+
+  it("offers no file transfer for a session that isn't SSH", async () => {
+    const menu = await menuOf("ts1", { Recent: ["Servers/ts1"] }, [{ ...session("Servers/ts1"), protocol: "RDP" }]);
+    await user.click(menu.getByRole("menuitem", { name: "File transfer (SFTP)" }));
+    expect(transfers).toEqual([]);
   });
 });
 

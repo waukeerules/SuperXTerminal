@@ -14,14 +14,18 @@
 //! request Windows may make of a drive (flush, security). So the channel is wrapped ([`Channel`]): such a request
 //! is refused, and the desktop stays.
 //!
-//! The work is done on the session's thread as each request comes, so a slow drive (a network share that's gone)
-//! holds up that tab's desktop, and no other tab's, until it answers.
+//! The work is done on the session's thread as each request comes, so a slow drive holds up that tab's desktop, and
+//! no other tab's, until it answers. Windows asks about every drive as the user logs on, and a mapped network drive
+//! whose server is gone takes some twenty seconds to say so: the desktop froze that long after connecting. So only
+//! the drives that answer when asked, all at once and within [`ANSWER_WITHIN`], are offered ([`local_drives`]). A
+//! drive that goes away later still holds the tab up while Windows asks after it.
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::{File, Metadata, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{mpsc, Arc};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ironrdp_core::impl_as_any;
 use ironrdp_pdu::PduResult;
@@ -54,12 +58,52 @@ pub struct Drive {
     pub root: PathBuf,
 }
 
-/// This computer's drives, as Remote Desktop Connection shares them: on Windows every drive letter, mapped network
-/// drives too (those of the user SuperXTerminal runs as: run as administrator, Windows hides the user's mapped
-/// drives from it). A drive with nothing in it (an empty card reader) is listed and fails when opened; asking each
-/// whether it's ready could wait seconds on a network drive that's gone.
-#[cfg(windows)]
+/// How long a drive has to answer as a session connects, to be offered to it: local drives answer at once, and a
+/// network drive that's there in well under a second; one whose server is gone takes some twenty seconds to fail.
+/// Connecting waits this long at most, and only when a drive doesn't answer.
+const ANSWER_WITHIN: Duration = Duration::from_secs(2);
+
+/// This computer's drives that answer now, to offer to a session that's connecting: [`every_drive`], without those
+/// that can't be opened (an empty card reader, a network drive that's gone) or take longer than [`ANSWER_WITHIN`]
+/// to say. The log says which were left out.
 pub fn local_drives() -> Vec<Drive> {
+    answering(every_drive(), ANSWER_WITHIN, |root| std::fs::metadata(root).is_ok())
+}
+
+/// The drives that `there` says are there, asked all at once and given `within` to answer, in the order given. Each
+/// is asked on a thread of its own, so one that doesn't answer holds up no other; its thread is left to end when the
+/// system gives up on the drive.
+fn answering(drives: Vec<Drive>, within: Duration, there: impl Fn(&Path) -> bool + Send + Sync + 'static) -> Vec<Drive> {
+    let there = Arc::new(there);
+    let (answers, answered) = mpsc::channel();
+    for (place, drive) in drives.iter().enumerate() {
+        let (there, answers, root) = (Arc::clone(&there), answers.clone(), drive.root.clone());
+        // a thread that can't be started leaves its drive out, as one that never answers
+        let _ = std::thread::Builder::new().name("rdp-drive".into()).spawn(move || {
+            let _ = answers.send((place, there(&root)));
+        });
+    }
+    // with ours let go, the channel closes once every drive has answered: no waiting out the time when all are quick
+    drop(answers);
+    let until = Instant::now() + within;
+    let mut found = vec![false; drives.len()];
+    while let Ok((place, is_there)) = answered.recv_timeout(until.saturating_duration_since(Instant::now())) {
+        found[place] = is_there;
+    }
+    let (kept, left): (Vec<_>, Vec<_>) = drives.into_iter().zip(found).partition(|(_, is_there)| *is_there);
+    if !left.is_empty() {
+        let names: Vec<&str> = left.iter().map(|(drive, _)| drive.name.as_str()).collect();
+        crate::applog::info(format!("Remote Desktop's drives: {} left out (not there, or not answering)", names.join(", ")));
+    }
+    kept.into_iter().map(|(drive, _)| drive).collect()
+}
+
+/// Every drive this computer has, as Remote Desktop Connection shares them: on Windows every drive letter, mapped
+/// network drives too (those of the user SuperXTerminal runs as: run as administrator, Windows hides the user's
+/// mapped drives from it). Whether each is there to open isn't asked here ([`local_drives`] does, off this thread):
+/// a network drive that's gone takes seconds to say.
+#[cfg(windows)]
+fn every_drive() -> Vec<Drive> {
     use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
     /// GetDriveTypeW: the letter has no drive (0 is "can't tell")
     const DRIVE_NO_ROOT_DIR: u32 = 1;
@@ -82,7 +126,7 @@ pub fn local_drives() -> Vec<Drive> {
 /// startup disk and any plugged in or mounted), as Finder's sidebar has them; elsewhere the whole file system as
 /// "Root"
 #[cfg(not(windows))]
-pub fn local_drives() -> Vec<Drive> {
+fn every_drive() -> Vec<Drive> {
     let mut drives = Vec::new();
     if let Some(home) = dirs::home_dir() {
         drives.push(Drive { name: "Home".into(), root: home });
@@ -1063,6 +1107,27 @@ mod tests {
         assert_eq!(&bytes[12..16], &0xC000_00BBu32.to_le_bytes());
         // a message that makes no sense at all is passed over
         assert!(channel.process(&[0xff; 3]).expect("the session goes on").is_empty());
+    }
+
+    #[test]
+    fn a_drive_that_doesnt_answer_is_left_out_and_doesnt_hold_up_the_connection() {
+        let drive = |name: &str| Drive { name: name.into(), root: PathBuf::from(name) };
+        let started = Instant::now();
+        // C and P answer at once; Q has nothing in it; Z is a network drive whose server is gone, which takes far
+        // longer to say so than a connection should wait
+        let offered = answering(vec![drive("C"), drive("Q"), drive("Z"), drive("P")], Duration::from_millis(300), |root| {
+            if root == Path::new("Z") {
+                std::thread::sleep(Duration::from_secs(5));
+            }
+            root != Path::new("Q")
+        });
+        assert_eq!(offered, [drive("C"), drive("P")]);
+        assert!(started.elapsed() < Duration::from_secs(2), "the connection waited for the drive that's gone");
+
+        // and with every drive quick, there's no waiting out the time
+        let started = Instant::now();
+        assert_eq!(answering(vec![drive("C"), drive("D")], Duration::from_secs(30), |_| true), [drive("C"), drive("D")]);
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

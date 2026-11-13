@@ -18,7 +18,7 @@
     remoteDelete, remoteMkdir, remoteRename, revealLocal, transfer, type Entry, type Listing, type Opened,
   } from "./api";
 
-  let { store, id, onState }: {
+  let { store, id, onState, onMode }: {
     /** Which sessions the session is in: Saved, Private or Database */
     store: Store;
     /** The session whose files are shown */
@@ -28,6 +28,11 @@
      * Try again), connected once it's in, disconnected when it couldn't connect
      */
     onState?: (state: "connecting" | "connected" | "disconnected") => void;
+    /**
+     * Told, once connected, which way the files go, for the tab's title: SFTP, or SCP when the device offers no
+     * SFTP (Cisco IOS) and the tab fell back to it
+     */
+    onMode?: (mode: "SFTP" | "SCP") => void;
   } = $props();
 
   let conn = $state<Opened | null>(null);
@@ -70,6 +75,7 @@
     try {
       conn = await openTransfer(store, id);
       onState?.("connected");
+      onMode?.(conn.scp ? "SCP" : "SFTP");
       localHome = conn.local;
       await Promise.all([load("local", conn.local), load("remote", conn.remote)]);
     } catch (e) {

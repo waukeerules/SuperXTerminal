@@ -317,6 +317,8 @@ class SftpPanel implements IContentRenderer {
           tabStates[id] = { ...tabStates[id], ended: state === "disconnected", connecting: state === "connecting" };
           this.tabs.notify();
         },
+        // the tab opens as "(SFTP)"; it says "(SCP)" when the device had no SFTP and the tab fell back to SCP
+        onMode: (mode: "SFTP" | "SCP") => this.tabs.transferMode(id, mode),
       },
     });
   }
@@ -717,6 +719,25 @@ export class TabArea {
     return panelId;
   }
 
+  /**
+   * A file transfer tab connected, and says which way its files go. Its title opened as "name (SFTP)", before ssh
+   * had asked the device: a device with no SFTP (Cisco IOS) is worked over SCP instead, with less it can do (no
+   * folders, rename or new folder), so the title says "name (SCP)". A tab the user renamed keeps their name; the
+   * title it would have is still kept, for Duplicate session.
+   * @param id The tab's panel id
+   * @param mode "SCP" when the tab fell back to it, else "SFTP" (as after Try again finds SFTP)
+   */
+  transferMode(id: string, mode: "SFTP" | "SCP"): void {
+    const panel = this.api.getPanel(id);
+    const opened = this.titles.get(id);
+    if (!panel || opened === undefined) return;
+    const title = opened.replace(/ \((SFTP|SCP)\)$/, ` (${mode})`);
+    if (title === opened) return;
+    this.titles.set(id, title);
+    if (panel.title === opened) panel.api.setTitle(title);
+    this.changed();
+  }
+
   /** Open a tab for Quick connect's one-off session; returns its panel id */
   openQuickConnect(quick: QuickConnect, title: string, local: boolean): string {
     return this.add(title, { target: { kind: "quickConnect", ...quick }, local, icon: local ? "terminal" : "computer", environment: null });
@@ -813,7 +834,7 @@ export class TabArea {
       return;
     }
     if (panel.view.contentComponent === "sftp" && params.target.kind === "session") {
-      this.openSftp(params.target.store, params.target.id, this.originalTitle(id).replace(/ \(SFTP\)$/, ""), params.icon, params.environment ?? null);
+      this.openSftp(params.target.store, params.target.id, this.originalTitle(id).replace(/ \((SFTP|SCP)\)$/, ""), params.icon, params.environment ?? null);
       return;
     }
     if (this.rdpHosts.has(id) && params.target.kind === "session") {

@@ -446,6 +446,39 @@ describe("a file transfer (SFTP) tab", () => {
     expect(reported.has("saved:Lab/sw1")).toBe(false);
   });
 
+  it("says SCP in its title when the device has no SFTP and the tab fell back to SCP", async () => {
+    transfer = async () => ({ id: 1, address: "admin@sw1", home: "flash:", local: "/Users/me", remote: "flash:", scp: true });
+    const id = tabs.openSftp("saved", "Lab/sw1", "sw1", "switch", null);
+    expect(label("sw1").textContent).toContain("sw1 (SFTP)");
+    await expect.poll(() => label("sw1").textContent).toContain("sw1 (SCP)");
+    expect(label("sw1").textContent).not.toContain("SFTP");
+    // a copy of the tab opens as any file transfer does, not as "sw1 (SCP) (SFTP)"
+    let asked = false;
+    transfer = () => new Promise(() => (asked = true));
+    tabs.duplicate(id);
+    expect(tabs.api.panels.map((p) => p.title)).toEqual(["sw1 (SCP)", "sw1 (SFTP)"]);
+    // the copy starts connecting a moment after it opens: let it, while the stand-ins it needs are still here
+    await expect.poll(() => asked).toBe(true);
+  });
+
+  it("keeps saying SFTP in its title when the device has it", async () => {
+    tabs.openSftp("saved", "Lab/sw1", "sw1", "switch", null);
+    await expect.poll(() => label("sw1").querySelector('[aria-label="Connected"]')).not.toBeNull();
+    expect(label("sw1").textContent).toContain("sw1 (SFTP)");
+  });
+
+  it("keeps the name the user gave the tab when it falls back to SCP", async () => {
+    let connected: (opened: unknown) => void = () => {};
+    transfer = () => new Promise((resolve) => (connected = resolve));
+    const id = tabs.openSftp("saved", "Lab/sw1", "sw1", "switch", null);
+    tabs.rename(id, "core switch");
+    // ssh is asked for a moment after the tab opens
+    await expect.poll(() => label("core switch").querySelector('[aria-label="Connecting"]')).not.toBeNull();
+    connected({ id: 1, address: "admin@sw1", home: "flash:", local: "/Users/me", remote: "flash:", scp: true });
+    await expect.poll(() => label("core switch").querySelector('[aria-label="Connected"]')).not.toBeNull();
+    expect(tabs.api.getPanel(id)!.title).toBe("core switch");
+  });
+
   it("shows disconnected when the connection fails", async () => {
     transfer = () => Promise.reject("ssh: connect to host 10.0.0.9 port 22: Connection refused");
     tabs.openSftp("saved", "Lab/sw9", "sw9", "switch", null);

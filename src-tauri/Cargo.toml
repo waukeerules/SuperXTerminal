@@ -43,6 +43,11 @@ ironrdp-graphics = "0.9"
 smallvec = "1"
 ironrdp-cliprdr = "0.7"
 ironrdp-core = "0.2"
+# this computer's drives in the remote desktop (rdp_drives.rs): the device channel, the messages it answers with,
+# and the sound channel Windows wants beside it (the versions ironrdp-client itself uses)
+ironrdp-rdpdr = "0.7"
+ironrdp-svc = "0.8"
+ironrdp-rdpsnd = "0.9"
 # the connection sequence itself, which rdp.rs's tests drive with a terminal server's PDUs (licensing, probes)
 ironrdp-connector = "0.10"
 russh-sftp = "3.0.1"

@@ -113,7 +113,7 @@
     <legend>Local resources</legend>
     <div class="grid">
       {@render flag("clipboard", "Clipboard (text)")}
-      {@render flag("drives", "Drives", true)}
+      {@render flag("drives", "Drives")}
       {@render flag("printers", "Printers", true)}
       {@render flag("smartCards", "Smart cards", true)}
       {@render flag("microphone", "Microphone", true)}

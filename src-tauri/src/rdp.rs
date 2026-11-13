@@ -259,6 +259,20 @@ pub fn rdp_open(
             Some(ironrdp_cliprdr::CliprdrClient::new(crate::rdp_clipboard::Factory(shared.clone()).build_cliprdr_backend()))
         });
     }
+    // this computer's drives in the remote desktop's File Explorer (rdp_drives.rs), with the Drives option
+    if options.drives == Some(true) {
+        let drives = crate::rdp_drives::local_drives();
+        let names: Vec<&str> = drives.iter().map(|drive| drive.name.as_str()).collect();
+        crate::applog::info(format!("Remote Desktop to {address} is offered this computer's drives: {}", names.join(", ")));
+        builder = builder.with_static_channel(move |_| Some(crate::rdp_drives::channel(&drives)));
+        // Windows says nothing on the device channel unless the sound channel is there as well (MS-RDPEFS, Appendix
+        // A <1>); when sound isn't played here, one that takes no sound stands in for it
+        if options.audio.unwrap_or(0) != 0 {
+            builder = builder.with_static_channel(|_| {
+                Some(ironrdp_rdpsnd::client::Rdpsnd::new(Box::new(ironrdp_rdpsnd::client::NoopRdpsndBackend)))
+            });
+        }
+    }
     // RD Gateway, as SuperXPuTTY's: the session's own login is the gateway's too
     if let Some(gateway) = options.gateway.as_deref().map(str::trim).filter(|g| !g.is_empty()) {
         let endpoint = if gateway.contains(':') { gateway.to_string() } else { format!("{gateway}:443") };

@@ -33,6 +33,7 @@ mod pty;
 mod putty_reg;
 mod rdp;
 mod rdp_clipboard;
+mod rdp_drives;
 mod rdp_options;
 mod remount;
 mod rhai_scripts;

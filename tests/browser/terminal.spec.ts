@@ -721,6 +721,33 @@ test.describe("Find", () => {
     await page.mouse.up();
     await expect.poll(() => copies(page)).toEqual(["interface"]);
   });
+
+  test("counts and marks a match in output that arrives while the find bar is open, and stays on the one shown", async ({ page }) => {
+    await openTerminal(page, {});
+    await feed(page, "\x1b[2J\x1b[H" + "sw1#show run int gi1/0/24\r\n description uplink\r\nsw1#");
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "action", name: "find" }));
+    await page.locator("#findText").fill("uplink");
+    await expect(page.locator("#findCount")).toHaveText("1 of 1");
+    const marks = () => page.evaluate(() => (window as any).terminalDev.findMarks().map((m: any) => m.row).sort());
+    expect(await marks()).toEqual([1]);
+    // the command is run again with the bar still open: its output has the text a second time
+    await feed(page, "show run int gi1/0/24\r\n description uplink\r\nsw1#");
+    await expect(page.locator("#findCount")).toHaveText("1 of 2");
+    expect(await marks()).toEqual([1, 3]);
+    // still on the match that was shown, and the next is the new one
+    expect(await page.evaluate(() => (window as any).terminalDev.term.getSelectionPosition().start.y)).toBe(1);
+    await page.locator("#findText").press("Enter");
+    await expect(page.locator("#findCount")).toHaveText("2 of 2");
+    // output without the text changes nothing
+    await feed(page, "show clock\r\n01:55:00 UTC\r\nsw1#");
+    await page.waitForTimeout(400);
+    await expect(page.locator("#findCount")).toHaveText("2 of 2");
+    // and with nothing found yet, the first match to arrive is shown
+    await page.locator("#findText").fill("err-disabled");
+    await expect(page.locator("#findCount")).toHaveText("No results");
+    await feed(page, "show int status\r\nGi1/0/3  err-disabled\r\nsw1#");
+    await expect(page.locator("#findCount")).toHaveText("1 of 1");
+  });
 });
 
 test.describe("Highlighting and Find on the text they match", () => {

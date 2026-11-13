@@ -43,8 +43,8 @@
   /** Still reaching the far end: a small yellow dot, as the Sessions tree shows */
   const connecting = $derived(tabStates[tabId]?.connecting ?? false);
   /**
-   * Connected, the far end having answered: a small green dot, as the Sessions tree shows. Only a terminal tab says
-   * (its page host reports connecting); a Remote Desktop or SFTP tab has no dot
+   * Connected, the far end having answered: a small green dot, as the Sessions tree shows. A terminal tab and a
+   * Remote Desktop tab say (their hosts report connecting); an SFTP tab has no dot
    */
   const connected = $derived(tabStates[tabId]?.connecting === false && !disconnected);
   /** Watch for Activity's alert (the tab pulses) or Watch for Silence's (a grey pause on the icon) */

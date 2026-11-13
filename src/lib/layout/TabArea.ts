@@ -263,8 +263,13 @@ class RdpPanel implements IContentRenderer {
       this.element.style.padding = "3px";
       this.element.style.background = environment;
     }
-    this.host = new RdpHost({ store: target.store, id: target.id }, () => parameters.api.title ?? "");
-    this.tabs.rdpHosts.set(parameters.api.id, this.host);
+    const id = parameters.api.id;
+    this.host = new RdpHost({ store: target.store, id: target.id }, () => parameters.api.title ?? "", () => {
+      // the tab's dot (yellow, green, or the red cross), and the Sessions tree's, as a terminal tab's
+      tabStates[id] = { ...tabStates[id], ended: this.host?.isEnded ?? false, connecting: this.host?.isConnecting ?? false };
+      this.tabs.notify();
+    });
+    this.tabs.rdpHosts.set(id, this.host);
     this.element.append(this.host.element);
     void this.host.connect();
   }
@@ -710,15 +715,16 @@ export class TabArea {
    * Each open session's state, for the Sessions tree, from its tabs': "connected" if any tab is (one is
    * enough: a second tab on a dropped device shows its own cross), else "connecting" if any tab is, else
    * "disconnected" (every tab shows the red cross), as each tab's page host has it: connecting until the far end
-   * answers (PageHost.isConnecting), ended once the session has. Only terminal tabs have a page host: a Remote
-   * Desktop or SFTP tab's session is connected here, as its tab shows neither.
+   * answers (PageHost.isConnecting), ended once the session has. A Remote Desktop tab's host says the same
+   * (RdpHost: connecting until the desktop is seen). An SFTP tab has neither host: its session is connected here,
+   * as its tab shows no dot.
    */
   private sessionStates(): Map<string, SessionState> {
     const rank: Record<SessionState, number> = { disconnected: 0, connecting: 1, connected: 2 };
     const states = new Map<string, SessionState>();
     for (const [panelId, key] of this.sessions) {
-      // a terminal tab's page host; none for a Remote Desktop or SFTP tab
-      const host = this.hosts.get(panelId);
+      // a terminal tab's page host or a Remote Desktop's; none for an SFTP tab
+      const host = this.hosts.get(panelId) ?? this.rdpHosts.get(panelId);
       const state: SessionState = host?.isEnded ? "disconnected" : host?.isConnecting ? "connecting" : "connected";
       const before = states.get(key);
       if (!before || rank[state] > rank[before]) states.set(key, state);

@@ -4,7 +4,7 @@
 // sessions have all ended (the red cross the tab shows). The terminal pages are stood in for by their iframes' postMessage (jsdom loads no
 // page), which records the "focus" the tab area sends the page; the Rust side by mockIPC, which answers with nothing
 // but hands over each tab's channel (pty_open), on which the test starts the session, and the profiles stored.
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import { gridShape, TabArea } from "./TabArea";
@@ -21,6 +21,8 @@ let element: HTMLElement;
 let focused: string[];
 /** Each tab's channel, by tab id, once its session has asked for a pseudo terminal */
 let channels: Map<string, Channel<unknown>>;
+/** Each Remote Desktop connection's channel, in the order they were opened (rdp_open) */
+let desktops: Channel<unknown>[];
 /** The profiles stored, as profiles_list gives them */
 let profiles: Profile[];
 /** What the tab area last told the Sessions tree: each open session's state */
@@ -34,12 +36,17 @@ beforeEach(() => {
     disconnect() {}
   } as unknown as typeof ResizeObserver;
   channels = new Map();
-  profiles = [emptyProfile(DEFAULT_PROFILE)];
+  desktops = [];
+  profiles =[emptyProfile(DEFAULT_PROFILE)];
   let opening: string | null = null;
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
     if (cmd === "pty_open" && opening) channels.set(opening, payload.onEvent as Channel<unknown>);
     if (cmd === "pty_open") return channels.size;
+    if (cmd === "rdp_open") {
+      desktops.push(payload.onEvent as Channel<unknown>);
+      return { id: desktops.length, width: 800, height: 600, fixed: false, smartSizing: true, scale: 100, keyboard: 0 };
+    }
     if (cmd === "profiles_list") return profiles;
     if (cmd === "highlighting_load") return { ruleSets: [], themes: [], problems: [] };
     return null;
@@ -316,6 +323,51 @@ describe("what the Sessions tree is told", () => {
     expect(reported.get("saved:Lab/sw1")).toBe("connected");
     exit(second);
     await expect.poll(() => reported.get("saved:Lab/sw1")).toBe("disconnected");
+  });
+});
+
+// A Remote Desktop tab has no page: its host (RdpHost) connects once the tab has a size, and draws on a canvas.
+// jsdom gives neither, so the tab is given a size, a canvas that draws nothing and an ImageData; the core is
+// mockIPC's rdp_open, whose channel the test sends the first piece of screen and the session's end on.
+describe("a Remote Desktop tab", () => {
+  beforeEach(() => {
+    mockWindows("main");
+    const real = HTMLDivElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLDivElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLDivElement) {
+      return this.classList.contains("rdp-panel") ? ({ width: 800, height: 600 } as DOMRect) : real.call(this);
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ putImageData() {} } as unknown as CanvasRenderingContext2D);
+    vi.stubGlobal("ImageData", class {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** One pixel of the remote screen, as the core sends it: "SXF1", where it goes, its size and the screen's, the pixel */
+  function screen(): ArrayBuffer {
+    const packet = new ArrayBuffer(20);
+    new Uint8Array(packet).set(new TextEncoder().encode("SXF1"));
+    const view = new DataView(packet);
+    [0, 0, 1, 1, 800, 600].forEach((value, i) => view.setUint16(4 + i * 2, value, true));
+    return packet;
+  }
+
+  it("shows connecting until the desktop is seen, connected once it is, and disconnected when it ends, as the Sessions tree is told", async () => {
+    const id = tabs.openRdp("saved", "Servers/ts1", "ts1", "windows", null);
+    await expect.poll(() => desktops.length).toBe(1);
+    const say = desktops[0].onmessage as (e: unknown) => void;
+    await expect.poll(() => label("ts1").querySelector('[aria-label="Connecting"]')).not.toBeNull();
+    expect(reported.get("saved:Servers/ts1")).toBe("connecting");
+    say(screen());
+    await expect.poll(() => label("ts1").querySelector('[aria-label="Connected"]')).not.toBeNull();
+    expect(label("ts1").querySelector('[aria-label="Connecting"]')).toBeNull();
+    expect(reported.get("saved:Servers/ts1")).toBe("connected");
+    say({ type: "ended", reason: "The remote computer ended the session", clean: true });
+    await expect.poll(() => label("ts1").querySelector('[aria-label="Disconnected"]')).not.toBeNull();
+    expect(reported.get("saved:Servers/ts1")).toBe("disconnected");
+    tabs.api.getPanel(id)!.api.close();
+    expect(reported.has("saved:Servers/ts1")).toBe(false);
   });
 });
 

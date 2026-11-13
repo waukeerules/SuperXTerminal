@@ -109,7 +109,13 @@ export class RdpHost {
   private shown = false;
   private generation = 0;
 
-  constructor(private readonly target: RdpTarget, private readonly title: () => string) {
+  /**
+   * @param target The session to connect to
+   * @param title The tab's title as it is now, for what's said over the desktop
+   * @param onState Called when the session starts connecting, shows its desktop or ends, so the tab's label and the
+   *   Sessions tree can show it (isConnecting, isEnded), as a terminal tab's page host tells them
+   */
+  constructor(private readonly target: RdpTarget, private readonly title: () => string, private readonly onState: () => void = () => {}) {
     this.element = document.createElement("div");
     this.element.className = "rdp-panel";
     this.canvas = document.createElement("canvas");
@@ -145,6 +151,7 @@ export class RdpHost {
     }
     this.ended = false;
     this.shown = false;
+    this.onState();
     if (this.attempts === 0) this.show(`Connecting to ${this.title()}…`);
     // what an earlier connection still sends (its end, as it closes) is ignored
     const generation = ++this.generation;
@@ -206,6 +213,7 @@ export class RdpHost {
         if (!this.shown) {
           this.shown = true;
           this.attempts = 0;
+          this.onState();
         }
         if (this.overlay.style.display !== "none" && !this.ended) this.overlay.style.display = "none";
       } else if (head === "SXP1") {
@@ -245,6 +253,7 @@ export class RdpHost {
   private end(text: string, clean: boolean): void {
     this.ended = true;
     this.id = null;
+    this.onState();
     this.releaseKeys();
     this.grabKeys();
     this.show(text);
@@ -546,6 +555,15 @@ export class RdpHost {
   /** Whether the session has ended */
   get isEnded(): boolean {
     return this.ended;
+  }
+
+  /**
+   * Whether it's still connecting: not ended, and none of the desktop seen yet (the tab's and the Sessions tree's
+   * yellow dot). The first piece of screen is the far end answering: the core reaching the computer and logging in
+   * come before it, and a refused login ends the session without one.
+   */
+  get isConnecting(): boolean {
+    return !this.ended && !this.shown;
   }
 
   /** Whether a reconnect is waiting, for the tab's Stop Reconnecting */

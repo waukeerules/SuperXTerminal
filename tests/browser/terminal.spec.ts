@@ -90,6 +90,39 @@ test.describe("Wrap Lines off", () => {
   });
 });
 
+test.describe("a double-click on a word", () => {
+  /** Double-click the character at `column` of the first row, and say what's selected */
+  async function doubleClick(page: Page, column: number): Promise<string> {
+    const cell = await page.evaluate(() => (window as any).terminalDev.term._core._renderService.dimensions.css.cell.width as number);
+    const box = (await page.locator("#terminal").boundingBox())!;
+    await page.mouse.dblclick(box.x + cell * column + cell / 2, box.y + 8);
+    return page.evaluate(() => (window as any).terminalDev.term.getSelection() as string);
+  }
+  /** A switch's prompt and a command on the first row: column 5 is the "h" of "show" */
+  const prompt = (page: Page) => feed(page, "\x1b[2J\x1b[H" + "sw1#show ip route");
+
+  test("selects through a # until it's one of the word delimiters, and stops at it once it is", async ({ page }) => {
+    await openTerminal(page, {});
+    await prompt(page);
+    await expect.poll(() => doubleClick(page, 5)).toBe("sw1#show");
+    // Settings > Terminal > Word delimiters, changed while the tab is open
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "prefs", prefs: { wordSeparators: "()[]#" } }));
+    await expect.poll(() => doubleClick(page, 5)).toBe("show");
+  });
+
+  test("stops at a space whatever the delimiters are, even none", async ({ page }) => {
+    await openTerminal(page, { wordSeparators: "" });
+    await prompt(page);
+    await expect.poll(() => doubleClick(page, 5)).toBe("sw1#show");
+  });
+
+  test("selects through a bracket taken out of the delimiters", async ({ page }) => {
+    await openTerminal(page, { wordSeparators: "#" });
+    await feed(page, "\x1b[2J\x1b[H" + "sw1(config)#interface Gi1/0/1");
+    await expect.poll(() => doubleClick(page, 5)).toBe("sw1(config)");
+  });
+});
+
 test("Wrap Lines on fits the tab, with no scroll bar", async ({ page }) => {
   await openTerminal(page, { wrap: "true" });
   expect(await cols(page)).toBeLessThan(300);

@@ -1,4 +1,6 @@
-// Settings > Terminal > Built-in highlighting rules: ticked unless turned off; unticking it saves the preference,
+// Settings > Terminal. Word delimiters: the characters a double-click's word ends at, typed in a box, saved as
+// typed less its spaces and repeats, and put back by Default.
+// Built-in highlighting rules: ticked unless turned off; unticking it saves the preference,
 // takes the app's own rule sets out of Highlighting's list, and puts Highlighting back to Automatic when it was on
 // one of them. The app's bundled rule sets are stood in for by `fetch`, the user's folder by mockIPC's
 // highlighting_load, and settings_save keeps what's saved, as the Rust side does.
@@ -45,6 +47,41 @@ const highlightingList = () => screen.getByLabelText("Highlighting") as HTMLSele
 const offered = () => within(highlightingList()).getAllByRole("option").map((o) => o.textContent).slice(2);
 /** The Built-in highlighting rules tick box */
 const builtIn = () => screen.getByRole("checkbox", { name: /Built-in highlighting rules/ }) as HTMLInputElement;
+
+describe("Settings > Terminal > Word delimiters", () => {
+  /** The box the delimiters are typed in, and the button that puts back the ones the app comes with */
+  const box = () => screen.getByLabelText(/Word delimiters/) as HTMLInputElement;
+  const byDefault = () => screen.getByRole("button", { name: "Default delimiters" }) as HTMLButtonElement;
+
+  it("shows the ones the app comes with, with nothing to put back", () => {
+    render(TerminalTab);
+    expect(box().value).toBe("()[]{}',\"`");
+    expect(byDefault().disabled).toBe(true);
+  });
+
+  it("saves what's typed without its spaces and repeats, and Default puts back the app's own", async () => {
+    const user = userEvent.setup();
+    render(TerminalTab);
+    await user.clear(box());
+    // "[[" and "{{" are how the keyboard stand-in is told to type one [ or {
+    await user.type(box(), "() [[]#{{}#");
+    await user.tab();
+    await expect.poll(() => saved.at(-1)).toEqual({ wordSeparators: "()[]#{}" });
+    expect(box().value).toBe("()[]#{}");
+    await user.click(byDefault());
+    await expect.poll(() => saved.at(-1)).toEqual({});
+    expect(box().value).toBe("()[]{}',\"`");
+  });
+
+  it("keeps none at all, so a word ends only at a space", async () => {
+    const user = userEvent.setup();
+    render(TerminalTab);
+    await user.clear(box());
+    await user.tab();
+    await expect.poll(() => saved.at(-1)).toEqual({ wordSeparators: "" });
+    expect(byDefault().disabled).toBe(false);
+  });
+});
 
 describe("Settings > Terminal > Built-in highlighting rules", () => {
   it("is on until it's turned off, with the app's rule sets offered beside the user's own", async () => {

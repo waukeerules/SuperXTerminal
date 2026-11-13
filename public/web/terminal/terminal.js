@@ -1827,12 +1827,30 @@
     function applyPrefs(changed) {
         prefs = changed || {};
         applyScrollback();
+        applyWordSeparators();
         applyRenderer();
         applyTheme();
         applyCursor();
         applyWrap();
         drawNumbers();
         markSelectionMatches();
+    }
+
+    /**
+     * The characters a double-click's word ends at when the preference isn't given: xterm.js's own, less the space
+     * (as PREF_DEFAULTS.wordSeparators in SuperXTerminal's prefs.ts)
+     */
+    var defaultWordSeparators = '()[]{}\',"`';
+
+    /**
+     * Where a double-click's word ends (SuperXTerminal's Settings > Terminal > Word delimiters): at a space always,
+     * and at each character of the preference. An empty preference is the user's (no character but the space), so
+     * it's read as it is rather than through loadPref, which takes empty for not set.
+     */
+    function applyWordSeparators() {
+        var chars = prefs.wordSeparators;
+        var wanted = ' ' + (chars === undefined || chars === null ? defaultWordSeparators : String(chars));
+        if (term.options.wordSeparator !== wanted) { term.options.wordSeparator = wanted; }
     }
 
     /**
@@ -1933,6 +1951,7 @@
         themes = config.themes || [];
         var problems = compileRuleSets(config.ruleSets);
         applyScrollback();
+        applyWordSeparators();
         applyRenderer();
         applyTheme();
         fit();

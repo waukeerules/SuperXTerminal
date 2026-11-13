@@ -84,6 +84,14 @@
     void setPrefs({ [name]: value });
   }
 
+  /**
+   * The word delimiters as typed, kept as the terminal uses them: each character once, in the order typed, and no
+   * spaces (a word always ends at a space, so one in the box would only look like a mistake)
+   */
+  function setWordSeparators(typed: string): void {
+    set("wordSeparators", [...new Set(typed.replace(/\s/g, ""))].join(""));
+  }
+
   /** A number box's value, kept within its range */
   function number(name: string, value: string, min: number, max: number): void {
     const n = Math.round(Number(value));
@@ -176,6 +184,14 @@
       onchange={(e) => set("markMatches", String(e.currentTarget.checked))} /> Mark matches of the selected text</label>
     <label class="check"><input type="checkbox" checked={prefs.copyOnSelect === "true"}
       onchange={(e) => set("copyOnSelect", String(e.currentTarget.checked))} /> Copy on select</label>
+    <label>Word delimiters
+      <span class="row"><input class="words" type="text" spellcheck="false" autocomplete="off" value={prefs.wordSeparators}
+        onchange={(e) => { setWordSeparators(e.currentTarget.value); e.currentTarget.value = allPrefs().wordSeparators; }} />
+        <button disabled={prefs.wordSeparators === PREF_DEFAULTS.wordSeparators} aria-label="Default delimiters"
+          onclick={(e) => { e.preventDefault(); void setPrefs({ wordSeparators: null }); }}
+          title="Use the delimiters the app comes with again">Default</button>
+        <span class="hint">where a double-clicked word ends, besides a space; add # to select "show" in "sw1#show", not the prompt with it</span></span>
+    </label>
     <label class="check"><input type="checkbox" checked={prefs.wrap === "true"}
       onchange={(e) => set("wrap", String(e.currentTarget.checked))} /> Wrap lines
       <span class="hint">(off: lines up to 300 columns stay whole, with a scroll bar to pan along them)</span></label>
@@ -277,6 +293,12 @@
 
   .row input {
     width: 90px;
+  }
+
+  .row input.words {
+    flex: none;
+    width: 150px;
+    font-family: Menlo, Consolas, monospace;
   }
 
   .hint {

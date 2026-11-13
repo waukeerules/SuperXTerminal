@@ -36,6 +36,12 @@ export const PREF_DEFAULTS: Record<string, string> = {
   /** "profile", "visual", "sound" or "none" */
   bell: "profile",
   copyOnSelect: "true",
+  /**
+   * The characters a word ends at when it's double-clicked, besides a space (always one): xterm.js's own by default.
+   * With # added, a double-click on a switch's "sw1#show" selects "show"; with ( and ) taken out, "sw1(config)" whole.
+   * "" for none but the space
+   */
+  wordSeparators: "()[]{}',\"`",
   markMatches: "true",
   /** "false": lines aren't wrapped at the tab's width; the terminal is 300 columns wide and the view pans along them */
   wrap: "true",

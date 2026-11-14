@@ -12,6 +12,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import TreeRows from "./TreeRows.svelte";
   import {
+    blankSession,
     deleteSession,
     getSession,
     loadSessions,
@@ -447,14 +448,6 @@
     await chooseSettingsFolder();
   }
 
-  /** A new session's fields, in a folder */
-  function blank(folder: string): SessionFields {
-    return {
-      name: "", folder, protocol: "SSH", host: "", port: 22, username: "", profile: "Default Settings", color: "",
-      icon: "computer", highlightRules: "", extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "", rdpOptions: "", sshAlgorithms: "", buttonBar: "",
-    };
-  }
-
   /** The folder settings along a folder's path in a store, nearest first, for Edit Session's inherited hints */
   function foldersAlong(store: Store, folder: string) {
     const settings = (loaded?.folders ?? []).filter(([s]) => s === store).map(([, f]) => f);
@@ -647,7 +640,7 @@
               { separator: true } as MenuItem,
             ]
           : []),
-        { label: "New session…", disabled: canAdd, action: () => (editing = { store: folder.store, id: null, fields: blank(folder.path) }) },
+        { label: "New session…", disabled: canAdd, action: () => (editing = { store: folder.store, id: null, fields: blankSession(folder.path) }) },
         { label: "New folder…", disabled: canAdd, action: () => newFolder(folder) },
         ...(isRoot ? [] : [{ label: `Copy  ${commandLabel("C")}`, action: () => copySelection() } as MenuItem]),
         {
@@ -1567,7 +1560,7 @@
       error = "Database sessions can't be written now.";
       return;
     }
-    editing = { store: folder.store, id: null, fields: blank(folder.path) };
+    editing = { store: folder.store, id: null, fields: blankSession(folder.path) };
   }
 
   /** The toolbar's New folder */

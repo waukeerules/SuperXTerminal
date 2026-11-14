@@ -147,6 +147,21 @@ export interface SessionFields {
   buttonBar: string;
 }
 
+/** A new session's fields before anything is typed: SSH on port 22, with Default Settings, in `folder` */
+export function blankSession(folder: string): SessionFields {
+  return {
+    name: "", folder, protocol: "SSH", host: "", port: 22, username: "", profile: "Default Settings", color: "",
+    icon: "computer", highlightRules: "", extraArgs: "", jumpHost: "", script: "", note: "", localPath: "", remotePath: "", rdpOptions: "", sshAlgorithms: "", buttonBar: "",
+  };
+}
+
+/** The usual port of a connection type, as SuperXPuTTY's GetDefaultPort; null leaves the port as it is (Raw) */
+export function defaultPort(protocol: string): number | null {
+  const ports: Record<string, number | null> = { SSH: 22, TELNET: 23, RLOGIN: 513, VNC: 5900, RDP: 3389, RAW: null };
+  const p = protocol.toUpperCase();
+  return p in ports ? ports[p] : 0;
+}
+
 /** A session's fields for editing */
 export function getSession(store: Store, id: string): Promise<SessionFields> {
   return invoke<SessionFields>("session_get", { store, id });

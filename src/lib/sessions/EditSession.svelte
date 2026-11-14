@@ -34,7 +34,7 @@
   import { OP_REFERENCE_HINT } from "../settings/onepassword";
   import { chosenScript } from "../scripting/scriptPath";
   import ScriptPathNote from "../scripting/ScriptPathNote.svelte";
-  import { JUMP_HOST_NEEDS, PROTOCOLS, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
+  import { JUMP_HOST_NEEDS, PROTOCOLS, defaultPort, saveSession, unavailableReason, type FolderSetting, type SessionFields, type Store } from "./api";
 
   interface Props {
     /** Which sessions it's in: Saved, Private or Database */
@@ -338,13 +338,6 @@
   $effect(() => {
     if (serial) void untrack(listSerialDevices);
   });
-
-  /** The usual port of a connection type, as SuperXPuTTY's GetDefaultPort; null leaves the port as it is (Raw) */
-  function defaultPort(protocol: string): number | null {
-    const ports: Record<string, number | null> = { SSH: 22, TELNET: 23, RLOGIN: 513, VNC: 5900, RDP: 3389, RAW: null };
-    const p = protocol.toUpperCase();
-    return p in ports ? ports[p] : 0;
-  }
 
   /** The connection type was chosen: its usual port, as SuperXPuTTY's Edit Session does */
   function protocolChanged(): void {

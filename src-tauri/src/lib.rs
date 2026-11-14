@@ -225,48 +225,10 @@ fn session_external(state: State<'_, AppState>, store: sessions::Store, id: Stri
     }
 }
 
-/// The serial devices on this Mac, for choosing which one a COM name is
-#[tauri::command]
-fn serial_devices_list() -> Vec<String> {
-    streams::serial_devices()
-}
-
-/// Remember which device a serial session's COM name is
-#[tauri::command]
-fn serial_device_set(state: State<'_, AppState>, name: String, device: String) -> Result<(), String> {
-    let mut settings = state.settings.lock().unwrap();
-    settings.serial_devices.insert(name, device);
-    settings.save(&state.user_folder)
-}
-
-/// The user's local overrides, by session id
-#[tauri::command]
-fn overrides_get(state: State<'_, AppState>) -> BTreeMap<String, overrides::Override> {
-    overrides::load(&state.user_folder)
-}
-
-/// Set (or, when empty, remove) sessions' local overrides; returns them all
-#[tauri::command]
-fn overrides_set(state: State<'_, AppState>, changes: Vec<(String, overrides::Override)>) -> Result<BTreeMap<String, overrides::Override>, String> {
-    overrides::set(&state.user_folder, changes)
-}
-
 /// How old a profile's key file is, in seconds; None when there's none (the profile editor's key fetch)
 #[tauri::command]
 fn profile_key_age(key_file: String) -> Option<u64> {
     launch::key_age(&key_file)
-}
-
-/// The user's override presets, by name
-#[tauri::command]
-fn override_presets_get(state: State<'_, AppState>) -> BTreeMap<String, overrides::Override> {
-    overrides::presets(&state.user_folder)
-}
-
-/// Save an override preset under a name, or remove it (no value); returns them all
-#[tauri::command]
-fn override_presets_set(state: State<'_, AppState>, name: String, value: Option<overrides::Override>) -> Result<BTreeMap<String, overrides::Override>, String> {
-    overrides::set_preset(&state.user_folder, &name, value)
 }
 
 /// The Favorites and Recent lists
@@ -1238,12 +1200,12 @@ pub fn run() {
             commands::database::db_create_schema,
             commands::database::db_pending_list,
             shortcuts_get,
-            serial_devices_list,
+            commands::overrides::serial_devices_list,
             commands::sessions::sessions_files_changed,
             session_external,
-            serial_device_set,
+            commands::overrides::serial_device_set,
             pty::pty_special,
-            overrides_get,
+            commands::overrides::overrides_get,
             commands::transfer::sessions_bulk_edit,
             commands::sessions_table::sessions_table_load,
             commands::sessions_table::sessions_table_save,
@@ -1282,13 +1244,13 @@ pub fn run() {
             ssh_algorithms_available,
             commands::session_files::sessions_export_xml,
             commands::session_files::sessions_edit_externally,
-            overrides_set,
-            override_presets_get,
+            commands::overrides::overrides_set,
+            commands::overrides::override_presets_get,
             profile_key_age,
             variables_usage,
             profiles_missing,
             variables_built_in,
-            override_presets_set,
+            commands::overrides::override_presets_set,
             pty::pty_serial_get,
             pty::pty_serial_set,
             commands::logs::log_open,

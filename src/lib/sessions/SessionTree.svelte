@@ -57,6 +57,8 @@
   import ConnectSome from "./ConnectSome.svelte";
   import FolderSettings from "./FolderSettings.svelte";
   import PendingChanges from "./PendingChanges.svelte";
+  import { sessionFromQuick } from "./fromQuickConnect";
+  import type { QuickConnect } from "../terminal/PageHost";
   import Prompt from "../ui/Prompt.svelte";
   import Menu, { type MenuItem } from "../ui/Menu.svelte";
   import { PALETTE } from "../icons/palette";
@@ -1506,6 +1508,14 @@
     } catch (e) {
       error = String(e);
     }
+  }
+
+  /**
+   * The tab menu's Save session as… for a Quick connect tab: Edit Session for a new saved session with what was
+   * typed in the toolbar (fromQuickConnect.ts), named as the tab. The password typed isn't kept.
+   */
+  export function saveQuickAs(quick: QuickConnect, title: string): void {
+    editing = { store: savedInUse() || loaded?.privateOff ? "saved" : "private", id: null, fields: sessionFromQuick(quick, title) };
   }
 
   /** Open a session by its id (SPSL's OPENSESSION), looking in Saved, Private then Database sessions; false if none */

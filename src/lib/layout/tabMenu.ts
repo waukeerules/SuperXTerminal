@@ -7,7 +7,7 @@
 import type { MenuItem } from "../ui/Menu.svelte";
 import type { SessionView } from "../sessions/api";
 import type { TabArea } from "./TabArea";
-import { specialCommands } from "../terminal/PageHost";
+import { specialCommands, type QuickConnect } from "../terminal/PageHost";
 import type { RdpHost } from "../terminal/RdpHost";
 import { shortcutLabel } from "../shortcuts";
 import { clipboardText } from "../clipboard";
@@ -31,6 +31,8 @@ export interface TabMenuHost {
   sessions: SessionView[];
   open: (session: SessionView) => void;
   saveAs: (store: SessionView["store"], id: string, title: string) => void;
+  /** Save session as… for a Quick connect tab: Edit Session for a new session with what was typed in the toolbar */
+  saveQuickAs: (quick: QuickConnect, title: string) => void;
   rename: (id: string, title: string) => void;
   /** Open a serial tab's Serial Settings */
   serialSettings: (id: string) => void;
@@ -136,8 +138,12 @@ export function tabMenu(host: TabMenuHost, id: string): MenuItem[] {
     },
     {
       label: "Save session as...",
-      disabled: !session && "Only a tab opened from a session can be saved as one",
-      action: () => session && host.saveAs(session.store, session.id, tab.title),
+      // a Quick connect tab's is made from what was typed in the toolbar, without its password
+      disabled: !session && target.kind !== "quickConnect" && "Only a tab opened from a session or Quick connect can be saved as one",
+      action: () => {
+        if (session) host.saveAs(session.store, session.id, tab.title);
+        else if (target.kind === "quickConnect") host.saveQuickAs(target, tab.title);
+      },
     },
     {
       label: "Tunnels...",

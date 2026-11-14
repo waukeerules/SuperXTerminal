@@ -292,6 +292,7 @@
             sessions: t.allSessions(),
             open: (session) => t.openById(session.id),
             saveAs: (store, sessionId, title) => void t.saveSessionAs(store, sessionId, title),
+            saveQuickAs: (quick, title) => t.saveQuickAs(quick, title),
             rename: (tabId, title) => (renaming = { id: tabId, title }),
             moveToNewWindow: (tabId) => void moveToNewWindow(tabId),
             gridView: (on) => void saveSettings({ gridView: on }),

@@ -1,4 +1,4 @@
-// A tab's right-click menu: its Tunnels... item, which shows the session's tunnels, or is greyed saying where to add
+// A tab's right-click menu: its Save session as... item, for a tab opened from a session or from Quick connect; its Tunnels... item, which shows the session's tunnels, or is greyed saying where to add
 // them; Grid View, ticked while it's on; and the Close items, greyed by the tabs they'd close. The tab area is stood in for by an object with what the menu reads of it, the window by the menu's host.
 import { describe, expect, it, vi } from "vitest";
 import { tabMenu, type TabMenuHost } from "./tabMenu";
@@ -8,7 +8,7 @@ import type { TabArea } from "./TabArea";
  * The menu of a terminal tab whose session opened these tunnels, in a window with Grid View on or off; with the
  * window's tunnels and Grid View callbacks
  */
-function menuWith(tunnels: { kind: string; listen: string; to: string }[], grid = false) {
+function menuWith(tunnels: { kind: string; listen: string; to: string }[], grid = false, target: Record<string, unknown> = { kind: "session", store: "saved", id: "Web" }) {
   const tab = {
     id: "t1",
     title: "Web",
@@ -18,7 +18,7 @@ function menuWith(tunnels: { kind: string; listen: string; to: string }[], grid 
   const tabs = {
     rdpHosts: new Map(),
     tabList: () => [tab],
-    paramsOf: () => ({ target: { kind: "session", store: "saved", id: "Web" }, local: false }),
+    paramsOf: () => ({ target, local: false }),
     api: { getPanel: () => ({ group: { panels: [{ id: "t1" }] } }) },
     watchOf: () => ({ activity: false, silence: 0 }),
     groupCount: () => (grid ? 3 : 1),
@@ -26,13 +26,29 @@ function menuWith(tunnels: { kind: string; listen: string; to: string }[], grid 
     // the tab alone in its group; in Grid View, one of the window's three tiles
     closeScope: () => (grid ? [{ id: "t0" }, { id: "t1" }, { id: "t2" }] : [{ id: "t1" }]),
   } as unknown as TabArea;
-  const host = { tabs, sessions: [], tunnels: vi.fn(), gridView: vi.fn() } as unknown as TabMenuHost;
+  const host = { tabs, sessions: [], tunnels: vi.fn(), gridView: vi.fn(), saveQuickAs: vi.fn() } as unknown as TabMenuHost;
   const items = tabMenu(host, "t1");
   type Item = { label?: string; disabled?: string | boolean; checked?: boolean; action?: () => void };
   const named = (start: string) => items.find((i) => "label" in i && i.label!.startsWith(start)) as Item | undefined;
   const item = named("Tunnels...") as Item;
-  return { item, named, tunnels: host.tunnels as ReturnType<typeof vi.fn>, gridView: host.gridView as ReturnType<typeof vi.fn> };
+  return { item, named, saveQuickAs: host.saveQuickAs as ReturnType<typeof vi.fn>, tunnels: host.tunnels as ReturnType<typeof vi.fn>, gridView: host.gridView as ReturnType<typeof vi.fn> };
 }
+
+describe("a tab's Save session as... item", () => {
+  it("saves a Quick connect tab as a session, from what was typed in the toolbar", () => {
+    const quick = { kind: "quickConnect", protocol: "SSH", host: "10.0.0.1", username: "netops", password: "", profile: "Lab" };
+    const { named, saveQuickAs } = menuWith([], false, quick);
+    const item = named("Save session as...")!;
+    expect(item.disabled).toBeFalsy();
+    item.action!();
+    expect(saveQuickAs).toHaveBeenCalledWith(quick, "Web");
+  });
+
+  it("is greyed for a Local Shell, which has nothing to save", () => {
+    const { named } = menuWith([], false, { kind: "localShell" });
+    expect(named("Save session as...")!.disabled).toBe("Only a tab opened from a session or Quick connect can be saved as one");
+  });
+});
 
 describe("a tab's Tunnels... item", () => {
   it("shows the session's tunnels", () => {

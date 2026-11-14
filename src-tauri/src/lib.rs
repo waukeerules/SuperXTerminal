@@ -402,10 +402,8 @@ pub fn run() {
                     }
                 }
                 // the last window closed: with the menu bar icon, SuperXTerminal keeps running there
-                tauri::RunEvent::ExitRequested { api, code: None, .. } => {
-                    if app.state::<AppState>().settings.lock().unwrap().show_in_menu_bar {
-                        api.prevent_exit();
-                    }
+                tauri::RunEvent::ExitRequested { api, code: None, .. } if app.state::<AppState>().settings.lock().unwrap().show_in_menu_bar => {
+                    api.prevent_exit();
                 }
                 // the Dock icon clicked with no window open: a new one
                 #[cfg(target_os = "macos")]

@@ -72,7 +72,7 @@ pub(crate) fn open_in_app(path: &std::path::Path) -> Result<(), String> {
 pub(crate) fn notepad_plus_plus() -> Option<PathBuf> {
     ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
         .iter()
-        .filter_map(|var| std::env::var_os(var))
+        .filter_map(std::env::var_os)
         .map(|root| PathBuf::from(root).join("Notepad++").join("notepad++.exe"))
         .chain(std::env::var_os("LOCALAPPDATA").map(|root| PathBuf::from(root).join("Programs").join("Notepad++").join("notepad++.exe")))
         .find(|p| p.exists())

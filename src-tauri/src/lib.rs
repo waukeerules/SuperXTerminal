@@ -227,53 +227,6 @@ fn buttonbars_import(state: State<'_, AppState>, path: PathBuf) -> Result<(Vec<b
     Ok((bars, last))
 }
 
-/// A log just started: its id for writing, its file, and whether it goes when the tab closes
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LogStarted {
-    id: u32,
-    path: PathBuf,
-    temporary: bool,
-}
-
-/// Start a tab's session log: kept in the chosen folder when the tab's profile says so (`keep`, its Session log),
-/// else when Settings > General says so (`keep` None); otherwise temporary
-#[tauri::command]
-fn log_open(state: State<'_, AppState>, logs: State<'_, logs::Logs>, name: String, keep: Option<bool>) -> Result<LogStarted, String> {
-    let (keep, folder) = {
-        let settings = state.settings.lock().unwrap();
-        (keep.unwrap_or(settings.session_log_enabled), settings.session_log_folder.clone())
-    };
-    let folder = if keep { logs::kept_folder(&folder) } else { logs::temp_folder() };
-    let (id, path) = logs.open(&folder, &name)?;
-    Ok(LogStarted { id, path, temporary: !keep })
-}
-
-/// Add a tab's finished lines to its log
-#[tauri::command]
-fn log_write(logs: State<'_, logs::Logs>, id: u32, text: String) -> Result<(), String> {
-    logs.write(id, &text)
-}
-
-/// Close a tab's log (a temporary one is deleted shortly after)
-#[tauri::command]
-fn log_close(logs: State<'_, logs::Logs>, id: u32, temporary: bool) {
-    logs.close(id, temporary);
-}
-
-/// A log's text from a byte offset, and the offset after it (Search Output, Highlighted Output)
-#[tauri::command]
-fn log_read(path: PathBuf, offset: u64) -> Result<(String, u64), String> {
-    logs::read_from(&path, offset)
-}
-
-/// Highlighted Output's next chunk of a file: base64 bytes (512 KB at most), the offset after them, and whether the
-/// file started again
-#[tauri::command]
-fn log_chunk(path: PathBuf, offset: u64) -> Result<(String, u64, bool), String> {
-    logs::read_chunk(&path, offset, 512 * 1024)
-}
-
 /// The user's own highlighting folder (Highlighted Output's folder button), made if it isn't there
 #[tauri::command]
 fn highlighting_user_folder(state: State<'_, AppState>) -> Result<PathBuf, String> {
@@ -1075,34 +1028,6 @@ fn layout_rename(state: State<'_, AppState>, from: String, to: String) -> Result
     layouts::rename(&shared_folder(&state), &from, &to)
 }
 
-/// The Log Viewer: entries after `after` (0 for all kept)
-#[tauri::command]
-fn applog_since(after: u64) -> Vec<applog::Entry> {
-    applog::since(after)
-}
-
-/// A line from the UI (the status bar's messages, as SuperXPuTTY's ReportStatus logs them)
-#[tauri::command]
-fn applog_write(level: String, text: String) {
-    match level.as_str() {
-        "WARN" => applog::warn(text),
-        "ERROR" => applog::error(text),
-        _ => applog::info(text),
-    }
-}
-
-/// The Log Viewer's Clear (the file keeps them)
-#[tauri::command]
-fn applog_clear() {
-    applog::clear();
-}
-
-/// The Log Viewer's Show Log File: the file in Finder
-#[tauri::command]
-fn applog_reveal() -> Result<(), String> {
-    opening::reveal(&applog::file())
-}
-
 /// Settings > General's Show buttons beside Use Sessions.xml and Use PrivateSessions.xml: the file in Finder or
 /// File Explorer, whether or not it's in use. Sessions.xml is in the settings folder, PrivateSessions.xml in this
 /// user's own folder (on this computer); Database sessions have no file. Returns what to tell the user when the file
@@ -1639,10 +1564,10 @@ pub fn run() {
             ui_themes_save,
             window_new,
             layouts_list,
-            applog_since,
-            applog_write,
-            applog_clear,
-            applog_reveal,
+            commands::logs::applog_since,
+            commands::logs::applog_write,
+            commands::logs::applog_clear,
+            commands::logs::applog_reveal,
             sessions_reveal,
             sessions_backups,
             sessions_restore,
@@ -1673,11 +1598,11 @@ pub fn run() {
             override_presets_set,
             pty::pty_serial_get,
             pty::pty_serial_set,
-            log_open,
-            log_write,
-            log_close,
-            log_read,
-            log_chunk,
+            commands::logs::log_open,
+            commands::logs::log_write,
+            commands::logs::log_close,
+            commands::logs::log_read,
+            commands::logs::log_chunk,
             highlighting_user_folder,
             commands::files::open_path,
             buttonbars_load,

@@ -19,3 +19,4 @@ pub(crate) mod overrides;
 pub(crate) mod shortcuts;
 pub(crate) mod variables;
 pub(crate) mod settings;
+pub(crate) mod appearance;

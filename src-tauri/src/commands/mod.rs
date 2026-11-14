@@ -5,3 +5,4 @@
 
 pub(crate) mod profiles;
 pub(crate) mod sessions;
+pub(crate) mod session_editing;

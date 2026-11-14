@@ -71,6 +71,7 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use profiles::Profiles;
+use commands::session_editing::with_copied_password;
 use commands::sessions::{follow_folder, follow_id, forget_folder, forget_id, other_ids, saved_folder, store_file, FilesRead};
 use sessions::Sessions;
 use settings::AppSettings;
@@ -154,34 +155,6 @@ fn highlighting_load(state: State<'_, AppState>) -> highlighting::Highlighting {
     highlighting::load(&folders)
 }
 
-/// One session's fields for Edit Session (a `-pw` password masked)
-#[tauri::command]
-fn session_get(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<editing::SessionFields, String> {
-    let sessions = state.sessions.lock().unwrap();
-    let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
-    Ok(editing::SessionFields::of(session))
-}
-
-/// Save a session from Edit Session (`original_id` None for a new one); returns its id. The caller reloads the tree.
-/// `copy_of` is the session a new one was filled in from (Duplicate as…, Save session as…), whose -pw it keeps.
-#[tauri::command]
-fn session_save(
-    state: State<'_, AppState>,
-    store: sessions::Store,
-    original_id: Option<String>,
-    fields: editing::SessionFields,
-    copy_of: Option<(sessions::Store, String)>,
-) -> Result<String, String> {
-    let path = store_file(&state, store)?;
-    let fields = with_copied_password(&state, fields, copy_of.as_ref());
-    // ids must be unique across Saved and Private sessions, as in SuperXPuTTY
-    let id = editing::save(&path, original_id.as_deref(), &fields, &other_ids(&state, store))?;
-    if let Some(old) = original_id {
-        follow_id(&state, &old, &id);
-    }
-    Ok(id)
-}
-
 /// One session for File > Edit Sessions as Table…: where it is, every field Edit Session has (a `-pw` masked), and,
 /// for a Database session, what the table locks against changes
 #[derive(serde::Serialize)]
@@ -239,129 +212,6 @@ fn sessions_table_save(state: State<'_, AppState>, store: sessions::Store, edits
         }
     }
     Ok(ids)
-}
-
-/// A new session's fields with the masked -pw of the session it was copied from put back, as SuperXPuTTY's
-/// Duplicate copies the session whole; the window only ever shows the mask
-fn with_copied_password(state: &AppState, mut fields: editing::SessionFields, copy_of: Option<&(sessions::Store, String)>) -> editing::SessionFields {
-    if let Some((store, id)) = copy_of {
-        if let Some(source) = state.sessions.lock().unwrap().find(*store, id) {
-            fields.extra_args = editing::unmask_password(&fields.extra_args, source.get("ExtraArgs"));
-        }
-    }
-    fields
-}
-
-/// Whether a session has a password of its own (Edit Session's Password), without reading the Keychain
-#[tauri::command]
-fn session_password_has(state: State<'_, AppState>, id: String) -> bool {
-    session_passwords::has(&state.user_folder, &id)
-}
-
-/// Store a session's own password in the Keychain, or forget it when `password` is empty
-#[tauri::command]
-fn session_password_set(state: State<'_, AppState>, id: String, password: String) -> Result<(), String> {
-    session_passwords::set(&state.user_folder, &id, &password)
-}
-
-/// Edit sessions… and Edit Sessions as Table…: one password stored as each session's own, in the Keychain on this
-/// computer only, or forgotten from each when `password` is empty. Returns how many
-#[tauri::command]
-fn session_passwords_set(state: State<'_, AppState>, ids: Vec<String>, password: String) -> Result<usize, String> {
-    session_passwords::set_many(&state.user_folder, &ids, &password)
-}
-
-/// Edit Session's Move to Password: the session's stored -pw becomes its own password in the Keychain. The -pw stays
-/// in its extra arguments until the window saves them without it.
-#[tauri::command]
-fn session_password_from_pw(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<(), String> {
-    let extra = {
-        let sessions = state.sessions.lock().unwrap();
-        let session = sessions.find(store, &id).ok_or_else(|| format!("The session {id} is gone."))?;
-        session.get("ExtraArgs").to_string()
-    };
-    let password = editing::stored_password(&extra).ok_or("The session has no -pw password.")?;
-    session_passwords::set(&state.user_folder, &id, &password)
-}
-
-/// Delete a session from its file
-#[tauri::command]
-fn session_delete(state: State<'_, AppState>, store: sessions::Store, id: String) -> Result<(), String> {
-    let path = store_file(&state, store)?;
-    editing::delete(&path, &id)?;
-    forget_id(&state, &id);
-    Ok(())
-}
-
-/// Rename or move a folder (every session below goes with it, and its settings)
-#[tauri::command]
-fn folder_move(state: State<'_, AppState>, store: sessions::Store, from: String, to: String) -> Result<(), String> {
-    folders::check_name(to.rsplit('/').next().unwrap_or(&to))?;
-    let path = store_file(&state, store)?;
-    folders::move_folder(&path, &from, &to, &other_ids(&state, store))?;
-    follow_folder(&state, &from, &to);
-    Ok(())
-}
-
-/// Delete a folder and every session in it
-#[tauri::command]
-fn folder_delete(state: State<'_, AppState>, store: sessions::Store, path: String) -> Result<(), String> {
-    let file = store_file(&state, store)?;
-    folders::delete_folder(&file, &path)?;
-    forget_folder(&state, &path);
-    Ok(())
-}
-
-/// Save a folder's settings (colour and defaults)
-#[tauri::command]
-fn folder_settings_save(state: State<'_, AppState>, store: sessions::Store, fields: folders::FolderFields) -> Result<(), String> {
-    let file = store_file(&state, store)?;
-    folders::save_settings(&file, &fields)
-}
-
-/// Move a session into another folder of its store; returns its new id
-#[tauri::command]
-fn session_move(state: State<'_, AppState>, store: sessions::Store, id: String, folder: String, name: Option<String>) -> Result<String, String> {
-    let file = store_file(&state, store)?;
-    let new = folders::move_session(&file, &id, &folder, &other_ids(&state, store), name.as_deref())?;
-    follow_id(&state, &id, &new);
-    Ok(new)
-}
-
-/// Move a selection of folders and sessions (ids) into the folder `to` of their store, "" for the top
-/// ([`folders::move_many`]): one read, one backup and one write of the sessions file however many are moved, where a
-/// folder_move or session_move for each wrote it over each time. Favorites, Recent, the local overrides and the
-/// sessions' own passwords follow in one pass too. Returns what moved and what couldn't; the caller reloads the tree.
-#[tauri::command]
-fn items_move(state: State<'_, AppState>, store: sessions::Store, folders: Vec<String>, sessions: Vec<String>, to: String) -> Result<folders::Moved, String> {
-    let file = store_file(&state, store)?;
-    let moved = folders::move_many(&file, &folders, &sessions, &to, &other_ids(&state, store))?;
-    if !moved.renamed.is_empty() {
-        let new_ids: std::collections::HashMap<&str, &str> = moved.renamed.iter().map(|(old, new)| (old.as_str(), new.as_str())).collect();
-        let rename = |id: &str| new_ids.get(id).map(|new| new.to_string());
-        shortcuts::follow(&state.user_folder, rename);
-        overrides::follow(&state.user_folder, rename);
-        session_passwords::follow(&state.user_folder, rename);
-    }
-    Ok(moved)
-}
-
-/// Delete a selection of folders (with every session in them) and sessions (ids) from their store
-/// ([`folders::delete_many`]): one read, one backup and one write of the sessions file however many there are, where
-/// a folder_delete or session_delete for each wrote it over each time. Favorites, Recent, the local overrides and the
-/// sessions' own passwords forget them in one pass too. Returns what couldn't be deleted and why; the caller reloads.
-#[tauri::command]
-fn items_delete(state: State<'_, AppState>, store: sessions::Store, folders: Vec<String>, sessions: Vec<String>) -> Result<Vec<String>, String> {
-    let file = store_file(&state, store)?;
-    let deleted = folders::delete_many(&file, &folders, &sessions)?;
-    let ids: std::collections::HashSet<&str> = deleted.gone.iter().map(String::as_str).collect();
-    // the sessions deleted, and, as forget_folder, any id below a deleted folder, in any spelling of it (a Favorite
-    // of a session that had already gone from the file)
-    let gone = |id: &str| ids.contains(id) || folders.iter().any(|f| folders::under(id, f.trim_matches('/')).is_some_and(|rest| !rest.is_empty()));
-    shortcuts::forget(&state.user_folder, gone);
-    overrides::forget(&state.user_folder, gone);
-    session_passwords::forget(&state.user_folder, gone);
-    Ok(deleted.problems)
 }
 
 /// The settings folder, or the user's folder when none is chosen, for shared files (ButtonBars.xml, scripts)
@@ -2922,18 +2772,18 @@ pub fn run() {
             settings_save,
             icons_custom,
             highlighting_load,
-            session_get,
-            session_password_has,
-            session_password_set,
-            session_password_from_pw,
-            session_save,
-            session_delete,
-            session_move,
-            folder_move,
-            items_move,
-            items_delete,
-            folder_delete,
-            folder_settings_save,
+            commands::session_editing::session_get,
+            commands::session_editing::session_password_has,
+            commands::session_editing::session_password_set,
+            commands::session_editing::session_password_from_pw,
+            commands::session_editing::session_save,
+            commands::session_editing::session_delete,
+            commands::session_editing::session_move,
+            commands::session_editing::folder_move,
+            commands::session_editing::items_move,
+            commands::session_editing::items_delete,
+            commands::session_editing::folder_delete,
+            commands::session_editing::folder_settings_save,
             variables_list,
             db_settings_get,
             db_settings_save,
@@ -2964,7 +2814,7 @@ pub fn run() {
             sessions_table_save,
             sessions_table_export_csv,
             sessions_table_read_csv,
-            session_passwords_set,
+            commands::session_editing::session_passwords_set,
             sessions_export_csv,
             sessions_csv_template,
             onepassword_check,

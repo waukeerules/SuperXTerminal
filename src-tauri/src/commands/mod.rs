@@ -9,3 +9,4 @@ pub(crate) mod session_editing;
 pub(crate) mod database;
 pub(crate) mod transfer;
 pub(crate) mod scripts;
+pub(crate) mod files;

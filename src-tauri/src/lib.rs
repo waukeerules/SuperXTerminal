@@ -180,36 +180,6 @@ fn profile_key_age(key_file: String) -> Option<u64> {
     launch::key_age(&key_file)
 }
 
-/// The layouts' names, "<Auto Restore>" first
-#[tauri::command]
-fn layouts_list(state: State<'_, AppState>) -> Vec<String> {
-    layouts::list(&shared_folder(&state))
-}
-
-/// A layout's text; None when it hasn't been saved
-#[tauri::command]
-fn layout_read(state: State<'_, AppState>, name: String) -> Option<String> {
-    layouts::read(&shared_folder(&state), &state.user_folder, &name)
-}
-
-/// Save a layout
-#[tauri::command]
-fn layout_save(state: State<'_, AppState>, name: String, text: String) -> Result<(), String> {
-    layouts::save(&shared_folder(&state), &state.user_folder, &name, &text)
-}
-
-/// Delete a saved layout
-#[tauri::command]
-fn layout_delete(state: State<'_, AppState>, name: String) -> Result<(), String> {
-    layouts::delete(&shared_folder(&state), &name)
-}
-
-/// Rename a saved layout
-#[tauri::command]
-fn layout_rename(state: State<'_, AppState>, from: String, to: String) -> Result<(), String> {
-    layouts::rename(&shared_folder(&state), &from, &to)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Run as ssh's askpass for Connect external (`askpass.rs`) instead of as the app; true when it did
 pub fn askpass_helper() -> bool {
@@ -387,7 +357,7 @@ pub fn run() {
             commands::appearance::ui_themes_load,
             commands::appearance::ui_themes_save,
             windows::window_new,
-            layouts_list,
+            commands::layouts::layouts_list,
             commands::logs::applog_since,
             commands::logs::applog_write,
             commands::logs::applog_clear,
@@ -401,10 +371,10 @@ pub fn run() {
             requests::links_make_default,
             commands::settings::shortcuts_keys,
             commands::settings::shortcuts_reserved,
-            layout_read,
-            layout_save,
-            layout_delete,
-            layout_rename,
+            commands::layouts::layout_read,
+            commands::layouts::layout_save,
+            commands::layouts::layout_delete,
+            commands::layouts::layout_rename,
             windows::window_start,
             commands::importing::sessions_import_plan,
             commands::importing::sessions_import_apply,

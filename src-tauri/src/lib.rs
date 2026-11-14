@@ -45,6 +45,7 @@ mod rdp_options;
 mod rdp_sound;
 mod rdp_win_keys;
 mod remount;
+mod requests;
 mod rhai_scripts;
 mod scripts;
 mod secrets;
@@ -366,97 +367,6 @@ fn layout_rename(state: State<'_, AppState>, from: String, to: String) -> Result
     layouts::rename(&shared_folder(&state), &from, &to)
 }
 
-/// What's been asked to open from outside (the command line, a second start, a link), waiting for the window in
-/// front to take it (`requests_take`)
-static PENDING: Mutex<Vec<cli::Request>> = Mutex::new(Vec::new());
-
-/// The menu bar icon's items ("tray:..."): a session opens in the window in front, or in a new one when none is open
-fn tray_command(app: &AppHandle, id: &str) {
-    let has_window = !app.webview_windows().is_empty();
-    if let Some(rest) = id.strip_prefix("tray:open:") {
-        // "<store>:<id>"; Database sessions' ids start "@db/" already
-        let session = rest.split_once(':').map(|(_, id)| id).unwrap_or(rest);
-        deliver(app, Some(cli::Request::Session { id: session.to_string() }));
-        return;
-    }
-    match id {
-        "tray:quit" => app.exit(0),
-        // a new window starts with a Local Shell
-        "tray:newLocalShell" | "tray:openSession" | "tray:newWindow" if !has_window => deliver(app, None),
-        "tray:newWindow" => {
-            let _ = windows::new_window(app, None, None, None);
-        }
-        "tray:newLocalShell" | "tray:openSession" => {
-            deliver(app, None);
-            let front = windows::FRONT_WINDOW.lock().unwrap().clone().unwrap_or_else(|| "main".into());
-            let _ = app.emit_to(front.as_str(), "menu", id.trim_start_matches("tray:"));
-        }
-        _ => deliver(app, None),
-    }
-}
-
-/// Something to open from outside: kept for the window in front, which is told and brought forward; with no window
-/// open (SuperXTerminal kept in the menu bar), a new one, which takes it as it starts
-fn deliver(app: &AppHandle, request: Option<cli::Request>) {
-    if app.webview_windows().is_empty() {
-        if let Some(request) = request {
-            PENDING.lock().unwrap().push(request);
-        }
-        let handle = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            let _ = windows::main_window(&handle);
-        });
-        return;
-    }
-    let front = windows::FRONT_WINDOW.lock().unwrap().clone().filter(|label| app.get_webview_window(label).is_some()).unwrap_or_else(|| "main".into());
-    if let Some(request) = request {
-        PENDING.lock().unwrap().push(request);
-        let _ = app.emit_to(front.as_str(), "open-request", ());
-    }
-    if let Some(window) = app.get_webview_window(&front) {
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    }
-}
-
-/// What's waiting to open, taken once
-#[tauri::command]
-fn requests_take() -> Vec<cli::Request> {
-    std::mem::take(&mut *PENDING.lock().unwrap())
-}
-
-/// Settings > General: SuperXTerminal opens ssh:// and telnet:// links (Terminal does until then), as LaunchServices
-/// records it for the user
-#[tauri::command]
-fn links_make_default(app: AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        use objc2_foundation::NSString;
-        #[link(name = "CoreServices", kind = "framework")]
-        unsafe extern "C" {
-            /// LaunchServices' call to make an app the default for a URL scheme; 0 when it worked
-            fn LSSetDefaultHandlerForURLScheme(scheme: *const std::ffi::c_void, bundle: *const std::ffi::c_void) -> i32;
-        }
-        let bundle = NSString::from_str(&app.config().identifier);
-        for scheme in ["ssh", "telnet"] {
-            let scheme = NSString::from_str(scheme);
-            // NSString is toll-free bridged to the CFString LaunchServices takes
-            let status = unsafe {
-                LSSetDefaultHandlerForURLScheme(&*scheme as *const NSString as *const _, &*bundle as *const NSString as *const _)
-            };
-            if status != 0 {
-                return Err(format!("macOS refused (error {status}). The app may need to be in Applications first."));
-            }
-        }
-        Ok(())
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = app;
-        Err("Only on the Mac.".into())
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Run as ssh's askpass for Connect external (`askpass.rs`) instead of as the app; true when it did
 pub fn askpass_helper() -> bool {
@@ -484,7 +394,7 @@ pub fn run() {
     // started with something to open (SuperXPuTTY's command line)
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(request) = cli::from_args(&args) {
-        PENDING.lock().unwrap().push(request);
+        requests::PENDING.lock().unwrap().push(request);
     }
     // No raw device events (Windows; the setting does nothing elsewhere): the window toolkit (tao) otherwise registers
     // the app for raw keyboard and mouse input, to report device events nothing here listens to, and Windows doesn't
@@ -496,7 +406,7 @@ pub fn run() {
     let builder = if demo::on() {
         builder
     } else {
-        builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| deliver(app, cli::from_args(argv.get(1..).unwrap_or(&[])))))
+        builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| requests::deliver(app, cli::from_args(argv.get(1..).unwrap_or(&[])))))
     };
     builder
         .plugin(tauri_plugin_opener::init())
@@ -515,7 +425,7 @@ pub fn run() {
         // menu items the UI handles arrive there as a "menu" event with the item's id
         .on_menu_event(|app, event| {
             if event.id().0.starts_with("tray:") {
-                tray_command(app, event.id().0.as_str());
+                requests::tray_command(app, event.id().0.as_str());
                 return;
             }
             if event.id().0 == "thirdPartyNotices" {
@@ -644,8 +554,8 @@ pub fn run() {
             commands::session_files::sessions_restore,
             commands::sending::command_history_load,
             commands::sending::command_history_add,
-            requests_take,
-            links_make_default,
+            requests::requests_take,
+            requests::links_make_default,
             shortcuts_keys,
             shortcuts_reserved,
             layout_read,
@@ -753,7 +663,7 @@ pub fn run() {
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Opened { urls } => {
                     for url in urls {
-                        deliver(app, cli::from_url(url.as_str()));
+                        requests::deliver(app, cli::from_url(url.as_str()));
                     }
                 }
                 // the last window closed: with the menu bar icon, SuperXTerminal keeps running there
@@ -764,7 +674,7 @@ pub fn run() {
                 }
                 // the Dock icon clicked with no window open: a new one
                 #[cfg(target_os = "macos")]
-                tauri::RunEvent::Reopen { has_visible_windows: false, .. } => deliver(app, None),
+                tauri::RunEvent::Reopen { has_visible_windows: false, .. } => requests::deliver(app, None),
                 _ => {}
             }
         });

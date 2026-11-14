@@ -231,56 +231,6 @@ fn profile_key_age(key_file: String) -> Option<u64> {
     launch::key_age(&key_file)
 }
 
-/// The Favorites and Recent lists
-#[tauri::command]
-fn shortcuts_get(state: State<'_, AppState>) -> shortcuts::Shortcuts {
-    shortcuts::load(&state.user_folder)
-}
-
-/// Add a session to Favorites, or take it out
-#[tauri::command]
-fn shortcuts_favorite(app: AppHandle, state: State<'_, AppState>, id: String, on: bool) -> Result<shortcuts::Shortcuts, String> {
-    let changed = shortcuts::edit(&state.user_folder, |s| {
-        s.favorites.retain(|f| *f != id);
-        if on {
-            s.favorites.push(id);
-        }
-    });
-    tray::refresh(&app);
-    changed
-}
-
-/// Record a session opened from the tree, first in Recent
-#[tauri::command]
-fn shortcuts_opened(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<shortcuts::Shortcuts, String> {
-    let changed = shortcuts::edit(&state.user_folder, |s| shortcuts::push_recent(&mut s.recent, &id));
-    tray::refresh(&app);
-    changed
-}
-
-/// Take one session out of Recent, or clear it (`id` None)
-#[tauri::command]
-fn shortcuts_forget_recent(app: AppHandle, state: State<'_, AppState>, id: Option<String>) -> Result<shortcuts::Shortcuts, String> {
-    let changed = shortcuts::edit(&state.user_folder, |s| match &id {
-        Some(id) => s.recent.retain(|r| r != id),
-        None => s.recent.clear(),
-    });
-    tray::refresh(&app);
-    changed
-}
-
-/// Remember Favorites or Recent being opened or closed by the user
-#[tauri::command]
-fn shortcuts_expanded(state: State<'_, AppState>, group: String, open: bool) -> Result<shortcuts::Shortcuts, String> {
-    shortcuts::edit(&state.user_folder, |s| {
-        if group == "favorites" {
-            s.favorites_expanded = open;
-        } else {
-            s.recent_expanded = open;
-        }
-    })
-}
-
 /// The user's Environment Variables for the window; secrets' values stay in the Keychain
 #[tauri::command]
 fn variables_list(state: State<'_, AppState>) -> Vec<variables::Variable> {
@@ -1199,7 +1149,7 @@ pub fn run() {
             commands::transfer::sessions_transfer,
             commands::database::db_create_schema,
             commands::database::db_pending_list,
-            shortcuts_get,
+            commands::shortcuts::shortcuts_get,
             commands::overrides::serial_devices_list,
             commands::sessions::sessions_files_changed,
             session_external,
@@ -1282,10 +1232,10 @@ pub fn run() {
             server_load::server_load_watch,
             server_load::server_load_stop,
             commands::files::dropped_file_save,
-            shortcuts_favorite,
-            shortcuts_opened,
-            shortcuts_forget_recent,
-            shortcuts_expanded,
+            commands::shortcuts::shortcuts_favorite,
+            commands::shortcuts::shortcuts_opened,
+            commands::shortcuts::shortcuts_forget_recent,
+            commands::shortcuts::shortcuts_expanded,
             commands::database::db_status,
             commands::database::db_pending_retry,
             commands::database::db_pending_discard,

@@ -16,3 +16,4 @@ pub(crate) mod sessions_table;
 pub(crate) mod importing;
 pub(crate) mod sending;
 pub(crate) mod overrides;
+pub(crate) mod shortcuts;

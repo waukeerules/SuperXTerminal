@@ -8,3 +8,4 @@ pub(crate) mod sessions;
 pub(crate) mod session_editing;
 pub(crate) mod database;
 pub(crate) mod transfer;
+pub(crate) mod scripts;

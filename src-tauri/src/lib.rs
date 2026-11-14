@@ -136,38 +136,6 @@ fn shared_folder(state: &AppState) -> PathBuf {
     state.settings.lock().unwrap().settings_folder.clone().unwrap_or_else(|| state.user_folder.clone())
 }
 
-/// The button bars, re-read from ButtonBars.xml each time (SuperXPuTTY reloads it whenever its menu opens)
-#[tauri::command]
-fn buttonbars_load(state: State<'_, AppState>) -> Vec<buttonbars::Bar> {
-    let folder = state.settings.lock().unwrap().settings_folder.clone();
-    buttonbars::load(&buttonbars::file(folder.as_deref(), &state.user_folder))
-}
-
-/// Save the button bars
-#[tauri::command]
-fn buttonbars_save(state: State<'_, AppState>, bars: Vec<buttonbars::Bar>) -> Result<(), String> {
-    let folder = state.settings.lock().unwrap().settings_folder.clone();
-    buttonbars::save(&buttonbars::file(folder.as_deref(), &state.user_folder), &bars)
-}
-
-/// Export one bar as SuperXPuTTY's JSON
-#[tauri::command]
-fn buttonbars_export(bar: buttonbars::Bar, path: PathBuf) -> Result<(), String> {
-    std::fs::write(path, buttonbars::export(&bar)).map_err(|e| e.to_string())
-}
-
-/// Add the bars from an export file and save; returns the bars and the last one imported
-#[tauri::command]
-fn buttonbars_import(state: State<'_, AppState>, path: PathBuf) -> Result<(Vec<buttonbars::Bar>, String), String> {
-    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
-    let folder = state.settings.lock().unwrap().settings_folder.clone();
-    let file = buttonbars::file(folder.as_deref(), &state.user_folder);
-    let mut bars = buttonbars::load(&file);
-    let last = buttonbars::import(&mut bars, &json)?;
-    buttonbars::save(&file, &bars)?;
-    Ok((bars, last))
-}
-
 /// The user's own highlighting folder (Highlighted Output's folder button), made if it isn't there
 #[tauri::command]
 fn highlighting_user_folder(state: State<'_, AppState>) -> Result<PathBuf, String> {
@@ -818,21 +786,6 @@ fn layout_rename(state: State<'_, AppState>, from: String, to: String) -> Result
     layouts::rename(&shared_folder(&state), &from, &to)
 }
 
-/// Send Commands' history saved from earlier runs, newest first, for the Command box as a window opens; none while
-/// Settings > General > Command bar keeps it 0 days (until the app closes)
-#[tauri::command]
-fn command_history_load(state: State<'_, AppState>) -> Vec<String> {
-    let days = state.settings.lock().unwrap().command_history_days;
-    command_history::load(&state.user_folder, days, command_history::now())
-}
-
-/// Note a command sent from the Command box in the saved history (nothing is saved with 0 days)
-#[tauri::command]
-fn command_history_add(state: State<'_, AppState>, command: String) -> Result<(), String> {
-    let days = state.settings.lock().unwrap().command_history_days;
-    command_history::add(&state.user_folder, days, &command, command_history::now())
-}
-
 /// What's been asked to open from outside (the command line, a second start, a link), waiting for the window in
 /// front to take it (`requests_take`)
 static PENDING: Mutex<Vec<cli::Request>> = Mutex::new(Vec::new());
@@ -1311,8 +1264,8 @@ pub fn run() {
             commands::session_files::sessions_reveal,
             commands::session_files::sessions_backups,
             commands::session_files::sessions_restore,
-            command_history_load,
-            command_history_add,
+            commands::sending::command_history_load,
+            commands::sending::command_history_add,
             requests_take,
             links_make_default,
             shortcuts_keys,
@@ -1345,10 +1298,10 @@ pub fn run() {
             commands::logs::log_chunk,
             highlighting_user_folder,
             commands::files::open_path,
-            buttonbars_load,
-            buttonbars_save,
-            buttonbars_export,
-            buttonbars_import,
+            commands::sending::buttonbars_load,
+            commands::sending::buttonbars_save,
+            commands::sending::buttonbars_export,
+            commands::sending::buttonbars_import,
             commands::scripts::scripts_list,
             commands::scripts::script_chosen,
             commands::scripts::script_copy_in,

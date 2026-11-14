@@ -14,3 +14,4 @@ pub(crate) mod logs;
 pub(crate) mod session_files;
 pub(crate) mod sessions_table;
 pub(crate) mod importing;
+pub(crate) mod sending;

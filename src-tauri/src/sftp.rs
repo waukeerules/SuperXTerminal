@@ -1246,7 +1246,7 @@ pub fn local_rename(from: String, to: String) -> Result<(), String> {
 /// Show a file or folder in Finder, or Explorer on Windows
 #[tauri::command]
 pub fn local_reveal(path: String) -> Result<(), String> {
-    crate::reveal(std::path::Path::new(&path))
+    crate::opening::reveal(std::path::Path::new(&path))
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ mod buttonbars;
 mod cli;
 mod charset;
 mod onepassword;
+mod opening;
 mod own_process;
 mod ui_themes;
 mod clipboard;
@@ -316,67 +317,7 @@ fn highlighting_user_folder(state: State<'_, AppState>) -> Result<PathBuf, Strin
 /// Open a file in its own app (Search Output's Open log)
 #[tauri::command]
 fn open_path(path: PathBuf) -> Result<(), String> {
-    open_in_app(&path)
-}
-
-/// How [`open_command`] is to open a file
-#[cfg_attr(windows, allow(dead_code))]
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Opening {
-    /// In the app the system has for it
-    InItsApp,
-    /// In the default text editor, whatever app its type opens in (the sessions file, the notices)
-    AsText,
-    /// Its folder shown, with it selected where the system can
-    InItsFolder,
-}
-
-/// The command that opens `path` as `how` asks, on the Mac and Linux (Windows has its own, in [`open_in_app`] and
-/// [`reveal`]). The Mac's `open`, with `-t` for the default text editor and `-R` for Finder with the file selected.
-/// Linux's `xdg-open`, as the Linux build had the Mac's `open` and nothing opened. It has no text-editor or select
-/// option, so a text file opens in the app for its type (a text editor, for .txt and .xml), and for InItsFolder the
-/// folder it's in is opened.
-#[cfg(not(windows))]
-fn open_command(path: &std::path::Path, how: Opening) -> std::process::Command {
-    if cfg!(target_os = "macos") {
-        let mut command = std::process::Command::new("open");
-        match how {
-            Opening::InItsApp => {}
-            Opening::AsText => {
-                command.arg("-t");
-            }
-            Opening::InItsFolder => {
-                command.arg("-R");
-            }
-        }
-        command.arg(path);
-        command
-    } else {
-        let mut command = std::process::Command::new("xdg-open");
-        // the system's environment, not an AppImage's, or xdg-open and the app it opens fail on its libraries
-        crate::appimage::tidy(&mut command);
-        match (how, path.parent()) {
-            (Opening::InItsFolder, Some(folder)) if !folder.as_os_str().is_empty() => command.arg(folder),
-            _ => command.arg(path),
-        };
-        command
-    }
-}
-
-/// Open a file or folder in the app the system uses for it: Explorer's "start" on Windows, else [`open_command`]
-fn open_in_app(path: &std::path::Path) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        /// Start cmd without a console window flashing up
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        // start's first quoted argument is a window title, hence the empty one
-        std::process::Command::new("cmd").args(["/c", "start", ""]).arg(path).creation_flags(CREATE_NO_WINDOW).spawn().map(|_| ()).map_err(|e| e.to_string())
-    }
-    #[cfg(not(windows))]
-    {
-        open_command(path, Opening::InItsApp).spawn().map(|_| ()).map_err(|e| e.to_string())
-    }
+    opening::open_in_app(&path)
 }
 
 /// Open a web link (http or https) in the default browser: a link Ctrl+clicked in a terminal, Settings' links, a new
@@ -394,17 +335,6 @@ fn open_link(url: String) -> Result<(), String> {
         return command.arg(&url).spawn().map(|_| ()).map_err(|e| format!("Couldn't open {url}: {e}"));
     }
     tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| format!("Couldn't open {url}: {e}"))
-}
-
-/// Notepad++, where its installer puts it, for editing the sessions file on Windows
-#[cfg(windows)]
-fn notepad_plus_plus() -> Option<PathBuf> {
-    ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
-        .iter()
-        .filter_map(|var| std::env::var_os(var))
-        .map(|root| PathBuf::from(root).join("Notepad++").join("notepad++.exe"))
-        .chain(std::env::var_os("LOCALAPPDATA").map(|root| PathBuf::from(root).join("Programs").join("Notepad++").join("notepad++.exe")))
-        .find(|p| p.exists())
 }
 
 /// File > Edit Sessions Externally, as SuperXPuTTY's: the sessions file (Sessions.xml, or PrivateSessions.xml when
@@ -428,14 +358,14 @@ fn sessions_edit_externally(state: State<'_, AppState>) -> Result<String, String
     }
     #[cfg(windows)]
     {
-        if let Some(editor) = notepad_plus_plus() {
+        if let Some(editor) = opening::notepad_plus_plus() {
             std::process::Command::new(editor).arg(&path).spawn().map_err(|e| format!("Couldn't start Notepad++: {e}"))?;
             return Ok(format!("Editing {} in Notepad++; the sessions are read again when it's saved", path.display()));
         }
-        open_in_app(&path)?;
+        opening::open_in_app(&path)?;
     }
     #[cfg(not(windows))]
-    open_command(&path, Opening::AsText).spawn().map_err(|e| e.to_string())?;
+    opening::open_command(&path, opening::Opening::AsText).spawn().map_err(|e| e.to_string())?;
     Ok(format!("Editing {}; the sessions are read again when it's saved", path.display()))
 }
 
@@ -971,9 +901,9 @@ fn open_notices<R: Runtime>(app: &AppHandle<R>) {
     let path = bundled.unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../THIRD-PARTY-NOTICES.txt"));
     // on Windows, the app for .txt files
     #[cfg(windows)]
-    let opened = open_in_app(&path).map_err(std::io::Error::other);
+    let opened = opening::open_in_app(&path).map_err(std::io::Error::other);
     #[cfg(not(windows))]
-    let opened = open_command(&path, Opening::AsText).status().map(|_| ());
+    let opened = opening::open_command(&path, opening::Opening::AsText).status().map(|_| ());
     if let Err(e) = opened {
         applog::warn(format!("Couldn't open {}: {e}", path.display()));
     }
@@ -1239,7 +1169,7 @@ fn applog_clear() {
 /// The Log Viewer's Show Log File: the file in Finder
 #[tauri::command]
 fn applog_reveal() -> Result<(), String> {
-    reveal(&applog::file())
+    opening::reveal(&applog::file())
 }
 
 /// Settings > General's Show buttons beside Use Sessions.xml and Use PrivateSessions.xml: the file in Finder or
@@ -1249,7 +1179,7 @@ fn applog_reveal() -> Result<(), String> {
 #[tauri::command]
 fn sessions_reveal(state: State<'_, AppState>, store: sessions::Store) -> Result<Option<String>, String> {
     let (shown, note) = file_or_folder(&sessions_file_of(&state, store)?);
-    reveal(&shown)?;
+    opening::reveal(&shown)?;
     Ok(note)
 }
 
@@ -1305,21 +1235,6 @@ fn command_history_load(state: State<'_, AppState>) -> Vec<String> {
 fn command_history_add(state: State<'_, AppState>, command: String) -> Result<(), String> {
     let days = state.settings.lock().unwrap().command_history_days;
     command_history::add(&state.user_folder, days, &command, command_history::now())
-}
-
-/// Show a file in its folder: selected in Finder on the Mac (`open -R`) and Explorer on Windows (`/select,`); on
-/// Linux the folder alone, in the file manager ([`open_command`])
-pub fn reveal(path: &std::path::Path) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let mut select = std::ffi::OsString::from("/select,");
-        select.push(path.as_os_str());
-        std::process::Command::new("explorer").arg(select).spawn().map(|_| ()).map_err(|e| e.to_string())
-    }
-    #[cfg(not(windows))]
-    {
-        open_command(path, Opening::InItsFolder).spawn().map(|_| ()).map_err(|e| e.to_string())
-    }
 }
 
 /// What's been asked to open from outside (the command line, a second start, a link), waiting for the window in
@@ -1930,34 +1845,6 @@ pub fn run() {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    /// What [`super::open_command`] would run: the program and its arguments
-    #[cfg(not(windows))]
-    fn opening(path: &str, how: super::Opening) -> Vec<String> {
-        let command = super::open_command(std::path::Path::new(path), how);
-        std::iter::once(command.get_program()).chain(command.get_args()).map(|a| a.to_string_lossy().into_owned()).collect()
-    }
-
-    /// The Linux build opened files with the Mac's `open`, which Linux hasn't got, so Help > Third-Party Notices,
-    /// Edit Sessions Externally, Open log and showing a file in its folder did nothing there. Not on Windows, which
-    /// opens files its own way (cmd's start, Explorer's /select,).
-    #[cfg(not(windows))]
-    #[test]
-    fn files_open_with_the_systems_own_opener() {
-        use super::Opening::*;
-        let file = "/home/me/SuperXTerminal/Sessions.xml";
-        if cfg!(target_os = "macos") {
-            assert_eq!(opening(file, InItsApp), ["open", file]);
-            assert_eq!(opening(file, AsText), ["open", "-t", file]);
-            assert_eq!(opening(file, InItsFolder), ["open", "-R", file]);
-        } else {
-            assert_eq!(opening(file, InItsApp), ["xdg-open", file]);
-            assert_eq!(opening(file, AsText), ["xdg-open", file]);
-            // xdg-open can't select a file, so its folder is opened
-            assert_eq!(opening(file, InItsFolder), ["xdg-open", "/home/me/SuperXTerminal"]);
-            assert_eq!(opening("Sessions.xml", InItsFolder), ["xdg-open", "Sessions.xml"]);
-        }
-    }
-
     /// An app's state with these settings, the user's folder a temporary one
     pub(crate) fn state_with(settings: crate::settings::AppSettings) -> super::AppState {
         use std::sync::Mutex;

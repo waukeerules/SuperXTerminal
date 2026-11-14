@@ -42,6 +42,30 @@ must work on the other, or say why it can't:
 Before committing, run the suites for what you changed: `cd src-tauri && cargo test`, `npm test`,
 and `npm run test:browser` for the terminal page.
 
+## Code organisation
+
+Write code in small parts that each do one thing, and import them where they're needed. A file that has started to
+do too much is harder to read, to review and to test than the same code in several.
+
+- **One subject per file.** A file's opening comment should say what it's for in a sentence or two. When it needs
+  "and also", the second thing belongs in a file of its own.
+- **New code goes where its subject is, not where it's convenient.** A new Tauri command goes in the module for its
+  area in `src-tauri/src/commands/` (sessions, profiles, settings, scripts...; a new module there for a new area),
+  and `src-tauri/src/lib.rs` keeps only the app's state and its start; a new dialog or
+  panel is its own Svelte component, not more markup in `App.svelte`; logic a component needs goes in a `.ts` file
+  beside it, where it can be tested without rendering anything (`src/lib/terminal/tunnels.ts`, `sshFailure.ts`).
+- **Write it once and import it.** When the same few lines are wanted a second time, make them a function or a
+  constant with a name and use it in both places (`frameIn` and `FRAME_PX` for the frame in a session's colour).
+- **Watch the size.** Past about 800 lines, look for a part that stands on its own and move it out before adding
+  more. Some files are well past that already (`launch.rs`, `SessionTree.svelte`, `TabArea.ts`,
+  `App.svelte`, `PageHost.ts`, `terminal.js`): don't make them longer. When a change adds much to one of them, put the
+  new code in a new file, and take what it sits beside out with it if that's a small step.
+- **A part of its own gets tests of its own.** A small file with one subject can have a test file beside it that
+  covers it directly (`tunnels.ts` and `tunnels.test.ts`), without standing in for the rest of the app first. If a
+  test needs a great deal set up to reach the code it's about, that code probably wants moving out.
+- **Moving code is its own commit.** A commit that moves code changes nothing it does, and its tests move with it
+  and still pass; the change in behaviour comes in the commit after. That keeps both easy to review.
+
 ## Code documentation
 
 The comments are written for the next developer, or AI assistant, who has never seen the file. Most of the code

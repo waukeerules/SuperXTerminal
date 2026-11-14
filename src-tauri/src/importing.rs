@@ -19,7 +19,9 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 pub mod csv;
+mod mobaxterm;
 mod putty;
+mod rdp;
 mod securecrt;
 pub mod ssh_config;
 
@@ -195,102 +197,9 @@ struct Found {
 
 // ---- MobaXterm
 
-/// Sessions in a MobaXterm sessions file (MobaDataHelper): `[Bookmarks_n]` sections with `SubRep=` (the folder,
-/// `\` separated) and `name=#id#...%host%port%user%...` lines; the id is the connection type
-fn read_mobaxterm(text: &str) -> Vec<Found> {
-    let mut found = Vec::new();
-    let mut folder = String::new();
-    for line in text.lines() {
-        let line = line.trim();
-        if line.starts_with("[Bookmarks") {
-            folder.clear();
-            continue;
-        }
-        if let Some(sub) = line.strip_prefix("SubRep=") {
-            folder = sub.trim().replace('\\', "/");
-            continue;
-        }
-        if line.starts_with("ImgNum=") {
-            continue;
-        }
-        let Some((name, rest)) = line.split_once('=') else { continue };
-        let Some(rest) = rest.trim_start().strip_prefix('#') else { continue };
-        let Some((kind, rest)) = rest.split_once('#') else { continue };
-        let Ok(kind) = kind.parse::<u32>() else { continue };
-        // #109#0%host%22%user%...: the first part is a flag, then host, port and username
-        let parts: Vec<&str> = rest.split('%').collect();
-        let part = |i: usize| parts.get(i).copied().unwrap_or("").trim().to_string();
-        let mut f = Found { folder: folder.clone(), name: name.trim().to_string(), host: part(1), port: part(2).parse().unwrap_or(0), username: part(3), ..Found::default() };
-        (f.protocol, f.icon) = match kind {
-            98 => ("Telnet", "application_xp_terminal"),
-            105 => ("WSL", "application_osx_terminal"),
-            128 => ("VNC", "map"),
-            129 => ("WINCMD", "application_osx_terminal"),
-            131 => ("Serial", "telephone"),
-            192 => ("PS", "application_osx_terminal"),
-            _ => ("SSH", "computer"),
-        };
-        match kind {
-            105 | 129 | 192 => {
-                f.host.clear();
-                f.username.clear();
-                f.port = 0;
-            }
-            128 if f.username == "-1" => f.username.clear(),
-            131 => {
-                // the line is the first word of the name ("COM3 (USB Serial)"); the speed is stored plus 1000000
-                f.host = f.name.split(' ').next().unwrap_or("").to_string();
-                f.username.clear();
-                let speed = part(2).parse::<u32>().unwrap_or(0).saturating_sub(1_000_000);
-                if speed > 0 {
-                    f.extra_args = format!("-sercfg {speed},8,n,1,N");
-                }
-                f.port = 0;
-            }
-            _ => {}
-        }
-        found.push(f);
-    }
-    found
-}
-
 // ---- SecureCRT
 
 // ---- Remote Desktop files
-
-/// A session from a `.rdp` file: its name, `full address:s:host[:port]` and `username:s:`
-fn read_rdp(path: &Path, text: &str) -> Found {
-    let mut f = Found {
-        name: path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string(),
-        protocol: "RDP",
-        icon: "monitor",
-        port: 3389,
-        note: format!("From {}", path.file_name().and_then(|s| s.to_str()).unwrap_or("")),
-        ..Found::default()
-    };
-    for line in text.lines() {
-        let line = line.trim().trim_start_matches('\u{feff}');
-        let Some((key, value)) = line.split_once(":s:") else { continue };
-        match key.to_ascii_lowercase().as_str() {
-            "full address" => {
-                let value = value.trim();
-                // [v6]:port, host:port, or a host alone
-                let (host, port) = match value.strip_prefix('[').and_then(|v| v.split_once(']')) {
-                    Some((host, rest)) => (host.to_string(), rest.strip_prefix(':').and_then(|p| p.parse().ok())),
-                    None => match value.rsplit_once(':') {
-                        Some((host, port)) if !host.contains(':') => (host.to_string(), port.parse().ok()),
-                        _ => (value.to_string(), None),
-                    },
-                };
-                f.host = host;
-                f.port = port.unwrap_or(3389);
-            }
-            "username" => f.username = value.trim().to_string(),
-            _ => {}
-        }
-    }
-    f
-}
 
 /// .rdp files are UTF-16 when Windows saves them; plain UTF-8 otherwise
 fn read_text(path: &Path) -> Result<String, String> {
@@ -380,10 +289,6 @@ fn registry_values(key: &str) -> Vec<(String, String, String)> {
     values
 }
 
-/// The registry key holding Remote Desktop Connection's recent computers (MRU0, MRU1, ...)
-#[cfg(windows)]
-const RDP_RECENT: &str = "HKEY_CURRENT_USER\\Software\\Microsoft\\Terminal Server Client\\Default";
-
 /// Where Import from PuTTY/KiTTY and from Remote Desktop's recent computers read, for the import window
 pub fn source_of_import(kind: &str) -> Option<String> {
     match kind {
@@ -395,36 +300,8 @@ pub fn source_of_import(kind: &str) -> Option<String> {
         #[cfg(not(windows))]
         "putty" => Some(dirs::home_dir().unwrap_or_default().join(".putty/sessions").display().to_string()),
         #[cfg(windows)]
-        "rdpRegistry" => Some(RDP_RECENT.to_string()),
+        "rdpRegistry" => Some(rdp::RDP_RECENT.to_string()),
         _ => None,
-    }
-}
-
-/// Remote Desktop Connection's recent computers (MRU0...MRU9), as SuperXPuTTY's RDPDataHelper: one RDP session each,
-/// named by its address. Windows only.
-fn read_rdp_recent() -> Result<Vec<Found>, String> {
-    #[cfg(windows)]
-    {
-        let mut found: Vec<Found> = registry_values(RDP_RECENT)
-            .into_iter()
-            .filter(|(key, name, value)| key.is_empty() && name.starts_with("mru") && !value.trim().is_empty())
-            .map(|(_, _, value)| {
-                let address = value.trim().to_string();
-                let (host, port) = match address.rsplit_once(':') {
-                    Some((h, p)) if p.parse::<u16>().is_ok() => (h.to_string(), p.parse().unwrap_or(3389)),
-                    _ => (address.clone(), 3389),
-                };
-                // named by the address, without Remote Desktop's own port; another port stays in the name
-                let name = if port == 3389 { host.clone() } else { format!("{host} {port}") };
-                Found { name, protocol: "RDP", host, port, icon: "monitor", ..Found::default() }
-            })
-            .collect();
-        found.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
-        Ok(found)
-    }
-    #[cfg(not(windows))]
-    {
-        Err("Remote Desktop Connection's recent computers are only on Windows.".into())
     }
 }
 
@@ -438,7 +315,7 @@ fn read_rdp_recent() -> Result<Vec<Found>, String> {
 pub fn plan(kind: &str, paths: &[PathBuf], store: Store, existing: &Existing) -> Result<Plan, String> {
     match kind {
         "putty" => return Ok(plan_added(putty::read_putty_saved()?, "ImportedFromPuTTY", store)),
-        "rdpRegistry" => return Ok(plan_added(read_rdp_recent()?, "ImportedFromRDPRecent", store)),
+        "rdpRegistry" => return Ok(plan_added(rdp::read_rdp_recent()?, "ImportedFromRDPRecent", store)),
         _ => {}
     }
     let first = paths.first().ok_or("Choose a file.")?;
@@ -455,11 +332,11 @@ pub fn plan(kind: &str, paths: &[PathBuf], store: Store, existing: &Existing) ->
         "puttyFolder" => Ok(plan_added(putty::read_putty_folder(first, "")?, "ImportedFromPortablePuTTY", store)),
         "securecrt" => Ok(plan_added(securecrt::read_securecrt_folder(first)?, "ImportedFromSecureCRT", store)),
         "csv" => Ok(plan_csv(&read_text(first)?, existing)),
-        "mobaxterm" => Ok(plan_added(read_mobaxterm(&read_text(first)?), "ImportedFromMobaXterm", store)),
+        "mobaxterm" => Ok(plan_added(mobaxterm::read_mobaxterm(&read_text(first)?), "ImportedFromMobaXterm", store)),
         "rdp" => {
             let mut found = Vec::new();
             for path in paths {
-                found.push(read_rdp(path, &read_text(path)?));
+                found.push(rdp::read_rdp(path, &read_text(path)?));
             }
             Ok(plan_added(found, "ImportedFromRDP", store))
         }
@@ -559,13 +436,13 @@ mod tests {
     #[test]
     fn reads_mobaxterm_rdp_and_ssh_config() {
         let moba = "[Bookmarks]\nSubRep=\nImgNum=42\nsw1=#109#0%10.0.0.1%22%admin%%-1%-1%%%22%%0%0%0%%%-1%0%0%0%%1080%%0%0%1#MobaFont%10%0%0%-1%15%236,236,236%30,30,30%180,180,180%0%-1%0%%xterm%-1%-1%_Std_Colors_0_%80%24%0%1%-1%<none>%%0%0%-1#0# #-1\n[Bookmarks_1]\nSubRep=Lab\\Core\nImgNum=41\nCOM3 (USB)=#131#2%COM3%1009600%0%0%\n";
-        let found = read_mobaxterm(moba);
+        let found = mobaxterm::read_mobaxterm(moba);
         assert_eq!(found.len(), 2);
         assert_eq!((found[0].host.as_str(), found[0].port, found[0].username.as_str()), ("10.0.0.1", 22, "admin"));
         assert_eq!((found[1].folder.as_str(), found[1].protocol, found[1].host.as_str()), ("Lab/Core", "Serial", "COM3"));
         assert_eq!(found[1].extra_args, "-sercfg 9600,8,n,1,N");
 
-        let rdp = read_rdp(Path::new("/x/File Server.rdp"), "screen mode id:i:2\r\nfull address:s:fs01.corp:3390\r\nusername:s:CORP\\me\r\n");
+        let rdp = rdp::read_rdp(Path::new("/x/File Server.rdp"), "screen mode id:i:2\r\nfull address:s:fs01.corp:3390\r\nusername:s:CORP\\me\r\n");
         assert_eq!((rdp.name.as_str(), rdp.host.as_str(), rdp.port, rdp.username.as_str()), ("File Server", "fs01.corp", 3390, "CORP\\me"));
 
         let dir = std::env::temp_dir().join(format!("sxt-ssh-{}", std::process::id()));

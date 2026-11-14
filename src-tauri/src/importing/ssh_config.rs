@@ -1,6 +1,6 @@
-//! Import from `~/.ssh/config`: each `Host` that names one computer becomes an SSH session, with its HostName,
-//! User, Port, IdentityFile, ProxyJump and forwards, and the files its `Include` lines name read too. Patterns
-//! (`Host *`, `Host *.lab`) aren't sessions and are left out.
+//! Import from `~/.ssh/config`: each name on a `Host` line without wildcards becomes an SSH session, with its
+//! HostName, Port, User, ProxyJump, IdentityFile and forwards, and the files its `Include` lines name are read
+//! too. `Match` blocks and `Host *` defaults aren't sessions: they're left to ssh, which still reads the file.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

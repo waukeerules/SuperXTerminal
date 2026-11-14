@@ -1,6 +1,7 @@
-//! Import from SecureCRT (SuperXTerminal's own; SuperXPuTTY has none): its Sessions folder of `.ini` files, a
-//! folder for each of SecureCRT's, read into sessions under ImportedFromSecureCRT. A session's key, port
-//! forwards and agent forwarding come from its own file, else from the Global settings in the Config folder.
+//! Import from SecureCRT (SuperXTerminal's own; SuperXPuTTY has none): its Sessions folder, one `.ini` file per
+//! session and Session Manager's folders as folders, read into sessions under ImportedFromSecureCRT. An SSH
+//! session brings its key (its own, or the global one in SSH2.ini), agent and X11 forwarding, port forwards and
+//! a jump through another session. Passwords aren't taken: SecureCRT encrypts them.
 
 use std::path::{Path, PathBuf};
 

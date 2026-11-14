@@ -154,7 +154,7 @@ fn under_program_files(folder: &Path) -> bool {
     let folder = folder.to_string_lossy().to_lowercase();
     ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
         .iter()
-        .filter_map(|var| std::env::var_os(var))
+        .filter_map(std::env::var_os)
         .map(|root| root.to_string_lossy().trim_end_matches('\\').to_lowercase())
         .any(|root| folder == root || folder.starts_with(&format!("{root}\\")))
 }

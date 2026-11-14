@@ -140,10 +140,13 @@ pub fn export(list: &[(Store, &StoredSession)], path: &Path) -> Result<(), Strin
     std::fs::write(path, format!("\u{feff}{}", to_csv(list))).map_err(|e| e.to_string())
 }
 
+/// One example row of the template: its Source, Folder and Name, then its session attributes by name
+type TemplateRow = (&'static str, &'static str, &'static str, &'static [(&'static str, &'static str)]);
+
 /// The template's example rows, for File > Import Sessions > CSV's Save a Template: Source, Folder, Name, then
 /// session attributes by name. Made-up addresses (10.0.0.x, example.test), one of each common kind, so a new user has
 /// the columns and what goes in them to copy
-pub(crate) const TEMPLATE_ROWS: &[(&str, &str, &str, &[(&str, &str)])] = &[
+pub(crate) const TEMPLATE_ROWS: &[TemplateRow] = &[
     ("Saved", "Lab/Switches", "core-sw1", &[
         ("Proto", "SSH"), ("Host", "10.0.0.1"), ("Port", "22"), ("Username", "admin"), ("PuttySession", "Cisco"),
         ("ImageKey", "switch"), ("Note", "Core switch; its profile (PuTTY profile) holds the login"), ("Color", "#2E7D32"),

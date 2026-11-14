@@ -52,7 +52,7 @@ pub fn read(bytes: &[u8]) -> Result<Vec<Profile>, String> {
 /// The file's text: UTF-16 little-endian after its byte order mark (regedit's), else UTF-8 or ANSI (REGEDIT4)
 fn decode(bytes: &[u8]) -> String {
     if let Some(rest) = bytes.strip_prefix(&[0xff, 0xfe]) {
-        let units: Vec<u16> = rest.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> = rest.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
         return String::from_utf16_lossy(&units);
     }
     let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);

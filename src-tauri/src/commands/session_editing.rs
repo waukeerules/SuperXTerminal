@@ -38,11 +38,9 @@ pub(crate) fn session_save(
 /// A new session's fields with the masked -pw of the session it was copied from put back, as SuperXPuTTY's
 /// Duplicate copies the session whole; the window only ever shows the mask
 pub(crate) fn with_copied_password(state: &AppState, mut fields: editing::SessionFields, copy_of: Option<&(sessions::Store, String)>) -> editing::SessionFields {
-    if let Some((store, id)) = copy_of {
-        if let Some(source) = state.sessions.lock().unwrap().find(*store, id) {
+    if let Some((store, id)) = copy_of && let Some(source) = state.sessions.lock().unwrap().find(*store, id) {
             fields.extra_args = editing::unmask_password(&fields.extra_args, source.get("ExtraArgs"));
         }
-    }
     fields
 }
 

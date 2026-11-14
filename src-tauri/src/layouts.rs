@@ -55,11 +55,9 @@ pub fn read(shared_folder: &Path, user_folder: &Path, name: &str) -> Option<Stri
 
 /// Save a layout, replacing one of that name
 pub fn save(shared_folder: &Path, user_folder: &Path, name: &str, text: &str) -> Result<(), String> {
-    if name != AUTO_RESTORE {
-        if let Some(problem) = name_problem(name) {
+    if name != AUTO_RESTORE && let Some(problem) = name_problem(name) {
             return Err(problem);
         }
-    }
     let path = path_of(shared_folder, user_folder, name);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

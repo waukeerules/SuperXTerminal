@@ -315,7 +315,7 @@ impl Device {
             "ping" => {
                 let words: Vec<&str> = typed.split(' ').skip(1).collect();
                 let count = words.windows(2).find(|w| w[0] == "-c").and_then(|w| w[1].parse().ok()).unwrap_or(4).clamp(1, 20);
-                let target = words.iter().filter(|w| !w.starts_with('-') && w.parse::<u32>().is_err()).last().copied().unwrap_or("localhost");
+                let target = words.iter().rfind(|w| !w.starts_with('-') && w.parse::<u32>().is_err()).copied().unwrap_or("localhost");
                 return self.unix_ping(target, count);
             }
             _ => {}

@@ -425,7 +425,7 @@ mod tests {
         let file = folder.join("Sessions.xml");
         std::fs::write(&file, sessions_file(&["Lab/sw1"])).unwrap();
         // one backup an hour through 1 January 2020, from 02:02 to 22:22: twenty-one of them
-        let name_at = |hour: u32| format!("Sessions.20200101_{:02}{hour:02}{hour:02}.xml", if hour % 12 == 0 { 12 } else { hour % 12 });
+        let name_at = |hour: u32| format!("Sessions.20200101_{:02}{hour:02}{hour:02}.xml", if hour.is_multiple_of(12) { 12 } else { hour % 12 });
         let midnight = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_577_836_800);
         for hour in 2..=22u32 {
             let path = folder.join(name_at(hour));

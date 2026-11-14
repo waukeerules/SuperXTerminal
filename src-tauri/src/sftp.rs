@@ -469,6 +469,8 @@ struct Item {
 
 /// Copy files and folders into a folder: up (this Mac's paths to the remote folder) or down. Progress goes to
 /// `on_progress`; folders are copied with everything in them.
+// each argument is one the page names in its call, so they aren't gathered into a struct
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn sftp_transfer(
     sftps: State<'_, Sftps>,
@@ -1026,12 +1028,10 @@ fn run_scp(words: &[String], token: &str, helper: &str, cancel: &AtomicBool, rep
         while let Ok(bytes) = rx.try_recv() {
             said.push_str(&String::from_utf8_lossy(&bytes));
         }
-        if let Some(percent) = meter_percent(&said) {
-            if last != Some(percent) {
+        if let Some(percent) = meter_percent(&said) && last != Some(percent) {
                 last = Some(percent);
                 report(percent);
             }
-        }
         // keep only the end: the meter redraws without end
         if said.len() > 8192 {
             // at a character's start: a file name's accents are several bytes

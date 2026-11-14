@@ -15,13 +15,12 @@ pub(crate) fn url_decode(name: &str) -> String {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Some(byte) = std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|hex| u8::from_str_radix(hex, 16).ok()) {
+        if bytes[i] == b'%' && i + 2 < bytes.len()
+            && let Some(byte) = std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|hex| u8::from_str_radix(hex, 16).ok()) {
                 out.push(byte);
                 i += 3;
                 continue;
             }
-        }
         out.push(bytes[i]);
         i += 1;
     }
@@ -92,7 +91,7 @@ pub(crate) fn read_putty_folder(folder: &Path, into: &str) -> Result<Vec<Found>,
         let file = file.strip_suffix(".ktx").unwrap_or(&file);
         found.push(putty_session(&url_decode(file), into, &values));
     }
-    found.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    found.sort_by_key(|a| a.name.to_lowercase());
     Ok(found)
 }
 

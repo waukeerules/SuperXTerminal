@@ -163,7 +163,7 @@ mod tests {
             read_or_nothing(file)
         };
         for check in 1..=5 {
-            assert!(!seen.changed(&files, now + Duration::from_secs(10 * check), &counted));
+            assert!(!seen.changed(&files, now + Duration::from_secs(10 * check), counted));
         }
         assert_eq!(reads.get(), 0);
         std::fs::remove_dir_all(folder).unwrap();
@@ -182,20 +182,20 @@ mod tests {
         // written again with the same contents (an editor's Save): looked at, both files, and not a change
         std::fs::write(&files[0], "<ArrayOfSessionData />").unwrap();
         set_time(&files[0], earlier());
-        assert!(!seen.changed(&files, now, &counted));
+        assert!(!seen.changed(&files, now, counted));
         assert_eq!(reads.get(), 2);
         // and not looked at again
-        assert!(!seen.changed(&files, now, &counted));
+        assert!(!seen.changed(&files, now, counted));
         assert_eq!(reads.get(), 2);
 
         // a teammate's save: a change, and still one until the files are read for the tree
         std::fs::write(&files[0], "<ArrayOfSessionData><SessionData SessionId=\"Lab/sw1\" /></ArrayOfSessionData>").unwrap();
-        assert!(seen.changed(&files, now, &counted));
-        assert!(seen.changed(&files, now, &counted));
+        assert!(seen.changed(&files, now, counted));
+        assert!(seen.changed(&files, now, counted));
         // a file going (the settings folder away) is one too
         let mut seen = super::tests::seen(&files, now);
         std::fs::remove_file(&files[1]).unwrap();
-        assert!(seen.changed(&files, now, &counted));
+        assert!(seen.changed(&files, now, counted));
         std::fs::remove_dir_all(folder).unwrap();
     }
 

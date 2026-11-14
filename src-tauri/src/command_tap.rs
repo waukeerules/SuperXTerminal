@@ -34,11 +34,10 @@ pub fn install(app: &AppHandle) {
                 ALONE.store(!others, Ordering::Relaxed);
             } else if !command && DOWN.load(Ordering::Relaxed) {
                 DOWN.store(false, Ordering::Relaxed);
-                if ALONE.swap(false, Ordering::Relaxed) {
-                    if let Some(window) = app.webview_windows().into_values().find(|w| w.is_focused().unwrap_or(false)) {
+                if ALONE.swap(false, Ordering::Relaxed)
+                    && let Some(window) = app.webview_windows().into_values().find(|w| w.is_focused().unwrap_or(false)) {
                         let _ = app.emit_to(window.label(), "command-tap", ());
                     }
-                }
             } else if others {
                 ALONE.store(false, Ordering::Relaxed);
             }

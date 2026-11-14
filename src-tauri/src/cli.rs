@@ -30,11 +30,9 @@ const PROTOCOLS: &[(&str, &str)] = &[
 pub fn from_args(args: &[String]) -> Option<Request> {
     // macOS adds -psn_... when Finder starts an app; one argument that's a link is a link
     let args: Vec<&String> = args.iter().filter(|a| !a.starts_with("-psn_")).collect();
-    if let [only] = args.as_slice() {
-        if only.contains("://") {
+    if let [only] = args.as_slice() && only.contains("://") {
             return from_url(only);
         }
-    }
     let mut session = None;
     let mut layout = None;
     let mut host = None;

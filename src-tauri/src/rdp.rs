@@ -656,6 +656,8 @@ pub fn rdp_sync(rdps: State<'_, Rdps>, id: u32, caps: bool, num: bool) -> Result
 
 /// The mouse at (x, y) on the remote screen: moved, a button ("left", "right", "middle") pressed or let go, or the
 /// wheel turned (`wheel` in notches, + away from the user)
+// each argument is one the page names in its call, so they aren't gathered into a struct
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn rdp_mouse(rdps: State<'_, Rdps>, id: u32, x: u16, y: u16, button: Option<String>, down: bool, wheel: i16, horizontal: bool) -> Result<(), String> {
     let mut flags = PointerFlags::empty();

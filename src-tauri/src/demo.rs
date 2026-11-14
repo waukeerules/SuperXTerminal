@@ -314,20 +314,22 @@ fn profiles() -> crate::profiles::Profiles {
 /// a steady block cursor, and nothing that reaches out (update checks, session logs, the menu bar icon beside a real
 /// SuperXTerminal's)
 fn settings(shared: &Path) -> crate::settings::AppSettings {
-    let mut settings = crate::settings::AppSettings::default();
-    settings.settings_folder = Some(shared.to_path_buf());
-    settings.environment_color_rules = "Production=#C62828;Prod=#C62828;Staging=#EF6C00;UAT=#EF6C00".into();
-    settings.database = database();
-    settings.use_sessions_xml = true;
-    settings.use_private_sessions = true;
-    settings.show_button_bar = true;
-    settings.show_send_commands = true;
-    settings.show_status_bar = true;
-    settings.session_log_enabled = false;
-    settings.auto_update_check = false;
-    settings.auto_reconnect = false;
-    settings.show_in_menu_bar = false;
-    settings.default_layout_name = LAYOUT.into();
+    let mut settings = crate::settings::AppSettings {
+        settings_folder: Some(shared.to_path_buf()),
+        environment_color_rules: "Production=#C62828;Prod=#C62828;Staging=#EF6C00;UAT=#EF6C00".into(),
+        database: database(),
+        use_sessions_xml: true,
+        use_private_sessions: true,
+        show_button_bar: true,
+        show_send_commands: true,
+        show_status_bar: true,
+        session_log_enabled: false,
+        auto_update_check: false,
+        auto_reconnect: false,
+        show_in_menu_bar: false,
+        default_layout_name: LAYOUT.into(),
+        ..Default::default()
+    };
     // lines not wrapped and numbered, two of the terminal's less usual features; a font small enough for a switch's
     // interface table to fit half the window
     settings.terminal_prefs.insert("wrap".into(), "false".into());

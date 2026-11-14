@@ -93,11 +93,9 @@ pub fn move_folder(sessions_file: &Path, from: &str, to: &str, others: &[String]
     })?;
     update_folders(&folders_file(sessions_file), |settings| {
         for setting in settings.iter_mut() {
-            if let Some(path) = get(setting, "Path").map(|p| p.trim_matches('/').to_string()) {
-                if within(&path, from) {
+            if let Some(path) = get(setting, "Path").map(|p| p.trim_matches('/').to_string()) && within(&path, from) {
                     set(setting, "Path", &moved(&path, from, to));
                 }
-            }
         }
     })
 }

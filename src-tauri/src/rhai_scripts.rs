@@ -130,7 +130,7 @@ pub fn check(source: &str) -> Vec<Issue> {
     let (_answers, replies) = channel();
     let ctx = Rc::new(Ctx { send: Rc::new(|_| false), replies, abort: Arc::default(), next_call: Cell::new(0), matched: RefCell::default() });
     register_functions(&mut engine, &ctx);
-    match engine.compile_with_scope(&scope, &without_marker(source)) {
+    match engine.compile_with_scope(&scope, without_marker(source)) {
         Ok(ast) => unknown_calls(&engine, &ast),
         Err(error) => vec![Issue { line: error.1.line().unwrap_or(0), message: error.0.to_string() }],
     }

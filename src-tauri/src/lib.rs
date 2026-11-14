@@ -118,11 +118,9 @@ pub fn demo_device() -> bool {
 /// Start the app: load the settings, open the main window, and handle the command line SuperXPuTTY takes
 pub fn run() {
     // demo mode: a fresh folder of made-up sessions in place of the user's own (demo.rs)
-    if demo::on() {
-        if let Err(e) = demo::prepare() {
+    if demo::on() && let Err(e) = demo::prepare() {
             applog::warn(format!("The demo's folder couldn't be made: {e}"));
         }
-    }
     let user_folder = sessions::user_folder();
     let settings = AppSettings::load(&user_folder);
     onepassword::set_enabled(settings.one_password);

@@ -232,15 +232,17 @@ mod tests {
 
     #[test]
     fn the_view_menu_ticks_what_is_shown_and_follows_each_change() {
-        let mut settings = AppSettings::default();
-        settings.show_sessions_pane = true;
-        settings.show_send_commands = false;
-        settings.show_button_bar = true;
-        settings.show_status_bar = true;
-        settings.sessions_auto_hide = false;
-        settings.show_session_detail = true;
-        settings.show_log_viewer = false;
-        settings.always_on_top = true;
+        let settings = AppSettings {
+            show_sessions_pane: true,
+            show_send_commands: false,
+            show_button_bar: true,
+            show_status_bar: true,
+            sessions_auto_hide: false,
+            show_session_detail: true,
+            show_log_viewer: false,
+            always_on_top: true,
+            ..Default::default()
+        };
         assert_eq!(
             view_checks(&settings),
             [

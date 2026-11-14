@@ -54,7 +54,7 @@ pub fn set(account: &str, value: &str) -> Result<(), String> {
     #[cfg(test)]
     {
         with_cache(|cache| cache.insert(account.to_string(), (!value.is_empty()).then(|| value.to_string())));
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(test))]
     store(account, value)

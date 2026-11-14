@@ -39,6 +39,9 @@ pub enum Target {
 }
 
 /// What a pseudo terminal sends its tab
+// Started is far larger than the rest (it carries the profile's whole look), but a session sends it once and the
+// others thousands of times, each made and sent at once and never kept in number: a Box would buy nothing
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PtyEvent {
@@ -379,11 +382,9 @@ pub fn pty_open(
     if std::env::var_os("LANG").is_none() {
         command.env("LANG", "en_US.UTF-8");
     }
-    if command.get_cwd().is_none() {
-        if let Some(home) = dirs::home_dir() {
+    if command.get_cwd().is_none() && let Some(home) = dirs::home_dir() {
             command.cwd(home);
         }
-    }
     // the system's environment, not an AppImage's: its libraries broke the shell's programs (appimage.rs)
     crate::appimage::tidy(&mut command);
     let child = Arc::new(Mutex::new(pair.slave.spawn_command(command).map_err(|e| e.to_string())?));
@@ -579,7 +580,7 @@ fn without_escapes(text: &str) -> String {
         }
         match chars.next() {
             // CSI: parameters and intermediates, up to a final byte from @ to ~
-            Some('[') => while let Some(c) = chars.next() {
+            Some('[') => for c in chars.by_ref() {
                 if ('@'..='~').contains(&c) {
                     break;
                 }

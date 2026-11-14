@@ -61,11 +61,9 @@ pub(crate) fn sessions_load(app: AppHandle, state: State<'_, AppState>) -> Sessi
     }
     // the Mac: the network share the settings folder is on is remembered while it's there, to be connected again
     // when it has been away (remount.rs); Windows reaches a share by its address, so needs none of it
-    if cfg!(target_os = "macos") && !saved_offline {
-        if let Some(folder) = saved_folder(&state) {
+    if cfg!(target_os = "macos") && !saved_offline && let Some(folder) = saved_folder(&state) {
             remount::remember(&state.user_folder, &folder);
         }
-    }
     let read = FilesRead { problems, saved_offline, saved_cached_at };
     *state.files_read.lock().unwrap() = Some(read.clone());
     tray::refresh(&app);
@@ -182,11 +180,9 @@ pub(crate) fn sessions_files_changed(state: State<'_, AppState>) -> bool {
     // network returns. If its server answers again, the share is connected again here (once each time it comes
     // back), and the check below then finds the folder there. It may wait on macOS asking for the share's password,
     // which is one more reason this isn't on the window's thread
-    if cfg!(target_os = "macos") {
-        if let Some(folder) = saved_folder(&state).filter(|folder| !saved_cache::reachable(folder)) {
+    if cfg!(target_os = "macos") && let Some(folder) = saved_folder(&state).filter(|folder| !saved_cache::reachable(folder)) {
             remount::reconnect(&state.user_folder, &folder);
         }
-    }
     let files = session_files(&state);
     state.files_seen.lock().unwrap().changed(&files, std::time::Instant::now(), file_watch::read_or_nothing)
 }

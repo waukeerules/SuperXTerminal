@@ -91,11 +91,9 @@ pub fn listed(user_folder: &Path) -> BTreeSet<String> {
 pub fn follow(user_folder: &Path, rename: impl Fn(&str) -> Option<String>) {
     for id in ids(user_folder) {
         let Some(new) = rename(&id).filter(|new| *new != id) else { continue };
-        if let Some(password) = get(&id) {
-            if set(user_folder, &new, &password).is_ok() {
+        if let Some(password) = get(&id) && set(user_folder, &new, &password).is_ok() {
                 let _ = set(user_folder, &id, "");
             }
-        }
     }
 }
 

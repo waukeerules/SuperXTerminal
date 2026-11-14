@@ -1,14 +1,14 @@
 //! Sessions to and from other formats, as SuperXPuTTY's File > Import sessions and Export sessions to CSV.
 //!
-//! CSV is SuperXPuTTY's `SessionCsv`: the same columns and headers (those of the Database sessions table, so a table
-//! exported from Postgres imports too), a `-pw` password written as `********` and kept on re-import, a leading `'`
-//! before a value a spreadsheet would take for a formula, and `;` or tab separators read as well as commas. A row is
-//! matched to a session by its Source, Folder and Name: an existing Saved or Private session is updated, otherwise
-//! one is added; Database rows are skipped.
+//! Each format is read in a module of its own: `csv` (SuperXPuTTY's `SessionCsv`, which also writes the export and
+//! its template), `mobaxterm`, `putty` (PuTTY, KiTTY and PuTTY Connection Manager), `rdp`, `securecrt` and
+//! `ssh_config`. Each gives the sessions it found ([`Found`]); what's here is what they share and what comes after:
+//! working out the [`Plan`] of rows an import would add or update, and [`apply`], which writes it.
 //!
-//! MobaXterm (`.mxtsessions`), Remote Desktop (`.rdp`) files and `~/.ssh/config` add new sessions in a folder of
-//! their own ("ImportedFromMobaXterm", ...), as SuperXPuTTY's `ImportSessions`, numbered when a name is taken.
-//! SecureCRT's Sessions folder (SuperXTerminal's own; SuperXPuTTY has none) does the same, into ImportedFromSecureCRT.
+//! A CSV row is matched to a session by its Source, Folder and Name: an existing Saved or Private session is
+//! updated, otherwise one is added; Database rows are skipped. Every other format adds new sessions in a folder of
+//! its own ("ImportedFromMobaXterm", "ImportedFromSecureCRT", ...), as SuperXPuTTY's `ImportSessions`, numbered when
+//! a name is taken.
 //!
 //! Nothing is changed until the user has seen the plan's summary: [`Plan`] is worked out first, then [`apply`]
 //! writes each file once.
@@ -25,18 +25,14 @@ mod rdp;
 mod securecrt;
 pub mod ssh_config;
 
+use crate::sessions::{self, Store, StoredSession};
 use csv::{keep_password, plan_csv, source_of};
 // the registry key the import window names, which only Windows has
 #[cfg(windows)]
 use putty::PUTTY_SESSIONS;
-use crate::sessions::{self, Store, StoredSession};
 
 /// SuperXPuTTY's connection types, as the Proto attribute writes them
 const PROTOCOLS: &[&str] = &["SSH", "Telnet", "Rlogin", "Raw", "Serial", "VNC", "RDP", "Mintty", "Cygterm", "WSL", "WINCMD", "PS"];
-
-// ---- Export
-
-// ---- Reading CSV
 
 // ---- Plans
 
@@ -195,12 +191,6 @@ struct Found {
     skip: Option<String>,
 }
 
-// ---- MobaXterm
-
-// ---- SecureCRT
-
-// ---- Remote Desktop files
-
 /// .rdp files are UTF-16 when Windows saves them; plain UTF-8 otherwise
 fn read_text(path: &Path) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -214,8 +204,6 @@ fn read_text(path: &Path) -> Result<String, String> {
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
-
-// ---- ~/.ssh/config
 
 /// Add `switch value` to a command line's arguments, unless the value is empty
 fn add_arg(args: &mut String, switch: &str, value: &str) {
@@ -254,7 +242,7 @@ fn plan_stored(found: Vec<StoredSession>, folder: &str, store: Store) -> Plan {
     plan
 }
 
-// ---- PuTTY and KiTTY
+// ---- What several formats share
 
 /// One of SuperXPuTTY's connection types by PuTTY's name for it ("ssh", "telnet", "rlogin", "raw", "serial"); SSH
 /// for any other

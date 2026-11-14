@@ -20,15 +20,15 @@ pub(crate) fn sessions_export_csv(state: State<'_, AppState>, items: Option<Vec<
         Some(items) => items.iter().filter_map(|(store, id)| all.find(*store, id).map(|s| (*store, s))).collect(),
         None => every.iter().flat_map(|(store, list)| list.iter().map(move |s| (*store, s))).collect(),
     };
-    importing::export(&list, &path)?;
-    let masked = list.iter().filter(|(_, s)| importing::has_password(s.get("ExtraArgs"))).count();
+    importing::csv::export(&list, &path)?;
+    let masked = list.iter().filter(|(_, s)| importing::csv::has_password(s.get("ExtraArgs"))).count();
     Ok((list.len(), masked))
 }
 
-/// Save a CSV template for File > Import Sessions: the columns, with example rows to copy (importing::template)
+/// Save a CSV template for File > Import Sessions: the columns, with example rows to copy (importing::csv::template)
 #[tauri::command]
 pub(crate) fn sessions_csv_template(path: PathBuf) -> Result<(), String> {
-    importing::write_template(&path)
+    importing::csv::write_template(&path)
 }
 
 /// The plan for importing sessions (`kind` "csv", "mobaxterm", "rdp" or "ssh"), worked out without changing anything

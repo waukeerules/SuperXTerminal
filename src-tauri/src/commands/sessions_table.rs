@@ -91,14 +91,14 @@ pub(crate) fn sessions_table_export_csv(state: State<'_, AppState>, rows: Vec<Ta
             .collect()
     };
     let list: Vec<(sessions::Store, &sessions::StoredSession)> = edited.iter().map(|(store, s)| (*store, s)).collect();
-    importing::export(&list, &path)?;
-    let masked = list.iter().filter(|(_, s)| importing::has_password(s.get("ExtraArgs"))).count();
+    importing::csv::export(&list, &path)?;
+    let masked = list.iter().filter(|(_, s)| importing::csv::has_password(s.get("ExtraArgs"))).count();
     Ok((list.len(), masked))
 }
 
 /// Edit Sessions as Table…'s Import CSV…: a CSV file's sessions, read as Import Sessions > CSV reads them, for the
 /// table to match to its rows; nothing is saved until the table's Save
 #[tauri::command]
-pub(crate) fn sessions_table_read_csv(path: PathBuf) -> Result<importing::CsvSessions, String> {
-    importing::read_csv_file(&path)
+pub(crate) fn sessions_table_read_csv(path: PathBuf) -> Result<importing::csv::CsvSessions, String> {
+    importing::csv::read_csv_file(&path)
 }

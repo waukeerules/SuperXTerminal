@@ -21,3 +21,4 @@ pub(crate) mod variables;
 pub(crate) mod settings;
 pub(crate) mod appearance;
 pub(crate) mod layouts;
+pub(crate) mod external;

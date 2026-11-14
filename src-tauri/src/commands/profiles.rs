@@ -1,10 +1,11 @@
-//! The commands behind Settings > Profiles: listing, saving, removing, exporting and importing profiles, and the
-//! team's profile templates. The profiles themselves, their file and their stored passwords are `crate::profiles`.
+//! The commands behind Settings > Profiles: listing, saving, removing, exporting and importing profiles, the
+//! team's profile templates, and how old a profile's fetched key is. The profiles themselves, their file and
+//! their stored passwords are `crate::profiles`.
 
 use tauri::State;
 
 use crate::profiles::{self, Profile};
-use crate::{applog, putty_reg, AppState};
+use crate::{applog, launch, putty_reg, AppState};
 
 /// The user's profiles, "Default Settings" first; passwords are only marked as stored, never sent
 #[tauri::command]
@@ -110,4 +111,10 @@ pub(crate) fn profile_template_share(state: State<'_, AppState>, name: String) -
 #[tauri::command]
 pub(crate) fn profiles_read_file(path: String) -> Result<Vec<Profile>, String> {
     profiles::import_text(&std::fs::read_to_string(&path).map_err(|e| e.to_string())?)
+}
+
+/// How old a profile's key file is, in seconds; None when there's none (the profile editor's key fetch)
+#[tauri::command]
+pub(crate) fn profile_key_age(key_file: String) -> Option<u64> {
+    launch::key_age(&key_file)
 }

@@ -4,3 +4,4 @@
 //! registers them all in `run`; the names the page calls them by are the functions' own.
 
 pub(crate) mod profiles;
+pub(crate) mod sessions;

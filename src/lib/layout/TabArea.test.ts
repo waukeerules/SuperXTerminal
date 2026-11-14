@@ -1,5 +1,5 @@
 // The tab area (dockview) with session tabs: switching tabs puts the keyboard in the chosen tab's terminal, a tab
-// takes its profile's Tab colour, each split's ▾ lists only its own tabs, and the Sessions tree is told whether each
+// takes its profile's Tab colour, its content is framed in its session's environment colour, each split's ▾ lists only its own tabs, and the Sessions tree is told whether each
 // open session is connecting (yellow, its tab too, until the far end answers), connected (green, its tab too) or its tabs'
 // sessions have all ended (the red cross the tab shows). The terminal pages are stood in for by their iframes' postMessage (jsdom loads no
 // page), which records the "focus" the tab area sends the page; the Rust side by mockIPC, which answers with nothing
@@ -271,6 +271,36 @@ describe("a profile's Tab colour", () => {
     // once the session's start has reached the tab
     await new Promise((r) => setTimeout(r, 20));
     expect(colourOf("core1")).toBe("#d32f2f");
+  });
+});
+
+describe("the frame in a session's environment colour", () => {
+  // a Remote Desktop and a file transfer ask about the window as they open; jsdom gives the desktop no canvas
+  beforeEach(() => {
+    mockWindows("main");
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ putImageData() {} } as unknown as CanvasRenderingContext2D);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  /** The content of tab `id`: what the frame is drawn around */
+  const content = (id: string) => tabs.api.getPanel(id)!.view.content.element;
+  /** The three kinds of tab a session opens, each opened with this environment colour */
+  const kinds: [string, (environment: string | null) => string][] = [
+    ["a terminal", (environment) => tabs.openSession("saved", "Lab/sw1", "sw1", false, "terminal", environment)],
+    ["a Remote Desktop", (environment) => tabs.openRdp("saved", "Servers/ts1", "ts1", "windows", environment)],
+    ["a file transfer", (environment) => tabs.openSftp("saved", "Lab/sw1", "sw1", "switch", environment)],
+  ];
+
+  it.each(kinds)("is 3 pixels of the colour around %s", (_kind, open) => {
+    const framed = content(open("#3c9a3c"));
+    expect(framed.style.padding).toBe("3px");
+    expect(framed.style.background).toBe("rgb(60, 154, 60)");
+  });
+
+  it.each(kinds)("is none around %s whose session has no colour", (_kind, open) => {
+    const plain = content(open(null));
+    expect(plain.style.padding).toBe("");
+    expect(plain.style.background).toBe("");
   });
 });
 

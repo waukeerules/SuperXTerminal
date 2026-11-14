@@ -44,6 +44,21 @@ export function tabNameWidth(max: number): string {
   return max > 0 ? `${Math.floor(max)}ch` : "none";
 }
 
+/**
+ * Frame a tab's content in its session's environment colour, as SuperXPuTTY: the tab is filled with the colour and
+ * its content padded in by [`FRAME_PX`], so the colour shows as a border around it. The one place the frame is drawn,
+ * for a terminal, a Remote Desktop and a file transfer alike. The content is moved in rather than drawn over, so the
+ * frame never hides a terminal's first line or its scroll bar; the terminal's page is told of it (PageHost's config)
+ * to keep its magnifying glass where it is in a tab with no colour.
+ * @param element The tab's content element (a dockview panel's)
+ * @param environment The session's environment colour ("#rrggbb"); null for none, which leaves the tab as it is
+ */
+export function frameIn(element: HTMLElement, environment: string | null | undefined): void {
+  if (!environment) return;
+  element.style.padding = `${FRAME_PX}px`;
+  element.style.background = environment;
+}
+
 /** A group of tabs (a split), as dockview makes them */
 type Group = ReturnType<DockviewApi["addGroup"]>;
 
@@ -261,11 +276,7 @@ class RdpPanel implements IContentRenderer {
   init(parameters: GroupPanelPartInitParameters): void {
     const { target, environment } = parameters.params as TerminalParams;
     if (target.kind !== "session") return;
-    // the environment colour frames the remote desktop, as it frames a terminal
-    if (environment) {
-      this.element.style.padding = `${FRAME_PX}px`;
-      this.element.style.background = environment;
-    }
+    frameIn(this.element, environment);
     const id = parameters.api.id;
     this.host = new RdpHost({ store: target.store, id: target.id }, () => parameters.api.title ?? "", () => {
       // the tab's dot (yellow, green, or the red cross), and the Sessions tree's, as a terminal tab's
@@ -301,10 +312,7 @@ class SftpPanel implements IContentRenderer {
   init(parameters: GroupPanelPartInitParameters): void {
     const { target, environment } = parameters.params as TerminalParams;
     if (target.kind !== "session") return;
-    if (environment) {
-      this.element.style.padding = `${FRAME_PX}px`;
-      this.element.style.background = environment;
-    }
+    frameIn(this.element, environment);
     const id = (this.id = parameters.api.id);
     this.view = mount(FileTransfer, {
       target: this.element,
@@ -452,11 +460,7 @@ class TerminalPanel implements IContentRenderer {
   init(parameters: GroupPanelPartInitParameters): void {
     const id = parameters.api.id;
     const { target, local, environment, adopt } = parameters.params as TerminalParams;
-    // SuperXPuTTY's frame: the environment colour shows as a 3 px border around the terminal
-    if (environment) {
-      this.element.style.padding = `${FRAME_PX}px`;
-      this.element.style.background = environment;
-    }
+    frameIn(this.element, environment);
     const frame = document.createElement("iframe");
     frame.className = "terminal-frame";
     // a label for screen readers; not "title", which WebKit shows as a tooltip over the whole terminal

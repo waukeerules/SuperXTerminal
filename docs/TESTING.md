@@ -67,6 +67,12 @@ only the numbers for tabs behind another mean anything then.
 No device is needed: what costs is the output reaching the page, and it's the same bytes whoever sent them. To try
 many tabs in the app itself without a lab, use Demo mode (below) and Connect all on a folder.
 
+### The main window
+
+`tests/browser/window.spec.ts` mounts the whole main window (`App.svelte`, through `tests/browser/fixtures/window.ts`,
+the Rust side stood in for), for what only the window's own styles decide: that a dialog of the Sessions pane still
+shows while the pane is folded to its edge tab (Auto hide). No session starts there; a tab opens and stays empty.
+
 ### The Sessions tree with thousands of sessions
 
 `tests/browser/tree.spec.ts` mounts the Sessions tree on a page of its own (`tests/browser/fixtures/tree.svelte.ts`,

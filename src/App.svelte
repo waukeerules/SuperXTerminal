@@ -1120,6 +1120,13 @@
     visibility: visible;
   }
 
+  /* the pane's dialogs (Edit Session, Import Sessions, Edit Sessions as a Table…) are inside it, and would be hidden
+     with it: one opened from elsewhere while it's folded (a tab's Save session as…, the File menu), or still open
+     when it folds again, shows all the same. Each has a backdrop over the whole window as its outermost part */
+  .autohide .side :global(.backdrop) {
+    visibility: visible;
+  }
+
   .edge {
     flex: none;
     width: 22px;

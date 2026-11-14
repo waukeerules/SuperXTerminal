@@ -32,7 +32,7 @@ Four npm commands do it, the same on both computers:
 | Command | What it does |
 |---|---|
 | `npm run release:version -- 0.3.0` | Sets the version in all five places it's written, and commits just those files (`scripts/set-version.mjs`) |
-| `npm run release:checks` | The type check, the front-end and browser tests, the licence check, `npm audit` of the packages shipped, the Rust tests and `cargo deny` |
+| `npm run release:checks` | The type check, the front-end and browser tests, the licence check, `npm audit` of the packages shipped, clippy on the Rust code, the Rust tests and `cargo deny` |
 | `npm run release` | Builds this computer's installers and copies them into `releases/<version>/` (`scripts/release.mjs`) |
 | `npm run release:publish` | Puts `releases/<version>/` into the version's GitHub release, with `NOTES.md` there as its notes; a draft until `-- --final` (`scripts/release-publish.mjs`) |
 

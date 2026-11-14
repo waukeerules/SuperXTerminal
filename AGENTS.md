@@ -40,7 +40,8 @@ must work on the other, or say why it can't:
 - Mark a test `#[cfg(...)]` only when its subject exists on one system alone, and say so in a comment.
 
 Before committing, run the suites for what you changed: `cd src-tauri && cargo test`, `npm test`,
-and `npm run test:browser` for the terminal page.
+and `npm run test:browser` for the terminal page. For Rust, also `npm run lint:rust` (clippy, where a warning is a
+failure): fix what it says, or where the code is right as it is, allow that one lint there with a comment saying why.
 
 ## Code organisation
 

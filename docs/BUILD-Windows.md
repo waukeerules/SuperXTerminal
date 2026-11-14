@@ -37,7 +37,8 @@ older versions can't find a draft release by its tag, so step 6 on the second co
    git push
    ```
 
-3. Check it: the type check, the unit and browser tests, the licences, `npm audit`, the Rust tests and `cargo deny`:
+3. Check it: the type check, the unit and browser tests, the licences, `npm audit`, clippy, the Rust tests and
+   `cargo deny`:
 
    ```bash
    npm run release:checks
@@ -272,5 +273,5 @@ Fixed on the way:
 ## Checks
 
 The same as the Mac's ([BUILD-macOS.md](BUILD-macOS.md), section 5): `npm run check`, `npm test`,
-`npm run test:browser`, `cargo test`, `cargo deny check`, `npm run licenses` and `npm run audit`. The browser tests' Chromium is
+`npm run test:browser`, `npm run lint:rust`, `cargo test`, `cargo deny check`, `npm run licenses` and `npm run audit`. The browser tests' Chromium is
 WebView2's engine, so they're the ones that speak for Windows.

@@ -12,3 +12,4 @@ pub(crate) mod scripts;
 pub(crate) mod files;
 pub(crate) mod logs;
 pub(crate) mod session_files;
+pub(crate) mod sessions_table;

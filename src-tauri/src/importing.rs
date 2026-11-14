@@ -21,6 +21,7 @@ use serde::Serialize;
 pub mod csv;
 mod putty;
 mod securecrt;
+pub mod ssh_config;
 
 use csv::{keep_password, plan_csv, source_of};
 // the registry key the import window names, which only Windows has
@@ -307,82 +308,6 @@ fn read_text(path: &Path) -> Result<String, String> {
 
 // ---- ~/.ssh/config
 
-/// Sessions from an OpenSSH config: one per name in a `Host` line without wildcards, with its HostName, Port, User,
-/// ProxyJump (the jump host), IdentityFile (`-i`) and forwards (`-L`, `-R`, `-D`). As ssh, the first value given for
-/// an option is the one used; `Include` is followed (relative to ~/.ssh, `*` and `?` in the file name); `Match`
-/// blocks and `Host *` defaults are left to ssh itself, which still reads the file when a session opens.
-fn read_ssh_config(path: &Path, ssh_folder: &Path, depth: u32) -> Vec<Found> {
-    let mut found = Vec::new();
-    let Ok(text) = std::fs::read_to_string(path) else { return found };
-    let mut current: Vec<Found> = Vec::new();
-    let mut have: HashSet<String> = HashSet::new();
-    let mut in_match = false;
-    let finish = |current: &mut Vec<Found>, found: &mut Vec<Found>| {
-        for mut f in current.drain(..) {
-            if f.host.is_empty() {
-                f.host = f.name.clone();
-            }
-            found.push(f);
-        }
-    };
-    for raw in text.lines() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        // "Key value", "Key=value" or "Key = value"
-        let (key, value) = match line.find(|c: char| c.is_whitespace() || c == '=') {
-            Some(at) => (&line[..at], line[at..].trim_start_matches(|c: char| c.is_whitespace() || c == '=').trim()),
-            None => (line, ""),
-        };
-        let value = value.trim_matches('"');
-        match key.to_ascii_lowercase().as_str() {
-            "host" => {
-                finish(&mut current, &mut found);
-                have.clear();
-                in_match = false;
-                for name in value.split_whitespace() {
-                    if !name.contains(['*', '?', '!']) {
-                        let note = format!("From {}", path.display());
-                        current.push(Found { name: name.to_string(), protocol: "SSH", icon: "computer", port: 0, note, ..Found::default() });
-                    }
-                }
-            }
-            "match" => {
-                finish(&mut current, &mut found);
-                in_match = true;
-            }
-            "include" if current.is_empty() && !in_match && depth < 4 => {
-                for pattern in value.split_whitespace() {
-                    for file in expand_include(pattern, ssh_folder) {
-                        found.extend(read_ssh_config(&file, ssh_folder, depth + 1));
-                    }
-                }
-            }
-            other if !current.is_empty() => {
-                let first = have.insert(other.to_string());
-                for f in current.iter_mut() {
-                    match other {
-                        "hostname" if first => f.host = value.to_string(),
-                        "port" if first => f.port = value.parse().unwrap_or(0),
-                        "user" if first => f.username = value.to_string(),
-                        "proxyjump" if first && !value.eq_ignore_ascii_case("none") => f.jump_host = value.to_string(),
-                        // several identity files and forwards all apply
-                        "identityfile" => add_arg(&mut f.extra_args, "-i", value),
-                        "localforward" => add_arg(&mut f.extra_args, "-L", &value.split_whitespace().collect::<Vec<_>>().join(":")),
-                        "remoteforward" => add_arg(&mut f.extra_args, "-R", &value.split_whitespace().collect::<Vec<_>>().join(":")),
-                        "dynamicforward" => add_arg(&mut f.extra_args, "-D", value),
-                        _ => {}
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    finish(&mut current, &mut found);
-    found
-}
-
 /// Add `switch value` to a command line's arguments, unless the value is empty
 fn add_arg(args: &mut String, switch: &str, value: &str) {
     if value.is_empty() {
@@ -393,51 +318,6 @@ fn add_arg(args: &mut String, switch: &str, value: &str) {
     }
     let value = if value.contains(' ') { format!("\"{value}\"") } else { value.to_string() };
     args.push_str(&format!("{switch} {value}"));
-}
-
-/// The files an Include names: ~ expanded, relative to ~/.ssh, with `*` and `?` matched in the file name
-fn expand_include(pattern: &str, ssh_folder: &Path) -> Vec<PathBuf> {
-    let expanded = match pattern.strip_prefix("~/") {
-        Some(rest) => dirs::home_dir().unwrap_or_default().join(rest),
-        None => PathBuf::from(pattern),
-    };
-    let full = if expanded.is_absolute() { expanded } else { ssh_folder.join(expanded) };
-    let Some(name) = full.file_name().and_then(|n| n.to_str()).map(str::to_string) else { return Vec::new() };
-    if !name.contains(['*', '?']) {
-        return if full.is_file() { vec![full] } else { Vec::new() };
-    }
-    let Some(dir) = full.parent() else { return Vec::new() };
-    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
-    let mut files: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| wildcard(&name, n)))
-        .collect();
-    files.sort();
-    files
-}
-
-/// Whether `text` matches a pattern with `*` (any run) and `?` (any one character)
-fn wildcard(pattern: &str, text: &str) -> bool {
-    let (p, t): (Vec<char>, Vec<char>) = (pattern.chars().collect(), text.chars().collect());
-    let (mut pi, mut ti, mut star, mut mark) = (0, 0, None, 0);
-    while ti < t.len() {
-        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
-            pi += 1;
-            ti += 1;
-        } else if pi < p.len() && p[pi] == '*' {
-            star = Some(pi);
-            mark = ti;
-            pi += 1;
-        } else if let Some(s) = star {
-            pi = s + 1;
-            mark += 1;
-            ti = mark;
-        } else {
-            return false;
-        }
-    }
-    p[pi..].iter().all(|c| *c == '*')
 }
 
 // ---- Another Sessions.xml
@@ -507,7 +387,7 @@ const RDP_RECENT: &str = "HKEY_CURRENT_USER\\Software\\Microsoft\\Terminal Serve
 /// Where Import from PuTTY/KiTTY and from Remote Desktop's recent computers read, for the import window
 pub fn source_of_import(kind: &str) -> Option<String> {
     match kind {
-        "ssh" => Some(ssh_config_path().display().to_string()),
+        "ssh" => Some(ssh_config::ssh_config_path().display().to_string()),
         // SecureCRT's Sessions folder where it has one; otherwise the window waits for one to be chosen
         "securecrt" => Some(securecrt::securecrt_folder()).filter(|f| f.is_dir()).map(|f| f.display().to_string()),
         #[cfg(windows)]
@@ -550,11 +430,6 @@ fn read_rdp_recent() -> Result<Vec<Found>, String> {
 
 // ---- Planning by kind
 
-/// The default ~/.ssh/config
-pub fn ssh_config_path() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join(".ssh/config")
-}
-
 /// Plan an import: `kind` is "csv", "mobaxterm", "rdp" (one or more files), "ssh", "superputty" (a Sessions.xml),
 /// "puttycm" (a PuTTY CM export), "puttyFolder" (a folder of PuTTY session files), "securecrt" (SecureCRT's Sessions
 /// folder, or a folder in it), "putty" (PuTTY's and KiTTY's
@@ -593,7 +468,7 @@ pub fn plan(kind: &str, paths: &[PathBuf], store: Store, existing: &Existing) ->
                 return Err(format!("{} isn't there.", first.display()));
             }
             let folder = first.parent().map(Path::to_path_buf).unwrap_or_default();
-            Ok(plan_added(read_ssh_config(first, &folder, 0), "ImportedFromSshConfig", store))
+            Ok(plan_added(ssh_config::read_ssh_config(first, &folder, 0), "ImportedFromSshConfig", store))
         }
         _ => Err(format!("Unknown import \"{kind}\"")),
     }
@@ -701,7 +576,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(dir.join("conf.d/extra.conf"), "Host extra\n  User x\n").unwrap();
-        let found = read_ssh_config(&dir.join("config"), &dir, 0);
+        let found = ssh_config::read_ssh_config(&dir.join("config"), &dir, 0);
         let names: Vec<&str> = found.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, ["extra", "bastion", "sw1", "sw2"]);
         assert_eq!(found[0].host, "extra", "no HostName: the alias");

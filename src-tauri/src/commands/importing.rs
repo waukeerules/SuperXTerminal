@@ -66,5 +66,5 @@ pub(crate) fn sessions_import_source(kind: String) -> Option<String> {
 /// ~/.ssh/config, for Import from ssh config
 #[tauri::command]
 pub(crate) fn ssh_config_path() -> String {
-    importing::ssh_config_path().display().to_string()
+    importing::ssh_config::ssh_config_path().display().to_string()
 }

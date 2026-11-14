@@ -10,7 +10,7 @@ use crate::settings::AppSettings;
 use crate::{applog, keys, opening};
 
 /// SuperXTerminal > Third-Party Notices: the components it ships and their licences (scripts/notices.mjs), in the
-/// system's text editor ([`Opening::AsText`]). The app has the file among its resources; a development build reads
+/// system's text editor ([`opening::Opening::AsText`]). The app has the file among its resources; a development build reads
 /// the project's.
 pub(crate) fn open_notices<R: Runtime>(app: &AppHandle<R>) {
     let bundled = app.path().resource_dir().map(|d| d.join("THIRD-PARTY-NOTICES.txt")).ok().filter(|p| p.exists());
@@ -30,8 +30,8 @@ pub(crate) fn open_notices<R: Runtime>(app: &AppHandle<R>) {
 /// SuperXPuTTY's File, View and Tools menus join it as their features arrive.
 /// Its keys are the settings' (Settings > Shortcuts). Tools > Use Local Overrides is ticked while they're used, and
 /// View's panes and bars while they're shown ([`view_checks`]): the menu is made again whenever one of those changes
-/// ([`window_changes`]), so the ticks follow however it changed: the item itself, the status bar's "Local overrides
-/// off", or a pane's own ×.
+/// ([`crate::commands::settings::window_changes`]), so the ticks follow however it changed: the item itself, the
+/// status bar's "Local overrides off", or a pane's own ×.
 pub(crate) fn menu<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> tauri::Result<Menu<R>> {
     let shortcuts = &settings.shortcuts;
     let overrides_on = settings.use_local_overrides;
@@ -208,8 +208,8 @@ pub(crate) fn menu<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings) -> ta
 
 /// The View menu's items that are shown or hidden, each with whether it's shown now, for its tick (as a Mac app's
 /// View menu, and SuperXPuTTY's, tick the panes and bars on screen). Each is a setting, saved when the item is chosen,
-/// so the menu is made again then ([`window_changes`]) and the tick follows. Full Screen isn't among them: the Mac's
-/// own View menu doesn't tick it either. Nor is Layouts…, which opens Settings > Layouts.
+/// so the menu is made again then ([`crate::commands::settings::window_changes`]) and the tick follows. Full Screen
+/// isn't among them: the Mac's own View menu doesn't tick it either. Nor is Layouts…, which opens Settings > Layouts.
 pub(crate) fn view_checks(settings: &AppSettings) -> [(&'static str, bool); 9] {
     [
         ("toggleSessionsPane", settings.show_sessions_pane),

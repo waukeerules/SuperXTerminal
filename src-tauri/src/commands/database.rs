@@ -1,6 +1,6 @@
 //! Database sessions: the connection's settings (Settings > Database), reading the table or its cache, changing
 //! its sessions and folders, and the changes that wait to be sent or were refused (Pending changes). The table
-//! itself is `crate::db`, and the queue of changes `crate::outbox`; what the tree's root shows is [`DbState`].
+//! itself is `crate::db`, and the queue of changes `crate::outbox`; what the tree's root shows is `DbState`.
 
 use std::path::PathBuf;
 

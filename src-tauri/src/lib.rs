@@ -1,4 +1,8 @@
-//! SuperXTerminal's Rust core: the commands the UI (`src/`) calls through Tauri's `invoke`.
+//! SuperXTerminal's Rust core: what every command shares ([`AppState`]) and the app's start ([`run`]), which
+//! loads the settings, registers the commands, builds the menu bar and opens the main window. The commands the UI
+//! (`src/`) calls through Tauri's `invoke` are in `commands/`, a module for each area of the app; the menu bar is
+//! `menu.rs`, the windows `windows.rs`, and what's asked of the app from outside `requests.rs`. Code that isn't
+//! the app's set-up belongs in one of those, or a module of its own, not here.
 
 mod algorithms;
 mod applog;
@@ -72,10 +76,10 @@ use std::sync::Mutex;
 
 use tauri::{Emitter, Manager};
 
-use profiles::Profiles;
 use commands::database::DbState;
 use commands::sessions::FilesRead;
 use menu::{menu, open_notices};
+use profiles::Profiles;
 use sessions::Sessions;
 use settings::AppSettings;
 
@@ -91,7 +95,7 @@ pub struct AppState {
     db_server: Mutex<Vec<sessions::StoredSession>>,
     /// The session files' contents when last read, so a change made elsewhere can be noticed
     files_seen: Mutex<file_watch::Seen>,
-    /// What the last read of the session files said; None until they've been read ([`sessions_shown`])
+    /// What the last read of the session files said; None until they've been read ([`commands::sessions::sessions_shown`])
     files_read: Mutex<Option<FilesRead>>,
 }
 
@@ -429,5 +433,4 @@ pub(crate) mod tests {
             files_read: Mutex::new(None),
         }
     }
-
 }

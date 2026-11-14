@@ -1,6 +1,6 @@
 //! Move to and Copy to between Saved, Private and Database sessions, and Edit Several Sessions' one change made
 //! to many. Both work across the stores, so they send a Database session's part to the table (`database.rs`) and
-//! write the files' part with `crate::editing`, and say what went and what didn't in a [`TransferReport`].
+//! write the files' part with `crate::editing`, and say what went and what didn't in a `TransferReport`.
 
 use tauri::State;
 

@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
-import { PageHost, hasText } from "./PageHost";
+import { FRAME_PX, PageHost, hasText } from "./PageHost";
 import { holdTunnels, releaseTunnels } from "./tunnels";
 import { catchShortcuts, loadShortcuts } from "../shortcuts";
 import { DEFAULT_PROFILE, emptyProfile, PROFILES_CHANGED, type Profile } from "../settings/profiles";
@@ -525,6 +525,26 @@ describe("a session's tunnels", () => {
     expect(notices().filter((n) => n.startsWith("The profile's tunnels changed"))).toEqual(["The profile's tunnels changed: Restart session (in the tab's menu) to use them."]);
     // the tab still has the ones ssh opened
     expect(host!.tunnels).toEqual([{ kind: "local", listen: "8080", to: "localhost:80" }]);
+  });
+});
+
+describe("the frame in the session's environment colour", () => {
+  /** Open a tab with this environment colour and give back the frame its page is told of, in pixels */
+  async function frameTold(environment: string | null): Promise<number | undefined> {
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, environment, () => {}, () => {});
+    page({ type: "ready" });
+    await expect.poll(() => channel).not.toBeNull();
+    (channel!.onmessage as (e: unknown) => void)({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "root" }, link: "pty" });
+    await expect.poll(() => posted.some((m) => m.type === "config" && "frame" in m)).toBe(true);
+    return (posted.find((m) => m.type === "config" && "frame" in m) as { frame?: number }).frame;
+  }
+
+  it("is told to the page, so the magnifying glass is where it is in a tab with no colour", async () => {
+    expect(await frameTold("#3c9a3c")).toBe(FRAME_PX);
+  });
+
+  it("is none for a session with no environment colour", async () => {
+    expect(await frameTold(null)).toBe(0);
   });
 });
 

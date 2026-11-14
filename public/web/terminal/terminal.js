@@ -1938,6 +1938,9 @@
         puttyToHand = config.putty !== false;
         menuKeys = config.menuKeys || [];
         hostMenu = !!config.hostMenu;
+        // the frame in the session's colour around this page, which terminal.css's find bar and magnifying glass
+        // move out by, to be where they are in a tab with none
+        document.documentElement.style.setProperty('--frame', (Number(config.frame) || 0) + 'px');
         keyLabels = config.keyLabels || {};
         titleFindButton();
         if (config.keys) { keysFromProfile = config.keys; }

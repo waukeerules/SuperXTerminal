@@ -27,6 +27,13 @@ import { isMac, loadShortcuts, shortcutLabel } from "../shortcuts";
 import { listen } from "@tauri-apps/api/event";
 import type { MenuItem } from "../ui/Menu.svelte";
 
+/**
+ * How wide the frame in a session's environment colour is around its tab's content, in pixels: SuperXPuTTY's 3
+ * (TabArea pads the tab by it). The terminal's page is told of it, as it's that much in from the tab's edges and
+ * places its magnifying glass and find bar by the tab's, not its own.
+ */
+export const FRAME_PX = 3;
+
 /** What the Rust core sends on a tab's channel (`PtyEvent`) */
 type PtyEvent =
   | { type: "data"; data: string }
@@ -989,6 +996,8 @@ export class PageHost implements ScriptTarget {
       // the profile's Scrollback (else Default Settings'), over Settings > Terminal's; 0 for Settings > Terminal's
       profileScrollback: look.scrollback ?? 0,
       cursorColor: this.cursorColor,
+      // the frame TabArea draws around the page in the environment colour, which the page's find button allows for
+      frame: this.cursorColor ? FRAME_PX : 0,
       profileTheme: look.theme ?? "",
       colors: { background: look.background ?? "", foreground: look.foreground ?? "", selection: look.selection ?? "", cursor: look.cursorColor ?? "" },
     });

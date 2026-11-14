@@ -209,10 +209,13 @@ body.nowrap #hscroll {
   background-color: var(--menu-fg);
 }
 
+/* --frame (terminal.js configure) is the frame a session's colour puts around this page, 3 pixels of the tab: the
+   find bar and its magnifying glass are that much nearer the page's edges, so they're at the same place in the tab
+   whether the session has a colour or not */
 #find {
   position: absolute;
-  top: 6px;
-  right: 22px;
+  top: calc(6px - var(--frame, 0px));
+  right: calc(22px - var(--frame, 0px));
   z-index: 5;
   display: flex;
   align-items: center;
@@ -267,8 +270,8 @@ body.nowrap #hscroll {
    pointer's on it so it doesn't hide the output under it */
 #findOpen {
   position: absolute;
-  top: 6px;
-  right: 22px;
+  top: calc(6px - var(--frame, 0px));
+  right: calc(22px - var(--frame, 0px));
   z-index: 4;
   display: flex;
   align-items: center;

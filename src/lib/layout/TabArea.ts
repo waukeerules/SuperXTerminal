@@ -24,7 +24,7 @@ import { mount, unmount } from "svelte";
 import { invoke } from "@tauri-apps/api/core";
 import type { CustomIcon } from "../icons/custom";
 import type { MenuItem } from "../ui/Menu.svelte";
-import { PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
+import { FRAME_PX, PageHost, type QuickConnect, type Target } from "../terminal/PageHost";
 import { OutputHost } from "../terminal/OutputHost";
 import { RdpHost } from "../terminal/RdpHost";
 import type { ScriptTarget } from "../scripting/spsl";
@@ -263,7 +263,7 @@ class RdpPanel implements IContentRenderer {
     if (target.kind !== "session") return;
     // the environment colour frames the remote desktop, as it frames a terminal
     if (environment) {
-      this.element.style.padding = "3px";
+      this.element.style.padding = `${FRAME_PX}px`;
       this.element.style.background = environment;
     }
     const id = parameters.api.id;
@@ -302,7 +302,7 @@ class SftpPanel implements IContentRenderer {
     const { target, environment } = parameters.params as TerminalParams;
     if (target.kind !== "session") return;
     if (environment) {
-      this.element.style.padding = "3px";
+      this.element.style.padding = `${FRAME_PX}px`;
       this.element.style.background = environment;
     }
     const id = (this.id = parameters.api.id);
@@ -454,7 +454,7 @@ class TerminalPanel implements IContentRenderer {
     const { target, local, environment, adopt } = parameters.params as TerminalParams;
     // SuperXPuTTY's frame: the environment colour shows as a 3 px border around the terminal
     if (environment) {
-      this.element.style.padding = "3px";
+      this.element.style.padding = `${FRAME_PX}px`;
       this.element.style.background = environment;
     }
     const frame = document.createElement("iframe");

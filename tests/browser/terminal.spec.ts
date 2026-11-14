@@ -721,6 +721,28 @@ test.describe("Find", () => {
     await expect(glass).toBeVisible();
   });
 
+  test("the magnifying glass and the find bar are at the same place in the tab, with a colour's frame around the terminal or none", async ({ page }) => {
+    // how far the glass, then the find bar, is from the page's top and right edges
+    const places = async () => {
+      const width = page.viewportSize()!.width;
+      const glass = (await page.locator("#findOpen").boundingBox())!;
+      await page.locator("#findOpen").click();
+      const bar = (await page.locator("#find").boundingBox())!;
+      await page.locator("#findText").press("Escape");
+      return { glass: { top: glass.y, right: width - (glass.x + glass.width) }, bar: { top: bar.y, right: width - (bar.x + bar.width) } };
+    };
+    await openTerminal(page, {});
+    const plain = await places();
+    // a session with an environment colour: the tab draws a 3 pixel frame around the page, and tells it so
+    await page.evaluate(() => (window as any).terminalDev.message({ type: "config", prefs: {}, themes: [{ name: "PuTTY", colors: {} }], frame: 3 }));
+    const framed = await places();
+    // the page is 3 pixels in from the tab's edges, so both are 3 pixels nearer the page's
+    for (const part of ["glass", "bar"] as const) {
+      expect(framed[part].top).toBeCloseTo(plain[part].top - 3, 1);
+      expect(framed[part].right).toBeCloseTo(plain[part].right - 3, 1);
+    }
+  });
+
   test("the magnifying glass names the app's Find key, and a new one from Settings > Shortcuts", async ({ page }) => {
     await page.goto("/web/terminal/index.html");
     await page.waitForFunction(() => !!(window as any).terminalDev);

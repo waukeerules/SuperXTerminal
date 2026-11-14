@@ -70,12 +70,12 @@ mod sftp;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use profiles::Profiles;
 use commands::database::DbState;
 use commands::sessions::FilesRead;
-use menu::{menu, open_notices, view_checks};
+use menu::{menu, open_notices};
 use sessions::Sessions;
 use settings::AppSettings;
 
@@ -93,12 +93,6 @@ pub struct AppState {
     files_seen: Mutex<file_watch::Seen>,
     /// What the last read of the session files said; None until they've been read ([`sessions_shown`])
     files_read: Mutex<Option<FilesRead>>,
-}
-
-/// The app's settings, for the UI
-#[tauri::command]
-fn settings_get(state: State<'_, AppState>) -> AppSettings {
-    state.settings.lock().unwrap().clone()
 }
 
 /// The custom icons in `<SettingsFolder>/icons`: (name, PNG as a data URL) for each `.png`, as SuperXPuTTY's CustomIcons
@@ -144,13 +138,6 @@ fn highlighting_user_folder(state: State<'_, AppState>) -> Result<PathBuf, Strin
     let folder = state.user_folder.join("highlighting");
     std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     Ok(folder)
-}
-
-/// What this computer's ssh has for each kind of algorithm, and its default order, for the algorithm lists in
-/// Settings > Profiles and Edit Session (algorithms.rs)
-#[tauri::command]
-fn ssh_algorithms_available() -> Vec<algorithms::Available> {
-    algorithms::available()
 }
 
 /// Open a session in another app: "open" for RDP (Windows App) and VNC (Screen Sharing), "terminal" for Connect
@@ -233,65 +220,6 @@ fn profile_key_age(key_file: String) -> Option<u64> {
     launch::key_age(&key_file)
 }
 
-/// Save the Settings window's General tab; the settings folder is changed with `settings_set_folder`
-#[tauri::command]
-fn settings_save(app: AppHandle, state: State<'_, AppState>, settings: AppSettings) -> Result<AppSettings, String> {
-    let mut current = state.settings.lock().unwrap();
-    let folder = current.settings_folder.clone();
-    let before = current.clone();
-    *current = AppSettings { settings_folder: folder, ..settings };
-    current.icon_size = match current.icon_size {
-        16 | 20 | 24 | 32 => current.icon_size,
-        _ => 24,
-    };
-    current.tree_font_size = current.tree_font_size.clamp(10, 24);
-    current.shortcuts = keys::cleaned(&current.shortcuts);
-    current.command_history_days = current.command_history_days.min(command_history::MOST_DAYS);
-    current.save(&state.user_folder)?;
-    onepassword::set_enabled(current.one_password);
-    // Settings > General > Command bar's days shortened (or 0): what they no longer allow goes now, not at next start
-    if current.command_history_days < before.command_history_days {
-        let _ = command_history::prune(&state.user_folder, current.command_history_days, command_history::now());
-    }
-    let changes = window_changes(&before, &current);
-    // the menu bar's keys follow Settings > Shortcuts
-    if changes.menu && let Ok(bar) = menu(&app, &current) {
-        let _ = app.set_menu(bar);
-    }
-    if changes.theme {
-        windows::apply_window_theme(&app, &current.theme);
-    }
-    let saved = current.clone();
-    drop(current);
-    applog::info("Settings saved");
-    // and the menu bar icon, Settings > General
-    tray::refresh(&app);
-    // every window reads them again, so another window's next save doesn't put back what it had
-    let _ = app.emit(SETTINGS_CHANGED, ());
-    Ok(saved)
-}
-
-/// What a settings save has to redo in the windows themselves (see [`window_changes`])
-#[derive(Debug, PartialEq)]
-struct WindowChanges {
-    /// The menu bar again: its keys (Settings > Shortcuts), Local overrides, or what View ticks changed
-    menu: bool,
-    /// The menu bar, menus and title bars in the theme again: Settings > General > Theme changed
-    theme: bool,
-}
-
-/// What a save from `before` to `after` changes in the windows. Each only when its own setting changed: on Windows,
-/// setting the menu bar again lays the whole window out again, which showed as the window shifting at every save (a
-/// checkbox in a terminal tab's menu saves too)
-fn window_changes(before: &AppSettings, after: &AppSettings) -> WindowChanges {
-    WindowChanges {
-        menu: before.shortcuts != after.shortcuts
-            || before.use_local_overrides != after.use_local_overrides
-            || view_checks(before) != view_checks(after),
-        theme: before.theme != after.theme,
-    }
-}
-
 /// The window's own themes (Settings > General > Look > Theme), from UiThemes.json in the user's folder
 #[tauri::command]
 fn ui_themes_load(state: State<'_, AppState>) -> Vec<ui_themes::UiTheme> {
@@ -302,39 +230,6 @@ fn ui_themes_load(state: State<'_, AppState>) -> Vec<ui_themes::UiTheme> {
 #[tauri::command]
 fn ui_themes_save(state: State<'_, AppState>, themes: Vec<ui_themes::UiTheme>) -> Result<Vec<ui_themes::UiTheme>, String> {
     ui_themes::save(&state.user_folder, &themes)
-}
-
-/// Settings > General's Check 1Password: whether its CLI works here, through the 1Password app (onepassword.rs).
-/// async: it waits for the user to approve it in 1Password
-#[tauri::command(async)]
-fn onepassword_check() -> Result<String, String> {
-    onepassword::check()
-}
-
-/// Use another settings folder (chosen in the UI), and remember it
-#[tauri::command]
-fn settings_set_folder(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<(), String> {
-    let mut settings = state.settings.lock().unwrap();
-    settings.settings_folder = Some(PathBuf::from(path));
-    settings.save(&state.user_folder)?;
-    let _ = app.emit(SETTINGS_CHANGED, ());
-    Ok(())
-}
-
-/// The event every window gets when the settings are saved
-const SETTINGS_CHANGED: &str = "settings-changed";
-
-/// The Shortcuts editor's rows: every action, its default and its key now
-#[tauri::command]
-fn shortcuts_keys(state: State<'_, AppState>) -> Vec<keys::Row> {
-    keys::rows(&state.settings.lock().unwrap().shortcuts)
-}
-
-/// The keys this system keeps (the Mac's Cmd+Q, Cmd+C...; Windows' Alt+F4 and the terminal's Ctrl+Shift+C/V), which
-/// the Shortcuts editor won't give to an action
-#[tauri::command]
-fn shortcuts_reserved() -> Vec<&'static str> {
-    keys::reserved().to_vec()
 }
 
 /// The layouts' names, "<Auto Restore>" first
@@ -488,11 +383,11 @@ pub fn run() {
             commands::sessions::sessions_load,
             commands::sessions::sessions_shown,
             commands::files::open_link,
-            settings_get,
-            settings_set_folder,
+            commands::settings::settings_get,
+            commands::settings::settings_set_folder,
             commands::files::folder_writable,
             commands::files::folder_exists,
-            settings_save,
+            commands::settings::settings_save,
             icons_custom,
             highlighting_load,
             commands::session_editing::session_get,
@@ -540,7 +435,7 @@ pub fn run() {
             commands::session_editing::session_passwords_set,
             commands::importing::sessions_export_csv,
             commands::importing::sessions_csv_template,
-            onepassword_check,
+            commands::settings::onepassword_check,
             ui_themes_load,
             ui_themes_save,
             windows::window_new,
@@ -556,8 +451,8 @@ pub fn run() {
             commands::sending::command_history_add,
             requests::requests_take,
             requests::links_make_default,
-            shortcuts_keys,
-            shortcuts_reserved,
+            commands::settings::shortcuts_keys,
+            commands::settings::shortcuts_reserved,
             layout_read,
             layout_save,
             layout_delete,
@@ -567,7 +462,7 @@ pub fn run() {
             commands::importing::sessions_import_apply,
             commands::importing::ssh_config_path,
             commands::importing::sessions_import_source,
-            ssh_algorithms_available,
+            commands::settings::ssh_algorithms_available,
             commands::session_files::sessions_export_xml,
             commands::session_files::sessions_edit_externally,
             commands::overrides::overrides_set,
@@ -695,27 +590,6 @@ pub(crate) mod tests {
             files_seen: Mutex::new(crate::file_watch::Seen::nothing()),
             files_read: Mutex::new(None),
         }
-    }
-
-    use super::{window_changes, WindowChanges};
-    use crate::settings::AppSettings;
-
-    #[test]
-    fn a_terminal_preference_saved_leaves_the_menu_bar_and_theme_alone() {
-        // a checkbox in a terminal tab's menu saves the settings; setting the menu bar again shifted the whole window
-        let before = AppSettings::default();
-        let mut after = before.clone();
-        after.terminal_prefs.insert("copyOnSelect".into(), "false".into());
-        assert_eq!(window_changes(&before, &after), WindowChanges { menu: false, theme: false });
-        let mut keys = before.clone();
-        keys.shortcuts.insert("newTab".into(), "Ctrl+T".into());
-        assert_eq!(window_changes(&before, &keys), WindowChanges { menu: true, theme: false });
-        let mut overrides = before.clone();
-        overrides.use_local_overrides = !before.use_local_overrides;
-        assert_eq!(window_changes(&before, &overrides), WindowChanges { menu: true, theme: false });
-        let mut theme = before.clone();
-        theme.theme = "light".into();
-        assert_eq!(window_changes(&before, &theme), WindowChanges { menu: false, theme: true });
     }
 
 }

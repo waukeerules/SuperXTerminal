@@ -228,7 +228,7 @@ pub(crate) fn view_checks(settings: &AppSettings) -> [(&'static str, bool); 9] {
 mod tests {
     use super::view_checks;
     use crate::settings::AppSettings;
-    use crate::{window_changes, WindowChanges};
+    use crate::commands::settings::{window_changes, WindowChanges};
 
     #[test]
     fn the_view_menu_ticks_what_is_shown_and_follows_each_change() {

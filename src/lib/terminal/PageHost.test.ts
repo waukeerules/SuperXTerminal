@@ -39,9 +39,12 @@ let openWaits: Promise<void> | null;
 let clipboard: string;
 /** What each log_open was told to do with the log: keep it, not, or as Settings > General says (null) */
 let logKeep: (boolean | null)[];
+/** The pseudo terminals pty_close was asked to close, by id */
+let ptyClosed: number[];
 
 beforeEach(() => {
   logKeep = [];
+  ptyClosed = [];
   channel = null;
   opened = 0;
   saved = [];
@@ -71,6 +74,10 @@ beforeEach(() => {
       return null;
     }
     if (cmd === "clipboard_text") return clipboard;
+    if (cmd === "pty_close") {
+      ptyClosed.push(Number(payload.id));
+      return null;
+    }
     if (cmd === "log_open") {
       logKeep.push(payload.keep as boolean | null);
       return { id: 1, path: "/tmp/sw1.log", temporary: payload.keep !== true };
@@ -603,6 +610,33 @@ describe("a tab behind another", () => {
     host.setShown(true);
     host.setShown(true);
     expect(told()).toEqual([false, false, true]);
+  });
+});
+
+describe("a tab closed as it opens", () => {
+  it("doesn't open its session once it's closed, though it was waiting for the page's size", async () => {
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    // closed at once: on Windows it's still waiting for the page to settle its size (settledSize)
+    host.dispose();
+    host = null;
+    await new Promise((r) => setTimeout(r, 400));
+    expect(opened).toBe(0);
+  });
+
+  it("closes its session when it's closed while the session is still opening, and starts no log", async () => {
+    let answer = () => {};
+    openWaits = new Promise((resolve) => (answer = resolve));
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "ready" });
+    await expect.poll(() => opened).toBe(1);
+    host.dispose();
+    host = null;
+    // pty_open answers after the tab has gone
+    answer();
+    await expect.poll(() => ptyClosed).toEqual([1]);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(logKeep).toEqual([]);
   });
 });
 

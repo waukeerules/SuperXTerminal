@@ -448,8 +448,16 @@ export class PageHost implements ScriptTarget {
     }).catch(() => {});
   };
 
+  /**
+   * Whether the tab has closed (dispose). Opening the session can still be under way then: on Windows the tab waits
+   * for the page's size first (settledSize), and pty_open takes a moment to answer anywhere. Without this the session
+   * opened after its tab had gone, with nothing left to close it
+   */
+  private closed = false;
+
   /** Close the pseudo terminal and stop listening; called when the tab closes */
   dispose(): void {
+    this.closed = true;
     releaseTunnels(this.tab);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.answeredTimer) clearTimeout(this.answeredTimer);
@@ -1106,7 +1114,7 @@ export class PageHost implements ScriptTarget {
       return;
     }
     try {
-      await this.openPty({ target: this.target, onEvent: channel, loginAs: this.loginAs });
+      if (!(await this.openPty({ target: this.target, onEvent: channel, loginAs: this.loginAs }))) return;
       this.fetchedKey = false;
       this.startedAt = Date.now();
       // one log for the tab, kept across reconnects, as SuperXPuTTY's
@@ -1232,11 +1240,22 @@ export class PageHost implements ScriptTarget {
     this.sizeChanged = null;
   }
 
-  private async openPty(args: { target: Target; onEvent: ReturnType<PageHost["outputChannel"]>; loginAs: string | null }): Promise<void> {
+  /**
+   * Open the tab's pseudo terminal once its size has settled; false when the tab closed meanwhile, and nothing is left
+   * open (a session that opened as it closed is closed again)
+   */
+  private async openPty(args: { target: Target; onEvent: ReturnType<PageHost["outputChannel"]>; loginAs: string | null }): Promise<boolean> {
     await this.settledSize();
+    if (this.closed) return false;
     const opening = { ...this.size };
-    this.ptyId = await invoke<number>("pty_open", { ...args, ...opening });
+    const id = await invoke<number>("pty_open", { ...args, ...opening });
+    if (this.closed) {
+      void invoke("pty_close", { id }).catch(() => {});
+      return false;
+    }
+    this.ptyId = id;
     if (this.size.cols !== opening.cols || this.size.rows !== opening.rows) await this.resizePty();
+    return true;
   }
 
   /**
@@ -1263,7 +1282,11 @@ export class PageHost implements ScriptTarget {
   private async runKeyFetch(profile: string): Promise<boolean> {
     const code = new Promise<number | null>((resolve) => (this.fetching = resolve));
     try {
-      await this.openPty({ target: { kind: "keyFetch", profile } satisfies Target, onEvent: this.outputChannel(), loginAs: null });
+      // the tab closed as the fetch opened: there's nothing to wait for
+      if (!(await this.openPty({ target: { kind: "keyFetch", profile } satisfies Target, onEvent: this.outputChannel(), loginAs: null }))) {
+        this.fetching = null;
+        return false;
+      }
     } catch (error) {
       this.fetching = null;
       this.post({ type: "notice", text: `${String(error)} Press Enter to try again.`, kind: "error" });

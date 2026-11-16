@@ -139,6 +139,13 @@ Things that differ from the Mac and Windows, worth checking first:
 - **"The system library `xyz` required by crate `xyz-sys` was not found"**: a new dependency needs a Linux library.
   Add its `-dev` package to the `apt-get install` in `scripts/linux-build.Dockerfile` (and to the Linux step of
   `.github/workflows/build.yml`), then `npm run build:linux -- --new-image`.
+- **The app doesn't open, and a terminal says "error while loading shared libraries"**: the package didn't ask for a
+  library the app links against. Tauri's `.deb` and `.rpm` ask only for WebKitGTK, GTK and the tray icon's library;
+  the rest are in `depends` in `tauri.conf.json` (`bundle > linux`). Ubuntu 26.04 and later ship OpenSSL 4, so
+  OpenSSL 3 (`libssl3t64`) is there only when a package asks for it. To see what the app needs, list its libraries
+  with `objdump -p /usr/bin/superxterminal | grep NEEDED` and check each one's package (`dpkg -S`) is asked for, or
+  comes with WebKitGTK or GTK. A `.deb` built outside the container, on a newer Ubuntu, links against that system's
+  libraries (OpenSSL 4 on 26.04), so it isn't the one to give to others.
 - **`failed to run linuxdeploy`** (the AppImage): the `.deb` and `.rpm` are made before it and still copied out.
   The image already deals with the two known causes: no FUSE in a container (`APPIMAGE_EXTRACT_AND_RUN=1`), and
   emulated x86 refusing AppImages' header marker (a patched copy of linuxdeploy's AppImage plugin; the Dockerfile

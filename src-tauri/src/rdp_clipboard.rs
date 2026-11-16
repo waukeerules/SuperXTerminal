@@ -604,7 +604,9 @@ mod tests {
         (backend, receiver)
     }
 
-    /// The backend's next message for the remote desktop
+    /// The backend's next message for the remote desktop. Only the Mac's and Windows' tests read one, so on Linux it
+    /// would be unused, which clippy fails
+    #[cfg(any(windows, target_os = "macos"))]
     fn message(receiver: &mut mpsc::UnboundedReceiver<RdpInputEvent>) -> ClipboardMessage {
         match receiver.try_recv() {
             Ok(RdpInputEvent::Clipboard(message)) => message,

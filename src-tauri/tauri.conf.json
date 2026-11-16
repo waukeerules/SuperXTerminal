@@ -48,8 +48,8 @@
       }
     },
     "linux": {
-      "deb": { "files": { "/usr/share/metainfo/com.waukeerules.superxterminal.metainfo.xml": "linux/com.waukeerules.superxterminal.metainfo.xml" } },
-      "rpm": { "files": { "/usr/share/metainfo/com.waukeerules.superxterminal.metainfo.xml": "linux/com.waukeerules.superxterminal.metainfo.xml" } },
+      "deb": { "depends": ["libssl3t64 | libssl3", "libasound2t64 | libasound2"], "files": { "/usr/share/metainfo/com.waukeerules.superxterminal.metainfo.xml": "linux/com.waukeerules.superxterminal.metainfo.xml" } },
+      "rpm": { "depends": ["openssl-libs", "alsa-lib"], "files": { "/usr/share/metainfo/com.waukeerules.superxterminal.metainfo.xml": "linux/com.waukeerules.superxterminal.metainfo.xml" } },
       "appimage": { "files": { "/usr/share/metainfo/com.waukeerules.superxterminal.metainfo.xml": "linux/com.waukeerules.superxterminal.metainfo.xml" } }
     },
     "windows": {

@@ -17,6 +17,36 @@ describe("sshFailure", () => {
     expect(sshFailure(earlier).kind).toBe("other");
   });
 
+  it("reads a host whose key has changed, with the name and file ssh gives, and doesn't reconnect by itself", () => {
+    // OpenSSH's own words, on the Mac (the "remove with" lines aren't printed by every build)
+    const warning = [
+      "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+      "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @",
+      "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+      "IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!",
+      "Someone could be eavesdropping on you right now (man-in-the-middle attack)!",
+      "It is also possible that a host key has just been changed.",
+      "The fingerprint for the ED25519 key sent by the remote host is",
+      "SHA256:Hx3Vp1ZbVq4W0kXyq4m0QhC2bq2Jq1xO9Zt3m3d0fXc.",
+      "Please contact your system administrator.",
+      "Add correct host key in /Users/me/.ssh/known_hosts to get rid of this message.",
+      "Offending ED25519 key in /Users/me/.ssh/known_hosts:12",
+      "  remove with:",
+      "  ssh-keygen -f '/Users/me/.ssh/known_hosts' -R '[sw1.lab]:2222'",
+      "Host key for [sw1.lab]:2222 has changed and you have requested strict checking.",
+      "Host key verification failed.",
+    ].join("\r\n") + "\r\n";
+    const failure = sshFailure(warning);
+    expect(failure).toEqual({ kind: "hostKeyChanged", host: "[sw1.lab]:2222", file: "/Users/me/.ssh/known_hosts", line: "12" });
+    expect(retries(failure)).toBe(false);
+    // Windows' file, with both slashes
+    expect(sshFailure(warning.replace(/\/Users\/me\/\.ssh/g, "C:\\Users\\me/.ssh"))).toMatchObject({ file: "C:\\Users\\me/.ssh/known_hosts" });
+  });
+
+  it("doesn't take a key that was never saved, under strict checking, for a changed one", () => {
+    expect(sshFailure("No ED25519 host key is known for sw1.lab and you have requested strict checking.\r\nHost key verification failed.\r\n").kind).toBe("other");
+  });
+
   it("reads an unknown host", () => {
     const failure = sshFailure("ssh: Could not resolve hostname test.localdomain: nodename nor servname provided, or not known\r\n");
     expect(failure).toEqual({ kind: "unknownHost", host: "test.localdomain" });

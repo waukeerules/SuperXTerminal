@@ -76,6 +76,8 @@ interface Look {
   antiIdleSeconds?: number;
   /** The tunnels ssh was given (the profile's, launch.rs's forwarding); absent or none for anything but SSH */
   tunnels?: Forward[];
+  /** The session's host as known_hosts names it ("[host]:port" off 22); absent or "" for anything but SSH */
+  knownHost?: string;
 }
 
 /** What a tab runs (`Target` in `src-tauri/src/pty.rs`) */
@@ -273,8 +275,13 @@ export class PageHost implements ScriptTarget {
    * read from it, in step with the end itself, where the page's finished lines can still be on their way
    */
   private tail = "";
-  /** A change to the profile that may make the next connection work, offered after a failure: F makes it */
-  private fix: { profile: string; change: "olderAlgorithms" | "offerKeys" } | null = null;
+  /**
+   * What may make the next connection work, offered after a failure: F makes it. A change to the profile, or
+   * forgetting the host's old key in known_hosts when it has changed (src-tauri/src/known_hosts.rs)
+   */
+  private fix: { profile: string; change: "olderAlgorithms" | "offerKeys" } | { change: "forgetHostKey"; host: string; file: string } | null = null;
+  /** The session's host as known_hosts names it, from its "started" event: only its own key is offered to forget */
+  private knownHost = "";
   /** What the profile's anti-idle string types (antiIdle.ts), and after how long without typing; "" and 0 for none */
   private antiIdle = { keys: "", ms: 0 };
   /** When something was last typed into the session: by the user, a button, the command bar or a script */
@@ -799,7 +806,11 @@ export class PageHost implements ScriptTarget {
     const advice = await this.advice(failure);
     if (advice) this.post({ type: "notice", text: advice, kind: retries(failure) ? "info" : "error" });
     if (!retries(failure)) {
-      this.post({ type: "notice", text: this.fix ? "Press F to make that change and reconnect, or Enter to reconnect as it is." : "Press Enter to try again.", kind: "info" });
+      // advice() may have set it, which TypeScript can't see after the null above
+      const fix = this.fix as PageHost["fix"];
+      const offer = fix?.change === "forgetHostKey" ? "Press F to forget the old key and reconnect, or Enter to try again."
+        : fix ? "Press F to make that change and reconnect, or Enter to reconnect as it is." : "Press Enter to try again.";
+      this.post({ type: "notice", text: offer, kind: "info" });
       return;
     }
     const max = Math.max(1, settings.autoReconnectAttempts);
@@ -826,6 +837,14 @@ export class PageHost implements ScriptTarget {
         return `Login failed: the username, password or key was refused. Check them ${inProfile}. Not reconnecting by itself, so a wrong password can't lock the account.`;
       case "unknownHost":
         return `Can't find host "${failure.host}": check the session's host name, or the network, VPN or DNS.`;
+      case "hostKeyChanged": {
+        // only the tab's own host: the warning is text in the tab, which a jump host's failure or a server could name
+        const own = this.knownHost !== "" && failure.host.toLowerCase() === this.knownHost.toLowerCase();
+        if (own) this.fix = { change: "forgetHostKey", host: this.knownHost, file: failure.file };
+        const said = `The host key of ${failure.host} has changed since it was saved in ${failure.file} (line ${failure.line}).`;
+        const why = "That's expected when the device is replaced or reinstalled, but it can also mean someone is intercepting the connection: if you didn't expect it, check with whoever looks after the device.";
+        return own ? `${said} ${why}` : `${said} ${why} To connect anyway, remove the old key with ssh-keygen -f "${failure.file}" -R "${failure.host}".`;
+      }
       case "tooManyAttempts": {
         const profile = await this.profileNamed(name);
         if (profile && profile.offerKeys !== false) this.fix = { profile: name, change: "offerKeys" };
@@ -860,11 +879,22 @@ export class PageHost implements ScriptTarget {
     return profiles.find((p) => p.name.toLowerCase() === name.trim().toLowerCase());
   }
 
-  /** Make the change offered (F) to the session's profile, and reconnect with it */
+  /** Make the change offered (F), to the session's profile or its host's saved key, and reconnect with it */
   private async makeFix(): Promise<void> {
     const fix = this.fix;
     this.fix = null;
     if (!fix) return;
+    if (fix.change === "forgetHostKey") {
+      try {
+        await invoke("known_hosts_forget", { host: fix.host, file: fix.file });
+      } catch (e) {
+        this.post({ type: "notice", text: `Couldn't forget the old key: ${e} Press Enter to try again.`, kind: "error" });
+        return;
+      }
+      this.post({ type: "notice", text: `The old key of ${fix.host} is gone from ${fix.file}.`, kind: "info" });
+      await this.reconnect();
+      return;
+    }
     const profile = await this.profileNamed(fix.profile);
     if (!profile) {
       this.post({ type: "notice", text: `Profile "${fix.profile}" isn't there any more. Press Enter to reconnect.`, kind: "error" });
@@ -1059,6 +1089,7 @@ export class PageHost implements ScriptTarget {
         this.link = event.link;
         this.configured = this.sendConfig(event.look);
         this.lookArrived(event.look);
+        this.knownHost = event.look.knownHost ?? "";
         // what the tunnels make reachable, at the top, with their links: a tunnel is otherwise invisible
         this.tunnels = event.look.tunnels ?? [];
         this.tunnelsChanged = false;

@@ -67,6 +67,11 @@ export interface Profile {
   x11Forwarding: boolean | null;
   /** Compression (-C); null: Default Settings', else off */
   compression: boolean | null;
+  /**
+   * Accept a host's key the first time it's met, without asking in the tab (ssh's StrictHostKeyChecking=accept-new); a
+   * key that has changed since is still refused. null: Default Settings', else off
+   */
+  acceptNewHostKeys: boolean | null;
   olderAlgorithms: boolean | null;
   /**
    * Show the server's CPU, memory, disk and network in the status bar while one of its sessions' tabs is in front
@@ -136,7 +141,7 @@ export interface Profile {
 /** A new, empty profile */
 export function emptyProfile(name: string): Profile {
   return {
-    name, basedOn: "", username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", forwards: [], tunnelsOff: null, agentForwarding: null, x11Forwarding: null, compression: null, olderAlgorithms: null, serverLoad: null, algorithms: "",
+    name, basedOn: "", username: "", port: 0, keyFile: "", keyFetch: "", keyLifetime: 0, offerKeys: null, askUsername: null, jumpHost: "", host: "", keepalive: 0, addressFamily: "", antiIdle: "", antiIdleSeconds: 0, sshOptions: "", forwards: [], tunnelsOff: null, agentForwarding: null, x11Forwarding: null, compression: null, acceptNewHostKeys: null, olderAlgorithms: null, serverLoad: null, algorithms: "",
     sshConfigHost: "", cursor: "", cursorBlink: null, bell: "", fontFamily: "", fontSize: 0, keyBackspace: "", keyHomeEnd: "", keyFunction: "", scrollback: 0, sessionLog: null, charset: "", colours: "", background: "", foreground: "", selection: "", cursorColor: "", tabColor: "", buttonBar: "", script: "", logInHere: false, hasPassword: false,
   };
 }

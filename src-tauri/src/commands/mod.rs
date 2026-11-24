@@ -15,6 +15,8 @@ pub(crate) mod files;
 pub(crate) mod importing;
 /// The saved layouts of tabs and splits
 pub(crate) mod layouts;
+/// Forgetting a host's changed key in known_hosts
+pub(crate) mod known_hosts;
 /// A tab's session log and the app's own log
 pub(crate) mod logs;
 /// A session's local overrides, their presets, and this computer's serial devices

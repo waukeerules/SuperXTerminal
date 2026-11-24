@@ -66,6 +66,9 @@ pub struct Look {
     /// The tunnels ssh was given for this tab ([`forwarding`]), so the tab can say what each makes reachable, with a
     /// link, and show its tunnel icon; none for anything but SSH
     pub tunnels: Vec<profiles::Forward>,
+    /// The name an SSH session's host has in known_hosts ([`crate::known_hosts::name`]), so the tab can offer to
+    /// forget its key when it has changed, and only its own; "" for anything but SSH
+    pub known_host: String,
 }
 
 /// The keys that differ between terminals, in the terminal page's names (its `keysFromProfile`), as PuTTY's Terminal >
@@ -542,6 +545,7 @@ fn look(profile: &Profile, default: &Profile) -> Look {
             [profile.anti_idle_seconds, default.anti_idle_seconds].into_iter().find(|s| *s != 0).unwrap_or(ANTI_IDLE_SECONDS)
         },
         tunnels: Vec::new(),
+        known_host: String::new(),
     }
 }
 
@@ -953,6 +957,11 @@ fn ssh(
     args.extend(forwarding(profile, default, &mut notices, &mut tunnels));
     args.extend(split_words(first(&profile.ssh_options, &default.ssh_options)));
     args.extend(extra.args);
+    // Accept new host keys: after the user's own options, as ssh keeps the first value given for an option, so a
+    // StrictHostKeyChecking of their own in the extra arguments still wins
+    if profile.accept_new_host_keys.or(default.accept_new_host_keys).unwrap_or(false) {
+        args.extend(["-o".into(), "StrictHostKeyChecking=accept-new".into()]);
+    }
     if config_host.is_empty() {
         args.push(host);
     } else {
@@ -977,9 +986,10 @@ fn ssh(
         args.splice(at..at, crate::server_load::master_args(&path));
         Some(crate::server_load::LoadVia::Shared(path))
     };
+    let known_host = crate::known_hosts::name(&login.host, login.port);
     let mut command = CommandBuilder::new(openssh("ssh"));
     command.args(&args);
-    Ok(Launch { command, password, local: false, notices, look: Look { rules, tunnels, ..look(profile, default) }, stream: None, login: Some(login), server_load })
+    Ok(Launch { command, password, local: false, notices, look: Look { rules, tunnels, known_host, ..look(profile, default) }, stream: None, login: Some(login), server_load })
 }
 
 /// A path with a leading home turned into the home folder: "~/" as written on the Mac and Linux, and on Windows its
@@ -1823,6 +1833,38 @@ mod tests {
         // the tab is told the tunnels ssh was given, for its links and icon: not the one left out
         let launch = launch(&Sessions::default(), &profiles, &HashMap::new(), &BTreeMap::new(), Store::Saved, &session(&[("PuttySession", "web")])).unwrap();
         assert_eq!(launch.look.tunnels, vec![forward("local", "8080", "localhost:80"), forward("remote", "127.0.0.1:9000", "localhost:22")]);
+    }
+
+    #[test]
+    fn the_tab_is_told_its_hosts_name_in_known_hosts_with_the_port_off_22() {
+        let known = |s: &StoredSession| launch(&Sessions::default(), &profiles(), &HashMap::new(), &BTreeMap::new(), Store::Saved, s).unwrap().look.known_host;
+        assert_eq!(known(&session(&[])), "10.0.0.1");
+        // profile "root" connects on 2222
+        assert_eq!(known(&session(&[("PuttySession", "root")])), "[10.0.0.1]:2222");
+    }
+
+    #[test]
+    fn accept_new_host_keys_lets_ssh_save_a_new_hosts_key_without_asking() {
+        let accept = "StrictHostKeyChecking=accept-new";
+        let with = |own: Option<bool>, default: Option<bool>, options: &str| {
+            let profiles = Profiles {
+                profiles: vec![
+                    Profile { name: profiles::DEFAULT_PROFILE.into(), accept_new_host_keys: default, ..Profile::default() },
+                    Profile { name: "lab".into(), accept_new_host_keys: own, ssh_options: options.into(), ..Profile::default() },
+                ],
+            };
+            args_of(&Sessions::default(), &profiles, &session(&[("PuttySession", "lab")])).0
+        };
+        // off unless asked for: ssh asks in the tab, as it always has
+        assert!(!with(None, None, "").contains(&accept.to_string()));
+        // the profile's own, else Default Settings', and the profile's off beats Default Settings' on
+        assert!(with(Some(true), None, "").contains(&accept.to_string()));
+        assert!(with(None, Some(true), "").contains(&accept.to_string()));
+        assert!(!with(Some(false), Some(true), "").contains(&accept.to_string()));
+        // before the host, and after the user's own StrictHostKeyChecking, which ssh takes first and so still wins
+        let args = with(Some(true), None, "-o StrictHostKeyChecking=yes");
+        let (own, ours) = (args.iter().position(|a| a == "StrictHostKeyChecking=yes").unwrap(), args.iter().position(|a| a == accept).unwrap());
+        assert!(own < ours && ours < args.len() - 1, "{args:?}");
     }
 
     #[test]

@@ -34,6 +34,7 @@ mod folders;
 mod highlighting;
 mod importing;
 mod keys;
+mod known_hosts;
 mod launch;
 mod layouts;
 mod logs;
@@ -362,6 +363,7 @@ pub fn run() {
             commands::profiles::profiles_delete,
             clipboard::clipboard_text,
             clipboard::clipboard_stamp,
+            commands::known_hosts::known_hosts_forget,
             pty::pty_open,
             pty::pty_write,
             pty::pty_resize,

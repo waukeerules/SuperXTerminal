@@ -51,6 +51,11 @@ describe("what a profile gives a session", () => {
     expect(profileRows("ssh", all, "Cisco", { ...NONE, algorithms: true }).some((r) => r.field === "algorithms")).toBe(false);
   });
 
+  it("says the session accepts new host keys, from its profile or Default Settings", () => {
+    expect(said(profileRows("connection", profiles({}, { acceptNewHostKeys: true }), "Cisco", NONE))).toEqual(["Accept new host keys: on -> acceptNewHostKeys"]);
+    expect(said(profileRows("connection", profiles({ acceptNewHostKeys: true }, {}), "Cisco", NONE))).toEqual([`Accept new host keys: on (${DEFAULT_PROFILE}) -> acceptNewHostKeys`]);
+  });
+
   it("says a profile's tunnels are off, and which are kept", () => {
     const all = profiles({}, { tunnelsOff: true, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }] });
     expect(said(profileRows("connection", all, "Cisco", NONE))).toEqual(["Tunnels: off (kept: Local 8080 → localhost:80) -> forwards"]);

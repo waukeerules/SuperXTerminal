@@ -2,7 +2,8 @@
  * Why an ssh session ended, from what ssh said last: OpenSSH exits with 255 for every failure of its own (a lost
  * connection, a wrong password, an unknown host), so its message is all there is to go by. Each kind says whether
  * reconnecting can help: a wrong password tried again by itself can lock the account (AAA lockouts, Cisco's
- * login block-for), and an unknown host or a device offering only older algorithms never answers differently.
+ * login block-for), and an unknown host, a device offering only older algorithms or a host whose key has changed
+ * never answers differently.
  */
 
 /** Why a session ended, and what the tab does about it */
@@ -11,6 +12,12 @@ export type SshFailure =
   | { kind: "login" }
   /** The device closed the connection after too many attempts: ssh offered its keys before the password */
   | { kind: "tooManyAttempts" }
+  /**
+   * The host's key isn't the one saved in known_hosts ("REMOTE HOST IDENTIFICATION HAS CHANGED!"): the device was
+   * replaced or reinstalled, or someone is in the middle. `host` as known_hosts names it ("[host]:port" off 22), and
+   * the file and line ssh says hold the old key
+   */
+  | { kind: "hostKeyChanged"; host: string; file: string; line: string }
   /** Could not resolve hostname */
   | { kind: "unknownHost"; host: string }
   /** Unable to negotiate: no algorithm of one kind in common ("key exchange method", "host key type", "cipher", "MAC") */
@@ -32,7 +39,7 @@ export type SshFailure =
 
 /** Whether reconnecting by itself can help: not when the device would only answer the same again */
 export function retries(failure: SshFailure): boolean {
-  return !["login", "tooManyAttempts", "unknownHost", "algorithms", "jumpForwarding"].includes(failure.kind);
+  return !["login", "tooManyAttempts", "unknownHost", "hostKeyChanged", "algorithms", "jumpForwarding"].includes(failure.kind);
 }
 
 /** Lines at the end of the output read for ssh's last words: earlier ones are the session's own (a remote "Permission denied") */
@@ -56,7 +63,16 @@ function plainLines(output: string): string[] {
 
 /** What ssh's output, since the session last started, says about how it ended */
 export function sshFailure(all: string): SshFailure {
-  const output = plainLines(all).slice(-LAST_LINES).join("\n");
+  const lines = plainLines(all);
+  const output = lines.slice(-LAST_LINES).join("\n");
+  // a changed host key: ssh's warning runs to more lines than the last few, so it's read whole once its last line
+  // says why ssh stopped
+  if (/Host key verification failed/i.test(output)) {
+    const warning = lines.join("\n");
+    const changed = /Host key for (\S+) has changed and you have requested strict checking/i.exec(warning);
+    const offending = /Offending \S+ key in (.+):(\d+)\s*$/im.exec(warning);
+    if (changed && offending) return { kind: "hostKeyChanged", host: changed[1], file: offending[1].trim(), line: offending[2] };
+  }
   // checked before "Permission denied", which a device may also send as it gives up
   if (/Too many authentication failures/i.test(output)) return { kind: "tooManyAttempts" };
   const negotiate = /Unable to negotiate with \S+ port \d+: no matching (key exchange method|host key type|cipher|MAC) found\. Their offer: (\S+)/i.exec(output);

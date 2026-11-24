@@ -37,6 +37,8 @@ let openedAt: { cols: number; rows: number } | null;
 let openWaits: Promise<void> | null;
 /** The clipboard's text, as clipboard_text reads it */
 let clipboard: string;
+/** The host keys the tab asked known_hosts_forget to remove: the host and the file */
+let forgotten: { host: string; file: string }[] = [];
 /** The clipboard's change number, as clipboard_stamp reads it: another app's copy moves it on */
 let clipboardStamp = 1;
 /** What each log_open was told to do with the log: keep it, not, or as Settings > General says (null) */
@@ -51,6 +53,7 @@ beforeEach(() => {
   opened = 0;
   saved = [];
   posted = [];
+  forgotten = [];
   resized = [];
   written = [];
   openedAt = null;
@@ -77,6 +80,10 @@ beforeEach(() => {
     }
     if (cmd === "clipboard_text") return clipboard;
     if (cmd === "clipboard_stamp") return clipboardStamp;
+    if (cmd === "known_hosts_forget") {
+      forgotten.push({ host: String(payload.host), file: String(payload.file) });
+      return "Host 10.0.0.9 found: line 12";
+    }
     if (cmd === "pty_close") {
       ptyClosed.push(Number(payload.id));
       return null;
@@ -134,13 +141,16 @@ function mockIPCSettingsSave(): void {
   });
 }
 
-/** Open a session's tab, have ssh print `output`, then end with 255 as it does on any failure of its own */
-async function sshEnds(output: string): Promise<void> {
+/**
+ * Open a session's tab, have ssh print `output`, then end with 255 as it does on any failure of its own
+ * @param knownHost The session's host as known_hosts names it, as launch.rs tells the tab
+ */
+async function sshEnds(output: string, knownHost = "10.0.0.9"): Promise<void> {
   host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
   page({ type: "ready" });
   await expect.poll(() => channel).not.toBeNull();
   const send = (event: unknown) => (channel!.onmessage as (e: unknown) => void)(event);
-  send({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "root" }, link: "pty" });
+  send({ type: "started", local: false, look: { cursor: "block", blink: true, bell: "visual", rules: "", profile: "root", knownHost }, link: "pty" });
   send({ type: "data", data: btoa(output) });
   send({ type: "exit", code: 255 });
 }
@@ -201,6 +211,32 @@ describe("a session's tab when ssh ends", () => {
     await expect.poll(() => saved.length).toBe(1);
     expect(saved[0]).toMatchObject({ name: "root", olderAlgorithms: true });
     await expect.poll(() => opened).toBe(2);
+  });
+
+  /** ssh's last words when the host's key isn't the one saved */
+  const changedKey = (host: string) =>
+    "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\r\nIT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\r\n" +
+    "Add correct host key in /Users/me/.ssh/known_hosts to get rid of this message.\r\nOffending ED25519 key in /Users/me/.ssh/known_hosts:12\r\n" +
+    `Host key for ${host} has changed and you have requested strict checking.\r\nHost key verification failed.\r\n`;
+
+  it("says a host's key has changed, and F forgets the old one and reconnects", async () => {
+    await sshEnds(changedKey("10.0.0.9"));
+    await expect.poll(() => notices().join("\n")).toContain("The host key of 10.0.0.9 has changed since it was saved in /Users/me/.ssh/known_hosts (line 12)");
+    expect(notices().at(-1)).toBe("Press F to forget the old key and reconnect, or Enter to try again.");
+    page({ type: "input", data: "f" });
+    await expect.poll(() => forgotten).toEqual([{ host: "10.0.0.9", file: "/Users/me/.ssh/known_hosts" }]);
+    await expect.poll(() => opened).toBe(2);
+    expect(saved).toEqual([]);
+  });
+
+  it("doesn't offer to forget a key the warning names for another host than the tab's", async () => {
+    // a jump host's, or words a server printed: not this session's host to forget
+    await sshEnds(changedKey("github.com"));
+    await expect.poll(() => notices().join("\n")).toContain("The host key of github.com has changed");
+    expect(notices().at(-1)).toBe("Press Enter to try again.");
+    page({ type: "input", data: "f" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(forgotten).toEqual([]);
   });
 
   it("offers turning off Offer SSH keys after too many attempts", async () => {

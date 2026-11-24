@@ -170,7 +170,7 @@
     if (isDefault && field === "cursor") return value || "block";
     if (isDefault && field === "bell") return value || "visual";
     if (field === "forwards") return JSON.stringify(value ?? []);
-    if (isDefault && (field === "agentForwarding" || field === "x11Forwarding" || field === "compression")) return value ?? false;
+    if (isDefault && (field === "agentForwarding" || field === "x11Forwarding" || field === "compression" || field === "acceptNewHostKeys")) return value ?? false;
     if (isDefault && field === "keyBackspace") return value || "del";
     if (isDefault && field === "keyHomeEnd") return value || "standard";
     if (isDefault && field === "keyFunction") return value || "tilde";
@@ -189,7 +189,7 @@
     "name", "basedOn", "username", "password", "keyFile", "keyFetch", "keyLifetime", "offerKeys", "askUsername", "port", "jumpHost", "host", "keepalive",
     "addressFamily", "antiIdle", "antiIdleSeconds",
     "olderAlgorithms", "serverLoad", "algorithms", "sshConfigHost", "sshOptions",
-    "agentForwarding", "x11Forwarding", "compression", "forwards", "tunnelsOff", "cursor", "cursorBlink", "bell",
+    "agentForwarding", "x11Forwarding", "compression", "acceptNewHostKeys", "forwards", "tunnelsOff", "cursor", "cursorBlink", "bell",
     "fontFamily", "fontSize", "keyBackspace", "keyHomeEnd", "keyFunction", "scrollback", "sessionLog", "charset", "colours", "background", "foreground", "selection", "cursorColor", "tabColor", "buttonBar", "script", "logInHere",
   ];
 
@@ -786,10 +786,12 @@
       <label>{@render caption("SSH config host", "sshConfigHost")}<input bind:value={draft.sshConfigHost} placeholder={`a Host in ${SSH_CONFIG}`} /></label>
       <label>{@render caption("Extra ssh arguments", "sshOptions")}<input bind:value={draft.sshOptions} placeholder="ssh's own, e.g. -o Compression=yes"
         title="Passed to ssh as written, before a session's own Extra arguments (which are PuTTY's, translated)" /></label>
-      {#each [["agentForwarding", "Agent forwarding", "Forward ssh-agent (-A): a login from there onwards uses your keys"], ["x11Forwarding", "X11 forwarding", "Forward X11 (-X): needs an X server on " + THIS_COMPUTER], ["compression", "Compression", "Compress (-C): for a slow link"]] as [field, label, on] (field)}
-        {@const key = field as "agentForwarding" | "x11Forwarding" | "compression"}
+      {#each [["agentForwarding", "Agent forwarding", "Forward ssh-agent (-A): a login from there onwards uses your keys"], ["x11Forwarding", "X11 forwarding", "Forward X11 (-X): needs an X server on " + THIS_COMPUTER], ["compression", "Compression", "Compress (-C): for a slow link"], ["acceptNewHostKeys", "Accept new host keys", "Save a new host's key without asking"]] as [field, label, on] (field)}
+        {@const key = field as "agentForwarding" | "x11Forwarding" | "compression" | "acceptNewHostKeys"}
         <label>{@render caption(label, key)}
-          <select value={triToValue(isDefault ? (draft[key] ?? false) : draft[key])} onchange={(e) => (draft[key] = valueToTri(e.currentTarget.value))}>
+          <!-- the rest of what Accept new host keys does, too long for the choice itself -->
+          <select value={triToValue(isDefault ? (draft[key] ?? false) : draft[key])} onchange={(e) => (draft[key] = valueToTri(e.currentTarget.value))}
+            title={key === "acceptNewHostKeys" ? "A key that has changed since it was saved is still refused: the tab then offers to forget the old one" : undefined}>
             {#if !isDefault}<option value="">{FROM}</option>{/if}
             <option value="on">{on}</option>
             <option value="off">Off</option>

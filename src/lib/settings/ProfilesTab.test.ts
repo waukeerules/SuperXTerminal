@@ -472,6 +472,19 @@ describe("Settings > Profiles", () => {
     });
   });
 
+  it("saves Accept new host keys, from Default Settings until it's chosen", async () => {
+    await open("root");
+    const accept = () => screen.getByRole("combobox", { name: /^Accept new host keys/ }) as HTMLSelectElement;
+    expect(accept().value).toBe("");
+    // short enough to read in full, the rest in its tooltip
+    expect(accept().querySelector('option[value="on"]')?.textContent).toBe("Save a new host's key without asking");
+    expect(accept().title).toContain("changed");
+    await userEvent.selectOptions(accept(), "on");
+    expect(dots()).toHaveLength(1);
+    await userEvent.click(button("Save"));
+    expect(calls.find((c) => c.cmd === "profiles_save")?.args.profile).toMatchObject({ name: "root", acceptNewHostKeys: true });
+  });
+
   it("puts the tunnels back on Revert, the saved profile's untouched", async () => {
     stored = stored.map((p) => (p.name === "root" ? { ...p, forwards: [{ kind: "local", listen: "8080", to: "localhost:80" }] } : p));
     await open("root");

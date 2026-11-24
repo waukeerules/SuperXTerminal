@@ -81,6 +81,10 @@ pub struct Profile {
     pub x11_forwarding: Option<bool>,
     /// Compression (ssh's -C), as PuTTY's Enable compression; for a slow link. None: the default's, else off
     pub compression: Option<bool>,
+    /// Accept a host's key the first time it's met and save it to known_hosts, without asking in the tab (ssh's
+    /// StrictHostKeyChecking=accept-new); a key that has changed since is still refused. None: the default's, else off,
+    /// when ssh asks "Are you sure you want to continue connecting?" as it would
+    pub accept_new_host_keys: Option<bool>,
     /// Accept the older algorithms older devices offer (SHA-1 key exchange, ssh-rsa, CBC ciphers); None: the default's
     pub older_algorithms: Option<bool>,
     /// Show the server's CPU, memory, disk and network traffic in the status bar while one of its sessions' tabs is in

@@ -355,6 +355,27 @@ test("Line Numbers take a button's colour for its command's lines, until a comma
   await expect.poll(async () => (await coloured()).slice(3)).toEqual(["4", "5", "6"]);
 });
 
+test.describe("another copy taking the clipboard", () => {
+  test("clears the highlight when something else takes the clipboard, as PuTTY does, but not a highlight made since", async ({ page }) => {
+    await openTerminal(page, {});
+    await feed(page, "\x1b[2J\x1b[H" + "interface GigabitEthernet1/0/24\r\n description uplink\r\n");
+    await expect.poll(() => page.evaluate(() => (window as any).terminalDev.term.buffer.active.cursorY)).toBe(2);
+    const selection = () => page.evaluate(() => (window as any).terminalDev.term.getSelection() as string);
+    const select = (row: number, column: number, length: number) =>
+      page.evaluate(([r, c, l]) => (window as any).terminalDev.term.select(c, r, l), [row, column, length]);
+    const taken = (text: string) => page.evaluate((t) => (window as any).terminalDev.message({ type: "clipboardTaken", text: t }), text);
+    // "interface" copied, then something copied in another app
+    await select(0, 0, 9);
+    await taken("interface");
+    await expect.poll(selection).toBe("");
+    // a highlight made since, not the one copied, stays
+    await select(1, 13, 6);
+    await taken("interface");
+    await page.waitForTimeout(100);
+    expect(await selection()).toBe("uplink");
+  });
+});
+
 test.describe("Shift+Insert and Ctrl+Shift+V", () => {
   for (const keys of ["Shift+Insert", "Control+Shift+V"]) {
     test(`${keys} pastes once, through TerminalControl, not again as the browser's own paste`, async ({ page, context, browserName }) => {

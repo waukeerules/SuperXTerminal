@@ -23,6 +23,7 @@ import { running } from "../commands/sending.svelte";
 import { checkPaste } from "./pasting.svelte";
 import { MONOSPACE_FONTS, SERIAL_DEVICES, SYSTEM_KIND, THIS_COMPUTER, type System } from "../platform";
 import { clipboardText } from "../clipboard";
+import { clipboardOwner } from "./clipboardOwner";
 import { isMac, loadShortcuts, shortcutLabel } from "../shortcuts";
 import { listen } from "@tauri-apps/api/event";
 import type { MenuItem } from "../ui/Menu.svelte";
@@ -459,6 +460,7 @@ export class PageHost implements ScriptTarget {
   dispose(): void {
     this.closed = true;
     releaseTunnels(this.tab);
+    clipboardOwner.release(this.clipboardHolder);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.answeredTimer) clearTimeout(this.answeredTimer);
     if (this.antiIdleTimer) clearInterval(this.antiIdleTimer);
@@ -492,6 +494,9 @@ export class PageHost implements ScriptTarget {
     this.visible = visible;
     this.post({ type: "shown", visible });
   }
+
+  /** This tab as the holder of the clipboard: told when another copy takes it, so the page clears the highlight copied */
+  private clipboardHolder = { taken: (text: string) => this.post({ type: "clipboardTaken", text }) };
 
   /** Send a message to the page */
   private post(message: PageMessage): void {
@@ -547,7 +552,11 @@ export class PageHost implements ScriptTarget {
         this.flush();
         break;
       case "copy":
-        if (typeof message.text === "string") await navigator.clipboard.writeText(message.text);
+        if (typeof message.text === "string") {
+          await navigator.clipboard.writeText(message.text);
+          // its highlight is cleared when something else is copied after it, as PuTTY's (clipboardOwner.ts)
+          await clipboardOwner.copied(this.clipboardHolder, message.text);
+        }
         break;
       case "pasteRequest":
         await this.paste(typeof message.text === "string" ? message.text : null);

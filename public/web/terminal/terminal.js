@@ -11,7 +11,7 @@
  * a line is sent to TerminalControl ("log") once the cursor has left it, and the cursor's line is sent as "current",
  * so SPSL's WAITFOR can match a prompt before Enter is pressed.
  *
- * Messages from TerminalControl: config, data, notice, paste, focus, action, cursorColor, shown, ruleSets. To it: ready, size, input,
+ * Messages from TerminalControl: config, data, notice, paste, focus, action, cursorColor, shown, ruleSets, clipboardTaken (another copy took the clipboard from its highlight). To it: ready, size, input,
  * ack, log, copy, pasteRequest (every paste, so TerminalControl can ask first; with "text" for one not from the
  * clipboard), document, bell, tab, openInPutty (only while config.putty isn't false), special (a Special Command, when config.specials offers it), openLink (a link Ctrl+clicked), pref, cleared (the screen was cleared
  * here; Windows' pseudo console keeps its own copy, whose redraw after a resize the page drops: dropConptyRedraw).
@@ -2010,6 +2010,9 @@
             case 'data': write(decode(message.data)); break;
             case 'notice': notice(message.text, message.kind); break;
             case 'paste': if (message.text) { term.paste(message.text); } break;
+            // something else was copied after this tab's highlight (SuperXTerminal, clipboardOwner.ts): cleared, as PuTTY
+            // clears its selection when it loses the clipboard, unless the highlight has changed since it was copied
+            case 'clipboardTaken': if (term.hasSelection() && term.getSelection() === message.text) { term.clearSelection(); } break;
             // behind another tab there's nothing to focus: it takes the keyboard when it's in front (setShown)
             case 'focus': if (shown) { term.focus(); } else { owedFocus = true; } break;
             // the tab came to the front or went behind another (SuperXTerminal)

@@ -15,6 +15,23 @@ pub fn clipboard_text() -> String {
     read().unwrap_or_default()
 }
 
+/// A number that changes whenever anything changes the clipboard, for a tab to clear the highlight it copied once
+/// something else is copied (`src/lib/terminal/clipboardOwner.ts`), as PuTTY does. The Mac's change count, Windows'
+/// sequence number; Linux has neither, so there it's the text's hash, which a copy of other text changes
+#[tauri::command]
+pub fn clipboard_stamp() -> u64 {
+    crate::clipboard_contents::stamp().map_or_else(|| text_hash(&read().unwrap_or_default()), u64::from)
+}
+
+/// A hash of the clipboard's text, standing in for a change number where the system has none. Kept to 53 bits, the
+/// most a JavaScript number holds exactly, so the page compares the number Rust gave
+fn text_hash(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish() & ((1 << 53) - 1)
+}
+
 /// The text on the Mac's clipboard, if any
 #[cfg(target_os = "macos")]
 pub(crate) fn read() -> Option<String> {
@@ -218,6 +235,31 @@ mod tests {
         let read = read_for_test("FastEthernet0/5 – ünïcode");
         write(&before);
         assert_eq!(read, "FastEthernet0/5 – ünïcode");
+    }
+
+    /// Another app's copy moves the clipboard's number on, so the tab whose highlight was copied clears it. The Mac
+    /// and Windows, as the test above: Linux's needs a desktop, as the test below says
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn the_clipboards_number_changes_when_something_else_is_copied() {
+        let _held = hold_for_test();
+        let before = clipboard_text();
+        write("interface GigabitEthernet1/0/24");
+        let copied = clipboard_stamp();
+        let unchanged = clipboard_stamp();
+        write("description uplink");
+        let changed = clipboard_stamp();
+        write(&before);
+        assert_eq!(copied, unchanged);
+        assert_ne!(copied, changed);
+    }
+
+    /// The stand-in on Linux: other text, another number; the same text, the same
+    #[test]
+    fn the_text_hash_differs_for_other_text_and_fits_a_javascript_number() {
+        assert_eq!(text_hash("uplink"), text_hash("uplink"));
+        assert_ne!(text_hash("uplink"), text_hash("downlink"));
+        assert!(text_hash("uplink") < 1 << 53);
     }
 
     /// Linux's clipboard, on Linux alone (the Mac and Windows have the test above for theirs): text put on it is

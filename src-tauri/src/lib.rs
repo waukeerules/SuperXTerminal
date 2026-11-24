@@ -361,6 +361,7 @@ pub fn run() {
             commands::profiles::profiles_save,
             commands::profiles::profiles_delete,
             clipboard::clipboard_text,
+            clipboard::clipboard_stamp,
             pty::pty_open,
             pty::pty_write,
             pty::pty_resize,

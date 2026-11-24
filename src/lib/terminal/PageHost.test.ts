@@ -37,6 +37,8 @@ let openedAt: { cols: number; rows: number } | null;
 let openWaits: Promise<void> | null;
 /** The clipboard's text, as clipboard_text reads it */
 let clipboard: string;
+/** The clipboard's change number, as clipboard_stamp reads it: another app's copy moves it on */
+let clipboardStamp = 1;
 /** What each log_open was told to do with the log: keep it, not, or as Settings > General says (null) */
 let logKeep: (boolean | null)[];
 /** The pseudo terminals pty_close was asked to close, by id */
@@ -74,6 +76,7 @@ beforeEach(() => {
       return null;
     }
     if (cmd === "clipboard_text") return clipboard;
+    if (cmd === "clipboard_stamp") return clipboardStamp;
     if (cmd === "pty_close") {
       ptyClosed.push(Number(payload.id));
       return null;
@@ -419,6 +422,18 @@ describe("a paste", () => {
     page({ type: "pasteRequest" });
     await expect.poll(() => posted.filter((m) => m.type === "paste")).toEqual([{ type: "paste", text: "FastEthernet0/5" }]);
     expect(pageRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("a copy", () => {
+  it("has the page clear the highlight copied once another app copies something, as PuTTY does", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(async () => {}) }, configurable: true });
+    host = new PageHost("t1", frame, { kind: "session", store: "saved", id: "Lab/sw1" }, false, null, () => {}, () => {});
+    page({ type: "copy", text: "uplink" });
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(posted.filter((m) => m.type === "clipboardTaken")).toEqual([]);
+    clipboardStamp++;
+    await expect.poll(() => posted.filter((m) => m.type === "clipboardTaken"), { timeout: 2000 }).toEqual([{ type: "clipboardTaken", text: "uplink" }]);
   });
 });
 

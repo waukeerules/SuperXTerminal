@@ -34,13 +34,18 @@ export interface Opened {
   address: string;
   /** SCP instead of SFTP: listed with the device's `dir`, files copied one at a time, nothing else */
   scp: boolean;
+  /** What crosses the network is compressed (ssh's -C): the profile's Compression, or the tab's Compress */
+  compressed: boolean;
 }
 
 /** A transfer's progress: its total once counted, then the bytes done and the file it's on */
 export type Progress = { type: "total"; bytes: number; files: number } | { type: "done"; bytes: number; file: string };
 
-/** Connect to a session's files */
-export const openTransfer = (store: Store, id: string) => invoke<Opened>("sftp_open", { store, id });
+/**
+ * Connect to a session's files. `compress` turns ssh's compression on or off (the tab's Compress, transfer_compression.rs);
+ * absent, it's as the session's profile has it
+ */
+export const openTransfer = (store: Store, id: string, compress?: boolean) => invoke<Opened>("sftp_open", { store, id, compress: compress ?? null });
 /** Close a file transfer's connection; one already closed is no matter */
 export const closeTransfer = (id: number) => invoke("sftp_close", { id }).catch(() => {});
 /** List a folder on the session's side */

@@ -1,6 +1,8 @@
 <!--
   One side of a file transfer, as SuperXPuTTY's pscp browser: the folder's path (typed, Up, Home, Refresh), its files
-  in columns (Name, Size, Last Mod, Perm, Owner, Group; a click on a heading sorts), and how many there are. A double
+  in columns (Name, Size, Last Mod, Perm, Owner, Group; a click on a heading sorts), and how many there are. Each
+  row's checkbox shows whether it's selected, and ticks it in or out without a key held, to copy several at once
+  (the heading's ticks them all); a click on a row still selects it alone, as in Finder. A double
   click opens a folder or copies a file to the other side; files dragged to the other side (or onto one of its
   folders) are copied there. Its right-click menu has the side's own actions.
 -->
@@ -42,6 +44,8 @@
 
   let { side, title, home, listing, loading, error, onNavigate, onCopy, onDrop, onMkdir, onRename, onDelete, onReveal }: Props = $props();
 
+  /** The checkboxes' column, in pixels: fixed, not one of the columns that resize */
+  const CHECK_PX = 26;
   /** A column of the list, by the Entry field it shows */
   type Column = "name" | "size" | "modified" | "permissions" | "owner" | "group";
   /** Each column and its heading, as SuperXPuTTY's panes name them */
@@ -53,8 +57,8 @@
   let listWidth = $state(0);
   /** The columns after Name, together */
   const others = $derived(columns.widths.slice(1).reduce((a, b) => a + b, 0));
-  /** Name's width: what the others leave, and at least its own */
-  const nameWidth = $derived(Math.max(columns.widths[0], listWidth - others));
+  /** Name's width: what the others and the checkboxes leave, and at least its own */
+  const nameWidth = $derived(Math.max(columns.widths[0], listWidth - others - CHECK_PX));
   let sort = $state<{ by: Column; up: boolean }>({ by: "name", up: true });
   let selected = $state<Set<string>>(new Set());
   /** Where a shift-click selects from */
@@ -124,6 +128,23 @@
     }
     selected = next;
   }
+
+  /** A row's checkbox: the entry in or out of the selection, keeping the rest, as Cmd+click (Ctrl on Windows) */
+  function toggle(entry: Entry): void {
+    const next = new Set(selected);
+    if (next.has(entry.name)) next.delete(entry.name);
+    else next.add(entry.name);
+    anchor = entry.name;
+    selected = next;
+  }
+
+  /** The heading's checkbox: every entry, or none when they all are already */
+  function toggleAll(): void {
+    selected = allChosen ? new Set() : new Set(entries.map((e) => e.name));
+  }
+
+  /** Whether every entry is selected (the heading's box ticked); some but not all shows it half ticked */
+  const allChosen = $derived(entries.length > 0 && entries.every((e) => selected.has(e.name)));
 
   /** Open an entry: go into a folder, or copy a file to the other side */
   function open(entry: Entry): void {
@@ -228,9 +249,13 @@
     ondragleave={() => (dropTarget = null)}
     ondrop={(e) => listing && drop(e, listing.path)}
     oncontextmenu={(e) => showMenu(e, null)}>
-    <table style:width="{nameWidth + others}px">
+    <table style:width="{CHECK_PX + nameWidth + others}px">
       <thead>
         <tr>
+          <th class="check" style:width="{CHECK_PX}px">
+            <input type="checkbox" aria-label="Choose all" title="Choose all, or none" disabled={!entries.length}
+              checked={allChosen} indeterminate={selected.size > 0 && !allChosen} onchange={toggleAll} />
+          </th>
           {#each HEADINGS as [by, label], i}
             {#if by === "name"}
               <th class={by} style:width="{nameWidth}px" onclick={(e) => sortClick(e, by)}>
@@ -254,7 +279,7 @@
         {#if listing && parentPath(listing.path) !== listing.path}
           <tr class="up" ondblclick={() => onNavigate(parentPath(listing.path))}
             ondragover={(e) => over(e, parentPath(listing.path))} ondrop={(e) => drop(e, parentPath(listing.path))}>
-            <td class="name"><span class="icon folder"></span>..</td><td></td><td></td><td></td><td></td><td></td>
+            <td></td><td class="name"><span class="icon folder"></span>..</td><td></td><td></td><td></td><td></td><td></td>
           </tr>
         {/if}
         {#each entries as entry (entry.name)}
@@ -265,6 +290,10 @@
             ondragstart={(e) => dragStart(e, entry)}
             ondragover={(e) => entry.dir && over(e, full(entry))}
             ondrop={(e) => entry.dir && drop(e, full(entry))}>
+            <!-- its own clicks: not the row's, which would select it alone or open it -->
+            <td class="check" onclick={(e) => e.stopPropagation()} ondblclick={(e) => e.stopPropagation()}>
+              <input type="checkbox" aria-label="Choose {entry.name}" checked={selected.has(entry.name)} onchange={() => toggle(entry)} />
+            </td>
             <td class="name" title={entry.link ? `${entry.name} (a link)` : entry.name}>
               <span class="icon" class:folder={entry.dir} class:link={entry.link}></span>{entry.name}
             </td>
@@ -281,6 +310,10 @@
   </div>
   <footer>{listing ? counts : ""}{selected.size ? ` · ${selected.size} selected` : ""}</footer>
 </section>
+
+<!-- the menu closes on a click elsewhere (its own clicks stop at it), and on another right-click before that one's
+  menu opens, so two panes' menus are never open together -->
+<svelte:window onclick={() => (menu = null)} oncontextmenucapture={() => (menu = null)} />
 
 {#if menu}
   <!-- at the page's top: inside the tab, a fixed menu would be placed relative to the tab -->
@@ -398,6 +431,18 @@
     text-align: right;
   }
 
+  th.check,
+  td.check {
+    padding: 0;
+    text-align: center;
+  }
+
+  .check input {
+    margin: 0;
+    vertical-align: middle;
+    accent-color: var(--accent);
+  }
+
   th {
     position: sticky;
     overflow: hidden;
@@ -430,17 +475,22 @@
     color: #fff;
   }
 
+  /* a file: a page, taller than wide, with its top corner folded, so it isn't taken for a checkbox beside the real ones */
   .icon {
     display: inline-block;
-    width: 12px;
-    height: 10px;
-    margin-right: 6px;
+    width: 9px;
+    height: 11px;
+    margin: 0 7px 0 2px;
     border: 1px solid var(--text-muted);
-    border-radius: 1px;
-    vertical-align: -1px;
+    border-radius: 1px 4px 1px 1px;
+    vertical-align: -2px;
   }
 
   .icon.folder {
+    width: 12px;
+    height: 10px;
+    margin: 0 6px 0 0;
+    vertical-align: -1px;
     background: #e8b84a;
     border-color: #c99628;
     border-radius: 1px 3px 1px 1px;

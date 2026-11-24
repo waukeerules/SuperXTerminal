@@ -69,6 +69,9 @@ pub struct Opened {
     address: String,
     /// SCP instead of SFTP: files listed with the device's `dir`, copied one at a time, nothing else
     scp: bool,
+    /// What crosses the network is compressed (ssh's -C): the profile's Compression, or the tab's Compress
+    /// ([`crate::transfer_compression`])
+    compressed: bool,
 }
 
 /// One file or folder in a pane
@@ -156,7 +159,8 @@ fn conn(sftps: &Sftps, id: u32) -> Result<Arc<Conn>, String> {
     sftps.conns.lock().unwrap().get(&id).cloned().ok_or_else(|| "The file transfer has closed.".to_string())
 }
 
-/// Connect to a session's files
+/// Connect to a session's files; `compress` turns ssh's compression on or off (the tab's Compress), else it's as the
+/// session's profile has it
 #[tauri::command]
 pub async fn sftp_open(
     app: AppHandle,
@@ -165,6 +169,7 @@ pub async fn sftp_open(
     sftps: State<'_, Sftps>,
     store: Store,
     id: String,
+    compress: Option<bool>,
 ) -> Result<Opened, String> {
     if crate::demo::on() {
         let sessions = state.sessions.lock().unwrap();
@@ -193,7 +198,7 @@ pub async fn sftp_open(
 
     // the terminal's ssh, without its terminal, running the sftp subsystem
     let base: Vec<String> = launch.command.get_argv().iter().skip(1).map(|w| w.to_string_lossy().to_string()).filter(|w| w != "-tt").collect();
-    let base = with_keepalive(without_forwarding(base));
+    let (base, compressed) = crate::transfer_compression::with_compression(with_keepalive(without_forwarding(base)), compress);
     let mut args = base.clone();
     args.splice(0..0, ["-s".to_string(), "-T".to_string()]);
     args.push("sftp".into());
@@ -254,7 +259,7 @@ pub async fn sftp_open(
             let remote = if remote.is_empty() { home.clone() } else { remote };
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
             sftps.conns.lock().unwrap().insert(id, Arc::new(Conn { raw: None, child: None, scp: Some(base), token, window: label }));
-            return Ok(Opened { id, home, remote, local, address, scp: true });
+            return Ok(Opened { id, home, remote, local, address, scp: true, compressed });
         }
         crate::askpass::forget(&token);
         // ssh's own words, once it has ended
@@ -285,7 +290,7 @@ pub async fn sftp_open(
 
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     sftps.conns.lock().unwrap().insert(id, Arc::new(Conn { raw: Some(raw), child: Some(tokio::sync::Mutex::new(child)), scp: None, token, window: label }));
-    Ok(Opened { id, home, remote, local, address, scp: false })
+    Ok(Opened { id, home, remote, local, address, scp: false, compressed })
 }
 
 /// The tab closed: disconnect
@@ -1131,7 +1136,7 @@ fn demo_open(session: &crate::sessions::StoredSession) -> Result<Opened, String>
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     DEMO.lock().unwrap().get_or_insert_with(HashMap::new).insert(id, (name, host));
     let local = crate::demo::downloads().to_string_lossy().to_string();
-    Ok(Opened { id, home: "flash:/".into(), remote: "flash:/".into(), local, address, scp: true })
+    Ok(Opened { id, home: "flash:/".into(), remote: "flash:/".into(), local, address, scp: true, compressed: false })
 }
 
 /// A demo device's folder, from its `dir`: flash:/ has files, any other folder is empty

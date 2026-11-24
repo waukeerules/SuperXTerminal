@@ -3,6 +3,8 @@
   and the transfers below (Id, Source, Target, Start, End, Progress, Status, Message), run one at a time. Files are
   copied by dragging them across (or onto a folder), a double click, the Upload/Download buttons, the right-click
   menu, or dropping them from Finder onto the remote side. The connection is the session's own ssh (sftp.rs).
+  Compress, above the transfer list, turns ssh's compression on or off for it (transfer_compression.rs), reconnecting
+  in the same folders; it starts as the session's profile has it.
 -->
 <script lang="ts">
   import { FILE_MANAGER, THIS_COMPUTER } from "../platform";
@@ -36,6 +38,8 @@
   } = $props();
 
   let conn = $state<Opened | null>(null);
+  /** Compress as the user last set it: on, off, or undefined to go by the session's profile */
+  let compressWanted: boolean | undefined = undefined;
   let failed = $state("");
   let localHome = $state("");
 
@@ -67,17 +71,22 @@
   let unlistenDrop: (() => void) | null = null;
   let remoteElement = $state<HTMLElement | undefined>();
 
-  /** Connect, and show both sides where they start */
+  /**
+   * Connect, and show both sides where they start; a reconnect (Compress changed, Try again) closes the connection
+   * there was and stays in the folders that were shown
+   */
   async function connect(): Promise<void> {
+    const keep = { local: sides.local.listing?.path, remote: sides.remote.listing?.path };
+    if (conn) void closeTransfer(conn.id);
     failed = "";
     conn = null;
     onState?.("connecting");
     try {
-      conn = await openTransfer(store, id);
+      conn = await openTransfer(store, id, compressWanted);
       onState?.("connected");
       onMode?.(conn.scp ? "SCP" : "SFTP");
       localHome = conn.local;
-      await Promise.all([load("local", conn.local), load("remote", conn.remote)]);
+      await Promise.all([load("local", keep.local ?? conn.local), load("remote", keep.remote ?? conn.remote)]);
     } catch (e) {
       failed = String(e);
       // only a connection that never was: a folder that wouldn't list keeps the tab connected, with its own message
@@ -172,6 +181,15 @@
       running = false;
     }
   }
+
+  /** Compress ticked or unticked: reconnect with ssh's compression so */
+  function setCompress(on: boolean): void {
+    compressWanted = on;
+    void connect();
+  }
+
+  /** Copies waiting or under way, which a reconnect would cut off: Compress waits for them */
+  const busy = $derived(jobs.some((j) => j.status === "Running" || j.status === "Waiting"));
 
   /** A time taken, for the Message column: "350 ms" or "2.4 s" */
   function seconds(ms: number): string {
@@ -278,6 +296,14 @@
       </div>
     </div>
 
+    <div class="options">
+      <label title={busy ? "Wait for the transfers to finish: changing it reconnects" : "ssh's compression (-C): faster over a slow link, little use on a LAN or for files already compressed (video, .zip). Changing it reconnects."}>
+        <input type="checkbox" checked={conn.compressed} disabled={busy} onchange={(e) => setCompress(e.currentTarget.checked)} />
+        Compress
+      </label>
+      <span class="note">{conn.compressed ? "what's sent is compressed; the files arrive as they are" : ""}</span>
+    </div>
+
     <div class="queue">
       <table style:width="{columns.total}px">
         <thead>
@@ -362,6 +388,28 @@
 
   .remote > :global(.pane) {
     flex: 1;
+  }
+
+  .options {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+  }
+
+  .options label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .options input {
+    margin: 0;
+    accent-color: var(--accent);
+  }
+
+  .options .note {
+    color: var(--text-muted);
   }
 
   .queue {

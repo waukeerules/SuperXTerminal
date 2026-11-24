@@ -65,6 +65,7 @@ mod sessions;
 mod session_passwords;
 mod shortcuts;
 mod streams;
+mod transfer_compression;
 mod tray;
 mod variables;
 mod windows;

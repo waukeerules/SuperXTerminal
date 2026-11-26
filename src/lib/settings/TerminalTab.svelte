@@ -184,6 +184,9 @@
       onchange={(e) => set("markMatches", String(e.currentTarget.checked))} /> Mark matches of the selected text</label>
     <label class="check"><input type="checkbox" checked={prefs.copyOnSelect === "true"}
       onchange={(e) => set("copyOnSelect", String(e.currentTarget.checked))} /> Copy on select</label>
+    <label class="check"><input type="checkbox" checked={prefs.rightClickPaste === "true"}
+      onchange={(e) => set("rightClickPaste", String(e.currentTarget.checked))} /> Paste on right-click
+      <span class="hint">(as in PuTTY; Ctrl+right-click opens the terminal's menu then)</span></label>
     <label>Word delimiters
       <span class="row"><input class="words" type="text" spellcheck="false" autocomplete="off" value={prefs.wordSeparators}
         onchange={(e) => { setWordSeparators(e.currentTarget.value); e.currentTarget.value = allPrefs().wordSeparators; }} />

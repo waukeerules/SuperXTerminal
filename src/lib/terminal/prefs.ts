@@ -37,6 +37,11 @@ export const PREF_DEFAULTS: Record<string, string> = {
   bell: "profile",
   copyOnSelect: "true",
   /**
+   * "true": a right-click in the terminal pastes, as PuTTY's does, and Ctrl+right-click opens its menu; "false":
+   * a right-click opens the menu (middle-click and Shift+Insert paste either way)
+   */
+  rightClickPaste: "false",
+  /**
    * The characters a word ends at when it's double-clicked, besides a space (always one): xterm.js's own by default.
    * With # added, a double-click on a switch's "sw1#show" selects "show"; with ( and ) taken out, "sw1(config)" whole.
    * "" for none but the space

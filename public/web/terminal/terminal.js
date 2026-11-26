@@ -4,7 +4,8 @@
  * Gui/TerminalControl runs plink in a pseudo console and sends its output here as base64 chunks, one at a time (each
  * answered with "ack"). xterm.js draws it; typing goes back as "input". It is meant to feel like PuTTY: select to copy,
  * Shift+Insert and middle-click paste, a blinking cursor only while focused, and a right-click menu (Copy, Paste,
- * Find..., Select All, Clear Scrollback, Clear Screen...). Lines are coloured live by the Highlighted Output rules,
+ * Find..., Select All, Clear Scrollback, Clear Screen...); with Paste on Right-Click chosen the right button pastes,
+ * as PuTTY's does, and Ctrl+right-click opens the menu. Lines are coloured live by the Highlighted Output rules,
  * using xterm.js decorations, so the bytes themselves never change.
  *
  * The session log is written from what this page shows (the pseudo console rewrites the stream, see the design doc):
@@ -979,6 +980,14 @@
     }
 
     /**
+     * Whether a right-click pastes, as PuTTY's does, rather than opening the menu: off unless chosen (the menu's
+     * Paste on Right-Click, or Settings > Terminal). Ctrl+right-click opens the menu then, as in PuTTY
+     */
+    function rightClickPastes() {
+        return loadPref('rightClickPaste') === 'true';
+    }
+
+    /**
      * Put a background on part of a buffer line (find and selection matches)
      * @returns {{marker, decoration}|null} to pass to unmark
      */
@@ -1413,6 +1422,8 @@
             { label: 'Cursor', items: cursorItems },
             '-',
             { label: 'Copy on Select', checked: prefOn('copyOnSelect'), action: function () { togglePref('copyOnSelect'); } },
+            // the key column says how to get back here once the right button pastes
+            { label: 'Paste on Right-Click', key: 'Menu: Ctrl+Right-Click', checked: rightClickPastes(), action: function () { savePref('rightClickPaste', rightClickPastes() ? 'false' : 'true'); } },
             { label: 'Mark Matches of Selection', checked: prefOn('markMatches'), action: function () { togglePref('markMatches'); markSelectionMatches(); } },
             { label: 'Wrap Lines', checked: wrapping(), action: function () { togglePref('wrap'); applyWrap(); } },
             { label: 'Line Numbers', checked: loadPref('lineNumbers') === 'true', action: function () { savePref('lineNumbers', loadPref('lineNumbers') === 'true' ? 'false' : 'true'); drawNumbers(); } },
@@ -2197,6 +2208,9 @@
         element.addEventListener('contextmenu', function (e) {
             e.preventDefault();
             restoreSelection();
+            // PuTTY's way, when chosen: the right button pastes (through TerminalControl, like every paste), and
+            // Ctrl with it opens the menu, so the menu and its switch for this stay in reach
+            if (rightClickPastes() && !e.ctrlKey) { hideMenu(); paste(); return; }
             if (hostMenu) { showHostMenu(e.clientX, e.clientY); } else { showMenu(e.clientX, e.clientY); }
         });
         // middle-click pastes, as in PuTTY when the right button opens a menu

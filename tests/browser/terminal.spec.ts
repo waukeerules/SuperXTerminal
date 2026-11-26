@@ -403,6 +403,74 @@ test.describe("Shift+Insert and Ctrl+Shift+V", () => {
   }
 });
 
+test.describe("Paste on Right-Click", () => {
+  /**
+   * Open the terminal with these preferences and keep what the page sends TerminalControl, as `sent`
+   * @param hostMenu Whether the host draws the right-click menu, as SuperXTerminal does (the page then sends it "menu")
+   */
+  async function openAndListen(page: Page, prefs: Record<string, string>, hostMenu = false) {
+    await page.goto("/web/terminal/index.html");
+    await page.waitForFunction(() => !!(window as any).terminalDev);
+    await page.evaluate(([prefs, hostMenu]) => (window as any).terminalDev.message({ type: "config", prefs, themes: [{ name: "PuTTY", colors: {} }], hostMenu }), [prefs, hostMenu] as const);
+    await page.waitForFunction(() => (window as any).terminalDev.term.cols > 2);
+    await page.evaluate(() => {
+      // through host/webview.js (to the main window: here, the page itself)
+      (window as any).sent = [];
+      window.addEventListener("message", (e) => { if (e.data?.channel === "sxt-page") (window as any).sent.push(e.data.message); });
+    });
+  }
+  /** The messages of one type the page has sent so far */
+  const sent = (page: Page, type: string) => page.evaluate((type) => (window as any).sent.filter((m: any) => m.type === type), type);
+
+  test("off, as the app comes: a right-click opens the menu and pastes nothing", async ({ page }) => {
+    await openAndListen(page, {});
+    await page.locator("#terminal").click({ button: "right", position: { x: 40, y: 60 } });
+    await expect(page.locator("#menu")).toBeVisible();
+    await expect(page.locator("#menu .item", { hasText: "Paste on Right-Click" })).not.toHaveClass(/checked/);
+    // postMessage delivers a moment later: long enough for a paste to have shown
+    await page.waitForTimeout(200);
+    expect(await sent(page, "pasteRequest")).toEqual([]);
+  });
+
+  test("on: a right-click pastes once, through TerminalControl, with no menu, and the keyboard stays in the terminal", async ({ page }) => {
+    await openAndListen(page, { rightClickPaste: "true" });
+    await page.locator("#terminal").click({ button: "right", position: { x: 40, y: 60 } });
+    await expect.poll(() => sent(page, "pasteRequest")).toEqual([{ type: "pasteRequest" }]);
+    await expect(page.locator("#menu")).toBeHidden();
+    expect(await page.evaluate(() => document.activeElement?.classList.contains("xterm-helper-textarea"))).toBe(true);
+  });
+
+  test("on: Ctrl+right-click opens the menu, pasting nothing, and the menu turns it off again", async ({ page }) => {
+    await openAndListen(page, { rightClickPaste: "true" });
+    await page.locator("#terminal").click({ button: "right", modifiers: ["Control"], position: { x: 40, y: 60 } });
+    await expect(page.locator("#menu")).toBeVisible();
+    const item = page.locator("#menu .item", { hasText: "Paste on Right-Click" });
+    await expect(item).toHaveClass(/checked/);
+    // the key column says how the menu is reached while the right button pastes
+    await expect(item.locator(".key")).toHaveText("Menu: Ctrl+Right-Click");
+    await item.click();
+    await expect.poll(() => sent(page, "pref")).toEqual([{ type: "pref", name: "rightClickPaste", value: "false" }]);
+    expect(await sent(page, "pasteRequest")).toEqual([]);
+    // off again: a plain right-click is the menu's
+    await page.locator("#terminal").click({ button: "right", position: { x: 40, y: 60 } });
+    await expect(page.locator("#menu")).toBeVisible();
+    await page.waitForTimeout(200);
+    expect(await sent(page, "pasteRequest")).toEqual([]);
+  });
+
+  test("on, with the host drawing the menu: a right-click pastes and sends it no menu; Ctrl+right-click sends the menu", async ({ page }) => {
+    await openAndListen(page, { rightClickPaste: "true" }, true);
+    await page.locator("#terminal").click({ button: "right", position: { x: 40, y: 60 } });
+    await expect.poll(() => sent(page, "pasteRequest")).toEqual([{ type: "pasteRequest" }]);
+    expect(await sent(page, "menu")).toEqual([]);
+    await page.locator("#terminal").click({ button: "right", modifiers: ["Control"], position: { x: 40, y: 60 } });
+    await expect.poll(async () => (await sent(page, "menu")).length).toBe(1);
+    const row = (await sent(page, "menu"))[0].items.find((item: any) => item.label === "Paste on Right-Click");
+    expect(row).toMatchObject({ checked: true, key: "Menu: Ctrl+Right-Click" });
+    expect(await sent(page, "pasteRequest")).toHaveLength(1);
+  });
+});
+
 test.describe("Windows' pseudo console redrawing its screen after a resize (ConPTY)", () => {
   /** A 60-line listing, then the prompt */
   const LISTING = Array.from({ length: 60 }, (_, i) => `old ${i + 1}\r\n`).join("") + "$ ";

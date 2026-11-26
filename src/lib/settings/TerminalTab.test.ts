@@ -2,7 +2,8 @@
 // typed less its spaces and repeats, and put back by Default.
 // Built-in highlighting rules: ticked unless turned off; unticking it saves the preference,
 // takes the app's own rule sets out of Highlighting's list, and puts Highlighting back to Automatic when it was on
-// one of them. The app's bundled rule sets are stood in for by `fetch`, the user's folder by mockIPC's
+// one of them. Paste on right-click: unticked as the app comes, and ticking it saves the preference.
+// The app's bundled rule sets are stood in for by `fetch`, the user's folder by mockIPC's
 // highlighting_load, and settings_save keeps what's saved, as the Rust side does.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/svelte";
@@ -125,5 +126,29 @@ describe("Settings > Terminal > Built-in highlighting rules", () => {
     await expect.poll(offered).toEqual(["Our switches"]);
     expect(highlightingList().value).toBe("ours");
     expect(saved).toEqual([{ ruleSet: "ours", builtInRules: "false" }]);
+  });
+});
+
+describe("Settings > Terminal > Paste on right-click", () => {
+  /** The Paste on right-click tick box */
+  const rightClick = () => screen.getByRole("checkbox", { name: /Paste on right-click/ }) as HTMLInputElement;
+
+  it("is off as the app comes, so a right-click is the menu's, and says how the menu opens once it's on", () => {
+    render(TerminalTab);
+    expect(rightClick().checked).toBe(false);
+    expect(rightClick().closest("label")?.textContent).toContain("Ctrl+right-click opens the terminal's menu");
+    expect(saved).toEqual([]);
+  });
+
+  it("on, saves that; off again, nothing is kept of it in the settings", async () => {
+    const user = userEvent.setup();
+    render(TerminalTab);
+    await user.click(rightClick());
+    expect(saved).toEqual([{ rightClickPaste: "true" }]);
+    expect(rightClick().checked).toBe(true);
+
+    await user.click(rightClick());
+    expect(saved.at(-1)).toEqual({});
+    expect(rightClick().checked).toBe(false);
   });
 });
